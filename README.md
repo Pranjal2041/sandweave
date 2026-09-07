@@ -17,6 +17,11 @@ Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 G
 
 Read [implementation, measurements and limits](notes/resource-snapshot-implementation.md), [machine-readable status](notes/resource-snapshot-status.json), and [reproduction instructions](notes/gvisor-lab-reproduction.md).
 
+[Fast-I/O research](notes/fast-io-research.md) traces Gym Anything's existing
+action acknowledgments and in-memory screenshots, and proposes a shared-memory
+capture path for this desktop. It records prior native measurements and the
+experiments still needed here; this feature is not implemented in the lab yet.
+
 ## Pause, resume and stop
 
 Use `python scripts/env.py pause ENV`, `resume ENV`, or `stop ENV`.

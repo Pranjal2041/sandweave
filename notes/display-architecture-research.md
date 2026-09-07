@@ -1,5 +1,9 @@
 # Display architecture after removing KVM
 
+Follow-up: the user chose to implement and qualify Xvnc first. That work is now
+recorded in [Xvnc fast I/O](xvnc-fast-io.md). The recommendation below is retained
+as research history; Mutter/Wayland implementation remains deferred.
+
 Research dated 2026-09-07. Existing desktops were preserved. This investigation
 read local and upstream source, documentation and issue discussions, and made
 one read-only capability probe on the allocated GPU's render node. No desktop,

@@ -16,6 +16,7 @@ import cpu_broker
 import environment_control as control
 import runtime_store
 import snapshot_store
+import fast_io
 
 
 class EnvironmentManager:
@@ -116,6 +117,7 @@ class EnvironmentManager:
             raise ValueError(f"cannot pause {name} in state {state['status']}")
         created = control.release_cpu(self.local, name)
         try:
+            fast_io.detach(self, name)
             if state['status'] == 'running':
                 self._run([*self._command(name), 'pause', name])
         except BaseException:
@@ -216,6 +218,9 @@ class EnvironmentManager:
 
     restore = load
 
+    def fast_io(self, name, *, backend='xvnc'):
+        return fast_io.FastIOClient(name, manager=self, backend=backend)
+
     def stop(self, name, *, discard=False, label=None, mode='auto', timeout=30):
         """Save durably before terminating; discard=True explicitly skips the save."""
         if discard and (label is not None or mode != 'auto'):
@@ -229,6 +234,8 @@ class EnvironmentManager:
             if state['status'] not in ('running', 'paused') and not discard:
                 raise ValueError('environment is still starting; wait for readiness or explicitly discard it')
             saved = None
+            if discard:
+                fast_io.detach(self, name, stop=True, discard=True)
             if not discard:
                 label = label or f'{name}-stop-{uuid.uuid4().hex[:12]}'
                 # Hold the source at the saved cut until it has been stopped.
@@ -239,6 +246,7 @@ class EnvironmentManager:
                     if state['status'] == 'running':
                         self._resume(name)
                     raise
+                fast_io.detach(self, name, stop=True)
             snapshot_store.write_json(self._logs(name) / 'stopped.json', {
                 'requested_at': time.time(), 'discarded': discard, 'saved': saved, 'complete': False})
             launcher = self._launcher(name)

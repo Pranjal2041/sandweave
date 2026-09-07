@@ -1,0 +1,11 @@
+{
+  "dimensions": [
+    1920,
+    1080
+  ],
+  "median_ms": 6.3750585,
+  "p95_ms": 9.425176,
+  "max_ms": 9.496267,
+  "samples": 50,
+  "read_only": true
+}

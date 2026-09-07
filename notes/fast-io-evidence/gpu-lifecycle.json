@@ -1,0 +1,121 @@
+{
+  "name": "fastio-gpu-a",
+  "gpu": true,
+  "iterations": 200,
+  "renderer": "NVIDIA L40S/PCIe/SSE2",
+  "action_to_visible_pixel": {
+    "median_ms": 56.0486995,
+    "p95_ms": 68.078781,
+    "max_ms": 68.534569,
+    "first_capture_updated": 0,
+    "samples": 30
+  },
+  "owned_images_and_freshness": true,
+  "benchmarks": {
+    "1280x800": {
+      "action": {
+        "median_ms": 2.3052325,
+        "p95_ms": 4.8835,
+        "max_ms": 7.678621,
+        "guest_action": {
+          "median_ms": 0.5049189999999999,
+          "p95_ms": 3.197649,
+          "max_ms": 6.200144
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 4.742758,
+        "p95_ms": 7.856334,
+        "max_ms": 57.15141,
+        "guest_capture": {
+          "median_ms": 2.6342185000000002,
+          "p95_ms": 5.497021,
+          "max_ms": 41.897
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 1.7274465,
+        "p95_ms": 3.570105,
+        "max_ms": 16.535434
+      },
+      "step": {
+        "median_ms": 5.393469,
+        "p95_ms": 9.132928,
+        "max_ms": 14.864414,
+        "guest_capture": {
+          "median_ms": 3.00214,
+          "p95_ms": 4.174117,
+          "max_ms": 7.360486
+        },
+        "guest_action": {
+          "median_ms": 0.508499,
+          "p95_ms": 3.154348,
+          "max_ms": 6.040661
+        }
+      }
+    },
+    "1920x1080": {
+      "action": {
+        "median_ms": 2.5135110000000003,
+        "p95_ms": 9.556876,
+        "max_ms": 13.568909,
+        "guest_action": {
+          "median_ms": 0.56657,
+          "p95_ms": 7.729102,
+          "max_ms": 12.038391
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 7.905670000000001,
+        "p95_ms": 14.67799,
+        "max_ms": 130.273333,
+        "guest_capture": {
+          "median_ms": 5.2738320000000005,
+          "p95_ms": 11.347338,
+          "max_ms": 15.244051
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 2.5391814999999998,
+        "p95_ms": 8.72095,
+        "max_ms": 12.207854
+      },
+      "step": {
+        "median_ms": 12.067587,
+        "p95_ms": 21.203989,
+        "max_ms": 26.374165,
+        "guest_capture": {
+          "median_ms": 4.9141905,
+          "p95_ms": 10.671906,
+          "max_ms": 16.768479
+        },
+        "guest_action": {
+          "median_ms": 3.5959060000000003,
+          "p95_ms": 10.936601,
+          "max_ms": 14.67653
+        }
+      }
+    }
+  },
+  "concurrent_readers": true,
+  "pause_resume": true,
+  "save_load": {
+    "snapshot": {
+      "snapshot": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/fastio-gpu-a-fastio-e806cd55",
+      "kind": "filesystem",
+      "experimental_gpu_live": false,
+      "timings": {
+        "input_setup_seconds": 0.0032231289660558105,
+        "controller_release_seconds": 0.3175767229986377,
+        "checkpoint_seconds": 9.137609404046088,
+        "manifest_seconds": 0.0010171589674428105,
+        "publication_seconds": 2.8900103643536568e-06,
+        "verifier_start_seconds": 0.0008222149917855859,
+        "total_seconds": 9.460252509976272
+      },
+      "verification": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/fastio-gpu-a-fastio-e806cd55/verification.json"
+    },
+    "app_ram_restored": false
+  },
+  "passed": true
+}

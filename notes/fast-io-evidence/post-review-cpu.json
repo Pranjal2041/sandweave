@@ -1,0 +1,127 @@
+{
+  "name": "fastio-final-check",
+  "gpu": false,
+  "iterations": 200,
+  "input": {
+    "text": "Fast IO! caf\u00e9 \u03a9\u4e2d",
+    "modifier_drag": true,
+    "double_triple_click": true,
+    "scroll": true,
+    "invalid_batch_atomic": true
+  },
+  "action_to_visible_pixel": {
+    "median_ms": 20.924637,
+    "p95_ms": 23.838025,
+    "max_ms": 72.314901,
+    "first_capture_updated": 0,
+    "samples": 30
+  },
+  "owned_images_and_freshness": true,
+  "benchmarks": {
+    "1280x800": {
+      "action": {
+        "median_ms": 1.8184735,
+        "p95_ms": 2.21959,
+        "max_ms": 2.942923,
+        "guest_action": {
+          "median_ms": 0.205304,
+          "p95_ms": 0.417798,
+          "max_ms": 0.558531
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 4.966260999999999,
+        "p95_ms": 5.590572,
+        "max_ms": 7.429446,
+        "guest_capture": {
+          "median_ms": 3.086951,
+          "p95_ms": 3.234779,
+          "max_ms": 4.195506
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 1.8328289999999998,
+        "p95_ms": 2.064518,
+        "max_ms": 2.313932
+      },
+      "step": {
+        "median_ms": 5.2377555000000005,
+        "p95_ms": 5.825616,
+        "max_ms": 7.860803,
+        "guest_capture": {
+          "median_ms": 3.1210120000000003,
+          "p95_ms": 3.27186,
+          "max_ms": 3.521554
+        },
+        "guest_action": {
+          "median_ms": 0.26671500000000004,
+          "p95_ms": 0.385277,
+          "max_ms": 0.714593
+        }
+      }
+    },
+    "1920x1080": {
+      "action": {
+        "median_ms": 1.64953,
+        "p95_ms": 1.995206,
+        "max_ms": 2.414434,
+        "guest_action": {
+          "median_ms": 0.186058,
+          "p95_ms": 0.351337,
+          "max_ms": 0.450848
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 5.553076,
+        "p95_ms": 8.574616,
+        "max_ms": 11.995599,
+        "guest_capture": {
+          "median_ms": 3.1966885,
+          "p95_ms": 6.04253,
+          "max_ms": 6.57046
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 2.17891,
+        "p95_ms": 2.646799,
+        "max_ms": 3.750728
+      },
+      "step": {
+        "median_ms": 6.434727499999999,
+        "p95_ms": 9.098156,
+        "max_ms": 11.968478,
+        "guest_capture": {
+          "median_ms": 3.52922,
+          "p95_ms": 6.00822,
+          "max_ms": 8.943604
+        },
+        "guest_action": {
+          "median_ms": 0.338371,
+          "p95_ms": 0.441318,
+          "max_ms": 1.298613
+        }
+      }
+    }
+  },
+  "concurrent_readers": true,
+  "pause_resume": true,
+  "save_load": {
+    "snapshot": {
+      "snapshot": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/fastio-final-check-fastio-a32b735c",
+      "kind": "live",
+      "experimental_gpu_live": false,
+      "timings": {
+        "input_setup_seconds": 0.003831819980405271,
+        "controller_release_seconds": 0.16688376700039953,
+        "checkpoint_seconds": 1.0103210959932767,
+        "manifest_seconds": 0.0006106310174800456,
+        "publication_seconds": 1.7199781723320484e-06,
+        "verifier_start_seconds": 0.0005764600355178118,
+        "total_seconds": 1.1822261839988641
+      },
+      "verification": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/fastio-final-check-fastio-a32b735c/verification.json"
+    },
+    "app_ram_restored": true
+  },
+  "passed": true
+}

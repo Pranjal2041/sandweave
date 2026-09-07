@@ -1,0 +1,102 @@
+{
+  "name": "fastio-gpu-a",
+  "gpu": true,
+  "iterations": 200,
+  "renderer": "NVIDIA L40S/PCIe/SSE2",
+  "action_to_visible_pixel": {
+    "median_ms": 55.213784000000004,
+    "p95_ms": 137.296684,
+    "max_ms": 455.893783,
+    "first_capture_updated": 0,
+    "samples": 30
+  },
+  "owned_images_and_freshness": true,
+  "benchmarks": {
+    "1280x800": {
+      "action": {
+        "median_ms": 1.532658,
+        "p95_ms": 4.150807,
+        "max_ms": 4.703547,
+        "guest_action": {
+          "median_ms": 0.2427745,
+          "p95_ms": 2.880963,
+          "max_ms": 3.511515
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 6.117627499999999,
+        "p95_ms": 9.025287,
+        "max_ms": 11.770287,
+        "guest_capture": {
+          "median_ms": 4.0147145,
+          "p95_ms": 7.096402,
+          "max_ms": 8.933025
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 1.508998,
+        "p95_ms": 4.237208,
+        "max_ms": 5.554042
+      },
+      "step": {
+        "median_ms": 5.5206420000000005,
+        "p95_ms": 8.429135,
+        "max_ms": 10.494523,
+        "guest_capture": {
+          "median_ms": 3.0634065,
+          "p95_ms": 4.724667,
+          "max_ms": 6.650562
+        },
+        "guest_action": {
+          "median_ms": 0.6569769999999999,
+          "p95_ms": 2.884813,
+          "max_ms": 5.053203
+        }
+      }
+    },
+    "1920x1080": {
+      "action": {
+        "median_ms": 5.223241,
+        "p95_ms": 9.549766,
+        "max_ms": 14.975387,
+        "guest_action": {
+          "median_ms": 2.573238,
+          "p95_ms": 7.935706,
+          "max_ms": 13.665572
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 9.117993,
+        "p95_ms": 15.815181,
+        "max_ms": 201.457387,
+        "guest_capture": {
+          "median_ms": 6.165344,
+          "p95_ms": 13.063931,
+          "max_ms": 15.802942
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 1.8254990000000002,
+        "p95_ms": 3.510585,
+        "max_ms": 9.71801
+      },
+      "step": {
+        "median_ms": 7.2852,
+        "p95_ms": 15.455235,
+        "max_ms": 379.782127,
+        "guest_capture": {
+          "median_ms": 4.4515720000000005,
+          "p95_ms": 7.272994,
+          "max_ms": 12.46626
+        },
+        "guest_action": {
+          "median_ms": 0.397652,
+          "p95_ms": 5.192626,
+          "max_ms": 376.350904
+        }
+      }
+    }
+  },
+  "concurrent_readers": true,
+  "passed": true
+}

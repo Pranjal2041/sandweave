@@ -1,0 +1,13 @@
+{
+  "sha256": {
+    "sources/xvnc-fast-io.c": "6a1ecbefc50daf7098911eb9d602c3109ad1f8d15b9cf7bebc8a847d17c9f94e",
+    "tools/fast-io/bridge": "ae1b439a17b114609739a5ace010f574342f5361e8d5834d1591a0557d9aeda0",
+    "tools/fast-io/libxcb-xtest.so.0": "399346c2b1a019326d1f1d2e84508f13b39d5deab76aba132600d80e8ad0f763"
+  },
+  "compiler": "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-14)",
+  "system_packages": [
+    "libxcb-1.13.1-9.el9.x86_64",
+    "libxcb-devel-1.13.1-9.el9.x86_64",
+    "glibc-2.34-272.el9_8.x86_64"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "hostname": "babel-u5-28",
+  "runtime_engine_commit": "59487a05f5e858d5b20a36d980036ccea2ad82ab",
+  "lab_parent_commit": "fad3758",
+  "source_sha256": {
+    "scripts/fast_io.py": "18a6fd8d1cf942215fbf607c883e30efaec39e3451cfba56c63ea6c9fe7dd9ad",
+    "sources/xvnc-fast-io.c": "6a1ecbefc50daf7098911eb9d602c3109ad1f8d15b9cf7bebc8a847d17c9f94e"
+  },
+  "notes": "cpu-latency/gpu-latency are the paired warm measurements; post-review-cpu reruns CPU acceptance after final failure-path hardening. Raw screenshots are ignored under runs/fastio-acceptance and runs/fastio-probe."
+}

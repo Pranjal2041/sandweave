@@ -1,5 +1,9 @@
 # Fast actions and screenshots for the no-KVM desktop
 
+Follow-up: [Xvnc fast I/O](xvnc-fast-io.md) implements the selected baseline and
+records live CPU/GPU measurements. This document retains the preceding research
+and design alternatives.
+
 Research dated 2026-09-07. No environments, benchmarks, installers or builds were
 started for this investigation. The current desktops and engine were preserved.
 This is a proposed design with source evidence and earlier measurements, not a

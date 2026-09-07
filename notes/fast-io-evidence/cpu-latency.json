@@ -1,0 +1,108 @@
+{
+  "name": "fastio-cpu-a",
+  "gpu": false,
+  "iterations": 200,
+  "input": {
+    "text": "Fast IO! caf\u00e9 \u03a9\u4e2d",
+    "modifier_drag": true,
+    "double_triple_click": true,
+    "scroll": true,
+    "invalid_batch_atomic": true
+  },
+  "action_to_visible_pixel": {
+    "median_ms": 20.817724,
+    "p95_ms": 23.005944,
+    "max_ms": 152.661937,
+    "first_capture_updated": 0,
+    "samples": 30
+  },
+  "owned_images_and_freshness": true,
+  "benchmarks": {
+    "1280x800": {
+      "action": {
+        "median_ms": 1.721467,
+        "p95_ms": 2.388634,
+        "max_ms": 4.215308,
+        "guest_action": {
+          "median_ms": 0.219404,
+          "p95_ms": 0.469889,
+          "max_ms": 2.912064
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 4.9439665,
+        "p95_ms": 5.602023,
+        "max_ms": 9.001236,
+        "guest_capture": {
+          "median_ms": 3.094322,
+          "p95_ms": 3.29162,
+          "max_ms": 4.682346
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 1.734757,
+        "p95_ms": 2.105699,
+        "max_ms": 2.908033
+      },
+      "step": {
+        "median_ms": 5.227231,
+        "p95_ms": 6.110993,
+        "max_ms": 12.416679,
+        "guest_capture": {
+          "median_ms": 3.0633015,
+          "p95_ms": 3.342222,
+          "max_ms": 3.569456
+        },
+        "guest_action": {
+          "median_ms": 0.3242305,
+          "p95_ms": 0.469979,
+          "max_ms": 1.835633
+        }
+      }
+    },
+    "1920x1080": {
+      "action": {
+        "median_ms": 1.5999645,
+        "p95_ms": 2.020418,
+        "max_ms": 3.682818,
+        "guest_action": {
+          "median_ms": 0.1925985,
+          "p95_ms": 0.388397,
+          "max_ms": 0.626122
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 3.861891,
+        "p95_ms": 7.912936,
+        "max_ms": 11.220247,
+        "guest_capture": {
+          "median_ms": 1.306789,
+          "p95_ms": 5.542142,
+          "max_ms": 6.065502
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 2.164615,
+        "p95_ms": 3.956833,
+        "max_ms": 6.48648
+      },
+      "step": {
+        "median_ms": 8.080003999999999,
+        "p95_ms": 9.091508,
+        "max_ms": 15.915364,
+        "guest_capture": {
+          "median_ms": 5.359404,
+          "p95_ms": 5.989471,
+          "max_ms": 12.952089
+        },
+        "guest_action": {
+          "median_ms": 0.2991105,
+          "p95_ms": 0.5055,
+          "max_ms": 1.575758
+        }
+      }
+    }
+  },
+  "concurrent_readers": true,
+  "passed": true
+}

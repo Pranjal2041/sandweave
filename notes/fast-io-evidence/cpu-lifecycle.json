@@ -1,0 +1,167 @@
+{
+  "name": "fastio-cpu-a",
+  "gpu": false,
+  "iterations": 200,
+  "input": {
+    "text": "Fast IO! caf\u00e9 \u03a9\u4e2d",
+    "modifier_drag": true,
+    "double_triple_click": true,
+    "scroll": true,
+    "invalid_batch_atomic": true
+  },
+  "action_to_visible_pixel": {
+    "median_ms": 21.5150595,
+    "p95_ms": 31.300821,
+    "max_ms": 35.483109,
+    "first_capture_updated": 0,
+    "samples": 30
+  },
+  "owned_images_and_freshness": true,
+  "benchmarks": {
+    "1280x800": {
+      "action": {
+        "median_ms": 1.756088,
+        "p95_ms": 3.081078,
+        "max_ms": 8.056849,
+        "guest_capture": {
+          "median_ms": 3.71492,
+          "p95_ms": 3.71492,
+          "max_ms": 3.71492
+        },
+        "guest_action": {
+          "median_ms": 0.337436,
+          "p95_ms": 1.427947,
+          "max_ms": 6.854547
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 5.340824,
+        "p95_ms": 6.360778,
+        "max_ms": 9.337364,
+        "guest_capture": {
+          "median_ms": 3.705899,
+          "p95_ms": 4.084896,
+          "max_ms": 6.48023
+        },
+        "guest_action": {
+          "median_ms": 0.0,
+          "p95_ms": 0.0,
+          "max_ms": 0.0
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 1.4941225,
+        "p95_ms": 1.910616,
+        "max_ms": 3.127288,
+        "guest_capture": {
+          "median_ms": 3.560246,
+          "p95_ms": 3.560246,
+          "max_ms": 3.560246
+        },
+        "guest_action": {
+          "median_ms": 0.0,
+          "p95_ms": 0.0,
+          "max_ms": 0.0
+        }
+      },
+      "step": {
+        "median_ms": 4.4966885,
+        "p95_ms": 6.374398,
+        "max_ms": 7.597821,
+        "guest_capture": {
+          "median_ms": 2.2157565000000004,
+          "p95_ms": 3.835991,
+          "max_ms": 3.964833
+        },
+        "guest_action": {
+          "median_ms": 0.409037,
+          "p95_ms": 0.580491,
+          "max_ms": 0.730054
+        }
+      }
+    },
+    "1920x1080": {
+      "action": {
+        "median_ms": 1.8218285,
+        "p95_ms": 2.290763,
+        "max_ms": 11.093286,
+        "guest_capture": {
+          "median_ms": 0.908947,
+          "p95_ms": 0.908947,
+          "max_ms": 0.908947
+        },
+        "guest_action": {
+          "median_ms": 0.307426,
+          "p95_ms": 0.585761,
+          "max_ms": 8.510017
+        }
+      },
+      "fresh_screenshot": {
+        "median_ms": 7.8202855,
+        "p95_ms": 9.70243,
+        "max_ms": 12.331599,
+        "guest_capture": {
+          "median_ms": 5.3509195,
+          "p95_ms": 7.261425,
+          "max_ms": 9.818132
+        },
+        "guest_action": {
+          "median_ms": 0.0,
+          "p95_ms": 0.0,
+          "max_ms": 0.0
+        }
+      },
+      "latest_screenshot": {
+        "median_ms": 2.1378500000000003,
+        "p95_ms": 2.791682,
+        "max_ms": 6.807296,
+        "guest_capture": {
+          "median_ms": 1.121201,
+          "p95_ms": 1.121201,
+          "max_ms": 1.121201
+        },
+        "guest_action": {
+          "median_ms": 0.0,
+          "p95_ms": 0.0,
+          "max_ms": 0.0
+        }
+      },
+      "step": {
+        "median_ms": 7.578730999999999,
+        "p95_ms": 10.205559,
+        "max_ms": 11.666017,
+        "guest_capture": {
+          "median_ms": 4.5127285,
+          "p95_ms": 7.063451,
+          "max_ms": 8.280814
+        },
+        "guest_action": {
+          "median_ms": 0.5456105,
+          "p95_ms": 0.770784,
+          "max_ms": 2.891794
+        }
+      }
+    }
+  },
+  "concurrent_readers": true,
+  "pause_resume": true,
+  "save_load": {
+    "snapshot": {
+      "snapshot": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/fastio-cpu-a-fastio-6a076623",
+      "kind": "live",
+      "experimental_gpu_live": false,
+      "timings": {
+        "input_setup_seconds": 0.036469145969022065,
+        "controller_release_seconds": 0.11670164600946009,
+        "checkpoint_seconds": 1.2599597880034707,
+        "manifest_seconds": 0.0006498220027424395,
+        "publication_seconds": 1.8900027498602867e-06,
+        "verifier_start_seconds": 0.000565600988920778,
+        "total_seconds": 1.4143487829715014
+      },
+      "verification": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/fastio-cpu-a-fastio-6a076623/verification.json"
+    },
+    "app_ram_restored": true
+  },
+  "passed": true
+}

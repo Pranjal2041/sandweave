@@ -4,6 +4,10 @@ The standalone lab exposes a Python API in `scripts/environment.py` and a JSON
 CLI in `scripts/env.py`. Existing `run-gvisor.py`, `checkpoint-gvisor.py` and
 `verify-snapshot.py` remain available. No Gym Anything contracts have changed.
 
+[Xvnc fast I/O](xvnc-fast-io.md) is available through `manager.fast_io(name)`.
+Pause/save detaches its external shared-memory buffer before freezing the guest;
+the next I/O request after resume/load reconnects it. Stop also closes its service.
+
 ## Operations
 
 | Operation | Behavior |

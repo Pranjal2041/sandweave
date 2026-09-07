@@ -1,0 +1,110 @@
+{
+  "first_use_ms": 356.970428,
+  "stop": {
+    "name": "fastio-cpu-a",
+    "status": "stopped",
+    "launcher": null,
+    "logs": "/data/user_data/pranjala/general-vm/runs/gvisor/fastio-cpu-a",
+    "ports": {
+      "80": 36011,
+      "8080": 53761,
+      "8000": 46809,
+      "5901": 41823,
+      "22": 43677
+    },
+    "last_stop": {
+      "requested_at": 1788817522.0610232,
+      "discarded": false,
+      "saved": {
+        "snapshot": "/data/user_data/pranjala/general-vm/snapshots/fastio-final-stop-65009f",
+        "kind": "live",
+        "experimental_gpu_live": false,
+        "timings": {
+          "input_setup_seconds": 0.004008313990198076,
+          "controller_release_seconds": 0.000632452021818608,
+          "checkpoint_seconds": 1.1010222010081634,
+          "manifest_seconds": 0.0006653729942627251,
+          "publication_seconds": 0.467422061949037,
+          "verifier_start_seconds": 0.0009592380374670029,
+          "total_seconds": 1.5747110699885525
+        },
+        "verification": "/data/user_data/pranjala/general-vm/snapshots/fastio-final-stop-65009f/verification.json"
+      },
+      "complete": true
+    }
+  },
+  "load": {
+    "name": "fastio-final-clone-829dfa",
+    "status": "running",
+    "launcher": {
+      "pid": 3116242,
+      "start": 27786057
+    },
+    "logs": "/data/user_data/pranjala/general-vm/runs/gvisor/fastio-final-clone-829dfa",
+    "sentry": {
+      "pid": 3116875,
+      "start": 27786101
+    },
+    "gpu": false,
+    "ports": {
+      "80": 52745,
+      "8080": 53169,
+      "8000": 40223,
+      "5901": 58597,
+      "22": 35995
+    }
+  },
+  "restored_action": {
+    "input_sequence": 1,
+    "action_ns": 9178820,
+    "frame_sequence": 4,
+    "capture_started_ns": 1931048192011,
+    "capture_completed_ns": 1931048626949,
+    "width": 1280,
+    "height": 800,
+    "generation": "53f3d23607114db0bce859c8161622eb",
+    "frame_path": "/tmp/general-vm.2710891.mkpcMH/gvisor/fast-io/fastio-final-clone-829dfa/53f3d23607114db0bce859c8161622eb.frame",
+    "host_frame_observed_ns": 277862168703016,
+    "backend": "xvnc",
+    "acknowledgement": "x-server-processed"
+  },
+  "clone_stop": {
+    "name": "fastio-final-clone-829dfa",
+    "status": "stopped",
+    "launcher": null,
+    "logs": "/data/user_data/pranjala/general-vm/runs/gvisor/fastio-final-clone-829dfa",
+    "ports": {
+      "80": 52745,
+      "8080": 53169,
+      "8000": 40223,
+      "5901": 58597,
+      "22": 35995
+    },
+    "last_stop": {
+      "requested_at": 1788817524.2775366,
+      "discarded": true,
+      "saved": null,
+      "complete": true
+    }
+  },
+  "discard_raw_paused_gpu": {
+    "name": "fastio-gpu-a",
+    "status": "stopped",
+    "launcher": null,
+    "logs": "/data/user_data/pranjala/general-vm/runs/gvisor/fastio-gpu-a",
+    "ports": {
+      "80": 37435,
+      "8080": 58793,
+      "8000": 50657,
+      "5901": 55791,
+      "22": 43771
+    },
+    "last_stop": {
+      "requested_at": 1788817527.6087255,
+      "discarded": true,
+      "saved": null,
+      "complete": true
+    }
+  },
+  "discard_raw_paused_ms": 2752.34199
+}

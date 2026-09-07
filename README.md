@@ -17,10 +17,13 @@ Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 G
 
 Read [implementation, measurements and limits](notes/resource-snapshot-implementation.md), [machine-readable status](notes/resource-snapshot-status.json), and [reproduction instructions](notes/gvisor-lab-reproduction.md).
 
-[Fast-I/O research](notes/fast-io-research.md) traces Gym Anything's existing
-action acknowledgments and in-memory screenshots, and proposes a shared-memory
-capture path for this desktop. It records prior native measurements and the
-experiments still needed here; this feature is not implemented in the lab yet.
+[Xvnc fast I/O](notes/xvnc-fast-io.md) is implemented and tested with CPU GTK and
+NVIDIA-accelerated Firefox: persistent acknowledged input plus direct host-shared
+screenshots. At 1280×800, fresh RGB captures measured roughly 5–6 ms median;
+GPU 1080p tail latency remains above 10 ms. Pause/save detaches the shared buffer
+and resume/load reconnects it. Use the `scripts/fastio.py` CLI or
+`EnvironmentManager().fast_io(ENV)`.
+[Fast-I/O research](notes/fast-io-research.md) records the preceding source analysis.
 [Display architecture research](notes/display-architecture-research.md) compares
 Xvnc with headless GNOME/Mutter and records the host render-node capabilities
 and gVisor device support needed for a GPU compositor.

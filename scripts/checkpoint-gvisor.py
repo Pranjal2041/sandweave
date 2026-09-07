@@ -14,6 +14,8 @@ import runtime_store
 import snapshot_store
 import filesystem_snapshot
 import environment_control
+import fast_io
+from environment import EnvironmentManager
 
 started = phase = time.perf_counter()
 timings = {}
@@ -101,6 +103,9 @@ if recorded_base.get('path') == base_info['path'] and recorded_base.get('sha256'
 mark('input_setup_seconds')
 
 with environment_control.suspended_cpu(local, a.name):
+    # Exec-donated frame FDs cannot be restored. Detach them from Xvnc and
+    # reap the helper before freezing; the next I/O call reconnects lazily.
+    fast_io.detach(EnvironmentManager(lab), a.name)
     command = [str(lab / 'scripts/gvisor-host.sh')]
     if settings.get('gpu'):
         command += ['--gpu', str(settings['gpu']['device_minor'])]

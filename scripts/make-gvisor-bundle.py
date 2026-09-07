@@ -17,7 +17,7 @@ args = parser.parse_args()
 if not re.fullmatch(r'[a-zA-Z0-9_-]+', args.name):
     parser.error('name must contain only letters, digits, dash, or underscore')
 bundle = local / 'gvisor' / 'bundles' / args.name
-bundle.mkdir(parents=True, exist_ok=True)
+bundle.mkdir(parents=True, exist_ok=False)
 (bundle / 'rootfs').mkdir(exist_ok=True)
 with tarfile.open(bundle / 'fixtures.tar', 'w') as archive:
     for name in ['./', './etc/', './usr/', './usr/local/', './usr/local/bin/']:

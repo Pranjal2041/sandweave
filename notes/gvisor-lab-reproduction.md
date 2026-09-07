@@ -72,9 +72,12 @@ scripts/gvisor-host.sh /lab/tools/gvisor-socket/runsc \
   docker exec general-vm-moodle docker ps
 ```
 
-For a full systemd guest, stop the laboratory sandbox with `kill --all demo
-KILL`; PID1 can ignore TERM and restart services. Keep original experiment
-images and data archives; do not delete the source ext4.
+Use `python scripts/env.py pause demo` and `resume demo` for an in-memory pause.
+`python scripts/env.py stop demo` saves before terminating the whole runtime;
+`stop demo --discard` explicitly discards unsaved state. Use the returned
+snapshot with `env.py load` and a fresh name. See the
+[lifecycle API](environment-lifecycle.md). Keep original experiment images and
+data archives; do not delete the source ext4.
 
 ## Durable container data
 

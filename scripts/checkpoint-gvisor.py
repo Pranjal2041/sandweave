@@ -13,6 +13,7 @@ import uuid
 import runtime_store
 import snapshot_store
 import filesystem_snapshot
+import environment_control
 
 started = phase = time.perf_counter()
 timings = {}
@@ -37,6 +38,7 @@ a = p.parse_args()
 for name in (a.name, a.checkpoint):
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', name):
         p.error('names must use letters, digits, dash or underscore')
+operation_lock = environment_control.acquire_lock(local, a.name, os.environ.get(environment_control.LOCK_FD_ENV))
 bundle = local / 'gvisor/bundles' / a.name
 settings = json.loads((bundle / 'launch-settings.json').read_text())
 if a.filesystem and a.experimental_gpu_live:
@@ -98,21 +100,7 @@ if recorded_base.get('path') == base_info['path'] and recorded_base.get('sha256'
     base_info['sha256'] = recorded_base['sha256']
 mark('input_setup_seconds')
 
-suspensions = []
-try:
-    for registration in (local / 'gvisor/cpu-brokers').glob('*/job-' + a.name + '.json'):
-        marker = registration.with_name(registration.name + '.suspend')
-        marker.write_text('checkpoint in progress\n')
-        suspensions.append(marker)
-        deadline = time.monotonic() + 5
-        while True:
-            status = json.loads((registration.parent / 'status.json').read_text())
-            job = status['jobs'].get(registration.name)
-            if job and not job['paused'] and status['time'] > marker.stat().st_mtime:
-                break
-            if time.monotonic() > deadline:
-                raise TimeoutError('CPU controller did not release checkpoint scheduling')
-            time.sleep(.05)
+with environment_control.suspended_cpu(local, a.name):
     command = [str(lab / 'scripts/gvisor-host.sh')]
     if settings.get('gpu'):
         command += ['--gpu', str(settings['gpu']['device_minor'])]
@@ -131,9 +119,6 @@ try:
         print(result.stdout.decode(errors='replace'), end='')
         result.check_returncode()
     pause_seconds = time.perf_counter() - start
-finally:
-    for marker in suspensions:
-        marker.unlink(missing_ok=True)
 mark('checkpoint_seconds')
 
 captured = {f.name: snapshot_store.signature(f) for f in dest.iterdir() if f.is_file()}

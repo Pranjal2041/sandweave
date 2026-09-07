@@ -1,0 +1,158 @@
+{
+  "prefix": "lifecycle-gpu-230f1a95",
+  "hostname": "babel-u5-28",
+  "cycles": [
+    {
+      "pause_seconds": 0.24232395098078996,
+      "resume_seconds": 0.16823151899734512,
+      "cuda": {
+        "nonce": "9e4815f934da4dc982620c7541b6be31",
+        "count": 2,
+        "pid": 498,
+        "address": 140658784337920,
+        "value": 73
+      },
+      "interop": {
+        "phase": "interop_alive",
+        "pid": 521,
+        "time": 1788812070.661993,
+        "value": 42
+      }
+    },
+    {
+      "pause_seconds": 0.2755653760395944,
+      "resume_seconds": 0.19181600300362334,
+      "cuda": {
+        "nonce": "9e4815f934da4dc982620c7541b6be31",
+        "count": 3,
+        "pid": 498,
+        "address": 140658784337920,
+        "value": 73
+      },
+      "interop": {
+        "phase": "interop_alive",
+        "pid": 521,
+        "time": 1788812074.8549154,
+        "value": 42
+      }
+    },
+    {
+      "pause_seconds": 0.2817956960061565,
+      "resume_seconds": 0.1875318779493682,
+      "cuda": {
+        "nonce": "9e4815f934da4dc982620c7541b6be31",
+        "count": 4,
+        "pid": 498,
+        "address": 140658784337920,
+        "value": 73
+      },
+      "interop": {
+        "phase": "interop_alive",
+        "pid": 521,
+        "time": 1788812079.044619,
+        "value": 42
+      }
+    }
+  ],
+  "vnc_banner": "RFB 003.008\n",
+  "filesystem_stop": {
+    "name": "lifecycle-gpu-230f1a95-desktop",
+    "status": "stopped",
+    "launcher": null,
+    "logs": "/data/user_data/pranjala/general-vm/runs/gvisor/lifecycle-gpu-230f1a95-desktop",
+    "ports": {
+      "80": 39365,
+      "8080": 51583,
+      "8000": 45373,
+      "5901": 58287,
+      "22": 38667
+    },
+    "last_stop": {
+      "requested_at": 1788812083.2913554,
+      "discarded": false,
+      "saved": {
+        "snapshot": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-gpu-230f1a95-fs",
+        "kind": "filesystem",
+        "experimental_gpu_live": false,
+        "timings": {
+          "input_setup_seconds": 0.0035644929739646614,
+          "controller_release_seconds": 0.00017835298785939813,
+          "checkpoint_seconds": 0.7321718960301951,
+          "manifest_seconds": 0.0007745629991404712,
+          "publication_seconds": 0.03561976697528735,
+          "verifier_start_seconds": 0.0008481850381940603,
+          "total_seconds": 0.7731583869899623
+        },
+        "verification": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-gpu-230f1a95-fs/verification.json"
+      },
+      "complete": true
+    }
+  },
+  "failed_save_preserved_source": true,
+  "passed": true,
+  "experimental_cuda": {
+    "before": {
+      "nonce": "ca9dd70bd20649ddb5bd5035c1715794",
+      "count": 1,
+      "pid": 1,
+      "address": 140649254879232,
+      "value": 73
+    },
+    "restored": {
+      "nonce": "ca9dd70bd20649ddb5bd5035c1715794",
+      "count": 3,
+      "pid": 1,
+      "address": 140649254879232,
+      "value": 73
+    },
+    "saved_while_paused": {
+      "snapshot": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-gpu-230f1a95-cuda-paused",
+      "kind": "live",
+      "experimental_gpu_live": true,
+      "timings": {
+        "input_setup_seconds": 0.0033224780345335603,
+        "controller_release_seconds": 0.00019761401927098632,
+        "checkpoint_seconds": 0.7528500289772637,
+        "manifest_seconds": 0.0006656519835814834,
+        "publication_seconds": 0.03423293202649802,
+        "verifier_start_seconds": 0.0008709349785931408,
+        "total_seconds": 0.7921407100511715
+      },
+      "verification": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-gpu-230f1a95-cuda-paused/verification.json"
+    },
+    "stopped": {
+      "name": "lifecycle-gpu-230f1a95-cuda",
+      "status": "stopped",
+      "launcher": null,
+      "logs": "/data/user_data/pranjala/general-vm/runs/gvisor/lifecycle-gpu-230f1a95-cuda",
+      "ports": {
+        "80": 34419,
+        "8080": 43421,
+        "8000": 34583,
+        "5901": 47003,
+        "22": 58987
+      },
+      "last_stop": {
+        "requested_at": 1788812092.5407917,
+        "discarded": false,
+        "saved": {
+          "snapshot": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-gpu-230f1a95-cuda-stop",
+          "kind": "live",
+          "experimental_gpu_live": true,
+          "timings": {
+            "input_setup_seconds": 0.003788576985243708,
+            "controller_release_seconds": 0.0001914030290208757,
+            "checkpoint_seconds": 0.7365876240073703,
+            "manifest_seconds": 0.000629980000667274,
+            "publication_seconds": 0.03408332995604724,
+            "verifier_start_seconds": 0.000842485052999109,
+            "total_seconds": 0.7761247890302911
+          },
+          "verification": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-gpu-230f1a95-cuda-stop/verification.json"
+        },
+        "complete": true
+      }
+    },
+    "missing_opt_in_refused": true
+  }
+}

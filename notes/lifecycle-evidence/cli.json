@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "operations": [
+    "start-custom-command",
+    "pause",
+    "resume",
+    "save-local",
+    "restore",
+    "stop-discard"
+  ],
+  "snapshot": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/lifecycle-cli-save-01"
+}

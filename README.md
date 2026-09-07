@@ -17,6 +17,16 @@ Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 G
 
 Read [implementation, measurements and limits](notes/resource-snapshot-implementation.md), [machine-readable status](notes/resource-snapshot-status.json), and [reproduction instructions](notes/gvisor-lab-reproduction.md).
 
+## Pause, resume and stop
+
+Use `python scripts/env.py pause ENV`, `resume ENV`, or `stop ENV`.
+Pause retains the resident environment; stop saves a snapshot before terminating.
+CPU environments default to a live snapshot, GPU environments to a filesystem
+snapshot. `stop ENV --discard` explicitly skips saving. `save ENV LABEL` and
+`load snapshots/LABEL NEW_ENV` expose the same snapshot implementation.
+The [lifecycle API](notes/environment-lifecycle.md) documents the Python interface,
+start/status/list commands, GPU limits and tested cleanup behavior.
+
 ## Restore the validated desktop
 
 ```bash

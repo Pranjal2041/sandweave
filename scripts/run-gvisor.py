@@ -140,6 +140,11 @@ if args.docker_data:
 bundle_flags = ['--docker-data'] if args.docker_data else []
 subprocess.run([sys.executable, str(lab / 'scripts/make-gvisor-bundle.py'), *bundle_flags, args.name, *args.command], check=True)
 bundle = local / 'gvisor/bundles' / args.name
+logs = lab / 'runs/gvisor' / args.name
+logs.mkdir(parents=True, exist_ok=True)
+snapshot_store.write_json(logs / 'launcher.json', {
+    'pid': os.getpid(), 'start': cpu_broker.process_table([os.getpid()])[os.getpid()]['start'],
+    'hostname': socket.gethostname(), 'started_at': started_at})
 runtime = saved_settings['runtime'] if saved_settings and not args.filesystem_runtime_current else json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
 runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore) or args.filesystem_runtime_current)
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
@@ -250,7 +255,14 @@ def spawn(command, logfile):
     child = subprocess.Popen(['prlimit', '--as=536870912', '--', *command], cwd=lab, stdout=output, stderr=subprocess.STDOUT,
                              start_new_session=True)
     children.append(child)
+    record_children()
     return child
+
+
+def record_children():
+    table = cpu_broker.process_table([child.pid for child in children if child.poll() is None])
+    snapshot_store.write_json(logs / 'owned-processes.json', {
+        'launcher': os.getpid(), 'processes': [{'pid': pid, 'start': info['start']} for pid, info in table.items()]})
 
 
 def wait_socket(path, child):
@@ -264,6 +276,9 @@ def wait_socket(path, child):
 
 
 try:
+    def interrupted(signum, frame):
+        raise SystemExit(128 + signum)
+    signal.signal(signal.SIGTERM, interrupted)
     # Apply eligibility to the launcher before spawning, so every runtime and
     # transport helper inherits the same shared CPU pool.
     selected_cpus = set()
@@ -276,10 +291,6 @@ try:
     if args.host_nice:
         os.nice(args.host_nice)
     if args.experimental_gpu_sm_chunks is not None:
-        # SIGTERM must unwind the owned MPS lease as well as network helpers.
-        def interrupted(signum, frame):
-            raise SystemExit(128 + signum)
-        signal.signal(signal.SIGTERM, interrupted)
         mps = gvisor_mps.acquire(lab, local, args.gpu, args.name,
                                 args.experimental_gpu_sm_chunks, args.experimental_gpu_client_memory_mib)
         mps.configure(spec, local)
@@ -381,6 +392,7 @@ try:
         guest = subprocess.Popen(command, cwd=lab, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  start_new_session=True)
         children.append(guest)
+        record_children()
         if filesystem_restore:
             def restore_mounts():
                 control = [str(lab / 'scripts/gvisor-host.sh')]
@@ -411,6 +423,7 @@ finally:
         mps_watch.join(2)
     if registration is not None:
         registration.unlink(missing_ok=True)
+        registration.with_name(registration.name + '.suspend').unlink(missing_ok=True)
         cpu_broker.resume_tree(os.getpid(), local / 'gvisor/state' / ('runsc-' + args.name + '.sock'))
     if mps is not None:
         # Release external GPU objects only after all owned runtime processes

@@ -1,0 +1,102 @@
+{
+  "prefix": "lifecycle-12061393",
+  "cpus": "4-7",
+  "hostname": "babel-u5-28",
+  "pause_seconds": 0.2343809609883465,
+  "save_paused_seconds": 0.25191173097118735,
+  "resume_seconds": 0.12852176604792476,
+  "stop_with_save_seconds": 0.8090699129970744,
+  "load_after_source_stop_seconds": 0.5589951950241812,
+  "discard_paused_seconds": 0.23885148100089282,
+  "passed": true,
+  "before": {
+    "nonce": "66ab16bebe4d6916be711efb27a43fc1",
+    "counter": 13,
+    "pid": 1,
+    "unlinked_file": "open-file:66ab16bebe4d6916be711efb27a43fc1",
+    "file_offset": 5,
+    "marker": "66ab16bebe4d6916be711efb27a43fc1",
+    "uid": 12345,
+    "gid": 6789,
+    "mode": "0o640",
+    "cross_netns_tcp": "66ab16bebe4d6916be711efb27a43fc1",
+    "abstract_queued": "queued-before-checkpoint"
+  },
+  "after_resume": {
+    "nonce": "66ab16bebe4d6916be711efb27a43fc1",
+    "counter": 16,
+    "pid": 1,
+    "unlinked_file": "open-file:66ab16bebe4d6916be711efb27a43fc1",
+    "file_offset": 5,
+    "marker": "66ab16bebe4d6916be711efb27a43fc1",
+    "uid": 12345,
+    "gid": 6789,
+    "mode": "0o640",
+    "cross_netns_tcp": "66ab16bebe4d6916be711efb27a43fc1",
+    "abstract_queued": "queued-before-checkpoint"
+  },
+  "restored": {
+    "nonce": "66ab16bebe4d6916be711efb27a43fc1",
+    "counter": 16,
+    "pid": 1,
+    "unlinked_file": "open-file:66ab16bebe4d6916be711efb27a43fc1",
+    "file_offset": 5,
+    "marker": "66ab16bebe4d6916be711efb27a43fc1",
+    "uid": 12345,
+    "gid": 6789,
+    "mode": "0o640",
+    "cross_netns_tcp": "66ab16bebe4d6916be711efb27a43fc1",
+    "abstract_queued": "queued-before-checkpoint"
+  },
+  "saved": {
+    "snapshot": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-12061393-saved",
+    "kind": "live",
+    "experimental_gpu_live": false,
+    "timings": {
+      "input_setup_seconds": 0.003858808020595461,
+      "controller_release_seconds": 0.0001810839748941362,
+      "checkpoint_seconds": 0.174166540033184,
+      "manifest_seconds": 0.0006642809603363276,
+      "publication_seconds": 0.018470486043952405,
+      "verifier_start_seconds": 0.0007709839846938848,
+      "total_seconds": 0.19811302301241085
+    },
+    "verification": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-12061393-saved/verification.json"
+  },
+  "stopped": {
+    "name": "lifecycle-12061393-source",
+    "status": "stopped",
+    "launcher": null,
+    "logs": "/data/user_data/pranjala/general-vm/runs/gvisor/lifecycle-12061393-source",
+    "ports": {
+      "80": 40995,
+      "8080": 46177,
+      "8000": 56255,
+      "5901": 54555,
+      "22": 33035
+    },
+    "last_stop": {
+      "requested_at": 1788811603.7253306,
+      "discarded": false,
+      "saved": {
+        "snapshot": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-12061393-stop",
+        "kind": "live",
+        "experimental_gpu_live": false,
+        "timings": {
+          "input_setup_seconds": 0.0035142420092597604,
+          "controller_release_seconds": 0.00017467403085902333,
+          "checkpoint_seconds": 0.16644940397236496,
+          "manifest_seconds": 0.0006535819848068058,
+          "publication_seconds": 0.019186478049959987,
+          "verifier_start_seconds": 0.0014001139788888395,
+          "total_seconds": 0.19138140400173143
+        },
+        "verification": "/data/user_data/pranjala/general-vm/snapshots/lifecycle-12061393-stop/verification.json"
+      },
+      "complete": true
+    }
+  },
+  "shared_broker_survived": 1542479,
+  "kvm_absent": true,
+  "peer_survived": true
+}

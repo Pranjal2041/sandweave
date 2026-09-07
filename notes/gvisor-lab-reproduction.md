@@ -25,6 +25,10 @@ The prototype changes are committed as
 GPU device donation is corrected in `b832209`; it restores completion wakeups
 and 24-fps Resolve playback. See [GPU notification repair](resolve-gpu-notifications.md)
 for current runtime, reproducer and desktop ports.
+Opt-in external MPS client support follows in `0330d55`; see
+[experimental CUDA partitions](experimental-gpu-mps.md) for its launcher flags,
+driver qualification, tests and limits. Existing desktops retain their original
+runtime; new launches use the currently staged immutable build.
 
 ```bash
 cd ~/scratch/general-vm

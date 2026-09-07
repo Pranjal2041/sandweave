@@ -9,7 +9,9 @@ each single-GPU sandbox. Select it by UUID for host NVIDIA commands.
 
 Both `resolve-gpu2` and `resolve-optfix` use this same physical GPU through
 nvproxy and the host driver. They also share it with a host inference process.
-There is no per-environment GPU compute or VRAM limit in the launcher.
+Their launches have no GPU compute or VRAM limit. Subsequent work added opt-in
+[experimental MPS partitions](experimental-gpu-mps.md) for cooperating CUDA
+clients; the existing desktops remain on ordinary GPU sharing.
 
 Read-only queries at 17:04 UTC found 41,586 MiB total device memory in use.
 Each desktop's ordinary-user `nvidia-smi` reported that whole-card total, but
@@ -98,7 +100,7 @@ listing does not establish what would appear after integrating MPS into gVisor.
 The earlier non-MPS desktop process-visibility checks remain a separate result.
 The temporary partition was removed and its controller/server stopped.
 
-## Scope and remaining integration
+## Scope and subsequent integration
 
 Static partitions separate participating MPS clients' compute units. They do
 not partition the entire graphics device or provide MIG's memory-bandwidth and
@@ -116,8 +118,9 @@ whole-card throughput against every host process.
 The engine already includes both ioctl additions from
 [gVisor PR #13484](https://github.com/google/gvisor/pull/13484), merged 2026-06-18:
 `MPS_COMPUTE` and `NV0080_CTRL_CMD_GR_SET_TPC_PARTITION_MODE`. This is encouraging,
-but the native result does not demonstrate clients crossing separate Sentry
-instances. Shared MPS transport, resource handles and client identity need a
-separate experiment. Environment-wide enforcement would also have to prevent
-bypassing MPS or multiplying per-client memory budgets. No MPS launch policy
-has been added to the environment runtime.
+but the native result alone did not demonstrate clients crossing separate
+Sentry instances. That integration subsequently passed with concurrent four-SM
+and eight-SM guests, GPU kernels and per-client allocation rejection. See
+[implementation, validation and opt-in flags](experimental-gpu-mps.md).
+Environment-wide enforcement would still have to prevent bypassing MPS or
+multiplying per-client memory budgets; the experimental feature does not claim it.

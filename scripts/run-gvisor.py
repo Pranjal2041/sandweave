@@ -15,6 +15,8 @@ import cpu_broker
 import runtime_store
 import snapshot_store
 import gvisor_gpu
+import gvisor_mps
+import signal
 
 started = phase = time.perf_counter()
 started_at = time.time()
@@ -50,12 +52,20 @@ parser.add_argument('--restore', type=Path, help='restore a complete lab snapsho
 parser.add_argument('--verify', action='store_true', help='explicitly verify all snapshot/dependency hashes before restoring')
 parser.add_argument('--cgroup', choices=['v1', 'v2'], default='v2')
 parser.add_argument('--gpu', type=int, help='one allocated /dev/nvidiaN device minor; N can differ from nvidia-smi index')
+parser.add_argument('--experimental-gpu-sm-chunks', type=int,
+                    help='opt-in cooperative CUDA MPS partition; L40S has four SMs per chunk; graphics stays shared')
+parser.add_argument('--experimental-gpu-client-memory-mib', type=int,
+                    help='optional MPS CUDA memory ceiling per client, including context overhead; not an environment VRAM cap')
 parser.add_argument('--runtime-debug', action=argparse.BooleanOptionalAction, default=True,
                     help='verbose engine logging; disable when measuring GPU throughput')
 parser.add_argument('--profile', action='store_true', help='enable runtime profiling RPCs for a diagnostic guest')
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
+try:
+    gvisor_mps.validate(args.gpu, args.experimental_gpu_sm_chunks, args.experimental_gpu_client_memory_mib)
+except ValueError as error:
+    parser.error(str(error))
 saved_settings = None
 snapshot_manifest = None
 if args.verify and not args.restore:
@@ -184,6 +194,9 @@ inside_net = '/local/' + str(netdir.relative_to(local))
 }, indent=2) + '\n')
 children, files = [], []
 registration = None
+mps = None
+mps_failed = threading.Event()
+mps_watch = None
 watch_done = threading.Event()
 reservations = []
 ports = {}
@@ -234,6 +247,27 @@ try:
     os.sched_setaffinity(0, selected_cpus)
     if args.host_nice:
         os.nice(args.host_nice)
+    if args.experimental_gpu_sm_chunks is not None:
+        # SIGTERM must unwind the owned MPS lease as well as network helpers.
+        def interrupted(signum, frame):
+            raise SystemExit(128 + signum)
+        signal.signal(signal.SIGTERM, interrupted)
+        mps = gvisor_mps.acquire(lab, local, args.gpu, args.name,
+                                args.experimental_gpu_sm_chunks, args.experimental_gpu_client_memory_mib)
+        mps.configure(spec, local)
+        launch_settings['gpu']['mps'] = mps.metadata
+        (bundle / 'config.json').write_text(json.dumps(spec, indent=2) + '\n')
+        (bundle / 'launch-settings.json').write_text(json.dumps(launch_settings, indent=2) + '\n')
+        (logs / 'mps.json').write_text(json.dumps(mps.metadata, indent=2) + '\n')
+        def watch_mps():
+            while not watch_done.wait(1):
+                if not mps.healthy():
+                    mps_failed.set()
+                    (logs / 'mps-failed.txt').write_text('MPS controller, server or gateway exited; terminating this experimental environment\n')
+                    cpu_broker.resume_tree(os.getpid(), local / 'gvisor/state' / ('runsc-' + args.name + '.sock'))
+                    cpu_broker.terminate_trees([child.pid for child in children if child.poll() is None])
+        mps_watch = threading.Thread(target=watch_mps, daemon=True)
+        mps_watch.start()
     if args.cpu_policy != 'shared':
         registration = cpu_broker.register(local, args.name, selected_cpus, args.cpu_weight,
                                              args.cpu_quota if args.cpu_policy == 'quota' else None)
@@ -285,7 +319,9 @@ try:
     if args.gpu is not None:
         command[4:4] = ['--gpu', str(args.gpu)]
         command += ['--nvproxy', '--nvproxy-allow-unsupported-driver',
-                    '--nvproxy-allowed-driver-capabilities=compute,utility,graphics,video']
+                    '--nvproxy-allowed-driver-capabilities=compute,utility,graphics,video' + (',profiling' if mps else '')]
+        if mps:
+            command += mps.flags()
     if args.restore:
         checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
         timings['snapshot_storage'] = str(checkpoint)
@@ -312,9 +348,13 @@ try:
         timings['setup_seconds'] = time.perf_counter() - started
         timings['runtime_spawned_at'] = time.time()
         snapshot_store.write_json(logs / 'restore-timings.json', timings)
+        if mps is not None and (mps_failed.is_set() or not mps.healthy()):
+            raise RuntimeError('MPS service failed before runtime startup')
         guest = subprocess.Popen(command, cwd=lab, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  start_new_session=True)
         children.append(guest)
+        if mps_failed.is_set():
+            cpu_broker.terminate_trees([guest.pid])
         for line in guest.stdout:
             output.write(line)
             output.flush()
@@ -325,9 +365,15 @@ try:
     raise SystemExit(result)
 finally:
     watch_done.set()
+    if mps_watch is not None:
+        mps_watch.join(2)
     if registration is not None:
         registration.unlink(missing_ok=True)
         cpu_broker.resume_tree(os.getpid(), local / 'gvisor/state' / ('runsc-' + args.name + '.sock'))
+    if mps is not None:
+        # Release external GPU objects only after all owned runtime processes
+        # have stopped, including on launcher SIGTERM or startup failure.
+        cpu_broker.terminate_trees([child.pid for child in children if child.poll() is None])
     for child in reversed(children):
         if child.poll() is None:
             child.terminate()
@@ -340,3 +386,6 @@ finally:
         output.close()
     for path in (ethernet_socket, passt_socket):
         path.unlink(missing_ok=True)
+    if mps is not None:
+        mps.close()
+        (logs / 'mps-released.txt').write_text('Partition released; last lease stops the private controller/server\n')

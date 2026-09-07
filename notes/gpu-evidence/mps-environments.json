@@ -1,0 +1,135 @@
+{
+  "gpu": {
+    "device_minor": 0,
+    "uuid": "GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5",
+    "host_nvml_index": 3,
+    "pci_bus_id": "0000:61:00.0"
+  },
+  "guests": {
+    "a": {
+      "name": "mps-final-a",
+      "command": [
+        "/home/pranjala/scratch/miniconda3/bin/python3",
+        "/data/user_data/pranjala/general-vm/scripts/run-gvisor.py",
+        "--gpu",
+        "0",
+        "--no-runtime-debug",
+        "--network-policy",
+        "offline",
+        "--experimental-gpu-sm-chunks",
+        "1",
+        "--experimental-gpu-client-memory-mib",
+        "1024",
+        "mps-final-a",
+        "--",
+        "runuser",
+        "-l",
+        "ga",
+        "-c",
+        "python3 /opt/engine-gpu/probes/gpu-mps-client-probe.py --expect-sms 4 --memory-limit-mib 1024 --hold-seconds 8 --inspect"
+      ],
+      "output": "{\"cuda_free_mib\": 598.6921539306641, \"cuda_total_mib\": 45486.375, \"nvidia_smi\": \"Mon Sep  7 18:24:53 2026       \\n+-----------------------------------------------------------------------------------------+\\n| NVIDIA-SMI 610.43.02              KMD Version: 610.43.02     CUDA UMD Version: 13.3     |\\n+-----------------------------------------+------------------------+----------------------+\\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\\n|                                         |                        |               MIG M. |\\n|=========================================+========================+======================|\\n|   0  NVIDIA L40S                    Off |   00000000:61:00.0 Off |                    0 |\\n| N/A   42C    P0             83W /  350W |   43655MiB /  46068MiB |      0%      Default |\\n|                                         |                        |                  N/A |\\n+-----------------------------------------+------------------------+----------------------+\\n\\n+-----------------------------------------------------------------------------------------+\\n| Processes:                                                                              |\\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\\n|        ID   ID                                                               Usage      |\\n|=========================================================================================|\\n|    0   N/A  N/A               1    M+C   runuser                                 426MiB |\\n+-----------------------------------------------------------------------------------------+\\n\"}\n{\"passed\": true, \"visible_sms\": 4, \"verified_bytes\": 1048576, \"kernel_result\": 1234567, \"over_limit_cuda_status\": 2}\n",
+      "released": true
+    },
+    "b": {
+      "name": "mps-final-b",
+      "command": [
+        "/home/pranjala/scratch/miniconda3/bin/python3",
+        "/data/user_data/pranjala/general-vm/scripts/run-gvisor.py",
+        "--gpu",
+        "0",
+        "--no-runtime-debug",
+        "--network-policy",
+        "offline",
+        "--experimental-gpu-sm-chunks",
+        "2",
+        "--experimental-gpu-client-memory-mib",
+        "1024",
+        "mps-final-b",
+        "--",
+        "runuser",
+        "-l",
+        "ga",
+        "-c",
+        "python3 /opt/engine-gpu/probes/gpu-mps-client-probe.py --expect-sms 8 --memory-limit-mib 1024 --hold-seconds 15 --inspect"
+      ],
+      "output": "{\"cuda_free_mib\": 598.6921539306641, \"cuda_total_mib\": 45486.375, \"nvidia_smi\": \"Mon Sep  7 18:24:54 2026       \\n+-----------------------------------------------------------------------------------------+\\n| NVIDIA-SMI 610.43.02              KMD Version: 610.43.02     CUDA UMD Version: 13.3     |\\n+-----------------------------------------+------------------------+----------------------+\\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\\n|                                         |                        |               MIG M. |\\n|=========================================+========================+======================|\\n|   0  NVIDIA L40S                    Off |   00000000:61:00.0 Off |                    0 |\\n| N/A   41C    P0             83W /  350W |   44082MiB /  46068MiB |      0%      Default |\\n|                                         |                        |                  N/A |\\n+-----------------------------------------+------------------------+----------------------+\\n\\n+-----------------------------------------------------------------------------------------+\\n| Processes:                                                                              |\\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\\n|        ID   ID                                                               Usage      |\\n|=========================================================================================|\\n|    0   N/A  N/A               1    M+C   runuser                                 426MiB |\\n+-----------------------------------------------------------------------------------------+\\n\"}\n{\"passed\": true, \"visible_sms\": 8, \"verified_bytes\": 1048576, \"kernel_result\": 1234567, \"over_limit_cuda_status\": 2}\n",
+      "released": true
+    },
+    "failure": {
+      "name": "mps-final-failure",
+      "command": [
+        "/home/pranjala/scratch/miniconda3/bin/python3",
+        "/data/user_data/pranjala/general-vm/scripts/run-gvisor.py",
+        "--gpu",
+        "0",
+        "--no-runtime-debug",
+        "--network-policy",
+        "offline",
+        "--experimental-gpu-sm-chunks",
+        "1",
+        "--experimental-gpu-client-memory-mib",
+        "1024",
+        "mps-final-failure",
+        "--",
+        "/bin/sleep",
+        "300"
+      ]
+    },
+    "default": {
+      "name": "mps-final-default",
+      "command": [
+        "/home/pranjala/scratch/miniconda3/bin/python3",
+        "/data/user_data/pranjala/general-vm/scripts/run-gvisor.py",
+        "--gpu",
+        "0",
+        "--no-runtime-debug",
+        "--network-policy",
+        "offline",
+        "mps-final-default",
+        "--",
+        "/bin/bash",
+        "-c",
+        "test -z \"${CUDA_MPS_SM_PARTITION:-}\" && python3 /opt/engine-gpu/probes/gpu-device-probe.py && runuser -u ga -- env -u LD_LIBRARY_PATH -u LD_PRELOAD python3 /opt/engine-gpu/probes/gpu-driver-probe.py"
+      ],
+      "output": "{\"passed\": true, \"devices\": [\"/dev/nvidia-uvm\", \"/dev/nvidia0\", \"/dev/nvidiactl\"], \"kvm_present\": false, \"unselected_device_open\": {\"errno\": 2, \"message\": \"[Errno 2] No such file or directory: '/dev/nvidia1'\", \"mknod_succeeded\": true}}\n{\"passed\": true, \"uid\": 1000, \"driver_version\": \"610.43.02\", \"cuda_device_count\": 1, \"loaded_libraries\": [\"/opt/engine-gpu/driver/lib/libcuda.so.610.43.02\", \"/opt/engine-gpu/driver/lib/libnvidia-ml.so.610.43.02\"], \"nvidia_smi\": \"NVIDIA L40S, 610.43.02, GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5\", \"library_environment_override\": false}\n",
+      "released": false
+    }
+  },
+  "concurrent_partitions": "GPU                  Partition                            free     used     free   used   clients\n                                                          chunks   chunks   SM     SM           \nGPU-20                                                    32       3        130    12    \nGPU-20               YBgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA          2               8      Yes   \nGPU-20               AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA          1               4      Yes",
+  "first_owner_exit_preserves_peer": true,
+  "server_failure_terminated_guest_seconds": 1.1156330310041085,
+  "passed": true,
+  "engine_commit": "0330d55b92b0fe7402e9786232dfe5fba832f428",
+  "runtime": {
+    "path": "tools/runtime-builds/c8c4f6b8b8f30e5872df7f45dc66b6bf2dc37c8cc931084b05b0ec380e705ba3",
+    "sha256": {
+      "runsc": "b9fe86961bd3b6d409e007f9654f6efb824ad483911c72c53d8bea71c01ed7b2",
+      "gvisor-bin/gvisor_sentry": "ec29d13786d66caf94428486b87a53c3eca6369559bda5538015fbfc5365842e",
+      "gvisor-bin/checkpointgofer": "30bef13c79e4f9e5af21abe4fb7ea55055ed4d23066404124b801a5d4697835b",
+      "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+      "gvisor-bin/runsc-metric-server": "8125ab334cce6fb595ea8597cb70c01b158c861b119ae42434663dee7ddec35f"
+    }
+  },
+  "date": "2026-09-07",
+  "node": "babel-u5-28",
+  "slurm_job": "10333558",
+  "additional_checks": {
+    "cpu_tree": {
+      "controller_excluded": true,
+      "server_excluded": true,
+      "gateway_included": true
+    },
+    "systemd_guest": "mps-systemd1",
+    "ordinary_login_command": "runuser -l ga -c \"python3 /opt/engine-gpu/probes/gpu-mps-client-probe.py --memory-limit-mib 1024\"",
+    "systemd_command": "systemd-run --wait --pipe --uid=ga /usr/bin/python3 /opt/engine-gpu/probes/gpu-mps-client-probe.py --memory-limit-mib 1024",
+    "ordinary_login_and_systemd_passed": true,
+    "snapshot_refusal": "usage: checkpoint-gvisor.py [-h] [--local-only] name checkpoint\ncheckpoint-gvisor.py: error: GPU snapshots are not qualified; refusing to pause this GPU environment\n",
+    "partition_exhaustion": "/tmp/general-vm.2710891.mkpcMH/gvisor/bundles/mps-exhaust1\nTraceback (most recent call last):\n  File \"/data/user_data/pranjala/general-vm/scripts/run-gvisor.py\", line 253, in <module>\n    mps = gvisor_mps.acquire(lab, local, args.gpu, args.name,\n                            args.experimental_gpu_sm_chunks, args.experimental_gpu_client_memory_mib)\n  File \"/data/user_data/pranjala/general-vm/scripts/gvisor_mps.py\", line 270, in acquire\n    output = control(root, uuid, f'sm_partition add {uuid} {chunks}')\n  File \"/data/user_data/pranjala/general-vm/scripts/gvisor_mps.py\", line 66, in control\n    raise RuntimeError(f'MPS {command!r}: {output} {result.stderr}')\nRuntimeError: MPS 'sm_partition add GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5 1000': Failed to create partition \n",
+    "engine_tests": ", 12 total actions\n//pkg/sentry/socket/unix/transport:transport_test               (cached) PASSED in 0.0s\n//runsc/config:config_test                                      (cached) PASSED in 0.0s\n//pkg/sentry/devices/nvproxy:nvproxy_test                                PASSED in 0.0s\n\nExecuted 1 out of 3 tests: 3 tests pass.\nThere were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.",
+    "python_unit_tests": {
+      "test-gvisor-mps.py": 6,
+      "test-gvisor-gpu.py": 6
+    }
+  }
+}

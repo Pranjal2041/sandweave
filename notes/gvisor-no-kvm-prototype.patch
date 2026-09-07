@@ -1,3 +1,15 @@
+diff --git a/pkg/abi/nvgpu/ctrl.go b/pkg/abi/nvgpu/ctrl.go
+index fc07881..00ea262 100644
+--- a/pkg/abi/nvgpu/ctrl.go
++++ b/pkg/abi/nvgpu/ctrl.go
+@@ -816,6 +816,7 @@ const (
+ 	NV83DE_CTRL_CMD_DEBUG_SUSPEND_CONTEXT           = 0x83de0317
+ 	NV83DE_CTRL_CMD_DEBUG_RESUME_CONTEXT            = 0x83de0318
+ 	NV83DE_CTRL_CMD_DEBUG_SET_MODE_ERRBAR_DEBUG     = 0x83de031f
++	NV83DE_CTRL_CMD_DEBUG_SET_DROP_DEFERRED_RC      = 0x83de0329
+ )
+ 
+ // NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS is the params type for
 diff --git a/pkg/erofs/BUILD b/pkg/erofs/BUILD
 index 00645a2..5acb9b4 100644
 --- a/pkg/erofs/BUILD
@@ -364,11 +376,78 @@ index 6240b68..13996fe 100644
  // SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
  func (c *Context64) SetOldRSeqInterruptedIP(value uintptr) {
  	c.Regs.R10 = uint64(value)
+diff --git a/pkg/sentry/devices/nvproxy/frontend.go b/pkg/sentry/devices/nvproxy/frontend.go
+index 3dda8ec..964a3ec 100644
+--- a/pkg/sentry/devices/nvproxy/frontend.go
++++ b/pkg/sentry/devices/nvproxy/frontend.go
+@@ -16,6 +16,7 @@ package nvproxy
+ 
+ import (
+ 	"fmt"
++	"slices"
+ 
+ 	"golang.org/x/sys/unix"
+ 	"gvisor.dev/gvisor/pkg/abi/linux"
+@@ -822,6 +823,28 @@ func rmDupObject(fi *frontendIoctlState) (uintptr, error) {
+ 	}
+ 
+ 	nvp := fi.fd.dev.nvp
++	if slices.Contains(nvp.mpsClients, ioctlParams.HClientSrc.Val) {
++		// The driver validates the host server's sharing permissions. Only the
++		// explicitly trusted server may supply objects; destinations must still
++		// belong to this sandbox. The server retains its source objects for the
++		// client's lifetime, so there are no sandbox pages to pin here.
++		clientDst, unlock := nvp.getClientWithLock(fi.ctx, ioctlParams.HClient)
++		if clientDst == nil {
++			return 0, frontendFailWithStatus(fi, &ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
++		}
++		n, err := frontendIoctlInvoke(fi, &ioctlParams)
++		if err == nil && ioctlParams.Status == nvgpu.NV_OK {
++			nvp.objAdd(fi.ctx, clientDst, ioctlParams.HObject, nvgpu.ClassID(0xffffffff), &miscObject{}, ioctlParams.HParent)
++		}
++		unlock()
++		if err != nil {
++			return n, err
++		}
++		if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
++			return n, err
++		}
++		return n, nil
++	}
+ 	clientDst, clientSrc, unlock := nvp.getClientsWithLock(fi.ctx, ioctlParams.HClient, ioctlParams.HClientSrc)
+ 	if clientDst == nil || clientSrc == nil {
+ 		return 0, frontendFailWithStatus(fi, &ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
 diff --git a/pkg/sentry/devices/nvproxy/nvproxy.go b/pkg/sentry/devices/nvproxy/nvproxy.go
-index 1c328cf..270d986 100644
+index 1c328cf..d5939f3 100644
 --- a/pkg/sentry/devices/nvproxy/nvproxy.go
 +++ b/pkg/sentry/devices/nvproxy/nvproxy.go
-@@ -290,6 +290,9 @@ func openHostDevFile(ctx context.Context, relpath string, useDevGofer bool, open
+@@ -51,6 +51,9 @@ type Options struct {
+ 	// unsupported driver version.
+ 	AllowUnsupportedDriver bool
+ 
++	// MPSClients permits object imports from these trusted host MPS RM clients.
++	MPSClients []uint32
++
+ 	// DriverCaps is the set of driver capabilities exposed to applications.
+ 	DriverCaps nvconf.DriverCaps
+ 
+@@ -85,6 +88,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
+ 		version:                opts.DriverVersion,
+ 		capsEnabled:            opts.DriverCaps,
+ 		useDevGofer:            opts.UseDevGofer,
++		mpsClients:             append([]uint32(nil), opts.MPSClients...),
+ 		procDriverNvidiaParams: opts.HostSettings.ProcDriverNvidiaParams,
+ 		frontendFDs:            make(map[*frontendFD]struct{}),
+ 		clients:                make(map[nvgpu.Handle]*rootClient),
+@@ -210,6 +214,7 @@ type nvproxy struct {
+ 	version                nvconf.DriverVersion
+ 	capsEnabled            nvconf.DriverCaps
+ 	useDevGofer            bool
++	mpsClients             []uint32
+ 	procDriverNvidiaParams string
+ 	devInfo                DeviceInfo
+ 	regularDevs            [nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX + 1]*frontendDevice
+@@ -290,6 +295,9 @@ func openHostDevFile(ctx context.Context, relpath string, useDevGofer bool, open
  			ctx.Warningf("nvproxy: failed to open device gofer %s: %v", relpath, err)
  			return -1, "", err
  		}
@@ -378,7 +457,7 @@ index 1c328cf..270d986 100644
  		return int32(hostFD), containerName, nil
  	}
  	abspath := filepath.Join("/dev", relpath)
-@@ -300,3 +303,16 @@ func openHostDevFile(ctx context.Context, relpath string, useDevGofer bool, open
+@@ -300,3 +308,16 @@ func openHostDevFile(ctx context.Context, relpath string, useDevGofer bool, open
  	}
  	return int32(hostFD), "", nil
  }
@@ -396,7 +475,7 @@ index 1c328cf..270d986 100644
 +	return nil
 +}
 diff --git a/pkg/sentry/devices/nvproxy/nvproxy_test.go b/pkg/sentry/devices/nvproxy/nvproxy_test.go
-index b96bb61..f70cb2c 100644
+index b96bb61..a5e409f 100644
 --- a/pkg/sentry/devices/nvproxy/nvproxy_test.go
 +++ b/pkg/sentry/devices/nvproxy/nvproxy_test.go
 @@ -15,6 +15,7 @@
@@ -448,11 +527,38 @@ index b96bb61..f70cb2c 100644
  func TestInit(t *testing.T) {
  	// Test that initializing all driverABI works (does not panic or anything).
  	Init()
+@@ -32,6 +67,16 @@ func TestInit(t *testing.T) {
+ 	}
+ }
+ 
++func TestMPSCheckpointRejected(t *testing.T) {
++	defer func() {
++		if got := recover(); got != "nvproxy: external MPS clients cannot be checkpointed" {
++			t.Fatalf("beforeSave panic = %v, want MPS checkpoint refusal", got)
++		}
++	}()
++	nvp := nvproxy{mpsClients: []uint32{1}}
++	nvp.beforeSave()
++}
++
+ // TestAllSupportedHashesPresent tests that all the supported versions in nvproxy have hash entries
+ // in this tool's map. If you're here because of failures run:
+ // `make sudo TARGETS=//tools/gpu:main ARGS="validate_checksum"`and fix mismatches.
 diff --git a/pkg/sentry/devices/nvproxy/save_restore.go b/pkg/sentry/devices/nvproxy/save_restore.go
-index 85652e6..f075ead 100644
+index 85652e6..52408c7 100644
 --- a/pkg/sentry/devices/nvproxy/save_restore.go
 +++ b/pkg/sentry/devices/nvproxy/save_restore.go
-@@ -352,6 +352,9 @@ func openHostDevFileForRestore(ctx goContext.Context, relpath string, useDevGofe
+@@ -174,6 +174,9 @@ func MakeDeviceRemapping(oldIDs, newIDs []DeviceRemapID) (*DeviceRemapping, erro
+ 
+ // beforeSave is invoked by stateify.
+ func (nvp *nvproxy) beforeSave() {
++	if len(nvp.mpsClients) != 0 {
++		panic("nvproxy: external MPS clients cannot be checkpointed")
++	}
+ 	// No need to hold any locks since the sandbox is paused.
+ 	// This avoids lock inversion between nvp.clientsMu and rootClient.objsMu.
+ 	for _, client := range nvp.clients {
+@@ -352,6 +355,9 @@ func openHostDevFileForRestore(ctx goContext.Context, relpath string, useDevGofe
  		if err != nil {
  			panic(fmt.Sprintf("failed to open device gofer %s: %v", relpath, err))
  		}
@@ -462,6 +568,26 @@ index 85652e6..f075ead 100644
  		return int32(hostFD)
  	}
  	abspath := filepath.Join("/dev", relpath)
+diff --git a/pkg/sentry/devices/nvproxy/version.go b/pkg/sentry/devices/nvproxy/version.go
+index 5e1b63c..8cd9053 100644
+--- a/pkg/sentry/devices/nvproxy/version.go
++++ b/pkg/sentry/devices/nvproxy/version.go
+@@ -341,6 +341,7 @@ func Init() {
+ 					nvgpu.NV83DE_CTRL_CMD_DEBUG_SUSPEND_CONTEXT:                            ctrlHandler(rmControlSimple, compUtil),
+ 					nvgpu.NV83DE_CTRL_CMD_DEBUG_RESUME_CONTEXT:                             ctrlHandler(rmControlSimple, compUtil),
+ 					nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_MODE_ERRBAR_DEBUG:                      ctrlHandler(rmControlSimple, compUtil),
++					nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_DROP_DEFERRED_RC:                       ctrlHandler(rmControlSimple, compUtil),
+ 					nvgpu.NV906F_CTRL_GET_CLASS_ENGINEID:                                   ctrlHandler(rmControlSimple, compUtil),
+ 					nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL:                                    ctrlHandler(rmControlSimple, compUtil),
+ 					nvgpu.NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE:                         ctrlHandler(rmControlSimple, nvconf.CapGraphics),
+@@ -669,6 +670,7 @@ func Init() {
+ 							nvgpu.NV83DE_CTRL_CMD_DEBUG_SUSPEND_CONTEXT:                            simpleIoctlInfo("NV83DE_CTRL_CMD_DEBUG_SUSPEND_CONTEXT", "NV83DE_CTRL_CMD_DEBUG_SUSPEND_CONTEXT_PARAMS"),
+ 							nvgpu.NV83DE_CTRL_CMD_DEBUG_RESUME_CONTEXT:                             simpleIoctlInfo("NV83DE_CTRL_CMD_DEBUG_RESUME_CONTEXT"), // No params.
+ 							nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_MODE_ERRBAR_DEBUG:                      simpleIoctlInfo("NV83DE_CTRL_CMD_DEBUG_SET_MODE_ERRBAR_DEBUG", "NV83DE_CTRL_DEBUG_SET_MODE_ERRBAR_DEBUG_PARAMS"),
++							nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_DROP_DEFERRED_RC:                       simpleIoctlInfo("NV83DE_CTRL_CMD_DEBUG_SET_DROP_DEFERRED_RC", "NV83DE_CTRL_DEBUG_SET_DROP_DEFERRED_RC_PARAMS"),
+ 							nvgpu.NV906F_CTRL_GET_CLASS_ENGINEID:                                   simpleIoctlInfo("NV906F_CTRL_GET_CLASS_ENGINEID", "NV906F_CTRL_GET_CLASS_ENGINEID_PARAMS"),
+ 							nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL:                                    simpleIoctlInfo("NV906F_CTRL_CMD_RESET_CHANNEL", "NV906F_CTRL_CMD_RESET_CHANNEL_PARAMS"),
+ 							nvgpu.NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE:                         simpleIoctlInfo("NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE", "NV9096_CTRL_GET_ZBC_CLEAR_TABLE_SIZE_PARAMS"),
 diff --git a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go b/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
 index d5d2f4d..941bef4 100644
 --- a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
@@ -1711,6 +1837,157 @@ index 2105a92..37109a9 100644
  
  		// Messages that are too small clear the error message set and return.
  		// From net/netfilter/nfnetlink.c:nfnetlink_rcv_batch
+diff --git a/pkg/sentry/socket/unix/transport/host.go b/pkg/sentry/socket/unix/transport/host.go
+index 60ab471..bb4a0b4 100644
+--- a/pkg/sentry/socket/unix/transport/host.go
++++ b/pkg/sentry/socket/unix/transport/host.go
+@@ -290,15 +290,17 @@ func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (Re
+ 	var cm unet.ControlMessage
+ 	if args.NumRights > 0 {
+ 		cm.EnableFDs(int(args.NumRights))
++		if c.passcred {
++			cm = append(cm, make([]byte, unix.CmsgSpace(unix.SizeofUcred))...)
++		}
+ 	}
+ 
+ 	// N.B. Unix sockets don't have a receive buffer, the send buffer
+ 	// serves both purposes.
+ 	//
+-	// We ignore args.Creds because we don't translate sandbox socket options to
+-	// host socket options, so the fd won't have the SO_PASSCRED option set. By
+-	// default, the sentry will always return credentials with PID 0 and UID/GID
+-	// 65534 (nobody).
++	// Imported sockets may already have SO_PASSCRED enabled. Discard their host
++	// credentials; the sandbox socket layer supplies PID 0 and UID/GID 65534
++	// (nobody), rather than exposing identities from the host namespace.
+ 	out := RecvOutput{Source: Address{Addr: c.addr}}
+ 	var err error
+ 	var controlLen uint64
+@@ -326,7 +328,7 @@ func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (Re
+ 		return out, false, nil
+ 	}
+ 
+-	fds, err := cm.ExtractFDs()
++	fds, err := extractHostFDs(cm)
+ 	if err != nil {
+ 		return RecvOutput{}, false, syserr.FromError(err)
+ 	}
+@@ -340,6 +342,35 @@ func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (Re
+ 	return out, false, nil
+ }
+ 
++// extractHostFDs accepts the credentials attached by the host to SO_PASSCRED
++// sockets without forwarding them into the sandbox.
++func extractHostFDs(control []byte) ([]int, error) {
++	msgs, err := unix.ParseSocketControlMessage(control)
++	if err != nil {
++		return nil, err
++	}
++	var fds []int
++	var parseErr error
++	for _, msg := range msgs {
++		if msg.Header.Level == unix.SOL_SOCKET && msg.Header.Type == unix.SCM_CREDENTIALS {
++			continue
++		}
++		rights, err := unix.ParseUnixRights(&msg)
++		if err != nil {
++			parseErr = err
++			continue
++		}
++		fds = append(fds, rights...)
++	}
++	if parseErr != nil {
++		for _, fd := range fds {
++			unix.Close(fd)
++		}
++		return nil, parseErr
++	}
++	return fds, nil
++}
++
+ // NotifyWriteSpace implements Receiver.NotifyWriteSpace.
+ func (c *HostSender) NotifyWriteSpace() {}
+ 
+diff --git a/pkg/sentry/socket/unix/transport/host_test.go b/pkg/sentry/socket/unix/transport/host_test.go
+index c9a0472..340a6e8 100644
+--- a/pkg/sentry/socket/unix/transport/host_test.go
++++ b/pkg/sentry/socket/unix/transport/host_test.go
+@@ -15,6 +15,7 @@
+ package transport
+ 
+ import (
++	"fmt"
+ 	"testing"
+ 
+ 	"golang.org/x/sys/unix"
+@@ -22,6 +23,67 @@ import (
+ 	"gvisor.dev/gvisor/pkg/waiter"
+ )
+ 
++func TestImportedPasscredSocketReceive(t *testing.T) {
++	for _, stype := range []int{unix.SOCK_STREAM, unix.SOCK_SEQPACKET, unix.SOCK_DGRAM} {
++		for _, withRights := range []bool{false, true} {
++			t.Run(fmt.Sprintf("type=%d/rights=%t", stype, withRights), func(t *testing.T) {
++				fds, err := unix.Socketpair(unix.AF_UNIX, stype, 0)
++				if err != nil {
++					t.Fatal(err)
++				}
++				defer unix.Close(fds[0])
++				defer unix.Close(fds[1])
++				if err := unix.SetsockoptInt(fds[0], unix.SOL_SOCKET, unix.SO_PASSCRED, 1); err != nil {
++					t.Fatal(err)
++				}
++				ep := &HostSender{fd: fds[0]}
++				if err := ep.initFromOptions(); err != nil {
++					t.Fatal(err)
++				}
++				var control []byte
++				var pipe [2]int
++				if withRights {
++					if err := unix.Pipe(pipe[:]); err != nil {
++						t.Fatal(err)
++					}
++					defer unix.Close(pipe[0])
++					defer unix.Close(pipe[1])
++					control = unix.UnixRights(pipe[1])
++				}
++				if err := unix.Sendmsg(fds[1], []byte("hello"), control, nil, 0); err != nil {
++					t.Fatal(err)
++				}
++				buf := make([]byte, 5)
++				out, _, serr := ep.Recv(nil, [][]byte{buf}, RecvArgs{NumRights: 1})
++				if serr != nil || string(buf) != "hello" || out.ControlTrunc {
++					t.Fatalf("Recv: output=%+v data=%q error=%v", out, buf, serr)
++				}
++				if out.Control.Credentials != nil {
++					t.Fatal("host credentials escaped into sandbox control messages")
++				}
++				if !withRights {
++					if out.Control.Rights != nil {
++						t.Fatal("unexpected rights")
++					}
++					return
++				}
++				rights, ok := out.Control.Rights.(*SCMRights)
++				if !ok || len(rights.FDs) != 1 {
++					t.Fatalf("rights=%+v", out.Control.Rights)
++				}
++				defer rights.Release(nil)
++				if _, err := unix.Write(rights.FDs[0], []byte("x")); err != nil {
++					t.Fatal(err)
++				}
++				var got [1]byte
++				if _, err := unix.Read(pipe[0], got[:]); err != nil || got[0] != 'x' {
++					t.Fatalf("passed pipe: %q, %v", got, err)
++				}
++			})
++		}
++	}
++}
++
+ // TestSCMSenderBeforeSaveIdempotent verifies that calling beforeSave
+ // on an SCMSender whose host file descriptor is already closed (fd < 0)
+ // is a safe no-op and does not panic in fdnotifier.RemoveFD.
 diff --git a/pkg/sentry/syscalls/linux/sys_tls_amd64.go b/pkg/sentry/syscalls/linux/sys_tls_amd64.go
 index 655cdc6..5df38d6 100644
 --- a/pkg/sentry/syscalls/linux/sys_tls_amd64.go
@@ -4150,7 +4427,7 @@ index 0000000..a9deb96
 +	}
 +}
 diff --git a/runsc/boot/vfs.go b/runsc/boot/vfs.go
-index f320cd9..bb976e8 100644
+index f320cd9..846b332 100644
 --- a/runsc/boot/vfs.go
 +++ b/runsc/boot/vfs.go
 @@ -1542,14 +1542,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
@@ -4198,8 +4475,24 @@ index f320cd9..bb976e8 100644
  	}
  	c.cgroupsMounted = true
  	return nil
+@@ -1976,10 +1988,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
+ 	if err != nil {
+ 		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
+ 	}
++	mpsClients, err := info.conf.MPSClientHandles()
++	if err != nil {
++		return err
++	}
+ 	devInfo, err := nvproxy.Register(vfsObj, &nvproxy.Options{
+ 		DriverVersion:          nvidiaDriverVersion,
+ 		DriverCaps:             driverCaps,
+ 		AllowUnsupportedDriver: info.conf.NVProxyAllowUnsupportedDriver,
++		MPSClients:             mpsClients,
+ 		HostSettings:           info.nvidiaHostSettings,
+ 		UseDevGofer:            true,
+ 	})
 diff --git a/runsc/config/config.go b/runsc/config/config.go
-index 0fbf027..803e880 100644
+index 0fbf027..539a151 100644
 --- a/runsc/config/config.go
 +++ b/runsc/config/config.go
 @@ -124,6 +124,10 @@ type Config struct {
@@ -4232,7 +4525,18 @@ index 0fbf027..803e880 100644
  	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
  	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
  
-@@ -493,6 +509,18 @@ type Config struct {
+@@ -381,6 +397,10 @@ type Config struct {
+ 	// unsupported driver version.
+ 	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
+ 
++	// NVProxyMPSClients lists trusted external MPS server RM client handles.
++	// Empty disables importing objects owned outside this sandbox.
++	NVProxyMPSClients string `flag:"nvproxy-mps-clients"`
++
+ 	// TPUProxy enables support for TPUs.
+ 	TPUProxy bool `flag:"tpuproxy"`
+ 
+@@ -493,6 +513,18 @@ type Config struct {
  // Config.Override does not validate, so callers must call Validate once they
  // are done overriding.
  func (c *Config) Validate() error {
@@ -4251,8 +4555,77 @@ index 0fbf027..803e880 100644
  	if c.Overlay && c.Overlay2.Enabled() {
  		// Deprecated flag was used together with flag that replaced it.
  		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
+@@ -539,6 +571,9 @@ func (c *Config) Validate() error {
+ 	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
+ 		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
+ 	}
++	if _, err := c.MPSClientHandles(); err != nil {
++		return err
++	}
+ 	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
+ 	if err != nil {
+ 		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: %w", c.NVProxyAllowedDriverCapabilities, err)
+@@ -1649,3 +1684,28 @@ func (xd *XDP) Set(input string) error {
+ 	}
+ 	return nil
+ }
++
++// MPSClientHandles validates the explicit external RM-client allowlist.
++func (c *Config) MPSClientHandles() ([]uint32, error) {
++	if c.NVProxyMPSClients == "" {
++		return nil, nil
++	}
++	if !c.NVProxy {
++		return nil, fmt.Errorf("nvproxy-mps-clients requires nvproxy")
++	}
++	parts := strings.Split(c.NVProxyMPSClients, ",")
++	if len(parts) > 16 {
++		return nil, fmt.Errorf("at most 16 MPS RM clients are allowed")
++	}
++	result := make([]uint32, 0, len(parts))
++	seen := make(map[uint32]bool)
++	for _, part := range parts {
++		value, err := strconv.ParseUint(part, 0, 32)
++		if err != nil || value == 0 || seen[uint32(value)] {
++			return nil, fmt.Errorf("invalid or duplicate MPS RM client handle %q", part)
++		}
++		seen[uint32(value)] = true
++		result = append(result, uint32(value))
++	}
++	return result, nil
++}
+diff --git a/runsc/config/config_test.go b/runsc/config/config_test.go
+index 710cb07..3e73af3 100644
+--- a/runsc/config/config_test.go
++++ b/runsc/config/config_test.go
+@@ -966,3 +966,25 @@ func TestParseSerializeOverlay2(t *testing.T) {
+ 		}
+ 	})
+ }
++
++func TestMPSClientHandles(t *testing.T) {
++	for _, tc := range []struct {
++		value          string
++		enabled, valid bool
++	}{
++		{"", false, true}, {"0xc1d00001,3251699424", true, true},
++		{"1", false, false}, {"0", true, false}, {"4294967296", true, false},
++		{"-1", true, false}, {"1,1", true, false}, {"1,", true, false},
++	} {
++		t.Run(fmt.Sprintf("%s/%t", tc.value, tc.enabled), func(t *testing.T) {
++			c := Config{NVProxy: tc.enabled, NVProxyMPSClients: tc.value}
++			got, err := c.MPSClientHandles()
++			if (err == nil) != tc.valid {
++				t.Fatalf("handles=%v, err=%v, valid=%t", got, err, tc.valid)
++			}
++			if tc.value == "" && len(got) != 0 {
++				t.Fatalf("default allows external clients: %v", got)
++			}
++		})
++	}
++}
 diff --git a/runsc/config/flags.go b/runsc/config/flags.go
-index f4852a7..7f5d69d 100644
+index f4852a7..1b74a49 100644
 --- a/runsc/config/flags.go
 +++ b/runsc/config/flags.go
 @@ -148,6 +148,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
@@ -4273,6 +4646,14 @@ index f4852a7..7f5d69d 100644
  	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
  	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
  	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
+@@ -184,6 +188,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+ 	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
+ 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
+ 	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
++	flagSet.String("nvproxy-mps-clients", "", "experimental comma-separated trusted host MPS RM client handles; empty disables external object imports")
+ 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
+ 	flagSet.Bool("rdmaproxy", false, "WIP: enable RDMA support for containers with /dev/infiniband/uverbs* devices.")
+ 	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
 diff --git a/runsc/sandbox/BUILD b/runsc/sandbox/BUILD
 index 387957f..899c79a 100644
 --- a/runsc/sandbox/BUILD

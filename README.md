@@ -51,8 +51,15 @@ pausing a GPU guest. Existing CPU-only snapshots are unchanged.
 
 See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
 The [sharing and partitioning investigation](notes/gpu-sharing-partitioning.md)
-records cross-environment monitoring visibility and a successful native,
-rootless MPS four-SM partition smoke test. MPS is not yet integrated into guests.
+records cross-environment monitoring visibility and the initial native MPS test.
+Opt-in [experimental CUDA MPS partitions](notes/experimental-gpu-mps.md) now work
+across environments. Add `--experimental-gpu-sm-chunks 2` to a `--gpu 0` launch
+for eight SMs on this L40S; optionally add
+`--experimental-gpu-client-memory-mib 1024` for a per-CUDA-client memory limit.
+Two concurrent guests, CUDA kernels, allocation rejection and lifecycle cleanup
+passed. These are cooperative CUDA controls; graphics and memory bandwidth stay
+shared, and GPU snapshots remain deferred. Ordinary GPU launches keep their
+existing behavior.
 The [GPU application investigation](notes/gpu-applications.md) records Earth's
 VirtualGL fixes and interactive checks. [Resolve setup and acceptance](notes/resolve-gpu.md)
 records the futex engine fix, audio setup, export verification and performance limits.

@@ -1,0 +1,57 @@
+{
+  "uid": 2710891,
+  "gpu_uuid": "GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5",
+  "commands": [
+    {
+      "command": "lspart",
+      "returncode": 0,
+      "stdout": "GPU                  Partition                            free     used     free   used   clients\n                                                          chunks   chunks   SM     SM           \nGPU-20                                                    35       0        142    0",
+      "stderr": ""
+    },
+    {
+      "command": "sm_partition add GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5 1",
+      "returncode": 0,
+      "stdout": "Partition GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5/AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA created",
+      "stderr": ""
+    },
+    {
+      "command": "set_default_device_pinned_mem_limit GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5 1024M",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "lspart",
+      "returncode": 0,
+      "stdout": "GPU                  Partition                            free     used     free   used   clients\n                                                          chunks   chunks   SM     SM           \nGPU-20                                                    34       1        138    4     \nGPU-20               AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA          1               4      No",
+      "stderr": ""
+    },
+    {
+      "command": "sm_partition rm GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5/AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "returncode": 0,
+      "stdout": "Partition AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA removed",
+      "stderr": ""
+    },
+    {
+      "command": "lspart",
+      "returncode": 0,
+      "stdout": "GPU                  Partition                            free     used     free   used   clients\n                                                          chunks   chunks   SM     SM           \nGPU-20                                                    35       0        142    0",
+      "stderr": ""
+    },
+    {
+      "command": "quit",
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "scope": "Native same-user MPS client; no gVisor integration; no GPU mode changes",
+  "probe": "scripts/gpu-mps-client-probe.py",
+  "client": {
+    "returncode": 0,
+    "stdout": "{\"passed\": true, \"visible_sms\": 4, \"verified_bytes\": 1048576}",
+    "stderr": ""
+  },
+  "controller_exitcode": 0,
+  "passed": true
+}

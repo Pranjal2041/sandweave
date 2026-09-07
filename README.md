@@ -50,6 +50,9 @@ GPU snapshots are deferred and the wrapper refuses them before
 pausing a GPU guest. Existing CPU-only snapshots are unchanged.
 
 See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
+The [sharing and partitioning investigation](notes/gpu-sharing-partitioning.md)
+records cross-environment monitoring visibility and a successful native,
+rootless MPS four-SM partition smoke test. MPS is not yet integrated into guests.
 The [GPU application investigation](notes/gpu-applications.md) records Earth's
 VirtualGL fixes and interactive checks. [Resolve setup and acceptance](notes/resolve-gpu.md)
 records the futex engine fix, audio setup, export verification and performance limits.

@@ -1,0 +1,3 @@
+{"phase": "opengl", "root_visual": "0x21", "renderer": "NVIDIA L40S/PCIe/SSE2", "pixel": [64, 127, 191, 255], "passed": true}
+{"phase": "interop_latency", "iterations": 100, "milliseconds": {"map": {"median": 0.005464499992058336, "max": 0.665252000004557}, "memset": {"median": 0.003980000002457018, "max": 0.008699999995087637}, "unmap": {"median": 0.005715499995062601, "max": 0.6981120000091323}, "gl_read": {"median": 0.15598300001329335, "max": 0.16087200000924895}}, "passed": true}
+{"phase": "cuda_opengl_interop", "bytes": 256, "passed": true}

@@ -1,0 +1,4 @@
+GPU_API initialized pid=2427
+GPU_API 329.282 cuMemsetD8Async count=241 total_ms=7.051 max_ms=0.051
+GPU_API 329.282 cuStreamAddCallback count=129 total_ms=6.149 max_ms=0.857
+GPU_API 329.282 cuLaunchHostFunc count=112 total_ms=6.482 max_ms=1.514

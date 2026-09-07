@@ -22,6 +22,9 @@ The prototype changes are committed as
 `ae303ca510bb171dd5e498783e2e18a56d67ad05`. Resource controls and full networking snapshots are committed through `8c8b1437b27ce0fb61a9db17c5feb33242b7bde3`; a cumulative diff is available in
 `notes/gvisor-no-kvm-prototype.patch`. The subsequent signed futex correction in
 `1bfaec6` enables Resolve's Qt semaphore; see [Resolve acceptance](resolve-gpu.md).
+GPU device donation is corrected in `b832209`; it restores completion wakeups
+and 24-fps Resolve playback. See [GPU notification repair](resolve-gpu-notifications.md)
+for current runtime, reproducer and desktop ports.
 
 ```bash
 cd ~/scratch/general-vm

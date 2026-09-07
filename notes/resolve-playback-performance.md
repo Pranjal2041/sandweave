@@ -1,5 +1,11 @@
 # Resolve playback performance investigation
 
+**Resolved in the subsequent experiment:** engine commit `b832209` repairs a
+device-gofer flag mismatch that suppressed GPU completion wakeups. The same
+project now plays at **24 fps** with four CPUs, GNOME and audio. See the
+[cause, repair and regression measurements](resolve-gpu-notifications.md).
+The observations below preserve the initial investigation before that fix.
+
 Measured 2026-09-07 on the same L40S and allocation as
 [Resolve acceptance](resolve-gpu.md). The original desktop was preserved;
 application comparisons used disposable native and gVisor sessions.

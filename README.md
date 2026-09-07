@@ -2,7 +2,7 @@
 
 Current runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's repository remains untouched.
 
-Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Earth Pro 7.3.7 have been exercised. The user requested closing those desktops; the current live desktop is `resolve-gpu2`, running GPU-accelerated DaVinci Resolve 21.0.4. Import, timeline playback, color grading, project reopening and ProRes export passed, with playback performance still limited to roughly 9 fps in this test. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
+Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Earth Pro 7.3.7 have been exercised. The user requested closing those desktops. The current fixed desktop is `resolve-optfix`, running GPU-accelerated DaVinci Resolve 21.0.4 at **24 fps** on the tested project, up from 8.9 fps after repairing GPU completion notifications. Import, color grading, project reopening and ProRes export also passed. The original `resolve-gpu2` remains available. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
 
 ## Four controls implemented and tested
 
@@ -53,6 +53,9 @@ See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
 The [GPU application investigation](notes/gpu-applications.md) records Earth's
 VirtualGL fixes and interactive checks. [Resolve setup and acceptance](notes/resolve-gpu.md)
 records the futex engine fix, audio setup, export verification and performance limits.
+The [GPU notification repair](notes/resolve-gpu-notifications.md) records the
+playback fix and native/before/after measurements. The fixed desktop is forwarded
+to Mac VNC `127.0.0.1:5913`, password `labvnc01`.
 
 ## Recovery and history
 

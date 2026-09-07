@@ -4,10 +4,10 @@
     "upstream": "https://github.com/google/gvisor.git",
     "branch": "experiment/no-kvm-slurm",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "1bfaec69c4d55bc4c763f9c6c32827cf9a8ce7ad",
+    "commit": "b83220974c58fe25619a7f3ce26cfb9b6115823f",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/f3fa79847a26becb63974150ceaab81a5ddd2ee762420e0151a9b61caee264f6",
-    "recovery_bundle": "checkpoints/resolve-futex-1bfaec6/gvisor.bundle",
-    "recovery_shallow_boundary": "checkpoints/resolve-futex-1bfaec6/gvisor.shallow"
+    "runtime_build": "tools/runtime-builds/79623840e3b5cab0482c5f7881ec9a1765608ce1a65ac8da48ab0181304a1aea",
+    "recovery_bundle": "checkpoints/gpu-notifications-b832209/gvisor.bundle",
+    "recovery_shallow_boundary": "checkpoints/gpu-notifications-b832209/gvisor.shallow"
   }
 }

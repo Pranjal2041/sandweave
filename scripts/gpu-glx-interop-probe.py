@@ -2,6 +2,9 @@
 """Exercise a root-visual OpenGL context and CUDA/OpenGL buffer sharing."""
 import ctypes as C
 import json
+import statistics
+import sys
+import time
 
 
 class VisualInfo(C.Structure):
@@ -81,6 +84,27 @@ cu('cuGraphicsUnmapResources', [C.c_uint, C.POINTER(ptr), ptr], 1, C.byref(resou
 readback = (C.c_ubyte * 256)()
 gl_extension('glGetBufferSubData', None, C.c_uint, C.c_ssize_t, C.c_ssize_t, ptr)(0x8892, 0, 256, readback)
 assert bytes(readback) == b'*' * 256
+if '--benchmark' in sys.argv:
+    samples = {name: [] for name in ('map', 'memset', 'unmap', 'gl_read')}
+    for attempt in range(110):
+        before = time.perf_counter()
+        cu('cuGraphicsMapResources', [C.c_uint, C.POINTER(ptr), ptr], 1, C.byref(resource), None)
+        mapped = time.perf_counter()
+        cu('cuGraphicsResourceGetMappedPointer_v2', [C.POINTER(C.c_uint64), C.POINTER(C.c_size_t), ptr],
+           C.byref(gpu_pointer), C.byref(size), resource)
+        cu('cuMemsetD8_v2', [C.c_uint64, C.c_ubyte, C.c_size_t], gpu_pointer, attempt, size)
+        filled = time.perf_counter()
+        cu('cuGraphicsUnmapResources', [C.c_uint, C.POINTER(ptr), ptr], 1, C.byref(resource), None)
+        unmapped = time.perf_counter()
+        gl_extension('glGetBufferSubData', None, C.c_uint, C.c_ssize_t, C.c_ssize_t, ptr)(0x8892, 0, 256, readback)
+        after = time.perf_counter()
+        assert bytes(readback) == bytes([attempt]) * 256
+        if attempt >= 10:
+            for name, elapsed in zip(samples, (mapped-before, filled-mapped, unmapped-filled, after-unmapped)):
+                samples[name].append(elapsed * 1000)
+    print(json.dumps({'phase': 'interop_latency', 'iterations': 100,
+                      'milliseconds': {name: {'median': statistics.median(values), 'max': max(values)}
+                                       for name, values in samples.items()}, 'passed': True}), flush=True)
 cu('cuGraphicsUnregisterResource', [ptr], resource)
 cu('cuCtxDestroy_v2', [ptr], cuda_context)
 gl_extension('glDeleteBuffers', None, integer, C.POINTER(C.c_uint))(1, C.byref(buffer))

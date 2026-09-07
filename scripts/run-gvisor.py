@@ -52,6 +52,7 @@ parser.add_argument('--cgroup', choices=['v1', 'v2'], default='v2')
 parser.add_argument('--gpu', type=int, help='one allocated /dev/nvidiaN device minor; N can differ from nvidia-smi index')
 parser.add_argument('--runtime-debug', action=argparse.BooleanOptionalAction, default=True,
                     help='verbose engine logging; disable when measuring GPU throughput')
+parser.add_argument('--profile', action='store_true', help='enable runtime profiling RPCs for a diagnostic guest')
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
@@ -277,6 +278,8 @@ try:
                f'--debug={str(args.runtime_debug).lower()}', f'--debug-log=/lab/runs/gvisor/{args.name}/%COMMAND%.log']
     if args.nftables:
         command.append('--TESTONLY-nftables')
+    if args.profile:
+        command.append('--profile')
     if args.guest_gs:
         command.append('--systrap-disable-syscall-patching')
     if args.gpu is not None:

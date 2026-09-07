@@ -24,13 +24,12 @@ visually inspected. The test's DNxHR decoding and ProRes encoding are not eviden
 of NVDEC/NVENC hardware codec acceleration; the GPU evidence is CUDA processing
 and the NVIDIA OpenGL renderer.
 
-**Playback remains below real time:** the Resolve viewer reported roughly
-8.7–8.9 fps, both before and after the audio setup correction. Frames advance
-and scrubbing works, but 24 fps playback is not qualified. A subsequent native
-control reached 24 fps on this same GPU, including with four-core affinity.
-Profiling found spare GPU compute and fast VirtualGL readback/blitting, while
-a fresh guest reproduced the slowdown. The exact remaining cause is unresolved;
-see [the measurements and control differences](resolve-playback-performance.md).
+**Playback now reaches 24 fps:** the earlier 8.7–8.9 fps limit came from a
+device-gofer flag mismatch suppressing GPU completion wakeups. Engine commit
+`b832209` fixes it. A fresh four-CPU guest with full GNOME and working audio
+plays the same project at 24 fps, independently confirmed by VirtualGL delivery
+measurements. See the [root cause and native/before/after tests](resolve-gpu-notifications.md)
+and [earlier diagnostic measurements](resolve-playback-performance.md).
 Other jobs occupy most of this GPU's VRAM, but no other jobs or devices were changed.
 
 The test does not cover arbitrary codecs, plugins, long projects, games, multi-GPU
@@ -40,7 +39,15 @@ the lab's explicit unsupported-driver allowance. GPU checkpointing is deferred;
 CPU-only snapshots retain their existing runtime pins. VNC provides video and
 input; the virtual audio sink does not forward sound to the Mac.
 
-## Two independent blockers resolved
+## Three independent blockers resolved
+
+### GPU completion notifications limited playback to roughly nine fps
+
+The gofer marked donated NVIDIA device descriptors nonblocking. NVIDIA's driver
+does not register poll waiters in that mode, leaving CUDA callbacks waiting for
+the next 100-ms polling deadline. Clearing that flag in nvproxy restores
+notifications and real-time playback. The [notification repair](resolve-gpu-notifications.md)
+documents the engine patch, small asynchronous reproducer and validation.
 
 ### Futex ABI bug prevented the main editor from opening
 
@@ -136,17 +143,20 @@ above; after copying the resulting ProRes movie out, validate it with:
 python scripts/verify-resolve-export.py PATH_TO_EXPORTED_MOVIE
 ```
 
-The currently open desktop is **resolve-gpu2**, with four advertised CPUs,
+The current fixed desktop is **resolve-optfix**, with four advertised CPUs,
 48 GiB guest-page budget, 1 GiB runtime guard, weight 100 on the inherited
 28-CPU pool, internet policy and GPU minor 0. GPU UUID:
 `GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5` (host NVML index 3).
-Node VNC port **40651** is forwarded to **127.0.0.1:5912** on the Mac; password
-`labvnc01`. These ports are session-specific. Project **No KVM GPU Test** and its
-export `/home/ga/Videos/no-kvm-gpu-desaturated.mov` remain in that guest.
+Node VNC port **35869** is forwarded to **127.0.0.1:5913** on the Mac; password
+`labvnc01`. These ports are session-specific. It contains a private copy of
+project **No KVM GPU Test**. The original **resolve-gpu2**, node port 40651 / Mac
+port 5912, remains available on its old runtime, with the saved project and
+export `/home/ga/Videos/no-kvm-gpu-desaturated.mov` preserved.
 
 At the user's request, `moodle-user1`, `earth-user1`, `ready-clone2`, `gpu-ready1`
 and `gpu-apps1` were stopped. The first Resolve guest was replaced with the
-fixed-engine guest; no older desktop is kept running. Historical images and
+futex-corrected guest. The playback investigation preserved that original
+desktop and stopped its temporary native and old-engine controls. Historical images and
 snapshots remain available.
 
 ## Evidence
@@ -163,4 +173,5 @@ snapshots remain available.
   [completed export](gpu-evidence/resolve-export-complete.png),
   [decoded output](gpu-evidence/resolve-export-frame.png),
   [output validation](gpu-evidence/resolve-export-verification.json),
-  [playback limitation](gpu-evidence/resolve-playback-after-audio.png).
+  [earlier playback limitation](gpu-evidence/resolve-playback-after-audio.png),
+  [fixed 24-fps playback](gpu-evidence/resolve-playback-fixed.png).

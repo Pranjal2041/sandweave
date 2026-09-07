@@ -1,0 +1,14 @@
+{
+  "original": {
+    "sentry_pid": 1879714,
+    "nvidia_character_device_fd_counts": {
+      "nonblocking": 189
+    }
+  },
+  "fixed": {
+    "sentry_pid": 2344412,
+    "nvidia_character_device_fd_counts": {
+      "blocking": 178
+    }
+  }
+}

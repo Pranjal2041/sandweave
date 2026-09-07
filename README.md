@@ -11,7 +11,7 @@ Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Ear
 | CPU | Weighted sharing by default; idle capacity can be borrowed. Optional average CPU-equivalent quotas. Affinity selects eligible CPUs, without exclusive ownership. |
 | Memory | Guest page allocator budget; separate sampled Go-runtime guard; address-space limits for network helpers. This is not an aggregate host-cgroup RSS cap. |
 | Network | Outside-guest policy allows public IPv4 while denying host/private/cross-environment destinations. Offline mode keeps incoming forwards and blocks egress. Nested Docker networking remains available. |
-| Snapshots | Whole running environment save/restore: RAM, processes, writable files, open descriptors, IPC, nested namespaces, firewall/NAT state and internal TCP. Full desktop restore and a snapshot of the restored desktop passed. |
+| Snapshots | CPU environments: whole running environment save/restore, including RAM, processes, writable files, open descriptors, IPC, nested namespaces, firewall/NAT state and internal TCP. GPU environments: persistent-filesystem cold restore is supported; RAM + processes + CUDA is experimental; live graphics restore is unsupported. |
 
 Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 GiB runtime guard, weight 100, and the inherited Slurm CPU allocation as the shared pool. CPU control is sampled userspace scheduling; the runtime guard permits transient overshoot. The Resolve desktop overrides the guest-page budget to 48 GiB.
 
@@ -49,8 +49,10 @@ five-second 1080p ProRes export passed; games are not yet tested.
 GPU environments now support whole persistent-filesystem snapshots and cold
 restore, including separate Docker storage mounts. Use
 `python scripts/checkpoint-gvisor.py --filesystem ENV LABEL`, then the normal
-`run-gvisor.py --restore` command. Small CUDA live-state restore passed an
-experimental control; Firefox/Earth/Resolve live graphics snapshots failed.
+`run-gvisor.py --restore` command. **RAM + processes + CUDA snapshots are
+experimental**, requiring `--experimental-gpu-live` for both save and restore.
+Only a small CUDA control passed; broader CUDA workloads need validation.
+Firefox/Earth/Resolve live graphics snapshots failed and remain unsupported.
 See [GPU filesystem snapshots and live-state evidence](notes/gpu-filesystem-snapshots.md).
 
 See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).

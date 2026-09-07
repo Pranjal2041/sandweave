@@ -21,6 +21,9 @@ Read [implementation, measurements and limits](notes/resource-snapshot-implement
 action acknowledgments and in-memory screenshots, and proposes a shared-memory
 capture path for this desktop. It records prior native measurements and the
 experiments still needed here; this feature is not implemented in the lab yet.
+[Display architecture research](notes/display-architecture-research.md) compares
+Xvnc with headless GNOME/Mutter and records the host render-node capabilities
+and gVisor device support needed for a GPU compositor.
 
 ## Pause, resume and stop
 

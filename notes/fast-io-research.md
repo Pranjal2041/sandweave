@@ -5,6 +5,11 @@ started for this investigation. The current desktops and engine were preserved.
 This is a proposed design with source evidence and earlier measurements, not a
 claim that fast I/O has already been implemented or timed in this lab.
 
+The subsequent [display architecture investigation](display-architecture-research.md)
+compares Xvnc with headless GNOME/Mutter and records accessible host render-node
+capabilities. Treat the helper below as a baseline; qualify the display backend
+before committing to a custom Xvnc implementation.
+
 The recommended starting point is Gym Anything's existing native C fast-I/O
 service: persistent XTest input, MIT-SHM capture, and a buffered frame cache.
 Adapt its transport and delivery contract to our gVisor desktop. A roughly 10 ms

@@ -1,0 +1,22 @@
+{
+  "observed_date": "2026-09-07",
+  "uid": 2710891,
+  "device": "/dev/dri/renderD128",
+  "pci": "0000:61:00.0",
+  "driver_symlink_name": "nvidia",
+  "device_mode": "0666",
+  "operation": "open O_RDWR|O_CLOEXEC, query advertised DRM capabilities through libdrm.drmGetCap, close",
+  "rendering_or_modesetting_performed": false,
+  "open_ok": true,
+  "capabilities": {
+    "PRIME": {"capability_id": 5, "return": 0, "value": 3, "errno": 0},
+    "SYNCOBJ": {"capability_id": 19, "return": 0, "value": 1, "errno": 0},
+    "SYNCOBJ_TIMELINE": {"capability_id": 20, "return": 0, "value": 1, "errno": 0}
+  },
+  "limits": [
+    "Capability advertisement does not validate actual GPU buffer import/export or a compositor.",
+    "PRIME capability bits are unconditional on recent Linux kernels.",
+    "The nvidia_drm modeset sysfs parameter could not be read as this user.",
+    "This probe does not establish access inside gVisor."
+  ]
+}

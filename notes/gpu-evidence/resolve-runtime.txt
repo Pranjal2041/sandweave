@@ -1,0 +1,45 @@
+0x7fb8feb6e000 | Main                 | INFO  | 2026-09-07 07:56:46,267 | Running DaVinci Resolve v21.0.4.0005 (Linux/Clang x86_64)
+0x7fb8feb6e000 | Main                 | INFO  | 2026-09-07 07:56:46,267 | BMD_BUILD_UUID f9b514d6-beae-4346-bf56-c521f546367a
+0x7fb8feb6e000 | Main                 | INFO  | 2026-09-07 07:56:46,267 | BMD_GIT_COMMIT 593727e1194664b1a140d50cc8d6ff88790697d8
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,268 | Starting GPUDetect 1.2_10-a3
+0x7fb8feb6e000 | GPUDetect            | WARN  | 2026-09-07 07:56:46,492 | X11 logs not found.
+0x7fb8feb6e000 | GPUDetect            | ERROR | 2026-09-07 07:56:46,539 | No Main Display GPU found and no monitors found to match, defaulting to gpu:51499d64.60d1b3e3.
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,539 | Done in 271 ms.
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,539 | Detected System:
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,539 |   - OS: Linux Ubuntu 22.04.5 LTS
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,539 |   - System ID: d7ba37e3b96a43c9a32be500be162278
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,539 |   - CPU: unknown, 4 threads, x86-64
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,549 |   - RAM: 7.8 GiB used of 48 GiB
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,549 | Detected 1 GPUs:
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,549 |   - "NVIDIA L40S" (gpu:51499d64.60d1b3e3) <- Main Display GPU
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,549 |     Discrete, 44.4 GiB VRAM, PCI:97:0
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,549 |     Matches: CUDA, NVML
+0x7fb8feb6e000 | GPUDetect            | WARN  | 2026-09-07 07:56:46,549 |     Warning: No OpenCL match.
+0x7fb8feb6e000 | GPUDetect            | INFO  | 2026-09-07 07:56:46,549 | Detected 1 monitors:
+0x7fb8feb6e000 | Main.GPUConfig       | INFO  | 2026-09-07 07:56:46,550 | Compute API set to automatic, defaulting to CUDA.
+0x7fb8feb6e000 | Main.GPUConfig       | INFO  | 2026-09-07 07:56:46,550 | Selected compute API: CUDA
+0x7fb8feb6e000 | Main.GPUConfig       | INFO  | 2026-09-07 07:56:46,550 | Automatic GPU Selection:
+0x7fb8feb6e000 | Main.GPUConfig       | INFO  | 2026-09-07 07:56:46,550 |   - "NVIDIA L40S" (gpu:51499d64.60d1b3e3)
+0x7fb8feb6e000 | IO                   | INFO  | 2026-09-07 07:56:46,550 | RED InitializeSdk with library path at /opt/resolve/libs
+0x7fb8feb6e000 | IO                   | INFO  | 2026-09-07 07:56:47,179 | R3DAPI 9.1.1-57f6471 (20251008 Lx64S OpenCL-Fix) R3DSDK 9.1.1-57f6471 (20251008 Lx64D C3B3 OpenCL-Fix) RED CUDA 9.1.2-0 (20251008) [/opt/resolve/libs/] init is successful
+libDeckLinkAPI.so: cannot open shared object file: No such file or directory
+0x7fb8feb6e000 | Main                 | INFO  | 2026-09-07 07:56:47,180 | Decklink model name: '', version: ''
+0x7fb8feb6e000 | DVIP                 | INFO  | 2026-09-07 07:56:47,180 | DVIP release/21.0.4 build 3 (decf6058fee35d37819d4958ddd493ea2b76f3b0). Release, version 21.0.4.
+0x7fb8796ec000 | IO                   | INFO  | 2026-09-07 07:56:47,289 | Using DNxHR library v3.0.0.1312r
+0x7fb879eed000 | Fusion               | INFO  | 2026-09-07 07:56:47,396 | Fusion Build: edc1ae3a_0004 (Aug  1 2026 07:20:51)
+0x7fb86bae9000 | Fusion               | INFO  | 2026-09-07 07:56:47,414 | fusionsystem: = "/opt/resolve/libs/Fusion/libfusionsystem.so"
+0x7fb8796ec000 | IO                   | INFO  | 2026-09-07 07:56:47,419 | Initialized ARRIImageSDK version 9.0.1
+0x7fb8796ec000 | IO                   | INFO  | 2026-09-07 07:56:47,419 | Apple ProRes RAW plugin - Standard v1.3 [com.apple.proresraw.prrplugin.standardrawconversion]
+0x7fb8796ec000 | IO                   | INFO  | 2026-09-07 07:56:47,419 | Found 1 Apple ProRes RAW plugins.
+0x7fb8796ec000 | IO                   | ERROR | 2026-09-07 07:56:47,419 | ProRes RAW SDK raw conversion plug-in loading error(s): unable to open default plug-in directory /usr/local/lib/proresraw/plugins
+0x7fb8796ec000 | IO                   | INFO  | 2026-09-07 07:56:47,420 | IO codec library load completed in 131 ms.
+0x7fb86bae9000 | Fusion               | INFO  | 2026-09-07 07:56:47,422 | FusionLibs: = "/opt/resolve/libs/Fusion/"
+0x7fb8feb6e000 | UI.GLContext         | INFO  | 2026-09-07 07:56:49,218 | Initialized OpenGL 4.5 (requested 4.5) on device 'NVIDIA Corporation NVIDIA L40S/PCIe/SSE2'
+0x7fb8feb6e000 | UI.ActionManager     | WARN  | 2026-09-07 07:56:52,178 | Action [fairlightImmersiveRendererSettings] is not a valid global action
+0x7fb8feb6e000 | UI.ActionManager     | WARN  | 2026-09-07 07:56:57,170 | Action [fairlightImmersiveRendererSettings] is not a valid global action
+0x7fb8feb6e000 | UI.ActionManager     | WARN  | 2026-09-07 07:56:57,177 | Action [fairlightImmersiveRendererSettings] is not a valid global action
+0x7fb8feb6e000 | UI.ActionManager     | WARN  | 2026-09-07 07:56:57,179 | Action [fairlightImmersiveRendererSettings] is not a valid global action
+0x7fb8feb6e000 | UI.ActionManager     | WARN  | 2026-09-07 07:56:57,241 | Action [fairlightImmersiveRendererSettings] is not a valid global action
+0x7fb8feb6e000 | UI.ActionManager     | WARN  | 2026-09-07 07:57:29,723 | Action [fairlightImmersiveRendererSettings] is not a valid global action
+0x7fb8feb6e000 | SyManager.ProjectManager | INFO  | 2026-09-07 08:01:29,086 | Saving project took 105 ms
+484	37	458	PipeWire	float32le 8ch 48000Hz

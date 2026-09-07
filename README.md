@@ -2,7 +2,7 @@
 
 Current runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's repository remains untouched.
 
-The live workload is Moodle 4.5.13 with Docker inside Docker and MariaDB, plus Firefox 155. Google Earth Pro 7.3.7 was exercised in the earlier interactive desktop. The original user desktops remain available. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
+Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Earth Pro 7.3.7 have been exercised. The user requested closing those desktops; the current live desktop is `resolve-gpu2`, running GPU-accelerated DaVinci Resolve 21.0.4. Import, timeline playback, color grading, project reopening and ProRes export passed, with playback performance still limited to roughly 9 fps in this test. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
 
 ## Four controls implemented and tested
 
@@ -13,7 +13,7 @@ The live workload is Moodle 4.5.13 with Docker inside Docker and MariaDB, plus F
 | Network | Outside-guest policy allows public IPv4 while denying host/private/cross-environment destinations. Offline mode keeps incoming forwards and blocks egress. Nested Docker networking remains available. |
 | Snapshots | Whole running environment save/restore: RAM, processes, writable files, open descriptors, IPC, nested namespaces, firewall/NAT state and internal TCP. Full desktop restore and a snapshot of the restored desktop passed. |
 
-Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 GiB runtime guard, weight 100, and the inherited Slurm CPU allocation as the shared pool. CPU control is sampled userspace scheduling; the runtime guard permits transient overshoot. Existing user desktops retain their old configuration.
+Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 GiB runtime guard, weight 100, and the inherited Slurm CPU allocation as the shared pool. CPU control is sampled userspace scheduling; the runtime guard permits transient overshoot. The Resolve desktop overrides the guest-page budget to 48 GiB.
 
 Read [implementation, measurements and limits](notes/resource-snapshot-implementation.md), [machine-readable status](notes/resource-snapshot-status.json), and [reproduction instructions](notes/gvisor-lab-reproduction.md).
 
@@ -44,13 +44,15 @@ The lab can expose one allocated NVIDIA GPU through gVisor `nvproxy`, still usin
 systrap without KVM or host sudo. PyTorch GPU training, interactive Firefox
 WebGL/WebRender, Google Earth Pro rendering/search, and CUDA/OpenGL buffer sharing
 passed on this node's L40S and driver 610.43.02. Earth has a recorded shutdown
-crash requiring further investigation; games and Resolve are not yet tested.
+crash requiring further investigation. Resolve's CUDA/OpenGL processing and a
+five-second 1080p ProRes export passed; games are not yet tested.
 GPU snapshots are deferred and the wrapper refuses them before
 pausing a GPU guest. Existing CPU-only snapshots are unchanged.
 
 See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
 The [GPU application investigation](notes/gpu-applications.md) records Earth's
-VirtualGL fixes, interactive checks, and the remaining Resolve installer step.
+VirtualGL fixes and interactive checks. [Resolve setup and acceptance](notes/resolve-gpu.md)
+records the futex engine fix, audio setup, export verification and performance limits.
 
 ## Recovery and history
 
@@ -60,6 +62,6 @@ are covered by `.gitignore`. The engine has its own checkout in `sources/gvisor`
 [source revisions](notes/source-revisions.json) pin its exact commit and cumulative
 patch. Check both repositories for a clean working tree when completing changes.
 
-The current implementation recovery bundle is `checkpoints/async-snapshots-8c8b143/`. It records source, exact binaries, launch fixtures, scripts, documentation, checksums and test evidence. It is distinct from a frozen running snapshot. The earlier implementation remains at `checkpoints/resources-snapshots-8c8b143-r3/`, and the baseline at `checkpoints/baseline-ae303ca/`.
+The CPU snapshot implementation recovery bundle is `checkpoints/async-snapshots-8c8b143/`. It records source, exact binaries, launch fixtures, scripts, documentation, checksums and test evidence. It is distinct from a frozen running snapshot. The earlier implementation remains at `checkpoints/resources-snapshots-8c8b143-r3/`, and the baseline at `checkpoints/baseline-ae303ca/`.
 
 [Detailed experiment history](notes/gvisor-prototype-progress.md) preserves both failures and successful trials. [Historical UML README](notes/uml-readme-history.md) records the earlier, paused UML work; it is not the current launch path.

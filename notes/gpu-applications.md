@@ -2,7 +2,8 @@
 
 Tested 2026-09-07 in the standalone lab on `babel-u5-28`, Slurm 10333558.
 No main-project changes, KVM, host sudo, or new gVisor engine patches were used.
-The engine remains `8c8b1437b27ce0fb61a9db17c5feb33242b7bde3`.
+These Earth and interop tests used engine `8c8b1437b27ce0fb61a9db17c5feb33242b7bde3`.
+The subsequent [Resolve investigation](resolve-gpu.md) adds a futex correction.
 
 ## Accepted behavior and remaining work
 
@@ -22,11 +23,11 @@ yet distinguish an Earth data/lifecycle issue from the shared graphics setup.
 Reopening through the application menu succeeded, and searching worked again.
 This is a recorded stability issue, not a fully qualified Earth lifecycle.
 
-DaVinci Resolve has **not been installed or run**. The official free Linux
-21.0.4 download requires registration. Searches of the user-authorized Mac
-Downloads directory and Gmail accounts found no installer or previous Blackmagic
-registration. The official form is open on the Mac; contact details or completion
-by the user are required. No invented contact information was submitted.
+The user subsequently completed registration, and the official Resolve 21.0.4
+Linux download succeeded despite the blank browser page. Resolve is now installed;
+GPU processing and a complete video/audio export passed. See [Resolve's own
+acceptance record](resolve-gpu.md) for the additional engine and setup fixes,
+measured playback limitation, and reproduction steps.
 
 CUDA/OpenGL sharing, a useful prerequisite for an editor combining compute and
 graphics, passes in both native Apptainer and gVisor. This does not establish
@@ -95,11 +96,12 @@ engine-gpu-gl /usr/bin/google-earth-pro
 The wrapper adds the root-visual shim, then invokes `engine-gpu vglrun -d egl0`.
 VirtualGL remains local to the launched application, not globally preloaded.
 
-The kept environment is **gpu-apps1**: four advertised CPUs, a 24 GiB guest-page
+The Earth test environment was **gpu-apps1**: four advertised CPUs, a 24 GiB guest-page
 budget, the usual 1 GiB runtime guard, weighted sharing of the inherited Slurm
 CPU pool, and the internet network policy. GPU minor 0 is host NVML index 3,
 UUID `GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5`. VNC is node loopback port
-**41711**. A `ut` forward was created on the Mac at **127.0.0.1:5911**. The lab
+**41711**. Its Mac forward was **127.0.0.1:5911**. Both the desktop and forward
+were subsequently stopped at the user's request. The lab
 VNC password is `labvnc01`. Ports and this live environment last only as long as
 the allocation and processes do. The original four user desktops are preserved.
 

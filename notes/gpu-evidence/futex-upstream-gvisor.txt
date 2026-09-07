@@ -1,0 +1,30 @@
+Failed to match any benchmarks against regex: .
+ Running 9 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 5 tests from PrivateFutexTest
+[ RUN      ] PrivateFutexTest.WakeOp0Set
+[       OK ] PrivateFutexTest.WakeOp0Set (0 ms)
+[ RUN      ] PrivateFutexTest.WakeOp0Add
+[       OK ] PrivateFutexTest.WakeOp0Add (0 ms)
+[ RUN      ] PrivateFutexTest.WakeOp0Or
+[       OK ] PrivateFutexTest.WakeOp0Or (0 ms)
+[ RUN      ] PrivateFutexTest.WakeOp0Andn
+[       OK ] PrivateFutexTest.WakeOp0Andn (0 ms)
+[ RUN      ] PrivateFutexTest.WakeOp0Xor
+[       OK ] PrivateFutexTest.WakeOp0Xor (0 ms)
+[----------] 5 tests from PrivateFutexTest (0 ms total)
+
+[----------] 4 tests from SharedPrivate/PrivateAndSharedFutexTest
+[ RUN      ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess/0
+[       OK ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess/0 (3000 ms)
+[ RUN      ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess/1
+[       OK ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess/1 (3000 ms)
+[ RUN      ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure/0
+[       OK ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure/0 (6000 ms)
+[ RUN      ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure/1
+[       OK ] SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure/1 (6000 ms)
+[----------] 4 tests from SharedPrivate/PrivateAndSharedFutexTest (18003 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 2 test suites ran. (18004 ms total)
+[  PASSED  ] 9 tests.

@@ -1,0 +1,581 @@
+{
+  "checks": 56,
+  "passed": false,
+  "failures": [
+    {
+      "op": 0,
+      "arg": -1,
+      "result": [
+        0,
+        0
+      ],
+      "value": "0xfff"
+    },
+    {
+      "op": 1,
+      "arg": -1,
+      "result": [
+        0,
+        0
+      ],
+      "value": "0x1004"
+    },
+    {
+      "op": 2,
+      "arg": -2048,
+      "result": [
+        0,
+        0
+      ],
+      "value": "0x801"
+    },
+    {
+      "op": 3,
+      "arg": -1,
+      "result": [
+        0,
+        0
+      ],
+      "value": "0xfffff000"
+    },
+    {
+      "op": 4,
+      "arg": -1,
+      "result": [
+        0,
+        0
+      ],
+      "value": "0xfffff000"
+    },
+    {
+      "op": 8,
+      "arg": 32,
+      "result": [
+        0,
+        0
+      ],
+      "value": "0x0"
+    },
+    {
+      "op": 8,
+      "arg": -1,
+      "result": [
+        0,
+        0
+      ],
+      "value": "0x0"
+    },
+    {
+      "private": false,
+      "old": -2147483648,
+      "cmp": 2,
+      "arg": 0,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -2147483648,
+      "cmp": 3,
+      "arg": 0,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -2147483648,
+      "cmp": 4,
+      "arg": 0,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -2147483648,
+      "cmp": 5,
+      "arg": 0,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -1,
+      "cmp": 0,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -1,
+      "cmp": 1,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -1,
+      "cmp": 3,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -1,
+      "cmp": 4,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": 1,
+      "cmp": 2,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": 1,
+      "cmp": 3,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": 1,
+      "cmp": 4,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": 1,
+      "cmp": 5,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -2048,
+      "cmp": 2,
+      "arg": 2047,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -2048,
+      "cmp": 3,
+      "arg": 2047,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -2048,
+      "cmp": 4,
+      "arg": 2047,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": false,
+      "old": -2048,
+      "cmp": 5,
+      "arg": 2047,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2147483648,
+      "cmp": 2,
+      "arg": 0,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2147483648,
+      "cmp": 3,
+      "arg": 0,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2147483648,
+      "cmp": 4,
+      "arg": 0,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2147483648,
+      "cmp": 5,
+      "arg": 0,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -1,
+      "cmp": 0,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -1,
+      "cmp": 1,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -1,
+      "cmp": 3,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -1,
+      "cmp": 4,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": 1,
+      "cmp": 2,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": 1,
+      "cmp": 3,
+      "arg": -1,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": 1,
+      "cmp": 4,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": 1,
+      "cmp": 5,
+      "arg": -1,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2048,
+      "cmp": 2,
+      "arg": 2047,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2048,
+      "cmp": 3,
+      "arg": 2047,
+      "wake": [
+        0,
+        0
+      ],
+      "wait": [
+        [
+          -1,
+          110
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2048,
+      "cmp": 4,
+      "arg": 2047,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "private": true,
+      "old": -2048,
+      "cmp": 5,
+      "arg": 2047,
+      "wake": [
+        1,
+        0
+      ],
+      "wait": [
+        [
+          0,
+          0
+        ]
+      ]
+    }
+  ]
+}

@@ -950,6 +950,150 @@ index 3143492..be13822 100644
  
  // SetInode sets the nsfs inode of the cgroup namespace.
  func (ns *CgroupNamespace) SetInode(inode *nsfs.Inode) {
+diff --git a/pkg/sentry/kernel/futex/BUILD b/pkg/sentry/kernel/futex/BUILD
+index 971dcf1..ef7d6b0 100644
+--- a/pkg/sentry/kernel/futex/BUILD
++++ b/pkg/sentry/kernel/futex/BUILD
+@@ -68,6 +68,7 @@ go_test(
+     srcs = ["futex_test.go"],
+     library = ":futex",
+     deps = [
++        "//pkg/abi/linux",
+         "//pkg/atomicbitops",
+         "//pkg/context",
+         "//pkg/errors/linuxerr",
+diff --git a/pkg/sentry/kernel/futex/futex.go b/pkg/sentry/kernel/futex/futex.go
+index b5e0431..5a8bc6c 100644
+--- a/pkg/sentry/kernel/futex/futex.go
++++ b/pkg/sentry/kernel/futex/futex.go
+@@ -130,11 +130,14 @@ func check(t Target, addr hostarch.Addr, val uint32) error {
+ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
+ 	opType := (opIn >> 28) & 0xf
+ 	cmp := (opIn >> 24) & 0xf
+-	opArg := (opIn >> 12) & 0xfff
+-	cmpArg := opIn & 0xfff
++	// Linux sign-extends both 12-bit immediates and compares signed words.
++	// Keep the arithmetic operand as a bit pattern for the uint32 atomics.
++	opArg := uint32(int32(opIn<<8) >> 20)
++	cmpArg := int32(opIn<<20) >> 20
+ 
+ 	if opType&linux.FUTEX_OP_OPARG_SHIFT != 0 {
+-		opArg = 1 << opArg
++		// Linux masks out-of-range shift counts to five bits.
++		opArg = 1 << (opArg & 31)
+ 		opType &^= linux.FUTEX_OP_OPARG_SHIFT // Clear flag.
+ 	}
+ 
+@@ -178,17 +181,17 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
+ 
+ 	switch cmp {
+ 	case linux.FUTEX_OP_CMP_EQ:
+-		return oldVal == cmpArg, nil
++		return int32(oldVal) == cmpArg, nil
+ 	case linux.FUTEX_OP_CMP_NE:
+-		return oldVal != cmpArg, nil
++		return int32(oldVal) != cmpArg, nil
+ 	case linux.FUTEX_OP_CMP_LT:
+-		return oldVal < cmpArg, nil
++		return int32(oldVal) < cmpArg, nil
+ 	case linux.FUTEX_OP_CMP_LE:
+-		return oldVal <= cmpArg, nil
++		return int32(oldVal) <= cmpArg, nil
+ 	case linux.FUTEX_OP_CMP_GT:
+-		return oldVal > cmpArg, nil
++		return int32(oldVal) > cmpArg, nil
+ 	case linux.FUTEX_OP_CMP_GE:
+-		return oldVal >= cmpArg, nil
++		return int32(oldVal) >= cmpArg, nil
+ 	default:
+ 		return false, linuxerr.ENOSYS
+ 	}
+diff --git a/pkg/sentry/kernel/futex/futex_test.go b/pkg/sentry/kernel/futex/futex_test.go
+index 9fe1c6c..472b77d 100644
+--- a/pkg/sentry/kernel/futex/futex_test.go
++++ b/pkg/sentry/kernel/futex/futex_test.go
+@@ -20,6 +20,7 @@ import (
+ 	"testing"
+ 	"unsafe"
+ 
++	"gvisor.dev/gvisor/pkg/abi/linux"
+ 	"gvisor.dev/gvisor/pkg/atomicbitops"
+ 	"gvisor.dev/gvisor/pkg/context"
+ 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+@@ -200,6 +201,73 @@ func TestFutexWakeUnrelated(t *testing.T) {
+ 	}
+ }
+ 
++func TestAtomicOpSignedArguments(t *testing.T) {
++	for _, tc := range []struct {
++		name      string
++		op, arg   uint32
++		old, want uint32
++	}{
++		{"set_negative", linux.FUTEX_OP_SET, 0xfff, 0, 0xffffffff},
++		{"add_negative", linux.FUTEX_OP_ADD, 0xfff, 5, 4},
++		{"or_negative", linux.FUTEX_OP_OR, 0x800, 1, 0xfffff801},
++		{"andn_negative", linux.FUTEX_OP_ANDN, 0xfff, 0xffffffff, 0},
++		{"xor_negative", linux.FUTEX_OP_XOR, 0xfff, 0xffffffff, 0},
++		{"shift_sign_bit", linux.FUTEX_OP_SET | linux.FUTEX_OP_OPARG_SHIFT, 31, 0, 0x80000000},
++		{"shift_wrapped", linux.FUTEX_OP_SET | linux.FUTEX_OP_OPARG_SHIFT, 32, 0, 1},
++		{"shift_negative", linux.FUTEX_OP_SET | linux.FUTEX_OP_OPARG_SHIFT, 0xfff, 0, 0x80000000},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			d := newTestData(sizeofInt32)
++			d.SwapUint32(0, tc.old)
++			if _, err := atomicOp(d, 0, tc.op<<28|tc.arg<<12); err != nil {
++				t.Fatal(err)
++			}
++			if got, _ := d.LoadUint32(0); got != tc.want {
++				t.Errorf("value = %#x, want %#x", got, tc.want)
++			}
++		})
++	}
++}
++
++func TestAtomicOpSignedComparisons(t *testing.T) {
++	for _, old := range []int32{math.MinInt32, -2048, -1, 0, 1, 2047, math.MaxInt32} {
++		for _, arg := range []int32{-2048, -1, 0, 1, 2047} {
++			for cmp, want := range []bool{old == arg, old != arg, old < arg, old <= arg, old > arg, old >= arg} {
++				d := newTestData(sizeofInt32)
++				d.SwapUint32(0, uint32(old))
++				op := uint32(linux.FUTEX_OP_OR)<<28 | uint32(cmp)<<24 | uint32(arg)&0xfff
++				if got, err := atomicOp(d, 0, op); err != nil || got != want {
++					t.Errorf("old=%d cmp=%d arg=%d: got (%v, %v), want (%v, nil)", old, cmp, arg, got, err, want)
++				}
++			}
++		}
++	}
++}
++
++func TestWakeOpClearSignBit(t *testing.T) {
++	for _, private := range []bool{false, true} {
++		t.Run(futexKind(private), func(t *testing.T) {
++			m := NewManager()
++			d := newTestData(2 * sizeofInt32)
++			d.SwapUint32(sizeofInt32, 0x80000001)
++			w := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0x80000001, ^uint32(0))
++			defer m.WaitComplete(w, d)
++			// Qt's multi-token semaphore clears its waiter bit and wakes
++			// waiters if the old, signed value had that bit set.
++			op := uint32(linux.FUTEX_OP_ANDN|linux.FUTEX_OP_OPARG_SHIFT)<<28 | linux.FUTEX_OP_CMP_LT<<24 | 31<<12
++			if n, err := m.WakeOp(d, 0, sizeofInt32, private, 1, math.MaxInt32, op); err != nil || n != 1 {
++				t.Fatalf("WakeOp: got (%d, %v), want (1, nil)", n, err)
++			}
++			if !w.woken() {
++				t.Error("waiter not woken")
++			}
++			if got, _ := d.LoadUint32(sizeofInt32); got != 1 {
++				t.Errorf("value = %#x, want 1", got)
++			}
++		})
++	}
++}
++
+ func TestWakeOpEmpty(t *testing.T) {
+ 	for _, private := range []bool{false, true} {
+ 		t.Run(futexKind(private), func(t *testing.T) {
 diff --git a/pkg/sentry/kernel/kernel.go b/pkg/sentry/kernel/kernel.go
 index 32afe64..04e5532 100644
 --- a/pkg/sentry/kernel/kernel.go

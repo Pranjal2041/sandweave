@@ -1,0 +1,10 @@
+native: exit 0
+{"phase": "released", "state": "0x300000002"}
+{"phase": "acquired", "passed": true}
+
+old gVisor: exit 124
+{"phase": "released", "state": "0x300000002"}
+
+fixed gVisor: exit 0
+{"phase": "released", "state": "0x0"}
+{"phase": "acquired", "passed": true}

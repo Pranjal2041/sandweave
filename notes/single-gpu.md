@@ -17,7 +17,8 @@ needed for the successful GPU workloads.
 | Device boundary | Only `/dev/nvidia0`, `nvidiactl`, `nvidia-uvm` visible. Guest-root creation of `/dev/nvidia1` succeeded, but opening it failed with ENOENT. `/dev/kvm` absent. Non-GPU launch exposes no NVIDIA devices. |
 | Google Earth Pro 7.3.7 | NVIDIA rendering, typed search, detailed imagery and menu launch passed after VirtualGL setup fixes. A shutdown crash also reproduces in native Apptainer with the same saved places. See [application evidence](gpu-applications.md). |
 | CUDA/OpenGL interop | CUDA wrote a mapped OpenGL buffer; OpenGL readback verified all 256 bytes. Native and gVisor pass with VirtualGL `-nodl`; both fail without it. |
-| Games / Resolve / Vulkan window presentation | Not tested yet. |
+| Resolve | CUDA/OpenGL, timeline playback, color adjustment, project reopening and ProRes export passed; see [Resolve acceptance and limits](resolve-gpu.md). |
+| Games / Vulkan window presentation | Not tested yet. |
 | GPU process/context snapshots | Deferred at the user's request. Launcher refuses GPU restore; checkpoint wrapper refuses GPU capture before pausing the guest. |
 
 [Machine-readable training evidence](gpu-evidence/training-comparison.json),
@@ -120,14 +121,15 @@ runuser -u ga -- env DISPLAY=:1 XAUTHORITY=/home/ga/.Xauthority \
   file:///opt/engine-gpu/probes/gpu-webgl.html
 ```
 
-The kept desktop is `gpu-ready1`, VNC port **54815**, password `labvnc01`:
+The original GPU test desktop was `gpu-ready1`, VNC port **54815**, password `labvnc01`:
 
 ```bash
 ssh -N -L 5910:127.0.0.1:54815 pranjala@babel-u5-28
 ```
 
-Connect the viewer to `127.0.0.1::5910`. Original desktops `moodle-user1`,
-`earth-user1`, and `ready-clone2` are preserved.
+That desktop and the original `moodle-user1`, `earth-user1`, and `ready-clone2`
+desktops were subsequently stopped at the user's request. The current live
+desktop and connection are documented in [Resolve acceptance](resolve-gpu.md).
 
 The native training control used the existing `native-root` Apptainer filesystem,
 bound the same three devices and same `/opt/engine-gpu` directory, selected CUDA

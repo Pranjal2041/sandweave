@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "video_codec": "prores",
+  "video_frames": 120,
+  "duration_seconds": 5,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "mean_rgb_spread": 0.0,
+  "distinct_sampled_frames": 3,
+  "audio_codec": "pcm_s24le",
+  "audio_rms": 0.08845623564026688,
+  "audio_frequency_hz": 440.0
+}

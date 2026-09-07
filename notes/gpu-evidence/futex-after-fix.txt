@@ -1,0 +1,23 @@
+OpenJDK 64-Bit Server VM warning: Options -Xverify:none and -noverify were deprecated in JDK 13 and will likely be removed in a future release.
+Computing main repo mapping:
+WARNING: For repository 'bazel_skylib', the root module requires module version bazel_skylib@1.7.1, but got bazel_skylib@1.8.2 in the resolved dependency graph. Please update the version in your MODULE.bazel or set --check_direct_dependencies=off
+Loading:
+Loading: 2 packages loaded
+Analyzing: target //pkg/sentry/kernel/futex:futex_test (3 packages loaded, 0 targets configured)
+Analyzing: target //pkg/sentry/kernel/futex:futex_test (3 packages loaded, 0 targets configured)
+
+Analyzing: target //pkg/sentry/kernel/futex:futex_test (88 packages loaded, 2699 targets configured)
+
+Analyzing: target //pkg/sentry/kernel/futex:futex_test (144 packages loaded, 19390 targets configured)
+
+INFO: Analyzed target //pkg/sentry/kernel/futex:futex_test (435 packages loaded, 29018 targets configured).
+[559 / 641] [Prepa] GoTestGenTest pkg/sentry/kernel/futex/futex_test_/testmain.go
+INFO: Found 1 test target...
+Target //pkg/sentry/kernel/futex:futex_test up-to-date:
+  bazel-bin/pkg/sentry/kernel/futex/futex_test_/futex_test
+INFO: Elapsed time: 4.761s, Critical Path: 0.31s
+INFO: 4 processes: 644 action cache hit, 1 internal, 3 linux-sandbox.
+INFO: Build completed successfully, 4 total actions
+//pkg/sentry/kernel/futex:futex_test                            (cached) PASSED in 0.1s
+
+Executed 0 out of 1 test: 1 test passes.

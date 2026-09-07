@@ -1,0 +1,27 @@
+Major Version 7
+Minor Version 3
+Build Number 0007
+Build Date Aug 17 2026
+Build Time 17:36:13
+OS Type 3
+OS Major Version 4
+OS Minor Version 19
+OS Build Version 0
+OS Patch Version 0
+Crash Signal 11
+Crash Time 1788763655
+Up Time 950.787
+
+Stacktrace from glibc:
+/opt/google/earth/pro/libgoogleearth_pro.so(+0x1a992a)[0x7efc69fa992a]
+/lib/x86_64-linux-gnu/libc.so.6(+0x42520)[0x7efc6a419520]
+/opt/google/earth/pro/libgeobase.so(_ZN5earth7geobase12LoadObserverD1Ev+0x5d)[0x7efc626d37dd]
+/opt/google/earth/pro/libgeobase.so(_ZN5earth7geobase17TypedLoadObserverINS0_13StyleSelectorEED0Ev+0x73)[0x7efc6265d9c3]
+/opt/google/earth/pro/libgeobase.so(_ZNSt10_HashtableIPKN5earth7geobase12SchemaObjectESt4pairIKS4_St6vectorINS0_6RefPtrINS1_12LoadObserverEEENS0_11mmallocatorISA_EEEESaISE_ENSt8__detail10_Select1stESt8equal_toIS4_ESt4hashIS4_ENSG_18_Mod_range_hashingENSG_20_Default_ranged_hashENSG_20_Prime_rehash_policyENSG_17_Hashtable_traitsILb0ELb0ELb1EEEE5clearEv+0x56)[0x7efc626e1736]
+/opt/google/earth/pro/libgeobase.so(_ZN5earth7geobase12LoadObserver8ShutdownEv+0x1b)[0x7efc626d345b]
+/opt/google/earth/pro/libgeobase.so(_ZN5earth7geobase9GShutdownEv+0x10e)[0x7efc6263d86e]
+/opt/google/earth/pro/libgoogleearth_pro.so(_ZN5earth6client11ApplicationD2Ev+0x2ac)[0x7efc6a01536c]
+/opt/google/earth/pro/libgoogleearth_pro.so(earthmain+0x7a1)[0x7efc69fa9461]
+/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x7efc6a400d90]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x7efc6a400e40]
+/opt/google/earth/pro/googleearth-bin[0x4009a9]

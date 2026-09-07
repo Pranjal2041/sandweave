@@ -1,0 +1,20 @@
+{
+  "gvisor_before": [
+    "[VGL 0xcf3ebb00] glXCreateContext (dpy=0x0069cee0(:1) vis=0x7f51caa3ab08(0x21) share_list=0x00000000 direct=1 config=0x00000000(0x00) ctx=0x00000000 ) 0.122070 ms"
+  ],
+  "gvisor_after": [
+    "[VGL 0xc61ebb00] glXCreateContext (dpy=0x0069cee0(:1) vis=0x7f1ec183ab08(0x21) share_list=0x00000000 direct=1 config=0x00ba3b20(0x05) ctx=0x00bfa0a1 ) 1.871109 ms",
+    "[VGL 0xc61ebb00] glXMakeCurrent (dpy=0x0069cee0(:1) drawable=0x00c0002e ctx=0x00bfa0a1 config=0x00ba3b20(0x05) drawable=0x00000001 renderer=NVIDIA L40S/PCIe/SSE2 ) 111.754894 ms",
+    "[VGL 0xc61ebb00] glXMakeCurrent (dpy=0x0069cee0(:1) drawable=0x00c0002e ctx=0x00bfa0a1 config=0x00ba3b20(0x05) drawable=0x00000002 renderer=NVIDIA L40S/PCIe/SSE2 ) 5.012989 ms",
+    "[VGL 0xc61ebb00] glXMakeCurrent (dpy=0x0069cee0(:1) drawable=0x00c0002e ctx=0x00bfa0a1 config=0x00ba3b20(0x05) drawable=0x00000002 renderer=NVIDIA L40S/PCIe/SSE2 ) 0.705957 ms"
+  ],
+  "native_before": [
+    "[VGL 0xea494b00] glXCreateContext (dpy=0x00926070(:97) vis=0x1517e603ab08(0x21) share_list=0x00000000 direct=1 config=0x00000000(0x00) ctx=0x00000000 ) 0.041962 ms"
+  ],
+  "native_after": [
+    "[VGL 0xf781cb00] glXCreateContext (dpy=0x0213c070(:97) vis=0x14ebf3c3ab08(0x21) share_list=0x00000000 direct=1 config=0x02632070(0x05) ctx=0x02686321 ) 0.894070 ms",
+    "[VGL 0xf781cb00] glXMakeCurrent (dpy=0x0213c070(:97) drawable=0x00a00029 ctx=0x02686321 config=0x02632070(0x05) drawable=0x00000001 renderer=NVIDIA L40S/PCIe/SSE2 ) 187.726021 ms",
+    "[VGL 0xf781cb00] glXMakeCurrent (dpy=0x0213c070(:97) drawable=0x00a00029 ctx=0x02686321 config=0x02632070(0x05) drawable=0x00000002 renderer=NVIDIA L40S/PCIe/SSE2 ) 3.820896 ms",
+    "[VGL 0xf781cb00] glXMakeCurrent (dpy=0x0213c070(:97) drawable=0x00a00029 ctx=0x02686321 config=0x02632070(0x05) drawable=0x00000002 renderer=NVIDIA L40S/PCIe/SSE2 ) 0.416040 ms"
+  ]
+}

@@ -15,7 +15,8 @@ needed for the successful GPU workloads.
 | Firefox 155 | Interactive WebGL cube rendered using NVIDIA; VNC reversal control worked. `about:support` reports WebRender, NVIDIA L40S/PCIe/SSE2, and VirtualGL EGL. No Firefox sandbox-disabling flag or forced acceleration preference was used. |
 | EGL/GLX probe | NVIDIA OpenGL 4.6 context through VirtualGL 3.1.5's EGL backend, presented to existing Xvnc. |
 | Device boundary | Only `/dev/nvidia0`, `nvidiactl`, `nvidia-uvm` visible. Guest-root creation of `/dev/nvidia1` succeeded, but opening it failed with ENOENT. `/dev/kvm` absent. Non-GPU launch exposes no NVIDIA devices. |
-| Google Earth Pro 7.3.7 | Attempted; fails with “Could not access Graphics Card”. Not accepted as GPU accelerated. |
+| Google Earth Pro 7.3.7 | NVIDIA rendering, typed search, detailed imagery and menu launch passed after VirtualGL setup fixes. A shutdown crash also reproduces in native Apptainer with the same saved places. See [application evidence](gpu-applications.md). |
+| CUDA/OpenGL interop | CUDA wrote a mapped OpenGL buffer; OpenGL readback verified all 256 bytes. Native and gVisor pass with VirtualGL `-nodl`; both fail without it. |
 | Games / Resolve / Vulkan window presentation | Not tested yet. |
 | GPU process/context snapshots | Deferred at the user's request. Launcher refuses GPU restore; checkpoint wrapper refuses GPU capture before pausing the guest. |
 
@@ -171,12 +172,13 @@ scripts/gvisor-host.sh --gpu 0 /lab/tools/gvisor-socket/runsc \
 
 ## Outstanding work and limits
 
-Earth's trace shows `glXChooseVisual` selecting visual 0x395, followed by its Qt
-window path using default visual 0x21. VirtualGL returns a null GLX context for
-the latter. Attempts with `VGL_DEFAULTFBCONFIG` and `VGL_PROBEGLX=0` did not fix
-it. This has not yet been reproduced in a matched native graphics control, so
-the failure is not conclusively assigned to gVisor or VirtualGL. The debug
-environment `gpu-first2` was stopped; `gpu-ready1` retains working Firefox.
+Earth's earlier context-creation failure was reproduced in native Apptainer.
+A small Xlib visual-order shim fixes VirtualGL's mapping of the default visual;
+staging its missing XCB key-symbol dependency also fixes keyboard input. The new
+`engine-gpu-gl` wrapper and “Google Earth Pro (GPU)” menu entry use this setup.
+[Application notes](gpu-applications.md) include reproduction commands, native
+comparisons, screenshots, and the separate shutdown crash. `gpu-ready1` retains
+working Firefox; `gpu-apps1` holds the new Earth desktop.
 
 GPU VRAM and GPU time do not fall under the existing guest page limit or CPU
 weights. The training probe voluntarily caps its own PyTorch allocator to 25%

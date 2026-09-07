@@ -1,0 +1,7 @@
++ test ! -e /dev/kvm
++ test -x /usr/local/bin/engine-gpu-gl
++ test -f /usr/local/share/applications/engine-google-earth-gpu.desktop
++ runuser -u ga -- python3 /opt/engine-gpu/probes/gpu-driver-probe.py
+{"passed": true, "uid": 1000, "driver_version": "610.43.02", "cuda_device_count": 1, "loaded_libraries": ["/opt/engine-gpu/driver/lib/libcuda.so.610.43.02", "/opt/engine-gpu/driver/lib/libnvidia-ml.so.610.43.02"], "nvidia_smi": "NVIDIA L40S, 610.43.02, GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5", "library_environment_override": false}
++ echo GPU_FIXTURES_OK
+GPU_FIXTURES_OK

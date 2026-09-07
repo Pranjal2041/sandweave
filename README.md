@@ -41,13 +41,16 @@ For explicit verification, use `python scripts/verify-snapshot.py snapshots/my-c
 ## Single-GPU experiment
 
 The lab can expose one allocated NVIDIA GPU through gVisor `nvproxy`, still using
-systrap without KVM or host sudo. PyTorch GPU training and interactive Firefox
-WebGL/WebRender passed on this node's L40S and driver 610.43.02. Google Earth Pro
-currently fails GLX context creation through VirtualGL; games and Resolve are
-not yet tested. GPU snapshots are deferred and the wrapper refuses them before
+systrap without KVM or host sudo. PyTorch GPU training, interactive Firefox
+WebGL/WebRender, Google Earth Pro rendering/search, and CUDA/OpenGL buffer sharing
+passed on this node's L40S and driver 610.43.02. Earth has a recorded shutdown
+crash requiring further investigation; games and Resolve are not yet tested.
+GPU snapshots are deferred and the wrapper refuses them before
 pausing a GPU guest. Existing CPU-only snapshots are unchanged.
 
 See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
+The [GPU application investigation](notes/gpu-applications.md) records Earth's
+VirtualGL fixes, interactive checks, and the remaining Resolve installer step.
 
 ## Recovery and history
 

@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Verify a four-SM MPS client and a one-MiB GPU memory round trip."""
+import argparse
 import ctypes as C
 import json
 import os
+import subprocess
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--inspect', action='store_true', help='compare CUDA and NVIDIA-SMI views')
+args = parser.parse_args()
 
 assert os.environ.get('CUDA_MPS_SM_PARTITION'), 'Set the private MPS partition first'
 cuda = C.CDLL('libcuda.so.1')
@@ -32,6 +38,17 @@ try:
         data = (C.c_ubyte * 1024**2)()
         call('cuMemcpyDtoH_v2', [ptr, C.c_uint64, C.c_size_t], data, memory, len(data))
         assert all(value == 0x5a for value in data), 'GPU readback mismatch'
+        if args.inspect:
+            free, total = C.c_size_t(), C.c_size_t()
+            call('cuMemGetInfo_v2', [C.POINTER(C.c_size_t), C.POINTER(C.c_size_t)],
+                 C.byref(free), C.byref(total))
+            gpu_uuid = os.environ['CUDA_MPS_SM_PARTITION'].split('/')[0]
+            print(json.dumps({
+                'cuda_free_mib': free.value / 1024**2,
+                'cuda_total_mib': total.value / 1024**2,
+                'nvidia_smi': subprocess.check_output(
+                    ['nvidia-smi', '-i', gpu_uuid], text=True, timeout=10),
+            }))
     finally:
         call('cuMemFree_v2', [C.c_uint64], memory)
     assert sms.value == 4, sms.value

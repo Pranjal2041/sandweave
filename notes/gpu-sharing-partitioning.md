@@ -70,6 +70,34 @@ identifier. After the client exits, send `sm_partition rm <UUID>/<partition>`,
 then `quit` to that private controller. The one-GiB client memory limit was
 configured, but allocation rejection at its boundary was not tested.
 
+### NVIDIA-SMI visibility with an active MPS client
+
+The native probe was repeated with `--inspect`, four SMs and a 1,024-MiB client
+memory ceiling. It launched `nvidia-smi -i <UUID>` from the client while its CUDA
+context and one-MiB allocation remained alive. The result was:
+
+- CUDA reported four SMs and the memory write/readback passed.
+- NVIDIA-SMI still displayed the physical L40S and 46,068 MiB total memory,
+  with 43,235 MiB used across the card. It did not display a four-SM device,
+  the client's memory ceiling, or additional GPUs for the MPS partitions.
+- Its GPU utilization was 100%, a whole-device metric rather than a percentage
+  of the client's four-SM allocation. The probe performed no sustained workload.
+- This driver displayed the native Python client as `M+C` (426 MiB) and the
+  MPS server separately (30 MiB), alongside the existing host GPU processes.
+  This agrees with the current [MPS quick start](https://docs.nvidia.com/deploy/mps/latest/quick-start.html),
+  which describes the `M+C` process type; older descriptions of attribution only
+  to the MPS server do not match this driver output.
+- CUDA `cuMemGetInfo_v2` returned 45,486.375 MiB total and approximately
+  598.692 MiB free. Its total also remained larger than the one-GiB ceiling;
+  the free result was consistent with remaining client headroom after context
+  overhead. Allocation-limit enforcement still requires a boundary test.
+
+[Recorded output](gpu-evidence/mps-partition-nvidia-smi.json) preserves the exact
+values. This was a native MPS client in the host PID namespace, so its process
+listing does not establish what would appear after integrating MPS into gVisor.
+The earlier non-MPS desktop process-visibility checks remain a separate result.
+The temporary partition was removed and its controller/server stopped.
+
 ## Scope and remaining integration
 
 Static partitions separate participating MPS clients' compute units. They do

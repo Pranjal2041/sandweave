@@ -1,0 +1,4 @@
+1105978e6fc8d34c986edb016bdefd89c6f2d97f78664ab60b837fe727f7a090  tools/uml-smp/bin/linux-net
+a77f59ea44a32879cb78bc78b800254e7f92774e638d016deef7a9e3aea3d950  patches/0001-uml-seccomp-user-instruction-pointer.patch
+aeea2b4c9aaa4fdba35038382c17cb3cd966431d5407d2ea77f2cddff16395dd  patches/0002-uml-restore-syscall-number-on-rollback.patch
+e595c48ea8779c9c36e2e21b0644c409b1478d53b23cbfdf7d1b85b63e257450  tools/seccomp-trap

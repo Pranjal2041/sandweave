@@ -1,0 +1,2 @@
+# Preserve patch context prefixes and upstream whitespace verbatim.
+*.patch -whitespace

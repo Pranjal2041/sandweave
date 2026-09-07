@@ -1,0 +1,51 @@
+# General VM: no-KVM Slurm lab
+
+Current runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's repository remains untouched.
+
+The live workload is Moodle 4.5.13 with Docker inside Docker and MariaDB, plus Firefox 155. Google Earth Pro 7.3.7 was exercised in the earlier interactive desktop. The original user desktops remain available. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
+
+## Four controls implemented and tested
+
+| Area | Current behavior |
+|---|---|
+| CPU | Weighted sharing by default; idle capacity can be borrowed. Optional average CPU-equivalent quotas. Affinity selects eligible CPUs, without exclusive ownership. |
+| Memory | Guest page allocator budget; separate sampled Go-runtime guard; address-space limits for network helpers. This is not an aggregate host-cgroup RSS cap. |
+| Network | Outside-guest policy allows public IPv4 while denying host/private/cross-environment destinations. Offline mode keeps incoming forwards and blocks egress. Nested Docker networking remains available. |
+| Snapshots | Whole running environment save/restore: RAM, processes, writable files, open descriptors, IPC, nested namespaces, firewall/NAT state and internal TCP. Full desktop restore and a snapshot of the restored desktop passed. |
+
+Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 GiB runtime guard, weight 100, and the inherited Slurm CPU allocation as the shared pool. CPU control is sampled userspace scheduling; the runtime guard permits transient overshoot. Existing user desktops retain their old configuration.
+
+Read [implementation, measurements and limits](notes/resource-snapshot-implementation.md), [machine-readable status](notes/resource-snapshot-status.json), and [reproduction instructions](notes/gvisor-lab-reproduction.md).
+
+## Restore the validated desktop
+
+```bash
+cd ~/scratch/general-vm
+python scripts/run-gvisor.py --detach --restore snapshots/full-desktop-ready my-desktop
+```
+
+The launcher checks snapshot sizes and recorded base/runtime metadata, restores its settings, and allocates fresh loopback ports. Normal restores do not scan payloads for checksums. If an unchanged frozen capture is still available on this node, the launcher reuses it instead of reading the persistent copy. `runs/gvisor/my-desktop/ports.json` identifies VNC port 5901's host mapping. Connect through an SSH tunnel; the lab VNC password is `labvnc01`. The snapshot contains a logged-in Moodle course in Firefox and a running nested database.
+
+Save another complete running environment with:
+
+```bash
+python scripts/checkpoint-gvisor.py my-desktop my-checkpoint
+```
+
+Snapshots are durable under `snapshots/`, with shared immutable dependencies under `images/` and `tools/runtime-builds/`. Preserve every dependency listed in `snapshot-manifest.json` when moving them. External peers do not roll back with the snapshot; applications must reconnect external sessions. Local internal TCP is included and tested.
+
+Save returns after publication and starts checksum verification in a detached, lower-priority worker. Check `snapshots/my-checkpoint/verification.json` for `pending`, `running`, `passed`, or `failed`. Restore can proceed while verification is pending/running; a known failure blocks new restores until a successful recheck. Keep the local capture until initial verification passes, including before moving the checkpoint to another node.
+
+For explicit verification, use `python scripts/verify-snapshot.py snapshots/my-checkpoint`, or add `--verify` to a restore to wait for full verification first. [Timing breakdown and verification behavior](notes/asynchronous-snapshot-verification.md) document the checks and live measurements. Incremental checkpoints remain deferred.
+
+## Recovery and history
+
+This lab is tracked on branch `experiment/no-kvm-slurm`. Scripts, tests, notes,
+patches and source probes belong in Git; generated data and downloaded dependencies
+are covered by `.gitignore`. The engine has its own checkout in `sources/gvisor`;
+[source revisions](notes/source-revisions.json) pin its exact commit and cumulative
+patch. Check both repositories for a clean working tree when completing changes.
+
+The current implementation recovery bundle is `checkpoints/async-snapshots-8c8b143/`. It records source, exact binaries, launch fixtures, scripts, documentation, checksums and test evidence. It is distinct from a frozen running snapshot. The earlier implementation remains at `checkpoints/resources-snapshots-8c8b143-r3/`, and the baseline at `checkpoints/baseline-ae303ca/`.
+
+[Detailed experiment history](notes/gvisor-prototype-progress.md) preserves both failures and successful trials. [Historical UML README](notes/uml-readme-history.md) records the earlier, paused UML work; it is not the current launch path.

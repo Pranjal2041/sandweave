@@ -1,0 +1,13 @@
+{
+  "gvisor": {
+    "path": "sources/gvisor",
+    "upstream": "https://github.com/google/gvisor.git",
+    "branch": "experiment/no-kvm-slurm",
+    "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
+    "commit": "8c8b1437b27ce0fb61a9db17c5feb33242b7bde3",
+    "patch": "notes/gvisor-no-kvm-prototype.patch",
+    "runtime_build": "tools/runtime-builds/6690faecc6ff12b743b214b625d3abc2bf1a4b29e67e6a54054a37c69f04b509",
+    "recovery_bundle": "checkpoints/async-snapshots-8c8b143/gvisor.bundle",
+    "recovery_shallow_boundary": "checkpoints/async-snapshots-8c8b143/gvisor.shallow"
+  }
+}

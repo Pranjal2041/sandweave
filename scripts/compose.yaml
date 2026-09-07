@@ -1,0 +1,21 @@
+name: uml-lab
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: lab-only-password
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+  web:
+    image: nginx:1.28-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+volumes:
+  db-data:

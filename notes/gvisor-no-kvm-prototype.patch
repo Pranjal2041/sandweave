@@ -1,0 +1,4295 @@
+diff --git a/pkg/erofs/BUILD b/pkg/erofs/BUILD
+index 00645a2..5acb9b4 100644
+--- a/pkg/erofs/BUILD
++++ b/pkg/erofs/BUILD
+@@ -10,6 +10,7 @@ go_library(
+     srcs = [
+         "erofs.go",
+         "erofs_unsafe.go",
++        "xattr.go",
+     ],
+     marshal = True,
+     visibility = ["//visibility:public"],
+@@ -28,6 +29,10 @@ go_library(
+ go_test(
+     name = "erofs_test",
+     size = "small",
+-    srcs = ["erofs_test.go"],
++    srcs = [
++        "erofs_test.go",
++        "xattr_test.go",
++    ],
+     library = ":erofs",
++    deps = ["//pkg/errors/linuxerr"],
+ )
+diff --git a/pkg/erofs/erofs.go b/pkg/erofs/erofs.go
+index 193781c..21b708e 100644
+--- a/pkg/erofs/erofs.go
++++ b/pkg/erofs/erofs.go
+@@ -416,6 +416,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
+ 	var (
+ 		rawBlockAddr uint32
+ 		inodeSize    int
++		xattrCount   uint16
+ 	)
+ 
+ 	switch layout := inode.Layout(); layout {
+@@ -425,11 +426,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
+ 			return Inode{}, err
+ 		}
+ 
+-		if ino.XattrCount != 0 {
+-			log.Warningf("Unsupported xattr at inode (nid=%v)", nid)
+-			return Inode{}, linuxerr.ENOTSUP
+-		}
+-
++		xattrCount = ino.XattrCount
+ 		rawBlockAddr = ino.RawBlockAddr
+ 		inodeSize = ino.SizeBytes()
+ 
+@@ -447,11 +444,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
+ 			return Inode{}, err
+ 		}
+ 
+-		if ino.XattrCount != 0 {
+-			log.Warningf("Unsupported xattr at inode (nid=%v)", nid)
+-			return Inode{}, linuxerr.ENOTSUP
+-		}
+-
++		xattrCount = ino.XattrCount
+ 		rawBlockAddr = ino.RawBlockAddr
+ 		inodeSize = ino.SizeBytes()
+ 
+@@ -468,6 +461,13 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
+ 		return Inode{}, linuxerr.ENOTSUP
+ 	}
+ 
++	if xattrCount != 0 {
++		inode.xattrOff = off + uint64(inodeSize)
++		inode.xattrSize = 12 + (uint32(xattrCount)-1)*4
++		if !i.checkRange(inode.xattrOff, uint64(inode.xattrSize)) {
++			return Inode{}, linuxerr.EUCLEAN
++		}
++	}
+ 	blockSize := uint64(i.BlockSize())
+ 	inode.blocks = (inode.size + (blockSize - 1)) / blockSize
+ 
+@@ -476,11 +476,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
+ 		// Inline data follows the inode and must fit within the block that holds
+ 		// it. The inode itself may straddle a block boundary, so measure the room
+ 		// from idataOff's offset within its block, not from blockSize-inodeSize.
+-		//
+-		// Linux also adds xattr_isize to inodeSize when locating the inline data.
+-		// Safe to skip here because XattrCount != 0 is rejected above; revisit if
+-		// EROFS xattr support is added.
+-		idataOff := off + uint64(inodeSize)
++		idataOff := off + uint64(inodeSize) + uint64(inode.xattrSize)
+ 		tailSize := inode.size & (blockSize - 1)
+ 		if tailSize == 0 || (idataOff&(blockSize-1))+tailSize > blockSize {
+ 			log.Warningf("Inline data not found or cross block boundary at inode (nid=%v)", nid)
+@@ -515,6 +511,10 @@ type Inode struct {
+ 	// if it's not zero in the metadata block.
+ 	idataOff uint64
+ 
++	// xattrOff and xattrSize locate the inline extended attribute body.
++	xattrOff  uint64
++	xattrSize uint32
++
+ 	// blocks indicates the count of blocks that store the data associated
+ 	// with this inode. It will count in the metadata block that includes
+ 	// the inline data as well.
+diff --git a/pkg/erofs/xattr.go b/pkg/erofs/xattr.go
+new file mode 100644
+index 0000000..1deaee6
+--- /dev/null
++++ b/pkg/erofs/xattr.go
+@@ -0,0 +1,110 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package erofs
++
++import (
++	"bytes"
++	"encoding/binary"
++
++	"gvisor.dev/gvisor/pkg/errors/linuxerr"
++)
++
++// Xattrs returns the inode's inline and shared extended attributes. Returned
++// strings own their storage and do not alias the mapped image. Long prefixes
++// require an incompatible feature that OpenImage does not accept.
++func (ino *Inode) Xattrs() (map[string]string, error) {
++	if ino.xattrSize == 0 {
++		return nil, nil
++	}
++	if ino.xattrSize == 12 {
++		// A header with no entries is undefined in the Linux on-disk format.
++		return nil, linuxerr.EOPNOTSUPP
++	}
++	body, err := ino.image.BytesAt(ino.xattrOff, uint64(ino.xattrSize))
++	if err != nil || len(body) < 12 {
++		return nil, linuxerr.EUCLEAN
++	}
++	sharedCount := int(body[4])
++	inlineStart := 12 + sharedCount*4
++	if inlineStart > len(body) {
++		return nil, linuxerr.EUCLEAN
++	}
++	xattrs := make(map[string]string)
++	add := func(entry []byte) (int, error) {
++		if len(entry) < 4 {
++			return 0, linuxerr.EUCLEAN
++		}
++		nameLen := int(entry[0])
++		valueLen := int(binary.LittleEndian.Uint16(entry[2:4]))
++		length := (4 + nameLen + valueLen + 3) &^ 3
++		if length > len(entry) {
++			return 0, linuxerr.EUCLEAN
++		}
++		var prefix string
++		switch entry[1] {
++		case 1:
++			prefix = "user."
++		case 2:
++			prefix = "system.posix_acl_access"
++		case 3:
++			prefix = "system.posix_acl_default"
++		case 4:
++			prefix = "trusted."
++		case 6:
++			prefix = "security."
++		default:
++			if entry[1]&0x80 != 0 {
++				return 0, linuxerr.EOPNOTSUPP
++			}
++			// Linux ignores unknown namespace indices.
++			return length, nil
++		}
++		suffix := entry[4 : 4+nameLen]
++		if bytes.IndexByte(suffix, 0) >= 0 || len(prefix)+nameLen > 255 {
++			return 0, linuxerr.EUCLEAN
++		}
++		name := prefix + string(suffix)
++		// Inline entries take precedence over shared entries, as in Linux.
++		if _, exists := xattrs[name]; !exists {
++			xattrs[name] = string(entry[4+nameLen : 4+nameLen+valueLen])
++		}
++		return length, nil
++	}
++	for entries := body[inlineStart:]; len(entries) != 0; {
++		n, err := add(entries)
++		if err != nil {
++			return nil, err
++		}
++		entries = entries[n:]
++	}
++	sharedBase := ino.image.sb.BlockAddrToOffset(ino.image.sb.XattrBlockAddr)
++	for index := 0; index < sharedCount; index++ {
++		id := binary.LittleEndian.Uint32(body[12+index*4:])
++		off := sharedBase + uint64(id)*4
++		header, err := ino.image.BytesAt(off, 4)
++		if err != nil {
++			return nil, linuxerr.EUCLEAN
++		}
++		length := (4 + uint64(header[0]) + uint64(binary.LittleEndian.Uint16(header[2:4])) + 3) &^ 3
++		entry, err := ino.image.BytesAt(off, length)
++		if err != nil {
++			return nil, linuxerr.EUCLEAN
++		}
++		if _, err := add(entry); err != nil {
++			return nil, err
++		}
++	}
++	return xattrs, nil
++}
+diff --git a/pkg/erofs/xattr_test.go b/pkg/erofs/xattr_test.go
+new file mode 100644
+index 0000000..ced89f3
+--- /dev/null
++++ b/pkg/erofs/xattr_test.go
+@@ -0,0 +1,123 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package erofs
++
++import (
++	"bytes"
++	"encoding/binary"
++	"reflect"
++	"testing"
++
++	"gvisor.dev/gvisor/pkg/errors/linuxerr"
++)
++
++func xattrEntry(index byte, name, value string) []byte {
++	b := make([]byte, (4+len(name)+len(value)+3)&^3)
++	b[0], b[1] = byte(len(name)), index
++	binary.LittleEndian.PutUint16(b[2:], uint16(len(value)))
++	copy(b[4:], name)
++	copy(b[4+len(name):], value)
++	return b
++}
++
++func xattrImage(extended bool, body []byte, tail string) *Image {
++	img := &Image{bytes: make([]byte, 10*4096), sb: SuperBlock{BlockSizeBits: 12, XattrBlockAddr: 4}}
++	const off = 2048
++	count := uint16(0)
++	if len(body) != 0 {
++		count = 1 + uint16((len(body)-12)/4)
++	}
++	format := uint16(InodeDataLayoutFlatInline << InodeDataLayoutBit)
++	size := InodeCompactSize
++	if extended {
++		ino := InodeExtended{Format: format | InodeLayoutExtended, XattrCount: count, Mode: 0100644, Size: uint64(len(tail)), Nlink: 1}
++		ino.MarshalUnsafe(img.bytes[off:])
++		size = InodeExtendedSize
++	} else {
++		ino := InodeCompact{Format: format, XattrCount: count, Mode: 0100644, Size: uint32(len(tail)), Nlink: 1}
++		ino.MarshalUnsafe(img.bytes[off:])
++	}
++	copy(img.bytes[off+size:], body)
++	copy(img.bytes[off+size+len(body):], tail)
++	return img
++}
++
++func TestInlineAndSharedXattrs(t *testing.T) {
++	for _, extended := range []bool{false, true} {
++		t.Run(map[bool]string{false: "compact", true: "extended"}[extended], func(t *testing.T) {
++			body := make([]byte, 16)
++			body[4] = 1
++			// The shared entry straddles a block boundary.
++			binary.LittleEndian.PutUint32(body[12:], 4080/4)
++			body = append(body, xattrEntry(1, "binary", "a\x00b\xff")...)
++			body = append(body, xattrEntry(1, "empty", "")...)
++			body = append(body, xattrEntry(4, "overlay.opaque", "y")...)
++			body = append(body, xattrEntry(2, "", "acl-bytes")...)
++			body = append(body, xattrEntry(5, "future", "ignored")...)
++			img := xattrImage(extended, body, "inline file contents")
++			shared := string(bytes.Repeat([]byte{0x5a}, 5000))
++			copy(img.bytes[4*4096+4080:], xattrEntry(6, "test", shared))
++			ino, err := img.Inode(64)
++			if err != nil {
++				t.Fatal(err)
++			}
++			got, err := ino.Xattrs()
++			if err != nil {
++				t.Fatal(err)
++			}
++			want := map[string]string{"user.binary": "a\x00b\xff", "user.empty": "", "trusted.overlay.opaque": "y", "system.posix_acl_access": "acl-bytes", "security.test": shared}
++			if !reflect.DeepEqual(got, want) {
++				t.Fatalf("xattrs mismatch: got %v, want %v", got, want)
++			}
++			data, err := img.BytesAt(ino.idataOff, ino.size)
++			if err != nil || string(data) != "inline file contents" {
++				t.Fatalf("tail following xattrs: %q, %v", data, err)
++			}
++		})
++	}
++}
++
++func TestMalformedXattrs(t *testing.T) {
++	for _, test := range []struct {
++		name string
++		body []byte
++		want error
++	}{
++		{"header-only", make([]byte, 12), linuxerr.EOPNOTSUPP},
++		{"shared-count-overflow", append([]byte{0, 0, 0, 0, 255}, make([]byte, 11)...), linuxerr.EUCLEAN},
++		{"shared-offset-overflow", append([]byte{0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}, 255, 255, 255, 255), linuxerr.EUCLEAN},
++		{"truncated-entry", append(make([]byte, 12), 255, 1, 255, 255), linuxerr.EUCLEAN},
++		{"long-prefix", append(make([]byte, 12), 0, 0x80, 0, 0), linuxerr.EOPNOTSUPP},
++		{"nul-name", append(make([]byte, 12), xattrEntry(1, "a\x00b", "x")...), linuxerr.EUCLEAN},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			ino, err := xattrImage(true, test.body, "tail").Inode(64)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if _, err := ino.Xattrs(); err != test.want {
++				t.Fatalf("Xattrs error = %v, want %v", err, test.want)
++			}
++		})
++	}
++}
++
++func TestXattrBodyBeyondImage(t *testing.T) {
++	img := xattrImage(true, append(make([]byte, 12), xattrEntry(1, "key", "value")...), "tail")
++	img.bytes = img.bytes[:2048+InodeExtendedSize+12]
++	if _, err := img.Inode(64); err != linuxerr.EUCLEAN {
++		t.Fatalf("Inode error = %v, want EUCLEAN", err)
++	}
++}
+diff --git a/pkg/sentry/arch/arch_amd64.go b/pkg/sentry/arch/arch_amd64.go
+index 6240b68..13996fe 100644
+--- a/pkg/sentry/arch/arch_amd64.go
++++ b/pkg/sentry/arch/arch_amd64.go
+@@ -171,6 +171,16 @@ func (c *Context64) SetTLS(value uintptr) bool {
+ 	return true
+ }
+ 
++// SetGSBase sets the application GS base, validating it like arch_prctl.
++func (c *Context64) SetGSBase(value uintptr) bool {
++	if !isValidSegmentBase(uint64(value)) {
++		return false
++	}
++	c.Regs.Gs = 0
++	c.Regs.Gs_base = uint64(value)
++	return true
++}
++
+ // SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
+ func (c *Context64) SetOldRSeqInterruptedIP(value uintptr) {
+ 	c.Regs.R10 = uint64(value)
+diff --git a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go b/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
+index d5d2f4d..941bef4 100644
+--- a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
++++ b/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
+@@ -266,9 +266,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
+ 		delete(mopts, "none")
+ 	}
+ 
+-	if !none && len(wantControllers) == 0 {
+-		// Specifying no controllers implies all controllers, unless "none" was
+-		// explicitly requested.
++	if !none && name == "" && len(wantControllers) == 0 {
++		// Without a hierarchy name or explicit "none", an empty controller
++		// set requests all controllers.
+ 		wantControllers = allControllers
+ 	}
+ 
+@@ -303,8 +303,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
+ 	// Is there a hierarchy available with all the controllers we want? If so,
+ 	// this mount is a view into the same hierarchy.
+ 	//
+-	// Note: we're guaranteed to have at least one requested controller, since
+-	// no explicit controller name implies all controllers.
++	// Named hierarchies may have no controllers, as with systemd's hierarchy.
+ 	vfsfs, err := r.FindHierarchy(ctx, name, wantControllers)
+ 	if err != nil {
+ 		return nil, nil, err
+@@ -312,6 +311,15 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
+ 	if vfsfs != nil {
+ 		fs := vfsfs.Impl().(*filesystem)
+ 		ctx.Debugf("cgroupfs.FilesystemType.GetFilesystem: mounting new view to hierarchy %v", fs.hierarchyID)
++		if task := kernel.TaskFromContext(ctx); task != nil {
++			if ns := task.GetCgroupNamespace(); ns != nil {
++				defer ns.DecRef(ctx)
++				if root, ok := ns.V1Root(fs.hierarchyID); ok {
++					root.IncRef()
++					return vfsfs, root.VFSDentry(), nil
++				}
++			}
++		}
+ 		fs.root.IncRef()
+ 		if fs.effectiveRoot != fs.root {
+ 			fs.effectiveRoot.IncRef()
+@@ -481,9 +489,23 @@ func (fs *filesystem) Release(ctx context.Context) {
+ 	fs.Filesystem.Release(ctx)
+ }
+ 
++// MountRootPath implements vfs.MountRootPathProvider.
++func (fs *filesystem) MountRootPath(ctx context.Context, vd vfs.VirtualDentry) string {
++	path := vd.Dentry().Impl().(*kernfs.Dentry).FSLocalPath()
++	if task := kernel.TaskFromContext(ctx); task != nil {
++		if ns := task.CgroupNamespace(); ns != nil {
++			return ns.V1Path(fs.hierarchyID, path)
++		}
++	}
++	return path
++}
++
+ // MountOptions implements vfs.FilesystemImpl.MountOptions.
+ func (fs *filesystem) MountOptions() string {
+ 	var cnames []string
++	if fs.hierarchyName != "" {
++		cnames = append(cnames, "name="+fs.hierarchyName)
++	}
+ 	for _, c := range fs.controllers {
+ 		cnames = append(cnames, string(c.Type()))
+ 	}
+diff --git a/pkg/sentry/fsimpl/cgroupfs/pids.go b/pkg/sentry/fsimpl/cgroupfs/pids.go
+index f567b63..0fb439c 100644
+--- a/pkg/sentry/fsimpl/cgroupfs/pids.go
++++ b/pkg/sentry/fsimpl/cgroupfs/pids.go
+@@ -287,7 +287,7 @@ func (d *pidsMaxData) WriteBackground(ctx context.Context, src usermem.IOSequenc
+ 	if err != nil {
+ 		return 0, err
+ 	}
+-	if strings.TrimSpace(string(buf)) == "max" {
++	if strings.TrimSpace(string(buf[:ncpy])) == "max" {
+ 		d.c.mu.Lock()
+ 		defer d.c.mu.Unlock()
+ 		d.c.max = pidLimitUnlimited
+diff --git a/pkg/sentry/fsimpl/erofs/erofs.go b/pkg/sentry/fsimpl/erofs/erofs.go
+index 7dfbe76..5b19977 100644
+--- a/pkg/sentry/fsimpl/erofs/erofs.go
++++ b/pkg/sentry/fsimpl/erofs/erofs.go
+@@ -28,6 +28,7 @@ import (
+ 	"os"
+ 	"runtime"
+ 	"strconv"
++	"strings"
+ 	"sync/atomic"
+ 
+ 	"golang.org/x/sys/unix"
+@@ -81,6 +82,9 @@ type filesystem struct {
+ 	// image is the EROFS image. image is immutable.
+ 	image *erofs.Image
+ 
++	// Disk IDs, including ACL entries, are IDs in the root user namespace.
++	rootUserNS *auth.UserNamespace
++
+ 	// mf implements memmap.File for this image.
+ 	mf imageMemmapFile
+ 
+@@ -167,6 +171,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
+ 		mopts:             opts.Data,
+ 		iopts:             iopts,
+ 		image:             image,
++		rootUserNS:        creds.UserNamespace.Root(),
+ 		devMinor:          devMinor,
+ 		useReadForIO:      useReadForIO,
+ 		mf:                imageMemmapFile{image: image},
+@@ -315,6 +320,11 @@ type inode struct {
+ 	// fs is the owning filesystem.
+ 	fs *filesystem
+ 
++	// Extended attributes and ACLs are immutable after inode creation.
++	xattrs     map[string]string
++	accessACL  *vfs.PosixACL
++	defaultACL *vfs.PosixACL
++
+ 	// dirMu protects dirents. dirents is immutable after creation.
+ 	dirMu sync.RWMutex `state:"nosave"`
+ 	// +checklocks:dirMu
+@@ -359,10 +369,25 @@ func (fs *filesystem) getInode(nid uint64) (*inode, error) {
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	xattrs, err := ino.Xattrs()
++	if err != nil {
++		return nil, err
++	}
++	accessACL, err := vfs.ParsePosixACL([]byte(xattrs[linux.XATTR_NAME_POSIX_ACL_ACCESS]), fs.rootUserNS)
++	if err != nil {
++		return nil, err
++	}
++	defaultACL, err := vfs.ParsePosixACL([]byte(xattrs[linux.XATTR_NAME_POSIX_ACL_DEFAULT]), fs.rootUserNS)
++	if err != nil {
++		return nil, err
++	}
+ 	return bucket.addInode(nid, func() *inode {
+ 		i := &inode{
+-			Inode: ino,
+-			fs:    fs,
++			Inode:      ino,
++			fs:         fs,
++			xattrs:     xattrs,
++			accessACL:  accessACL,
++			defaultACL: defaultACL,
+ 		}
+ 		i.InitRefs()
+ 		return i
+@@ -382,7 +407,61 @@ func (i *inode) DecRef(ctx context.Context) {
+ }
+ 
+ func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
+-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.Mode()), nil, auth.KUID(i.UID()), auth.KGID(i.GID()))
++	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(i.Mode()), i.accessACL, auth.KUID(i.UID()), auth.KGID(i.GID()))
++}
++
++func (i *inode) listXattr(creds *auth.Credentials, size uint64) ([]string, error) {
++	var names []string
++	var required uint64
++	for name := range i.xattrs {
++		if strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) && !creds.HasRootCapability(linux.CAP_SYS_ADMIN) {
++			continue
++		}
++		names = append(names, name)
++		required += uint64(len(name) + 1)
++	}
++	if size != 0 && required > size {
++		return nil, linuxerr.ERANGE
++	}
++	return names, nil
++}
++
++func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
++	mode := linux.FileMode(i.Mode())
++	if err := vfs.CheckXattrPermissions(creds, vfs.MayRead, mode, auth.KUID(i.UID()), opts.Name); err != nil {
++		return "", err
++	}
++	var value string
++	var err error
++	switch {
++	case strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX):
++		value, err = vfs.ACLGetXattr(creds, opts, mode, i.accessACL, i.defaultACL)
++	case strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX),
++		strings.HasPrefix(opts.Name, linux.XATTR_TRUSTED_PREFIX),
++		strings.HasPrefix(opts.Name, linux.XATTR_SECURITY_PREFIX):
++		if strings.HasPrefix(opts.Name, linux.XATTR_USER_PREFIX) {
++			if err := i.checkPermissions(creds, vfs.MayRead); err != nil {
++				return "", err
++			}
++		}
++		var ok bool
++		value, ok = i.xattrs[opts.Name]
++		if !ok {
++			return "", linuxerr.ENODATA
++		}
++		if opts.Name == linux.XATTR_SECURITY_CAPABILITY {
++			value, err = auth.FixupVfsCapDataOnGet(creds, value)
++		}
++	default:
++		return "", linuxerr.EOPNOTSUPP
++	}
++	if err != nil {
++		return "", err
++	}
++	if opts.Size != 0 && uint64(len(value)) > opts.Size {
++		return "", linuxerr.ERANGE
++	}
++	return value, nil
+ }
+ 
+ func (i *inode) statTo(stat *linux.Statx) {
+@@ -829,12 +908,12 @@ func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
+ 
+ // ListXattr implements vfs.FileDescriptionImpl.ListXattr.
+ func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
+-	return nil, linuxerr.ENOTSUP
++	return fd.inode().listXattr(auth.CredentialsFromContext(ctx), size)
+ }
+ 
+ // GetXattr implements vfs.FileDescriptionImpl.GetXattr.
+ func (fd *fileDescription) GetXattr(ctx context.Context, opts vfs.GetXattrOptions) (string, error) {
+-	return "", linuxerr.ENOTSUP
++	return fd.inode().getXattr(auth.CredentialsFromContext(ctx), &opts)
+ }
+ 
+ // SetXattr implements vfs.FileDescriptionImpl.SetXattr.
+diff --git a/pkg/sentry/fsimpl/erofs/filesystem.go b/pkg/sentry/fsimpl/erofs/filesystem.go
+index de8b278..f31fbb2 100644
+--- a/pkg/sentry/fsimpl/erofs/filesystem.go
++++ b/pkg/sentry/fsimpl/erofs/filesystem.go
+@@ -440,8 +440,8 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	d.DecRef(ctx)
+-	return nil, linuxerr.ENOTSUP
++	defer d.DecRef(ctx)
++	return d.inode.listXattr(rp.Credentials(), size)
+ }
+ 
+ // GetXattrAt implements vfs.FilesystemImpl.GetXattrAt.
+@@ -450,8 +450,8 @@ func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
+ 	if err != nil {
+ 		return "", err
+ 	}
+-	d.DecRef(ctx)
+-	return "", linuxerr.ENOTSUP
++	defer d.DecRef(ctx)
++	return d.inode.getXattr(rp.Credentials(), &opts)
+ }
+ 
+ // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
+@@ -480,9 +480,15 @@ func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath,
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	d.DecRef(ctx)
+-	// erofs does not support POSIX ACLs.
+-	return nil, nil
++	defer d.DecRef(ctx)
++	switch t {
++	case vfs.AccessACL:
++		return d.inode.accessACL, nil
++	case vfs.DefaultACL:
++		return d.inode.defaultACL, nil
++	default:
++		return nil, linuxerr.EINVAL
++	}
+ }
+ 
+ // SetPosixACLAt implements vfs.FilesystemImpl.SetPosixACLAt.
+@@ -492,8 +498,7 @@ func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath,
+ 		return nil, 0, err
+ 	}
+ 	d.DecRef(ctx)
+-	// erofs does not support POSIX ACLs.
+-	return nil, 0, linuxerr.EOPNOTSUPP
++	return nil, 0, linuxerr.EROFS
+ }
+ 
+ // PrependPath implements vfs.FilesystemImpl.PrependPath.
+diff --git a/pkg/sentry/fsimpl/proc/task.go b/pkg/sentry/fsimpl/proc/task.go
+index 69c94a6..1b24a49 100644
+--- a/pkg/sentry/fsimpl/proc/task.go
++++ b/pkg/sentry/fsimpl/proc/task.go
+@@ -66,9 +66,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
+ 		"ipc":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWIPC),
+ 		"uts":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWUTS),
+ 	}
+-	if task.Kernel().Cgroup2FS().EverMounted() {
+-		nsEntries["cgroup"] = fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWCGROUP)
+-	}
++	nsEntries["cgroup"] = fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWCGROUP)
+ 
+ 	contents := map[string]kernfs.Inode{
+ 		"auxv":            fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, &mmFile{task: task, ftype: auxvMMFile}),
+diff --git a/pkg/sentry/fsimpl/proc/task_files.go b/pkg/sentry/fsimpl/proc/task_files.go
+index 4602277..0bded7c 100644
+--- a/pkg/sentry/fsimpl/proc/task_files.go
++++ b/pkg/sentry/fsimpl/proc/task_files.go
+@@ -1476,9 +1476,6 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
+ 		}
+ 		return nil
+ 	case linux.CLONE_NEWCGROUP:
+-		if !t.Kernel().Cgroup2FS().EverMounted() {
+-			return nil
+-		}
+ 		if cgroupns := t.GetCgroupNamespace(); cgroupns != nil {
+ 			return cgroupns.GetInode()
+ 		}
+@@ -1646,14 +1643,14 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error
+ 		return linuxerr.ESRCH
+ 	}
+ 
+-	d.task.GenerateProcTaskCgroup(buf)
++	var readerNS *kernel.CgroupNamespace
++	if reader := kernel.TaskFromContext(ctx); reader != nil {
++		readerNS = reader.CgroupNamespace()
++	}
++	d.task.GenerateProcTaskCgroup(buf, readerNS)
+ 	if v2Mounted {
+ 		// The cgroup path is shown relative to the cgroup namespace of the
+ 		// task reading this file, per Linux's proc_cgroup_show().
+-		var readerNS *kernel.CgroupNamespace
+-		if reader := kernel.TaskFromContext(ctx); reader != nil {
+-			readerNS = reader.CgroupNamespace()
+-		}
+ 		if cg2Entry := d.task.GetCgroup2Entry(readerNS); cg2Entry != nil {
+ 			fmt.Fprintf(buf, "0::%s\n", cg2Entry.Path)
+ 		}
+diff --git a/pkg/sentry/inet/namespace.go b/pkg/sentry/inet/namespace.go
+index bf182a5..753cc13 100644
+--- a/pkg/sentry/inet/namespace.go
++++ b/pkg/sentry/inet/namespace.go
+@@ -15,19 +15,27 @@
+ package inet
+ 
+ import (
+-	goContext "context"
+-
+ 	"gvisor.dev/gvisor/pkg/abi/linux"
+ 	"gvisor.dev/gvisor/pkg/context"
+ 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
+ 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
++	"gvisor.dev/gvisor/pkg/sync"
+ )
+ 
++// Namespace registries retain no extra namespace references; Destroy removes
++// entries. They include namespaces held only by open descriptors or bind mounts.
++// +stateify savable
++type namespaceRegistry struct {
++	mu  sync.Mutex `state:"nosave"`
++	all map[*Namespace]struct{}
++}
++
+ // Namespace represents a network namespace. See network_namespaces(7).
+ //
+ // +stateify savable
+ type Namespace struct {
+-	inode *nsfs.Inode
++	registry *namespaceRegistry
++	inode    *nsfs.Inode
+ 
+ 	// stack is the network stack implementation of this network namespace.
+ 	stack Stack
+@@ -35,9 +43,8 @@ type Namespace struct {
+ 	// creator allows kernel to create new network stack for network namespaces.
+ 	// If nil, no networking will function if network is namespaced.
+ 	//
+-	// At afterLoad(), creator will be used to create network stack. Stateify
+-	// needs to wait for this field to be loaded before calling afterLoad().
+-	creator NetworkStackCreator `state:"wait"`
++	// The creator is retained for namespaces created after restoration.
++	creator NetworkStackCreator
+ 
+ 	// isRoot indicates whether this is the root network namespace.
+ 	isRoot bool
+@@ -57,6 +64,7 @@ type Namespace struct {
+ func NewRootNamespace(stack Stack, creator NetworkStackCreator, userNS *auth.UserNamespace) *Namespace {
+ 	n := &Namespace{
+ 		stack:             stack,
++		registry:          &namespaceRegistry{all: make(map[*Namespace]struct{})},
+ 		creator:           creator,
+ 		isRoot:            true,
+ 		userNS:            userNS,
+@@ -65,6 +73,7 @@ func NewRootNamespace(stack Stack, creator NetworkStackCreator, userNS *auth.Use
+ 	if eventPublishingStack, ok := stack.(InterfaceEventPublisher); ok {
+ 		eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
+ 	}
++	n.registry.all[n] = struct{}{}
+ 	n.abstractSockets.init()
+ 	return n
+ }
+@@ -88,15 +97,22 @@ func (n *Namespace) GetInode() *nsfs.Inode {
+ func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
+ 	n := &Namespace{
+ 		creator:           root.creator,
++		registry:          root.registry,
+ 		userNS:            userNS,
+ 		netlinkMcastTable: NewNetlinkMcastTable(),
+ 	}
+ 	n.init()
++	n.registry.mu.Lock()
++	n.registry.all[n] = struct{}{}
++	n.registry.mu.Unlock()
+ 	return n
+ }
+ 
+ // Destroy implements nsfs.Namespace.Destroy.
+ func (n *Namespace) Destroy(ctx context.Context) {
++	n.registry.mu.Lock()
++	delete(n.registry.all, n)
++	n.registry.mu.Unlock()
+ 	if s := n.Stack(); s != nil {
+ 		s.Destroy()
+ 	}
+@@ -164,9 +180,15 @@ func (n *Namespace) init() {
+ 	n.abstractSockets.init()
+ }
+ 
+-// afterLoad is invoked by stateify.
+-func (n *Namespace) afterLoad(goContext.Context) {
+-	n.init()
++// All returns all live network namespaces in this sandbox.
++func (n *Namespace) All() []*Namespace {
++	n.registry.mu.Lock()
++	defer n.registry.mu.Unlock()
++	result := make([]*Namespace, 0, len(n.registry.all))
++	for ns := range n.registry.all {
++		result = append(result, ns)
++	}
++	return result
+ }
+ 
+ // AbstractSockets returns AbstractSocketNamespace.
+diff --git a/pkg/sentry/kernel/cgroup.go b/pkg/sentry/kernel/cgroup.go
+index 047b21b..05b83e1 100644
+--- a/pkg/sentry/kernel/cgroup.go
++++ b/pkg/sentry/kernel/cgroup.go
+@@ -440,10 +440,17 @@ func (r *CgroupRegistry) FindCgroup(ctx context.Context, ctype CgroupControllerT
+ 		return Cgroup{}, fmt.Errorf("path must be absolute")
+ 	}
+ 	k := KernelFromContext(ctx)
+-	vfsfs, err := r.FindHierarchy(ctx, "", []CgroupControllerType{ctype})
+-	if err != nil {
+-		return Cgroup{}, err
++	// FindHierarchy requires an exact controller set for mount(2). A task
++	// lookup by one controller must also find co-mounted controllers.
++	var vfsfs *vfs.Filesystem
++	r.mu.Lock()
++	if ctrl, ok := r.controllers[ctype]; ok {
++		h := r.hierarchies[ctrl.HierarchyID()]
++		if h.fs.TryIncRef() {
++			vfsfs = h.fs
++		}
+ 	}
++	r.mu.Unlock()
+ 	if vfsfs == nil {
+ 		return Cgroup{}, fmt.Errorf("controller not active")
+ 	}
+@@ -564,9 +571,9 @@ func (r *CgroupRegistry) computeInitialGroups(inherit map[Cgroup]struct{}) map[C
+ 	// Remember controllers from the inherited cgroups set...
+ 	for cg := range inherit {
+ 		cg.IncRef() // Ref transferred to caller.
++		cgset[cg] = struct{}{}
+ 		for _, ctl := range cg.Controllers() {
+ 			ctlSet[ctl.Type()] = ctl
+-			cgset[cg] = struct{}{}
+ 		}
+ 	}
+ 
+@@ -583,6 +590,25 @@ func (r *CgroupRegistry) computeInitialGroups(inherit map[Cgroup]struct{}) map[C
+ 			cgset[cg] = struct{}{}
+ 		}
+ 	}
++	// Named hierarchies such as systemd's have no controllers. They still
++	// participate in task inheritance and initial placement.
++	for _, h := range r.hierarchies {
++		if len(h.controllers) != 0 {
++			continue
++		}
++		inherited := false
++		for cg := range cgset {
++			if cg.HierarchyID() == h.id {
++				inherited = true
++				break
++			}
++		}
++		if !inherited {
++			cg := h.fs.Impl().(cgroupFS).RootCgroup()
++			cg.IncRef()
++			cgset[cg] = struct{}{}
++		}
++	}
+ 	return cgset
+ }
+ 
+diff --git a/pkg/sentry/kernel/cgroup2.go b/pkg/sentry/kernel/cgroup2.go
+index 3143492..be13822 100644
+--- a/pkg/sentry/kernel/cgroup2.go
++++ b/pkg/sentry/kernel/cgroup2.go
+@@ -16,6 +16,7 @@ package kernel
+ 
+ import (
+ 	"math"
++	"path/filepath"
+ 
+ 	"gvisor.dev/gvisor/pkg/context"
+ 	"gvisor.dev/gvisor/pkg/ebpf"
+@@ -238,8 +239,8 @@ func (t *Task) GetCgroup2Entry(readerNS *CgroupNamespace) *TaskCgroupEntry {
+ 
+ // CgroupNamespace represents a cgroup namespace. A cgroup namespace
+ // virtualizes the view of a task's cgroups: paths in /proc/<pid>/cgroup are
+-// shown relative to the namespace root, and cgroup2 mounts created from
+-// within the namespace are rooted at the namespace root.
++// shown relative to the namespace roots, and cgroup mounts created from
++// within the namespace are rooted at the corresponding namespace root.
+ //
+ // +stateify savable
+ type CgroupNamespace struct {
+@@ -248,6 +249,10 @@ type CgroupNamespace struct {
+ 	// not change even if that task subsequently migrates. Immutable.
+ 	root Cgroup2
+ 
++	// v1Roots holds one referenced root per v1 hierarchy, captured before the
++	// namespace is published. Empty in the initial namespace.
++	v1Roots map[uint32]Cgroup
++
+ 	// userns is the user namespace that owns this cgroup namespace. Immutable.
+ 	userns *auth.UserNamespace
+ 
+@@ -283,6 +288,39 @@ func (ns *CgroupNamespace) Root() Cgroup2 {
+ 	return ns.root
+ }
+ 
++func (ns *CgroupNamespace) captureV1Roots(t *Task) {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	ns.v1Roots = make(map[uint32]Cgroup, len(t.cgroups))
++	for cg := range t.cgroups {
++		cg.IncRef()
++		ns.v1Roots[cg.HierarchyID()] = cg
++	}
++}
++
++// V1Root returns the namespace's root for a v1 hierarchy. The returned cgroup
++// is borrowed from ns; the caller must keep the namespace alive.
++func (ns *CgroupNamespace) V1Root(id uint32) (Cgroup, bool) {
++	cg, ok := ns.v1Roots[id]
++	return cg, ok
++}
++
++// V1Path returns a hierarchy path relative to this namespace's root, retaining
++// leading /.. components for cgroups outside the namespace.
++func (ns *CgroupNamespace) V1Path(id uint32, path string) string {
++	if root, ok := ns.v1Roots[id]; ok {
++		rel, err := filepath.Rel(root.Path(), path)
++		if err != nil {
++			panic(err)
++		}
++		if rel == "." {
++			return "/"
++		}
++		return "/" + rel
++	}
++	return path
++}
++
+ // UserNamespace returns the user namespace that owns this cgroup namespace.
+ func (ns *CgroupNamespace) UserNamespace() *auth.UserNamespace {
+ 	return ns.userns
+@@ -294,7 +332,11 @@ func (ns *CgroupNamespace) Type() string {
+ }
+ 
+ // Destroy implements vfs.Namespace.Destroy.
+-func (ns *CgroupNamespace) Destroy(ctx context.Context) {}
++func (ns *CgroupNamespace) Destroy(ctx context.Context) {
++	for _, root := range ns.v1Roots {
++		root.Dentry.DecRef(ctx)
++	}
++}
+ 
+ // SetInode sets the nsfs inode of the cgroup namespace.
+ func (ns *CgroupNamespace) SetInode(inode *nsfs.Inode) {
+diff --git a/pkg/sentry/kernel/kernel.go b/pkg/sentry/kernel/kernel.go
+index 32afe64..04e5532 100644
+--- a/pkg/sentry/kernel/kernel.go
++++ b/pkg/sentry/kernel/kernel.go
+@@ -783,15 +783,13 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
+ 
+ 		// Save the timekeeper's state.
+ 
+-		if rootNS := k.rootNetworkNamespace; rootNS != nil && rootNS.Stack() != nil {
+-			// Pause the network stack.
+-			netstackPauseStart := time.Now()
+-			// Stack.removeConf should be true when resume=false and vice versa.
+-			k.rootNetworkNamespace.Stack().SetRemoveConf(!resume)
+-			log.Infof("Pausing root network namespace")
+-			k.rootNetworkNamespace.Stack().Pause()
+-			defer k.rootNetworkNamespace.Stack().Resume()
+-			log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
++		for _, ns := range k.rootNetworkNamespace.All() {
++			if ns.Stack() == nil {
++				continue
++			}
++			ns.Stack().SetRemoveConf(false)
++			ns.Stack().Pause()
++			defer ns.Stack().Resume()
+ 		}
+ 
+ 		// Save the kernel state.
+@@ -1015,9 +1013,20 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
+ 		if err := networkArgs.ConfigureNetwork(s); err != nil {
+ 			return fmt.Errorf("configuring network: %w", err)
+ 		}
+-		s.Restore()
+-		timeline.Reached("Network stack restored")
++		timeline.Reached("Root network transport reconnected")
++	}
++
++	// Restore namespaces concurrently: TCP endpoint restoration has global
++	// ordering barriers across listeners and connected endpoints.
++	var netRestore sync.WaitGroup
++	for _, ns := range k.rootNetworkNamespace.All() {
++		if ns.Stack() == nil {
++			continue
++		}
++		netRestore.Add(1)
++		go func(ns *inet.Namespace) { defer netRestore.Done(); ns.Stack().Restore() }(ns)
+ 	}
++	netRestore.Wait()
+ 
+ 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
+ 		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
+diff --git a/pkg/sentry/kernel/task_cgroup.go b/pkg/sentry/kernel/task_cgroup.go
+index 365eed0..2e3a917 100644
+--- a/pkg/sentry/kernel/task_cgroup.go
++++ b/pkg/sentry/kernel/task_cgroup.go
+@@ -265,9 +265,12 @@ func (t *Task) GetCgroupEntries() []TaskCgroupEntry {
+ }
+ 
+ // GenerateProcTaskCgroup writes the contents of /proc/<pid>/cgroup for t to buf.
+-func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer) {
++func (t *Task) GenerateProcTaskCgroup(buf *bytes.Buffer, readerNS *CgroupNamespace) {
+ 	cgEntries := t.GetCgroupEntries()
+ 	for _, cgE := range cgEntries {
++		if readerNS != nil {
++			cgE.Path = readerNS.V1Path(cgE.HierarchyID, cgE.Path)
++		}
+ 		fmt.Fprintf(buf, "%d:%s:%s\n", cgE.HierarchyID, cgE.Controllers, cgE.Path)
+ 	}
+ }
+diff --git a/pkg/sentry/kernel/task_clone.go b/pkg/sentry/kernel/task_clone.go
+index 2b6b42d..ebfb60c 100644
+--- a/pkg/sentry/kernel/task_clone.go
++++ b/pkg/sentry/kernel/task_clone.go
+@@ -66,7 +66,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
+ 	if args.Flags&^SupportedCloneFlags != 0 {
+ 		return 0, nil, linuxerr.EINVAL
+ 	}
+-	if !t.k.Cgroup2FS().EverMounted() && args.Flags&(linux.CLONE_NEWCGROUP|linux.CLONE_INTO_CGROUP) != 0 {
++	if !t.k.Cgroup2FS().EverMounted() && args.Flags&linux.CLONE_INTO_CGROUP != 0 {
+ 		return 0, nil, linuxerr.EINVAL
+ 	}
+ 	// Since signal actions may refer to application signal handlers by virtual
+@@ -188,6 +188,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
+ 		// even if the child is placed elsewhere via CLONE_INTO_CGROUP. See
+ 		// Linux's copy_cgroup_ns().
+ 		cgroupns = newCgroupNamespace(t.Cgroup2(), userns)
++		cgroupns.captureV1Roots(t)
+ 		cgroupns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, cgroupns))
+ 	} else {
+ 		cgroupns.IncRef()
+@@ -595,9 +596,7 @@ func (nss *namespaceSet) release(t *Task) {
+ 
+ func (nss *namespaceSet) initFromTask(t *Task, target *Task, flags int32) error {
+ 	supported := uint32(linux.CLONE_NEWPID | linux.CLONE_NEWNET | linux.CLONE_NEWUTS | linux.CLONE_NEWIPC | linux.CLONE_NEWNS | linux.CLONE_NEWUSER)
+-	if target.k.Cgroup2FS().EverMounted() {
+-		supported |= linux.CLONE_NEWCGROUP
+-	}
++	supported |= linux.CLONE_NEWCGROUP
+ 	if (uint32(flags) & ^supported) != 0 || flags == 0 {
+ 		return linuxerr.EINVAL
+ 	}
+@@ -729,9 +728,6 @@ func (nss *namespaceSet) initFromNS(ns vfs.Namespace, flags int32) error {
+ 
+ // Setns reassociates task t with the specified namespace(s).
+ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
+-	if !t.k.Cgroup2FS().EverMounted() && flags&linux.CLONE_NEWCGROUP != 0 {
+-		return linuxerr.EINVAL
+-	}
+ 	var nss namespaceSet
+ 	defer nss.release(t)
+ 
+@@ -752,9 +748,6 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
+ 		if !ok {
+ 			return linuxerr.EINVAL // Linux returns EINVAL in this case.
+ 		}
+-		if _, ok := i.Namespace().(*CgroupNamespace); ok && !t.k.Cgroup2FS().EverMounted() {
+-			return linuxerr.EINVAL
+-		}
+ 		if err := nss.initFromNS(i.Namespace(), flags); err != nil {
+ 			return err
+ 		}
+@@ -902,9 +895,6 @@ func (t *Task) Unshare(flags int32) error {
+ 	if flags&(linux.CLONE_VM|linux.CLONE_SIGHAND) != 0 {
+ 		return linuxerr.EINVAL
+ 	}
+-	if !t.k.Cgroup2FS().EverMounted() && flags&linux.CLONE_NEWCGROUP != 0 {
+-		return linuxerr.EINVAL
+-	}
+ 	if flags&linux.CLONE_THREAD != 0 {
+ 		t.tg.signalHandlers.mu.Lock()
+ 		if t.tg.tasksCount != 1 {
+@@ -1003,6 +993,7 @@ func (t *Task) Unshare(flags int32) error {
+ 	}
+ 	if flags&linux.CLONE_NEWCGROUP != 0 {
+ 		newCgroupNS = newCgroupNamespace(t.Cgroup2(), creds.UserNamespace)
++		newCgroupNS.captureV1Roots(t)
+ 		newCgroupNS.SetInode(nsfs.NewInode(t, t.k.nsfsMount, newCgroupNS))
+ 	}
+ 	if flags&linux.CLONE_NEWNS != 0 {
+diff --git a/pkg/sentry/kernel/task_run.go b/pkg/sentry/kernel/task_run.go
+index eb266fc..d955c00 100644
+--- a/pkg/sentry/kernel/task_run.go
++++ b/pkg/sentry/kernel/task_run.go
+@@ -283,6 +283,14 @@ func (app *runApp) execute(t *Task) taskRunState {
+ 				// We can resume running the application.
+ 				return (*runApp)(nil)
+ 			}
++			if err == linuxerr.ENOMEM && t.k.MemoryFile().LimitBytes() != 0 {
++				// A valid anonymous fault exhausted the sandbox's page budget.
++				// Kill the allocating process so its pages can be reclaimed;
++				// reporting SIGSEGV would misidentify OOM as an invalid address.
++				t.Warningf("Out of sandbox memory while handling a page fault")
++				t.SendGroupSignal(SignalInfoPriv(linux.SIGKILL))
++				return (*runApp)(nil)
++			}
+ 
+ 			// Is this a vsyscall that we need emulate?
+ 			//
+diff --git a/pkg/sentry/pgalloc/BUILD b/pkg/sentry/pgalloc/BUILD
+index feb4941..4fbbc07 100644
+--- a/pkg/sentry/pgalloc/BUILD
++++ b/pkg/sentry/pgalloc/BUILD
+@@ -209,6 +209,7 @@ go_test(
+     srcs = [
+         "pgalloc_64k_test.go",
+         "pgalloc_test.go",
++        "limit_test.go",
+     ],
+     library = ":pgalloc",
+     deps = [
+diff --git a/pkg/sentry/pgalloc/limit_test.go b/pkg/sentry/pgalloc/limit_test.go
+new file mode 100644
+index 0000000..2a17c11
+--- /dev/null
++++ b/pkg/sentry/pgalloc/limit_test.go
+@@ -0,0 +1,109 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package pgalloc
++
++import (
++	"os"
++	"sync"
++	"sync/atomic"
++	"testing"
++
++	"gvisor.dev/gvisor/pkg/hostarch"
++	"gvisor.dev/gvisor/pkg/sentry/memmap"
++)
++
++func limitedMemoryFile(t *testing.T, pages uint64) *MemoryFile {
++	t.Helper()
++	file, err := os.CreateTemp(t.TempDir(), "memory")
++	if err != nil {
++		t.Fatal(err)
++	}
++	f, err := NewMemoryFile(file, MemoryFileOpts{LimitBytes: pages * hostarch.PageSize})
++	if err != nil {
++		file.Close()
++		t.Fatal(err)
++	}
++	t.Cleanup(f.Destroy)
++	return f
++}
++
++func TestMemoryLimitConcurrentAndRestore(t *testing.T) {
++	f := limitedMemoryFile(t, 16)
++	var successes atomic.Uint32
++	var ranges [64]memmap.FileRange
++	var wg sync.WaitGroup
++	for i := range ranges {
++		wg.Add(1)
++		go func(i int) {
++			defer wg.Done()
++			fr, err := f.Allocate(hostarch.PageSize, AllocOpts{})
++			if err == nil {
++				ranges[i] = fr
++				successes.Add(1)
++			}
++		}(i)
++	}
++	wg.Wait()
++	if got := successes.Load(); got != 16 {
++		t.Fatalf("successful concurrent allocations = %d, want 16", got)
++	}
++	f.mu.Lock()
++	metadata := f.exportMetadataProto()
++	f.mu.Unlock()
++	// Metadata import precedes file mapping in LoadFrom. Use metadata-only
++	// objects here so Destroy cannot unmap not-yet-created chunk mappings.
++	restored := &MemoryFile{opts: MemoryFileOpts{LimitBytes: 16 * hostarch.PageSize}}
++	restored.initFields()
++	if err := restored.importMetadataProto(metadata); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := restored.Allocate(hostarch.PageSize, AllocOpts{}); err == nil {
++		t.Fatal("restored pages escaped the budget")
++	}
++	tooSmall := &MemoryFile{opts: MemoryFileOpts{LimitBytes: 15 * hostarch.PageSize}}
++	tooSmall.initFields()
++	if err := tooSmall.importMetadataProto(metadata); err == nil {
++		t.Fatal("restore accepted a checkpoint above its configured limit")
++	}
++	for _, r := range ranges {
++		if r.Length() != 0 {
++			f.DecRef(r)
++		}
++	}
++}
++
++func TestMemoryLimitReferenceAndReclaim(t *testing.T) {
++	f := limitedMemoryFile(t, 1)
++	fr, err := f.Allocate(hostarch.PageSize, AllocOpts{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	f.IncRef(fr, 0)
++	f.DecRef(fr)
++	if _, err := f.Allocate(hostarch.PageSize, AllocOpts{}); err == nil {
++		t.Fatal("dropping one reference freed a shared page's charge")
++	}
++	// Control the releaser to verify that allocation reclaims waste itself.
++	f.mu.Lock()
++	f.unfreeSmall.MutateFullRange(fr, func(seg unfreeIterator) bool { seg.ValuePtr().refs = 0; return true })
++	f.unwasteSmall.RemoveFullRange(fr)
++	f.memAcct.MutateFullRange(fr, func(seg memAcctIterator) bool { seg.ValuePtr().wasteOrReleasing = true; return true })
++	f.mu.Unlock()
++	replacement, err := f.Allocate(hostarch.PageSize, AllocOpts{})
++	if err != nil {
++		t.Fatalf("reallocation after freeing memory: %v", err)
++	}
++	f.DecRef(replacement)
++}
+diff --git a/pkg/sentry/pgalloc/pgalloc.go b/pkg/sentry/pgalloc/pgalloc.go
+index 6c2eae3..fe6b15f 100644
+--- a/pkg/sentry/pgalloc/pgalloc.go
++++ b/pkg/sentry/pgalloc/pgalloc.go
+@@ -170,10 +170,14 @@ type MemoryFile struct {
+ 	// All of these fields are protected by mu.
+ 	memAcct             memAcctSet
+ 	knownCommittedBytes uint64
+-	commitSeq           uint64
+-	nextCommitScan      time.Time
+-	ongoingCommitScan   atomic.Bool
+-	isSaving            bool
++	// chargedBytes includes all allocated, waste and releasing pages. Pages
++	// remain charged until released, even when their contents are all zero.
++	// Protected by mu; reconstructed from memAcct on restore.
++	chargedBytes      uint64
++	commitSeq         uint64
++	nextCommitScan    time.Time
++	ongoingCommitScan atomic.Bool
++	isSaving          bool
+ 
+ 	// evictable maps EvictableMemoryUsers to eviction state.
+ 	//
+@@ -345,6 +349,9 @@ type evictableMemoryUserInfo struct {
+ 
+ // MemoryFileOpts provides options to NewMemoryFile.
+ type MemoryFileOpts struct {
++	// LimitBytes bounds pages that can be populated in this MemoryFile. Zero
++	// disables the limit. This excludes Go heap and host filesystem caches.
++	LimitBytes uint64
+ 	// DelayedEviction controls the extent to which the MemoryFile may delay
+ 	// eviction of evictable allocations.
+ 	DelayedEviction DelayedEvictionType
+@@ -390,6 +397,11 @@ type MemoryFileOpts struct {
+ 	DisableMemoryAccounting bool
+ }
+ 
++// LimitBytes returns the configured sandbox page budget, or zero if unlimited.
++func (f *MemoryFile) LimitBytes() uint64 {
++	return f.opts.LimitBytes
++}
++
+ // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
+ type DelayedEvictionType uint8
+ 
+@@ -425,6 +437,9 @@ const (
+ // NewMemoryFile succeeds, ownership of file is transferred to the returned
+ // MemoryFile.
+ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
++	if !hostarch.IsPageAligned(opts.LimitBytes) {
++		return nil, fmt.Errorf("MemoryFile limit must be page aligned")
++	}
+ 	switch opts.DelayedEviction {
+ 	case DelayedEvictionDefault:
+ 		opts.DelayedEviction = DelayedEvictionEnabled
+@@ -842,6 +857,26 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
+ 		}
+ 	}
+ 
++	// Reclaim waste synchronously before rejecting an allocation at the limit.
++	// Keep releasing pages charged while releaseLocked temporarily drops mu.
++	if limit := f.opts.LimitBytes; limit != 0 {
++		for alloc.length > limit || f.chargedBytes > limit-alloc.length {
++			released := false
++			for i, waste := range []*unwasteSet{&f.unwasteSmall, &f.unwasteHuge} {
++				if gap := waste.LastLargeEnoughGap(1); gap.Ok() {
++					r := gap.Range()
++					waste.Insert(gap, r, unwasteInfo{})
++					f.releaseLocked(r, i == 1)
++					released = true
++					break
++				}
++			}
++			if !released {
++				return memmap.FileRange{}, linuxerr.ENOMEM
++			}
++		}
++	}
++
+ 	// No suitable waste pages or we can't use them.
+ retryFree:
+ 	// Try to allocate free pages from existing chunks.
+@@ -886,6 +921,9 @@ retryFree:
+ 		knownCommitted: false,
+ 		commitSeq:      f.commitSeq,
+ 	})
++	if f.opts.LimitBytes != 0 {
++		f.chargedBytes += fr.Length()
++	}
+ 	return
+ }
+ 
+@@ -1365,6 +1403,9 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
+ 					usage.MemoryAccounting.Dec(malen, ma.kind, ma.memCgID)
+ 				}
+ 			}
++			if f.opts.LimitBytes != 0 {
++				f.chargedBytes -= maseg.Range().Length()
++			}
+ 			maseg = f.memAcct.Remove(maseg).NextSegment()
+ 		}
+ 	}()
+diff --git a/pkg/sentry/pgalloc/save_restore.go b/pkg/sentry/pgalloc/save_restore.go
+index 0700060..f44532d 100644
+--- a/pkg/sentry/pgalloc/save_restore.go
++++ b/pkg/sentry/pgalloc/save_restore.go
+@@ -126,6 +126,19 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto)
+ 	if pb.Version != 1 {
+ 		return fmt.Errorf("unsupported MemoryFileMetadataProto version %d", pb.Version)
+ 	}
++	var charged uint64
++	for _, segment := range pb.MemAcct {
++		if segment.End < segment.Start || charged > ^uint64(0)-(segment.End-segment.Start) {
++			return fmt.Errorf("invalid memory accounting range in checkpoint")
++		}
++		charged += segment.End - segment.Start
++	}
++	if f.opts.LimitBytes != 0 {
++		if charged > f.opts.LimitBytes {
++			return fmt.Errorf("checkpoint requires %d bytes, exceeding memory limit %d", charged, f.opts.LimitBytes)
++		}
++		f.chargedBytes = charged
++	}
+ 	f.subreleased = make(map[uint64]uint64, len(pb.Subreleased))
+ 	for k, v := range pb.Subreleased {
+ 		f.subreleased[k] = v
+diff --git a/pkg/sentry/platform/systrap/subprocess_amd64.go b/pkg/sentry/platform/systrap/subprocess_amd64.go
+index 070d84d..2fa568d 100644
+--- a/pkg/sentry/platform/systrap/subprocess_amd64.go
++++ b/pkg/sentry/platform/systrap/subprocess_amd64.go
+@@ -200,6 +200,8 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
+ 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
+ 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_FS)},
+ 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
++					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_GS)},
++					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_GS)},
+ 				},
+ 			}),
+ 			Action: seccomp.Allow,
+@@ -216,6 +218,12 @@ func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
+ 	regs.Gs_base = sysThread.msg.Self
+ }
+ 
++// SupportsGSBase reports whether guest GS is available instead of reserved by
++// the binary syscall-patching fast path.
++func (*Systrap) SupportsGSBase() bool {
++	return disableSyscallPatching
++}
++
+ func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+ }
+ 
+diff --git a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
+index 5d6b4ce..4e3418d 100644
+--- a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
++++ b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
+@@ -161,6 +161,26 @@ static void set_fsbase(uint64_t fsbase) {
+   }
+ }
+ 
++static uint64_t get_gsbase(void) {
++  uint64_t base;
++  if (__export_arch_state.fsgsbase) {
++    asm volatile("rdgsbase %0" : "=r"(base));
++  } else {
++    int ret = __syscall(__NR_arch_prctl, ARCH_GET_GS, (long)&base, 0, 0, 0, 0);
++    if (ret) panic(STUB_ERROR_ARCH_PRCTL, ret);
++  }
++  return base;
++}
++
++static void set_gsbase(uint64_t base) {
++  if (__export_arch_state.fsgsbase) {
++    asm volatile("wrgsbase %0" : : "r"(base) : "memory");
++  } else {
++    int ret = __syscall(__NR_arch_prctl, ARCH_SET_GS, base, 0, 0, 0, 0);
++    if (ret) panic(STUB_ERROR_ARCH_PRCTL, ret);
++  }
++}
++
+ // switch_context_amd64 is a wrapper of switch_context() which does checks
+ // specific to amd64.
+ struct thread_context *switch_context_amd64(
+@@ -241,6 +261,9 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
+   if (signo != SIGCHLD ||
+       ucontext->uc_mcontext.gregs[REG_RIP] < __export_stub_start) {
+     ctx->ptregs.fs_base = fs_base;
++    if (__export_disable_syscall_patching) {
++      ctx->ptregs.gs_base = get_gsbase();
++    }
+     ctx->err = 0;
+     gregs_to_ptregs(ucontext, &ctx->ptregs);
+     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
+@@ -348,6 +371,11 @@ init:
+     ucontext->uc_mcontext.fpregs = (void *)ctx->fpstate;
+   }
+   ptregs_to_gregs(ucontext, &ctx->ptregs);
++  if (__export_disable_syscall_patching) {
++    // GS is not included in the host signal frame. Restore it explicitly,
++    // including when the next application context belongs to another thread.
++    set_gsbase(ctx->ptregs.gs_base);
++  }
+ }
+ 
+ void __syshandler() {
+diff --git a/pkg/sentry/socket/netlink/netfilter/protocol.go b/pkg/sentry/socket/netlink/netfilter/protocol.go
+index 2105a92..37109a9 100644
+--- a/pkg/sentry/socket/netlink/netfilter/protocol.go
++++ b/pkg/sentry/socket/netlink/netfilter/protocol.go
+@@ -1333,9 +1333,12 @@ func (p *Protocol) receiveBatchMessage(ctx context.Context, ms *nlmsg.MessageSet
+ 		}
+ 	}
+ 
+-	// The resource ID is a 16-bit value that is stored in network byte order.
+-	// We ensure that it is in host byte order before passing it for processing.
+-	resID := nlmsg.NetToHostU16(nfGenMsg.ResourceID)
++	// nfnetlink_rcv_skb_batch also accepts the NFTABLES subsystem ID in
++	// host byte order for compatibility with older nft userspace.
++	resID := nfGenMsg.ResourceID
++	if resID != linux.NFNL_SUBSYS_NFTABLES {
++		resID = nlmsg.NetToHostU16(resID)
++	}
+ 	if err := p.processBatchMessage(ctx, buf, ms, hdr, resID); err != nil {
+ 		log.Debugf("Failed to process batch message: %v", err)
+ 		netlink.DumpErrorMessage(hdr, ms, err.GetError())
+@@ -1387,6 +1390,9 @@ func (p *Protocol) processBatchMessage(ctx context.Context, buf []byte, ms *nlms
+ 		}
+ 
+ 		hdr := msg.Header()
++		// Each request in a batch has its own sequence number. Replies must
++		// identify that request, rather than the batch-begin message.
++		ms.Seq = hdr.Seq
+ 
+ 		// Messages that are too small clear the error message set and return.
+ 		// From net/netfilter/nfnetlink.c:nfnetlink_rcv_batch
+diff --git a/pkg/sentry/syscalls/linux/sys_tls_amd64.go b/pkg/sentry/syscalls/linux/sys_tls_amd64.go
+index 655cdc6..5df38d6 100644
+--- a/pkg/sentry/syscalls/linux/sys_tls_amd64.go
++++ b/pkg/sentry/syscalls/linux/sys_tls_amd64.go
+@@ -46,8 +46,20 @@ func ArchPrctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
+ 			return 0, nil, linuxerr.EPERM
+ 		}
+ 	case linux.ARCH_GET_GS, linux.ARCH_SET_GS:
+-		t.Kernel().EmitUnimplementedEvent(t, sysno)
+-		fallthrough
++		// Systrap's binary syscall patches reserve GS for their own state.
++		// Only expose this ABI when the platform preserves application GS.
++		p, ok := t.Kernel().Platform.(interface{ SupportsGSBase() bool })
++		if !ok || !p.SupportsGSBase() {
++			t.Kernel().EmitUnimplementedEvent(t, sysno)
++			return 0, nil, linuxerr.EINVAL
++		}
++		if args[0].Int() == linux.ARCH_SET_GS {
++			if !t.Arch().SetGSBase(uintptr(args[1].Uint64())) {
++				return 0, nil, linuxerr.EPERM
++			}
++		} else if _, err := primitive.CopyUint64Out(t, args[1].Pointer(), t.Arch().Regs.Gs_base); err != nil {
++			return 0, nil, err
++		}
+ 	default:
+ 		return 0, nil, linuxerr.EINVAL
+ 	}
+diff --git a/pkg/tcpip/link/nested/nested.go b/pkg/tcpip/link/nested/nested.go
+index fdb5022..c297965 100644
+--- a/pkg/tcpip/link/nested/nested.go
++++ b/pkg/tcpip/link/nested/nested.go
+@@ -192,3 +192,17 @@ func (e *Endpoint) SetOnCloseAction(action func()) {
+ func (e *Endpoint) Child() stack.LinkEndpoint {
+ 	return e.child
+ }
++
++// Pause stops a child link's checkpoint-aware background worker.
++func (e *Endpoint) Pause() {
++	if child, ok := e.child.(interface{ Pause() }); ok {
++		child.Pause()
++	}
++}
++
++// Resume restarts a child link after save or restore.
++func (e *Endpoint) Resume() {
++	if child, ok := e.child.(interface{ Resume() }); ok {
++		child.Resume()
++	}
++}
+diff --git a/pkg/tcpip/link/veth/BUILD b/pkg/tcpip/link/veth/BUILD
+index 3980a6a..f5286c0 100644
+--- a/pkg/tcpip/link/veth/BUILD
++++ b/pkg/tcpip/link/veth/BUILD
+@@ -45,6 +45,7 @@ go_test(
+     ],
+     deps = [
+         "//pkg/buffer",
++        "//pkg/state",
+         "//pkg/refs",
+         "//pkg/sync",
+         "//pkg/tcpip",
+diff --git a/pkg/tcpip/link/veth/veth.go b/pkg/tcpip/link/veth/veth.go
+index d942678..d9c22d2 100644
+--- a/pkg/tcpip/link/veth/veth.go
++++ b/pkg/tcpip/link/veth/veth.go
+@@ -16,6 +16,8 @@
+ package veth
+ 
+ import (
++	"context"
++	"gvisor.dev/gvisor/pkg/sync"
+ 	"gvisor.dev/gvisor/pkg/tcpip"
+ 	"gvisor.dev/gvisor/pkg/tcpip/header"
+ 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+@@ -34,7 +36,11 @@ type veth struct {
+ 	// +checklocks:mu
+ 	closed bool
+ 
+-	backlogQueue chan vethPacket `state:"nosave"`
++	backlogQueue  chan vethPacket `state:".(savedBacklog)"`
++	loadedBacklog *savedBacklog   `state:"nosave"`
++	workerMu      sync.Mutex      `state:"nosave"`
++	workerStop    chan struct{}   `state:"nosave"`
++	workerDone    chan struct{}   `state:"nosave"`
+ 
+ 	// +checklocks:mu
+ 	mtu uint32
+@@ -116,13 +122,7 @@ func NewPair(mtu, backlogQueueSize uint32) (*Endpoint, *Endpoint) {
+ 	b.peer = a
+ 	a.veth = &veth
+ 	b.veth = &veth
+-	go func() {
+-		for t := range veth.backlogQueue {
+-			t.e.InjectInbound(t.protocol, t.pkt)
+-			t.pkt.DecRef()
+-		}
+-
+-	}()
++	a.Resume()
+ 	return a, b
+ }
+ 
+@@ -188,7 +188,7 @@ func (e *Endpoint) SetMTU(mtu uint32) {
+ 
+ // Capabilities implements stack.LinkEndpoint.Capabilities.
+ func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
+-	return stack.CapabilityRXChecksumOffload | stack.CapabilitySaveRestore | stack.CapabilityTXChecksumOffload
++	return stack.CapabilitySaveRestore | stack.CapabilityRXChecksumOffload | stack.CapabilityTXChecksumOffload
+ }
+ 
+ // GSOMaxSize implements stack.GSOEndpoint.
+@@ -288,3 +288,77 @@ func (e *Endpoint) SetOnCloseAction(action func()) {
+ 	defer e.mu.Unlock()
+ 	e.onCloseAction = action
+ }
++
++// +stateify savable
++type savedBacklog struct {
++	Capacity int
++	Packets  []vethPacket
++}
++
++func (v *veth) saveBacklogQueue() savedBacklog {
++	v.mu.Lock()
++	defer v.mu.Unlock()
++	saved := savedBacklog{Capacity: cap(v.backlogQueue)}
++	for count := len(v.backlogQueue); count > 0; count-- {
++		saved.Packets = append(saved.Packets, <-v.backlogQueue)
++	}
++	for _, p := range saved.Packets {
++		v.backlogQueue <- p
++	}
++	return saved
++}
++func (v *veth) loadBacklogQueue(_ context.Context, saved savedBacklog) {
++	// Slice elements may still await pointer fixups. Defer copying values
++	// into the channel until Resume, after the whole graph has loaded.
++	v.backlogQueue = make(chan vethPacket, saved.Capacity)
++	v.loadedBacklog = &saved
++}
++
++// Pause waits for the shared link's packet delivery worker to stop.
++func (e *Endpoint) Pause() {
++	v := e.veth
++	v.workerMu.Lock()
++	defer v.workerMu.Unlock()
++	if v.workerStop != nil {
++		close(v.workerStop)
++		<-v.workerDone
++		v.workerStop = nil
++	}
++}
++
++// Resume restarts packet delivery after all saved dependencies are loaded.
++func (e *Endpoint) Resume() {
++	v := e.veth
++	v.workerMu.Lock()
++	defer v.workerMu.Unlock()
++	if v.workerStop != nil {
++		return
++	}
++	if v.loadedBacklog != nil {
++		for _, p := range v.loadedBacklog.Packets {
++			v.backlogQueue <- p
++		}
++		if v.closed {
++			close(v.backlogQueue)
++		}
++		v.loadedBacklog = nil
++	}
++	v.workerStop = make(chan struct{})
++	v.workerDone = make(chan struct{})
++	stop, done := v.workerStop, v.workerDone
++	go func() {
++		defer close(done)
++		for {
++			select {
++			case <-stop:
++				return
++			case p, ok := <-v.backlogQueue:
++				if !ok {
++					return
++				}
++				p.e.InjectInbound(p.protocol, p.pkt)
++				p.pkt.DecRef()
++			}
++		}
++	}()
++}
+diff --git a/pkg/tcpip/link/veth/veth_test.go b/pkg/tcpip/link/veth/veth_test.go
+index c466d92..54b168e 100644
+--- a/pkg/tcpip/link/veth/veth_test.go
++++ b/pkg/tcpip/link/veth/veth_test.go
+@@ -15,6 +15,9 @@
+ package veth_test
+ 
+ import (
++	"bytes"
++	"context"
++	"gvisor.dev/gvisor/pkg/state"
+ 	"os"
+ 	"testing"
+ 	"time"
+@@ -198,3 +201,43 @@ func TestMain(m *testing.M) {
+ 	refs.DoLeakCheck()
+ 	os.Exit(code)
+ }
++
++func TestCheckpointQueuedPacket(t *testing.T) {
++	a, b := veth.NewPair(1500, 8)
++	a.Pause()
++	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData([]byte("queued across checkpoint"))})
++	pkt.NetworkProtocolNumber = 55
++	var packets stack.PacketBufferList
++	packets.PushBack(pkt)
++	if n, err := a.WritePackets(packets); err != nil || n != 1 {
++		t.Fatalf("queue packet: n=%d err=%v", n, err)
++	}
++	pkt.DecRef()
++	original := []*veth.Endpoint{a, b}
++	var saved bytes.Buffer
++	if _, err := state.Save(context.Background(), &saved, &original); err != nil {
++		t.Fatal(err)
++	}
++	var restored []*veth.Endpoint
++	if _, err := state.Load(context.Background(), &saved, &restored); err != nil {
++		t.Fatal(err)
++	}
++	var wg sync.WaitGroup
++	sink := &testNetworkDispatcher{ch: make(chan *stack.PacketBuffer, 1), wg: &wg}
++	restored[1].Attach(sink)
++	restored[0].Resume()
++	defer restored[0].Close()
++	a.Resume()
++	defer a.Close()
++	select {
++	case got := <-sink.ch:
++		defer got.DecRef()
++		data := got.ToBuffer()
++		defer data.Release()
++		if !bytes.Equal(data.Flatten(), []byte("queued across checkpoint")) {
++			t.Fatalf("restored packet=%q", data.Flatten())
++		}
++	case <-time.After(time.Second):
++		t.Fatal("restored veth did not deliver its queued packet")
++	}
++}
+diff --git a/pkg/tcpip/nftables/BUILD b/pkg/tcpip/nftables/BUILD
+index f390167..923970b 100644
+--- a/pkg/tcpip/nftables/BUILD
++++ b/pkg/tcpip/nftables/BUILD
+@@ -39,6 +39,7 @@ go_library(
+         "nftables_set.go",
+         "nftables_types.go",
+         "nftinterp.go",
++        "save_restore.go",
+     ],
+     visibility = [
+         "//:sandbox",
+@@ -64,6 +65,7 @@ go_test(
+     srcs = [
+         "nftables_test.go",
+         "nftinterp_test.go",
++        "save_restore_test.go",
+     ],
+     library = ":nftables",
+     deps = [
+@@ -74,10 +76,14 @@ go_test(
+         "//pkg/rand",
+         "//pkg/sentry/socket/netlink/nlmsg",
+         "//pkg/sync",
++        "//pkg/state",
+         "//pkg/syserr",
+         "//pkg/tcpip",
+         "//pkg/tcpip/faketime",
+         "//pkg/tcpip/header",
++        "//pkg/tcpip/link/ethernet",
++        "//pkg/tcpip/link/loopback",
++        "//pkg/tcpip/network/ipv4",
+         "//pkg/tcpip/stack",
+         "@com_github_google_go_cmp//cmp:go_default_library",
+     ],
+diff --git a/pkg/tcpip/nftables/nft_bitwise.go b/pkg/tcpip/nftables/nft_bitwise.go
+index 6d647d6..5967ee3 100644
+--- a/pkg/tcpip/nftables/nft_bitwise.go
++++ b/pkg/tcpip/nftables/nft_bitwise.go
+@@ -50,13 +50,14 @@ func (bop bitwiseOp) String() string {
+ // bitwise is an operation that performs bitwise math operations over data in
+ // a given register, storing the result in a destination register.
+ // Note: bitwise operations are not supported for the verdict register.
++// +stateify savable
+ type bitwise struct {
+ 	sregIdx int       // Index of the source register in registerSet.data.
+ 	dregIdx int       // Index of the destination register in registerSet.data.
+ 	bop     bitwiseOp // Bitwise operator to use.
+ 	blen    int       // Number of bytes to apply bitwise operation to.
+-	mask    []byte    // Mask to apply bitwise & for boolean operations (before ^).
+-	xor     []byte    // Xor to apply bitwise ^ for boolean operations (after &).
++	mask    []byte    `state:".(savedBytes)"` // Mask to apply bitwise & for boolean operations (before ^).
++	xor     []byte    `state:".(savedBytes)"` // Xor to apply bitwise ^ for boolean operations (after &).
+ 	shift   uint32    // Shift to apply bitwise <</>> for non-boolean operations.
+ 
+ 	// Note: Technically, the linux kernel has defined bool, lshift, and rshift
+diff --git a/pkg/tcpip/nftables/nft_byteorder.go b/pkg/tcpip/nftables/nft_byteorder.go
+index 3ec3dd8..00c4ca1 100644
+--- a/pkg/tcpip/nftables/nft_byteorder.go
++++ b/pkg/tcpip/nftables/nft_byteorder.go
+@@ -25,6 +25,7 @@ import (
+ 
+ // byteorder is an operation that performs byte order operations on a register.
+ // Note: byteorder operations are not supported for the verdict register.
++// +stateify savable
+ type byteorder struct {
+ 	sregIdx int         // Index of the source register in registerSet.data.
+ 	dregIdx int         // Index of the destination register in registerSet.data.
+diff --git a/pkg/tcpip/nftables/nft_comparison.go b/pkg/tcpip/nftables/nft_comparison.go
+index 1e64d4d..0a05ade 100644
+--- a/pkg/tcpip/nftables/nft_comparison.go
++++ b/pkg/tcpip/nftables/nft_comparison.go
+@@ -30,8 +30,9 @@ import (
+ // value and breaks (by setting the verdict register to NFT_BREAK) from the rule
+ // if the comparison is false.
+ // Note: comparison operations are not supported for the verdict register.
++// +stateify savable
+ type comparison struct {
+-	data    []byte // Data to compare the source register to.
++	data    []byte `state:".(savedBytes)"` // Data to compare the source register to.
+ 	sregIdx int    // Index of the source register in registerSet.data.
+ 	cop     cmpOp  // Comparison operator.
+ }
+diff --git a/pkg/tcpip/nftables/nft_counter.go b/pkg/tcpip/nftables/nft_counter.go
+index 6be6272..fb1dc75 100644
+--- a/pkg/tcpip/nftables/nft_counter.go
++++ b/pkg/tcpip/nftables/nft_counter.go
+@@ -15,21 +15,21 @@
+ package nftables
+ 
+ import (
+-	"sync/atomic"
+-
+ 	"gvisor.dev/gvisor/pkg/abi/linux"
++	"gvisor.dev/gvisor/pkg/atomicbitops"
+ 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+ 	"gvisor.dev/gvisor/pkg/syserr"
+ )
+ 
+ // counter is an operation that increments a counter for the packets and number
+ // of bytes each time the operation is evaluated.
++// +stateify savable
+ type counter struct {
+ 	// Must be thread-safe because data stored here is updated for each evaluation
+ 	// and evaluations can happen in parallel for processing multiple packets.
+ 
+-	bytes   atomic.Uint64 // Number of bytes that have passed through counter.
+-	packets atomic.Uint64 // Number of packets that have passed through counter.
++	bytes   atomicbitops.Uint64 // Number of bytes that have passed through counter.
++	packets atomicbitops.Uint64 // Number of packets that have passed through counter.
+ }
+ 
+ // newCounter creates a new counter operation.
+diff --git a/pkg/tcpip/nftables/nft_ct.go b/pkg/tcpip/nftables/nft_ct.go
+index a793c24..b80704b 100644
+--- a/pkg/tcpip/nftables/nft_ct.go
++++ b/pkg/tcpip/nftables/nft_ct.go
+@@ -73,6 +73,7 @@ func (k ctKey) String() string {
+ }
+ 
+ // ctGet loads conntrack data into a register.
++// +stateify savable
+ type ctGet struct {
+ 	// key is the key to query conntrack for.
+ 	key uint32
+@@ -85,6 +86,7 @@ type ctGet struct {
+ }
+ 
+ // ctSet sets data from a register.
++// +stateify savable
+ type ctSet struct {
+ 	// key is the key to set data for.
+ 	key uint32
+diff --git a/pkg/tcpip/nftables/nft_fib.go b/pkg/tcpip/nftables/nft_fib.go
+index b2b5c5c..c5122d1 100644
+--- a/pkg/tcpip/nftables/nft_fib.go
++++ b/pkg/tcpip/nftables/nft_fib.go
+@@ -28,6 +28,7 @@ import (
+ )
+ 
+ // fib is an operation that queries the routing table.
++// +stateify savable
+ type fib struct {
+ 	result  int
+ 	flags   uint32
+diff --git a/pkg/tcpip/nftables/nft_immediate.go b/pkg/tcpip/nftables/nft_immediate.go
+index 816b01d..64a67df 100644
+--- a/pkg/tcpip/nftables/nft_immediate.go
++++ b/pkg/tcpip/nftables/nft_immediate.go
+@@ -24,10 +24,11 @@ import (
+ )
+ 
+ // immediate is an operation that sets the data in a register.
++// +stateify savable
+ type immediate struct {
+ 	dregIdx  int     // Index of the destination register in registerSet.data.
+ 	dataType uint32  // Type of data in the register (NFT_DATA_VALUE or NFT_DATA_VERDICT).
+-	data     []byte  // optional
++	data     []byte  `state:".(savedBytes)"` // optional
+ 	verdict  Verdict // optional
+ }
+ 
+diff --git a/pkg/tcpip/nftables/nft_last.go b/pkg/tcpip/nftables/nft_last.go
+index 7d4d7d8..8f50d42 100644
+--- a/pkg/tcpip/nftables/nft_last.go
++++ b/pkg/tcpip/nftables/nft_last.go
+@@ -15,7 +15,7 @@
+ package nftables
+ 
+ import (
+-	"sync/atomic"
++	"gvisor.dev/gvisor/pkg/atomicbitops"
+ 
+ 	"gvisor.dev/gvisor/pkg/log"
+ 	"gvisor.dev/gvisor/pkg/syserr"
+@@ -24,16 +24,17 @@ import (
+ // last is an operation that records the last time the operation was evaluated
+ // for the purpose of tracking the last time the rule has matched a packet.
+ // Note: no explicit constructor bc no fields need to be set (use &last{}).
++// +stateify savable
+ type last struct {
+ 	// Must be thread-safe because data stored here is updated for each evaluation
+ 	// and evaluations can happen in parallel for processing multiple packets.
+ 
+ 	// timestampMS is the time of last evaluation as a millisecond unix time.
+ 	// Milliseconds chosen as units because closest in magnitude to jiffies.
+-	timestampMS atomic.Int64
++	timestampMS atomicbitops.Int64
+ 
+ 	// set is whether the operation has been evaluated at least once.
+-	set atomic.Bool
++	set atomicbitops.Bool
+ 
+ 	// Note: The last operation has not been observed in the nft binary debug
+ 	// output, so it has no interpretation, though it is fully implemented.
+diff --git a/pkg/tcpip/nftables/nft_lookup.go b/pkg/tcpip/nftables/nft_lookup.go
+index 3274d7f..caa0e39 100644
+--- a/pkg/tcpip/nftables/nft_lookup.go
++++ b/pkg/tcpip/nftables/nft_lookup.go
+@@ -25,6 +25,7 @@ import (
+ 
+ // lookup represents a lookup operation.
+ // Matches Linux net/netfilter/nft_lookup.c.
++// +stateify savable
+ type lookupOp struct {
+ 	// sregIdx represents the index of the key in the register set.
+ 	sregIdx int
+diff --git a/pkg/tcpip/nftables/nft_masq.go b/pkg/tcpip/nftables/nft_masq.go
+index d6be144..3756561 100644
+--- a/pkg/tcpip/nftables/nft_masq.go
++++ b/pkg/tcpip/nftables/nft_masq.go
+@@ -26,6 +26,7 @@ import (
+ )
+ 
+ // masqOp corresponds to the NFT_MASQ expression.
++// +stateify savable
+ type masqOp struct {
+ 	// Index of the source register for the minimum protocol in the register set.
+ 	sregProtoMinIdx int8
+diff --git a/pkg/tcpip/nftables/nft_metaload.go b/pkg/tcpip/nftables/nft_metaload.go
+index 8f77eed..9ae0c8f 100644
+--- a/pkg/tcpip/nftables/nft_metaload.go
++++ b/pkg/tcpip/nftables/nft_metaload.go
+@@ -27,6 +27,7 @@ import (
+ // metaLoad is an operation that loads specific meta data into a register.
+ // Note: meta operations are not supported for the verdict register.
+ // TODO(b/345684870): Support retrieving more meta fields for Meta Load.
++// +stateify savable
+ type metaLoad struct {
+ 	key     metaKey // Meta key specifying what data to retrieve.
+ 	dregIdx int     // Index of the destination register in registerSet.data.
+diff --git a/pkg/tcpip/nftables/nft_metaset.go b/pkg/tcpip/nftables/nft_metaset.go
+index a645cb1..074a48a 100644
+--- a/pkg/tcpip/nftables/nft_metaset.go
++++ b/pkg/tcpip/nftables/nft_metaset.go
+@@ -27,6 +27,7 @@ import (
+ // register.
+ // Note: meta operations are not supported for the verdict register.
+ // TODO(b/345684870): Support setting more meta fields for Meta Set.
++// +stateify savable
+ type metaSet struct {
+ 	key     metaKey // Meta key specifying what data to set.
+ 	sregIdx int     // Index of the source register in registerSet.data.
+diff --git a/pkg/tcpip/nftables/nft_nat.go b/pkg/tcpip/nftables/nft_nat.go
+index 89ed521..cebd04d 100644
+--- a/pkg/tcpip/nftables/nft_nat.go
++++ b/pkg/tcpip/nftables/nft_nat.go
+@@ -27,6 +27,7 @@ import (
+ )
+ 
+ // natOp represents the NFT_NAT expression.
++// +stateify savable
+ type natOp struct {
+ 	// sregAddrMinIdx is the starting index in the register set to read/write address min data.
+ 	sregAddrMinIdx int8
+@@ -106,6 +107,7 @@ func (n *natOp) updateReferences(table *Table, sourceTable *Table, sourceOp oper
+ func (n *natOp) destroy() {}
+ 
+ // nfNatRange is the equivalent of struct nf_nat_range2 in Linux.
++// +stateify savable
+ type nfNatRange struct {
+ 	minAddr  tcpip.Address
+ 	maxAddr  tcpip.Address
+diff --git a/pkg/tcpip/nftables/nft_payload_load.go b/pkg/tcpip/nftables/nft_payload_load.go
+index 7c8dcb7..3b1fef1 100644
+--- a/pkg/tcpip/nftables/nft_payload_load.go
++++ b/pkg/tcpip/nftables/nft_payload_load.go
+@@ -27,6 +27,7 @@ import (
+ // payloadLoad is an operation that loads data from the packet payload into a
+ // register.
+ // Note: payload operations are not supported for the verdict register.
++// +stateify savable
+ type payloadLoad struct {
+ 	base    payloadBase // Payload base to access data from.
+ 	offset  uint8       // Number of bytes to skip after the base.
+diff --git a/pkg/tcpip/nftables/nft_payload_set.go b/pkg/tcpip/nftables/nft_payload_set.go
+index feba1ed..9d04518 100644
+--- a/pkg/tcpip/nftables/nft_payload_set.go
++++ b/pkg/tcpip/nftables/nft_payload_set.go
+@@ -29,6 +29,7 @@ import (
+ // payloadSet is an operation that sets data in the packet payload to the value
+ // in a register.
+ // Note: payload operations are not supported for the verdict register.
++// +stateify savable
+ type payloadSet struct {
+ 	base       payloadBase // Payload base to access data from.
+ 	offset     uint8       // Number of bytes to skip after the base for data.
+diff --git a/pkg/tcpip/nftables/nft_ranged.go b/pkg/tcpip/nftables/nft_ranged.go
+index 89544d6..876ab99 100644
+--- a/pkg/tcpip/nftables/nft_ranged.go
++++ b/pkg/tcpip/nftables/nft_ranged.go
+@@ -29,9 +29,10 @@ import (
+ // an inclusive range and breaks if the comparison is false.
+ // Note: ranged operations are not supported for the verdict register.
+ // Note: named "ranged" because "range" is a reserved keyword in Go.
++// +stateify savable
+ type ranged struct {
+-	low     []byte // Data to compare the source register to.
+-	high    []byte // Data to compare the source register to.
++	low     []byte `state:".(savedBytes)"` // Data to compare the source register to.
++	high    []byte `state:".(savedBytes)"` // Data to compare the source register to.
+ 	sregIdx int    // Index of the source register in registerSet.data.
+ 	rop     rngOp  // Range operator.
+ 
+diff --git a/pkg/tcpip/nftables/nft_route.go b/pkg/tcpip/nftables/nft_route.go
+index c443f27..9264f0d 100644
+--- a/pkg/tcpip/nftables/nft_route.go
++++ b/pkg/tcpip/nftables/nft_route.go
+@@ -26,6 +26,7 @@ import (
+ 
+ // route is an operation that loads specific route data into a register.
+ // Note: route operations are not supported for the verdict register.
++// +stateify savable
+ type route struct {
+ 	key     routeKey // Route key specifying what data to retrieve.
+ 	dregIdx int      // Index of the destination register in registerSet.data.
+diff --git a/pkg/tcpip/nftables/nft_xt_addrtype.go b/pkg/tcpip/nftables/nft_xt_addrtype.go
+index 9033081..3378498 100644
+--- a/pkg/tcpip/nftables/nft_xt_addrtype.go
++++ b/pkg/tcpip/nftables/nft_xt_addrtype.go
+@@ -30,6 +30,7 @@ import (
+ 
+ // addrTypeMatchInfo stores params for addrtype match evaluation.
+ // Ref: net/netfilter/xt_addrtype.c:xt_addrtype_info_v1
++// +stateify savable
+ type addrTypeMatchInfo struct {
+ 	// sourceMask is the bitmask of XT_ADDRTYPE_* types allowed for the source address.
+ 	sourceMask uint16
+@@ -53,11 +54,12 @@ type addrTypeMatchInfo struct {
+ 
+ // compatAddrtypeMatch implements the "addrtype" xtables match extension.
+ // It evaluates source and destination routing address types against FIB route lookups.
++// +stateify savable
+ type compatAddrtypeMatch struct {
+ 	// revision is the XTables addrtype match extension revision (0 or 1).
+ 	revision uint32
+ 	// infoData is the raw netlink attribute payload for serialization (NFTA_MATCH_INFO).
+-	infoData []byte
++	infoData []byte `state:".(savedBytes)"`
+ 	// info holds the precomputed source/destination masks and interface limit flags.
+ 	info addrTypeMatchInfo
+ }
+diff --git a/pkg/tcpip/nftables/nft_xt_conntrack.go b/pkg/tcpip/nftables/nft_xt_conntrack.go
+index e647246..285dd15 100644
+--- a/pkg/tcpip/nftables/nft_xt_conntrack.go
++++ b/pkg/tcpip/nftables/nft_xt_conntrack.go
+@@ -29,6 +29,7 @@ import (
+ 
+ // ctMatchInfo stores params for conntrack match evaluation.
+ // Ref: net/netfilter/xt_conntrack.c:xt_conntrack_mtinfo2
++// +stateify savable
+ type ctMatchInfo struct {
+ 	// checkState indicates if state matching is enabled.
+ 	checkState bool
+@@ -46,11 +47,12 @@ type ctMatchInfo struct {
+ // compatCTMatch implements the "conntrack" xtables match extension.
+ // It evaluates connection tracking state and
+ // direction against packet conntrack info.
++// +stateify savable
+ type compatCTMatch struct {
+ 	// revision is the XTables conntrack match extension revision (1, 2, or 3).
+ 	revision uint32
+ 	// infoData is the raw netlink attribute payload for serialization (NFTA_MATCH_INFO).
+-	infoData []byte
++	infoData []byte `state:".(savedBytes)"`
+ 	// info holds the precomputed match flags and state masks.
+ 	info ctMatchInfo
+ }
+diff --git a/pkg/tcpip/nftables/nft_xt_masq.go b/pkg/tcpip/nftables/nft_xt_masq.go
+index 4772544..5bf9ca8 100644
+--- a/pkg/tcpip/nftables/nft_xt_masq.go
++++ b/pkg/tcpip/nftables/nft_xt_masq.go
+@@ -32,6 +32,7 @@ import (
+ 
+ // masqTargetInfo stores precomputed port range parameters for masq target.
+ // Ref: net/netfilter/xt_masquerade.c
++// +stateify savable
+ type masqTargetInfo struct {
+ 	// netProto is the expected network protocol number (IPv4 or IPv6).
+ 	netProto tcpip.NetworkProtocolNumber
+@@ -42,11 +43,12 @@ type masqTargetInfo struct {
+ }
+ 
+ // compatMASQTarget implements the xtables MASQUERADE target extension.
++// +stateify savable
+ type compatMASQTarget struct {
+ 	// revision is the XTables MASQUERADE target extension revision.
+ 	revision uint32
+ 	// infoData is the raw netlink attribute payload; saved for dump.
+-	infoData []byte
++	infoData []byte `state:".(savedBytes)"`
+ 	// info contains the port range parameters.
+ 	info masqTargetInfo
+ }
+diff --git a/pkg/tcpip/nftables/nft_xt_match.go b/pkg/tcpip/nftables/nft_xt_match.go
+index de9a318..7711b6d 100644
+--- a/pkg/tcpip/nftables/nft_xt_match.go
++++ b/pkg/tcpip/nftables/nft_xt_match.go
+@@ -27,13 +27,11 @@ import (
+ 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+ 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+ 	"gvisor.dev/gvisor/pkg/syserr"
++	"gvisor.dev/gvisor/pkg/tcpip/header"
+ 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+ )
+ 
+-const (
+-	tcpudpRevision1   = 1
+-	tcpudpMaxRevision = tcpudpRevision1
+-)
++const tcpudpMaxRevision = 0
+ 
+ // lookupTCPUDPRevision validates if a tcp/udp match revision is supported
+ // and returns the best revision.
+@@ -62,48 +60,125 @@ func lookupCompatMatchRevision(name string, rev uint32, family stack.AddressFami
+ 	}
+ }
+ 
+-// compatNoopMatch implements pass-through xtables matches like "tcp" and "udp".
+-// TODO: b/505405732 - Support xt_tcp/xt_udp.
+-type compatNoopMatch struct {
++// compatTransportMatch implements revision-zero xt_tcp and xt_udp matching.
++// +stateify savable
++type compatTransportMatch struct {
+ 	// name is the name of the match extension (e.g., "tcp" or "udp").
+ 	name string
+ 	// revision is the match extension revision.
+ 	revision uint32
+ 	// infoData is the raw netlink attribute payload; saved for dump.
+-	infoData []byte
++	infoData []byte `state:".(savedBytes)"`
+ }
+ 
+ // Ref: net/netfilter/xt_tcpudp.c
+-func (op *compatNoopMatch) evaluate(regs *registerSet, evalCtx opEvalCtx) {
+-	regs.verdict = Verdict{Code: VC(linux.NFT_CONTINUE)}
++func (op *compatTransportMatch) evaluate(regs *registerSet, evalCtx opEvalCtx) {
++	matched, hotdrop := op.matches(evalCtx.pkt)
++	if hotdrop {
++		regs.verdict = Verdict{Code: VC(linux.NF_DROP)}
++	} else if !matched {
++		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
++	}
++}
++
++func transportPortMatches(start, end, port uint16, inverse bool) bool {
++	return (start <= port && port <= end) != inverse
++}
++
++// matches follows xt_tcpudp.c, including inversion, malformed TCP options, and
++// the distinction between a non-matching packet and a packet to be dropped.
++func (op *compatTransportMatch) matches(pkt *stack.PacketBuffer) (bool, bool) {
++	protocol := header.UDPProtocolNumber
++	minimum := header.UDPMinimumSize
++	if op.name == MatchTCP {
++		protocol = header.TCPProtocolNumber
++		minimum = header.TCPMinimumSize
++	}
++	if pkt.TransportProtocolNumber != protocol {
++		return false, false
++	}
++	if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
++		net := header.IPv4(pkt.NetworkHeader().Slice())
++		if len(net) < header.IPv4MinimumSize {
++			return false, true
++		}
++		if offset := net.FragmentOffset(); offset != 0 {
++			return false, op.name == MatchTCP && offset == 8
++		}
++	}
++	buf := pkt.TransportHeader().Slice()
++	if len(buf) < minimum {
++		return false, true
++	}
++	if op.name == MatchUDP {
++		if len(op.infoData) < linux.SizeOfXTUDP {
++			return false, true
++		}
++		var info linux.XTUDP
++		info.UnmarshalBytes(op.infoData)
++		udp := header.UDP(buf)
++		return transportPortMatches(info.SourcePortStart, info.SourcePortEnd, udp.SourcePort(), info.InverseFlags&1 != 0) &&
++			transportPortMatches(info.DestinationPortStart, info.DestinationPortEnd, udp.DestinationPort(), info.InverseFlags&2 != 0), false
++	}
++	if len(op.infoData) < linux.SizeOfXTTCP {
++		return false, true
++	}
++	var info linux.XTTCP
++	info.UnmarshalBytes(op.infoData)
++	tcp := header.TCP(buf)
++	if !transportPortMatches(info.SourcePortStart, info.SourcePortEnd, tcp.SourcePort(), info.InverseFlags&linux.XT_TCP_INV_SRCPT != 0) ||
++		!transportPortMatches(info.DestinationPortStart, info.DestinationPortEnd, tcp.DestinationPort(), info.InverseFlags&linux.XT_TCP_INV_DSTPT != 0) ||
++		((uint8(tcp.Flags())&info.FlagMask == info.FlagCompare) == (info.InverseFlags&linux.XT_TCP_INV_FLAGS != 0)) {
++		return false, false
++	}
++	if info.Option == 0 {
++		return true, false
++	}
++	end := int(tcp.DataOffset())
++	if end < header.TCPMinimumSize || end > len(buf) {
++		return false, true
++	}
++	options := buf[header.TCPMinimumSize:end]
++	inverse := info.InverseFlags&linux.XT_TCP_INV_OPTION != 0
++	for i := 0; i < len(options); {
++		if options[i] == info.Option {
++			return !inverse, false
++		}
++		if options[i] < 2 || i == len(options)-1 || options[i+1] == 0 {
++			i++
++		} else {
++			i += int(options[i+1])
++		}
++	}
++	return inverse, false
+ }
+ 
+ // checkCompatibility implements operation.checkCompatibility.
+-func (op *compatNoopMatch) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
++func (op *compatTransportMatch) checkCompatibility(cCtx *opCompatCtx) *syserr.AnnotatedError {
+ 	return nil
+ }
+ 
+ // deepCopy implements operation.deepCopy.
+-func (op *compatNoopMatch) deepCopy() operation {
++func (op *compatTransportMatch) deepCopy() operation {
+ 	opCopy := *op
+ 	opCopy.infoData = append([]byte(nil), op.infoData...)
+ 	return &opCopy
+ }
+ 
+ // updateReferences implements operation.updateReferences.
+-func (op *compatNoopMatch) updateReferences(_ *Table, _ *Table, _ operation) {}
++func (op *compatTransportMatch) updateReferences(_ *Table, _ *Table, _ operation) {}
+ 
+ // destroy implements operation.destroy.
+-func (op *compatNoopMatch) destroy() {}
++func (op *compatTransportMatch) destroy() {}
+ 
+ // GetExprName implements operation.GetExprName.
+-func (op *compatNoopMatch) GetExprName() string {
++func (op *compatTransportMatch) GetExprName() string {
+ 	return OpTypeMatch.String()
+ }
+ 
+ // Dump implements operation.Dump.
+ // Ref: net/netfilter/nft_compat.c:__nft_match_dump()
+-func (op *compatNoopMatch) Dump() ([]byte, *syserr.AnnotatedError) {
++func (op *compatTransportMatch) Dump() ([]byte, *syserr.AnnotatedError) {
+ 	m := &nlmsg.Message{}
+ 	m.PutAttrString(linux.NFTA_MATCH_NAME, op.name)
+ 	m.PutAttr(linux.NFTA_MATCH_REV, nlmsg.PutU32(op.revision))
+@@ -168,7 +243,23 @@ func initMatch(tab *Table, exprInfo ExprInfo) (operation, *syserr.AnnotatedError
+ 		if rev > tcpudpMaxRevision {
+ 			return nil, syserr.NewAnnotatedError(syserr.ErrNoSuchFile, fmt.Sprintf("%s revision %d not supported", name, rev))
+ 		}
+-		return &compatNoopMatch{name: name, revision: rev, infoData: infoData}, nil
++		if len(infoData) != 16 {
++			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "xt_tcp/xt_udp requires an aligned match payload of 16 bytes")
++		}
++		if name == MatchTCP {
++			var info linux.XTTCP
++			info.UnmarshalBytes(infoData)
++			if info.InverseFlags & ^uint8(15) != 0 {
++				return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "invalid xt_tcp inverse flags")
++			}
++		} else {
++			var info linux.XTUDP
++			info.UnmarshalBytes(infoData)
++			if info.InverseFlags & ^uint8(3) != 0 {
++				return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "invalid xt_udp inverse flags")
++			}
++		}
++		return &compatTransportMatch{name: name, revision: rev, infoData: infoData}, nil
+ 	default:
+ 		return nil, syserr.NewAnnotatedError(syserr.ErrNoSuchFile, fmt.Sprintf("match extension %s not supported", name))
+ 	}
+diff --git a/pkg/tcpip/nftables/nft_xt_nat.go b/pkg/tcpip/nftables/nft_xt_nat.go
+index 3605a48..73fcddb 100644
+--- a/pkg/tcpip/nftables/nft_xt_nat.go
++++ b/pkg/tcpip/nftables/nft_xt_nat.go
+@@ -31,6 +31,7 @@ import (
+ 
+ // natTargetInfo stores params for SNAT/DNAT target.
+ // Ref: net/netfilter/nft_nat.c
++// +stateify savable
+ type natTargetInfo struct {
+ 	// netProto is the expected network protocol number (IPv4 or IPv6).
+ 	netProto tcpip.NetworkProtocolNumber
+@@ -47,13 +48,14 @@ type natTargetInfo struct {
+ }
+ 
+ // compatNATTarget implements the xtables SNAT and DNAT target extensions.
++// +stateify savable
+ type compatNATTarget struct {
+ 	// name is the name of the NAT target extension ("SNAT" or "DNAT").
+ 	name string
+ 	// revision is the XTables NAT target extension revision (0, 1, ...).
+ 	revision uint32
+ 	// infoData is the raw netlink attribute payload; saved for dump.
+-	infoData []byte
++	infoData []byte `state:".(savedBytes)"`
+ 	// info holds the NAT params.
+ 	info natTargetInfo
+ }
+diff --git a/pkg/tcpip/nftables/nftables_set.go b/pkg/tcpip/nftables/nftables_set.go
+index 9114085..45baf94 100644
+--- a/pkg/tcpip/nftables/nftables_set.go
++++ b/pkg/tcpip/nftables/nftables_set.go
+@@ -1468,6 +1468,7 @@ func (nf *NFTables) GetSetElements(attrs map[uint16]nlmsg.BytesView, family stac
+ // Add set backend implementations below.
+ 
+ // setMapBackend is a backend to handle map operations.
++// +stateify savable
+ type setMapBackend struct {
+ 	keyLen  int
+ 	dataLen int
+diff --git a/pkg/tcpip/nftables/nftables_test.go b/pkg/tcpip/nftables/nftables_test.go
+index 04d2b77..5785b13 100644
+--- a/pkg/tcpip/nftables/nftables_test.go
++++ b/pkg/tcpip/nftables/nftables_test.go
+@@ -5775,12 +5775,12 @@ func TestCompatOperationDeepCopy(t *testing.T) {
+ 		},
+ 		{
+ 			name: "noop match",
+-			op: &compatNoopMatch{
++			op: &compatTransportMatch{
+ 				name:     "tcp",
+ 				revision: 0,
+ 				infoData: []byte{1, 2, 3, 4},
+ 			},
+-			opts: cmp.AllowUnexported(compatNoopMatch{}),
++			opts: cmp.AllowUnexported(compatTransportMatch{}),
+ 		},
+ 	} {
+ 		t.Run(tc.name, func(t *testing.T) {
+@@ -5799,7 +5799,7 @@ func TestCompatOpCompatibility(t *testing.T) {
+ 	masq := &compatMASQTarget{}
+ 	snat := &compatNATTarget{info: natTargetInfo{natType: stack.SNAT}}
+ 	dnat := &compatNATTarget{info: natTargetInfo{natType: stack.DNAT}}
+-	noop := &compatNoopMatch{name: "tcp"}
++	noop := &compatTransportMatch{name: "tcp"}
+ 	const nonBaseChainType = BaseChainType(-1)
+ 
+ 	makeCtx := func(bcType BaseChainType, hook stack.NFHook) *opCompatCtx {
+@@ -6313,19 +6313,63 @@ func TestCompatNATTargetEvaluation(t *testing.T) {
+ 	})
+ }
+ 
+-// Tests that pass-through no-op compat matches (like tcp/udp) return NFT_CONTINUE.
+-func TestCompatNoopMatchEvaluation(t *testing.T) {
+-	op := &compatNoopMatch{
+-		name:     "tcp",
+-		revision: 0,
+-		infoData: []byte{1, 2, 3, 4},
++func TestCompatTransportMatchEvaluation(t *testing.T) {
++	for _, tc := range []struct {
++		name                           string
++		dport                          uint16
++		inverse, option, mask, compare uint8
++		fragment                       uint16
++		dataOffset                     uint8
++		want                           uint32
++	}{
++		{"matching port", 8080, 0, 0, 0, 0, 0, 24, VC(linux.NFT_CONTINUE)},
++		{"other published port", 80, 0, 0, 0, 0, 0, 24, VC(linux.NFT_BREAK)},
++		{"inverted matching port", 8080, 2, 0, 0, 0, 0, 24, VC(linux.NFT_BREAK)},
++		{"inverted other port", 80, 2, 0, 0, 0, 0, 24, VC(linux.NFT_CONTINUE)},
++		{"SYN flag", 8080, 0, 0, 2, 2, 0, 24, VC(linux.NFT_CONTINUE)},
++		{"ACK flag", 8080, 0, 0, 16, 16, 0, 24, VC(linux.NFT_BREAK)},
++		{"inverted flags", 8080, 4, 0, 16, 16, 0, 24, VC(linux.NFT_CONTINUE)},
++		{"MSS option", 8080, 0, 2, 0, 0, 0, 24, VC(linux.NFT_CONTINUE)},
++		{"missing option", 8080, 0, 3, 0, 0, 0, 24, VC(linux.NFT_BREAK)},
++		{"inverted missing option", 8080, 8, 3, 0, 0, 0, 24, VC(linux.NFT_CONTINUE)},
++		{"truncated options", 8080, 0, 2, 0, 0, 0, 28, VC(linux.NF_DROP)},
++		{"tiny TCP fragment", 8080, 0, 0, 0, 0, 8, 24, VC(linux.NF_DROP)},
++		{"noninitial TCP fragment", 8080, 0, 0, 0, 0, 16, 24, VC(linux.NFT_BREAK)},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: 44})
++			defer pkt.DecRef()
++			pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
++			pkt.TransportProtocolNumber = header.TCPProtocolNumber
++			tcp := header.TCP(pkt.TransportHeader().Push(24))
++			tcp.Encode(&header.TCPFields{SrcPort: 12345, DstPort: 8080, DataOffset: tc.dataOffset, Flags: header.TCPFlagSyn})
++			copy(tcp[20:], []byte{2, 4, 5, 180})
++			ip := header.IPv4(pkt.NetworkHeader().Push(20))
++			ip.Encode(&header.IPv4Fields{TotalLength: 44, Protocol: 6, TTL: 64, FragmentOffset: tc.fragment})
++			info := linux.XTTCP{SourcePortEnd: 65535, DestinationPortStart: tc.dport, DestinationPortEnd: tc.dport, InverseFlags: tc.inverse, Option: tc.option, FlagMask: tc.mask, FlagCompare: tc.compare}
++			data := make([]byte, 16)
++			info.MarshalBytes(data)
++			op := &compatTransportMatch{name: MatchTCP, infoData: data}
++			regs := newRegisterSet()
++			op.evaluate(&regs, opEvalCtx{pkt: pkt})
++			if regs.verdict.Code != tc.want {
++				t.Fatalf("verdict = %d, want %d", regs.verdict.Code, tc.want)
++			}
++		})
+ 	}
+-	regs := &registerSet{verdict: Verdict{Code: VC(linux.NF_DROP)}}
+-	pkt := makeArbitraryIPv4Packet()
+-	defer pkt.DecRef()
+-
+-	op.evaluate(regs, opEvalCtx{pkt: pkt})
+-	if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
+-		t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, VC(linux.NFT_CONTINUE))
++	for _, inverse := range []uint8{0, 1, 2, 3} {
++		for _, dport := range []uint16{53, 54} {
++			pkt := makeUDPv4Packet(tcpip.AddrFrom4([4]byte{10, 0, 0, 1}), tcpip.AddrFrom4([4]byte{10, 0, 0, 2}), 12345, dport)
++			info := linux.XTUDP{SourcePortStart: 12345, SourcePortEnd: 12345, DestinationPortStart: 53, DestinationPortEnd: 53, InverseFlags: inverse}
++			data := make([]byte, 16)
++			info.MarshalBytes(data)
++			op := &compatTransportMatch{name: MatchUDP, infoData: data}
++			matched, drop := op.matches(pkt)
++			pkt.DecRef()
++			want := inverse&1 == 0 && ((dport == 53) != (inverse&2 != 0))
++			if matched != want || drop {
++				t.Fatalf("UDP inverse=%d port=%d: matched=%v drop=%v want=%v", inverse, dport, matched, drop, want)
++			}
++		}
+ 	}
+ }
+diff --git a/pkg/tcpip/nftables/nftables_types.go b/pkg/tcpip/nftables/nftables_types.go
+index ff432ff..e2479cd 100644
+--- a/pkg/tcpip/nftables/nftables_types.go
++++ b/pkg/tcpip/nftables/nftables_types.go
+@@ -43,7 +43,6 @@ package nftables
+ import (
+ 	"fmt"
+ 	"slices"
+-	"sync/atomic"
+ 	"time"
+ 
+ 	"gvisor.dev/gvisor/pkg/abi/linux"
+@@ -250,17 +249,18 @@ func StackHook(family stack.AddressFamily, hook uint32) (stack.NFHook, *syserr.A
+ 
+ // NFTables represents the nftables state for all address families.
+ // Note: unlike iptables, nftables doesn't start with any initialized tables.
++// +stateify savable
+ type NFTables struct {
+ 	filters            [stack.NumAFs]*addressFamilyFilter  // Filters for each address family.
+ 	ip4InetBaseChains  [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv4-inet family.
+ 	ip6InetBaseChains  [stack.NFNumHooks]hookFunctionStack // List of base chains for each hook in the IPv6-inet family.
+ 	clock              tcpip.Clock                         // Clock for timing evaluations.
+-	startTime          time.Time                           // Time NFTables object was created.
+-	rng                rand.RNG                            // Random number generator.
++	startTime          time.Time                           `state:".(int64)"` // Time NFTables object was created.
++	rng                rand.RNG                            `state:"nosave"`   // Random number generator.
+ 	tableHandleCounter atomicbitops.Uint64                 // Table handle counter.
+ 	genid              uint32                              // Generation ID for nftables.
+ 	connTrack          *stack.ConnTrack                    // Conntrack object for tracking connections.
+-	connTrackReaper    tcpip.Timer                         // Reaper timer for reaping timed out connections.
++	connTrackReaper    tcpip.Timer                         `state:"nosave"` // Reaper timer for reaping timed out connections.
+ 	natEnabled         bool                                // Whether the nat module is enabled.
+ 	stack              *stack.Stack                        // Parent stack object.
+ }
+@@ -270,6 +270,7 @@ var _ stack.NFTablesInterface = (*NFTables)(nil)
+ 
+ // addressFamilyFilter represents the nftables state for a specific address
+ // family.
++// +stateify savable
+ type addressFamilyFilter struct {
+ 	// family is the address family of the filter.
+ 	family stack.AddressFamily
+@@ -291,6 +292,7 @@ type addressFamilyFilter struct {
+ // Table represents a single table as a collection of named chains.
+ // Note: as tables are simply collections of chains, evaluations aren't done on
+ // the table-level and instead are done on the chain- and hook- level.
++// +stateify savable
+ type Table struct {
+ 	// name is the name of the table.
+ 	name string
+@@ -327,7 +329,7 @@ type Table struct {
+ 
+ 	// userData is the user-specified metadata for the table. This is not used
+ 	// by the kernel, but rather userspace applications like nft binary.
+-	userData []byte
++	userData []byte `state:".(savedBytes)"`
+ }
+ 
+ // TableInfo represents data between an AFfilter and a Table.
+@@ -345,6 +347,7 @@ type HookInfo struct {
+ 
+ // hookFunctionStack represents the list of base chains for a specific hook.
+ // The stack is ordered by priority and built as chains are added to tables.
++// +stateify savable
+ type hookFunctionStack struct {
+ 	baseChains    []*Chain
+ 	natBaseChains []*Chain
+@@ -368,6 +371,7 @@ const (
+ // the netfilter pipeline to be called whenever the hook is encountered.
+ // Regular chains have a nil hook and must be called by base chains for
+ // evaluation.
++// +stateify savable
+ type Chain struct {
+ 	// name is the name of the chain.
+ 	name string
+@@ -394,7 +398,7 @@ type Chain struct {
+ 
+ 	// userData is the user-specified metadata for the chain. This is not used
+ 	// by the kernel, but rather userspace applications like nft binary.
+-	userData []byte
++	userData []byte `state:".(savedBytes)"`
+ 
+ 	// From net/netfilter/nf_tables_api.c: nft_data_hold
+ 	// chainUse is the number of jump references to this chain.
+@@ -408,9 +412,10 @@ type Chain struct {
+ }
+ 
+ // ChainCounter maintains thread-safe packet and byte counters for base chains.
++// +stateify savable
+ type ChainCounter struct {
+-	bytes   atomic.Uint64
+-	packets atomic.Uint64
++	bytes   atomicbitops.Uint64
++	packets atomicbitops.Uint64
+ }
+ 
+ // newChainCounter creates a new counter with initial byte and packet counts.
+@@ -436,6 +441,7 @@ func (c *ChainCounter) Add(pkts, bytes uint64) {
+ // evaluation of a packet.
+ 
+ // BaseChainInfo stores hook-related info for attaching a chain to the pipeline.
++// +stateify savable
+ type BaseChainInfo struct {
+ 	// LINT.IfChange(base_chain_info)
+ 
+@@ -551,6 +557,7 @@ var supportedHooksForBaseChainTypes [NumBaseChainTypes][]stack.NFHook = [NumBase
+ // lower priority value have precedence.
+ // Use the respective NewIntPriority or NewStandardPriority to create new
+ // Priority objects.
++// +stateify savable
+ type Priority struct {
+ 	// Contents are hidden to prevent creating invalid Priority objects.
+ 
+@@ -721,18 +728,20 @@ func validateBaseChainInfo(info *BaseChainInfo, family stack.AddressFamily) *sys
+ // Rules must be registered to a chain to be used and evaluated, and rules that
+ // have been registered to a chain cannot be modified.
+ // Note: Empty rules should be created directly (via &Rule{}).
++// +stateify savable
+ type Rule struct {
+ 	chain  *Chain
+ 	ops    []operation
+ 	handle uint64
+-	udata  []byte
++	udata  []byte `state:".(savedBytes)"`
+ }
+ 
+ // ExprInfo represents the information for a single expression nested under
+ // NFTA_EXPRESSIONS.
++// +stateify savable
+ type ExprInfo struct {
+ 	ExprName string
+-	ExprData nlmsg.AttrsView
++	ExprData nlmsg.AttrsView `state:".(savedBytes)"`
+ }
+ 
+ type opCompatCtx struct {
+@@ -794,7 +803,7 @@ var (
+ 	// xtables operations
+ 	_ operation = (*compatAddrtypeMatch)(nil)
+ 	_ operation = (*compatCTMatch)(nil)
+-	_ operation = (*compatNoopMatch)(nil)
++	_ operation = (*compatTransportMatch)(nil)
+ 	_ operation = (*compatNATTarget)(nil)
+ 	_ operation = (*compatMASQTarget)(nil)
+ )
+@@ -1022,6 +1031,7 @@ type NftSetBackend interface {
+ 
+ // Set represents an nftables set.
+ // Ref: include/net/netfilter/nf_tables.h:nft_set
++// +stateify savable
+ type nftSet struct {
+ 	// name represents the unique name for this set.
+ 	name string
+@@ -1052,7 +1062,7 @@ type nftSet struct {
+ 	// TODO: b/505409691 - Add support for set policy.
+ 	policy uint32
+ 	// udata represents the user data of the set.
+-	udata []byte
++	udata []byte `state:".(savedBytes)"`
+ 	// exprInfos represents the stateful nft expressions/ops;
+ 	// counter, limit, etc.
+ 	// that are directly associated with the individual set elements.
+@@ -1085,23 +1095,25 @@ type nftSet struct {
+ }
+ 
+ // dataOrVerdict represents the data or verdict of the set element.
++// +stateify savable
+ type dataOrVerdict struct {
+ 	isVerdict bool
+ 	verdict   Verdict
+-	data      []byte
++	data      []byte `state:".(savedBytes)"`
+ }
+ 
+ // nftSetElem represents an element in an nftables set.
+ // Ref: include/net/netfilter/nf_tables.h:nft_set_elem
++// +stateify savable
+ type nftSetElem struct {
+ 	// startKey represents the lower bound key for the element.
+ 	// For a simple set, this is the key itself.
+ 	// For a set range, this is the lower bound of the range.
+-	startKey []byte
++	startKey []byte `state:".(savedBytes)"`
+ 	// endKey represents the upper bound key for the element.
+ 	// Only required for ranged sets.
+ 	// TODO: b/505409691 - Add support for ranged sets.
+-	endKey []byte
++	endKey []byte `state:".(savedBytes)"`
+ 	// data represents the data or verdict of the set element.
+ 	data dataOrVerdict
+ 	// ops represents the Nftables ops(counter, limit, etc.)
+@@ -1115,7 +1127,7 @@ type nftSetElem struct {
+ 	expiration uint64
+ 	// userData represents the user data that can be associated with the element.
+ 	// It's only for the user to see and has no affect on the set element.
+-	userData []byte
++	userData []byte `state:".(savedBytes)"`
+ }
+ 
+ // AFtoNetlinkAF converts a generic address family to a netfilter address family.
+@@ -1539,6 +1551,7 @@ func (nf *NFTables) DeepCopy() *NFTables {
+ //
+ 
+ // Verdict represents the result of evaluating a packet against a rule or chain.
++// +stateify savable
+ type Verdict struct {
+ 	// Code is the numeric code that represents the verdict issued.
+ 	Code uint32
+diff --git a/pkg/tcpip/nftables/save_restore.go b/pkg/tcpip/nftables/save_restore.go
+new file mode 100644
+index 0000000..336b3c7
+--- /dev/null
++++ b/pkg/tcpip/nftables/save_restore.go
+@@ -0,0 +1,161 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package nftables
++
++import (
++	"context"
++	"time"
++
++	"gvisor.dev/gvisor/pkg/rand"
++	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
++)
++
++func (nf *NFTables) saveStartTime() int64 { return nf.startTime.UnixNano() }
++
++func (nf *NFTables) loadStartTime(_ context.Context, nanos int64) {
++	nf.startTime = time.Unix(0, nanos)
++}
++
++func (nf *NFTables) afterLoad(context.Context) {
++	nf.rng = rand.RNGFrom(rand.Reader)
++}
++
++// Pause waits for the conntrack reaper to stop before state is serialized.
++func (nf *NFTables) Pause() {
++	if nf.connTrackReaper != nil {
++		nf.connTrackReaper.Stop()
++	}
++}
++
++// Resume restarts the reaper without discarding rules, counters or NAT tuples.
++func (nf *NFTables) Resume() {
++	if nf.connTrack == nil {
++		return
++	}
++	if nf.connTrackReaper == nil {
++		nf.connTrack.RestoreState(&nf.rng)
++		nf.connTrackReaper = nf.connTrack.StartReaper()
++	} else {
++		nf.connTrackReaper.Reset(time.Second)
++	}
++}
++
++// savedBytes stores opaque netlink data by value. Netlink views can overlap
++// within one packet; these are immutable values, not semantic pointer aliases.
++// +stateify savable
++type savedBytes struct {
++	Present bool
++	Data    string
++}
++
++func saveBytes(v []byte) savedBytes { return savedBytes{Present: v != nil, Data: string(v)} }
++func loadBytes(v savedBytes) []byte {
++	if !v.Present {
++		return nil
++	}
++	return []byte(v.Data)
++}
++
++func (o *immediate) saveData() savedBytes { return saveBytes(o.data) }
++
++func (o *immediate) loadData(_ context.Context, v savedBytes) { o.data = []byte(loadBytes(v)) }
++
++func (o *compatAddrtypeMatch) saveInfoData() savedBytes { return saveBytes(o.infoData) }
++
++func (o *compatAddrtypeMatch) loadInfoData(_ context.Context, v savedBytes) {
++	o.infoData = []byte(loadBytes(v))
++}
++
++func (o *comparison) saveData() savedBytes { return saveBytes(o.data) }
++
++func (o *comparison) loadData(_ context.Context, v savedBytes) { o.data = []byte(loadBytes(v)) }
++
++func (o *bitwise) saveMask() savedBytes { return saveBytes(o.mask) }
++
++func (o *bitwise) loadMask(_ context.Context, v savedBytes) { o.mask = []byte(loadBytes(v)) }
++
++func (o *bitwise) saveXor() savedBytes { return saveBytes(o.xor) }
++
++func (o *bitwise) loadXor(_ context.Context, v savedBytes) { o.xor = []byte(loadBytes(v)) }
++
++func (o *ranged) saveLow() savedBytes { return saveBytes(o.low) }
++
++func (o *ranged) loadLow(_ context.Context, v savedBytes) { o.low = []byte(loadBytes(v)) }
++
++func (o *ranged) saveHigh() savedBytes { return saveBytes(o.high) }
++
++func (o *ranged) loadHigh(_ context.Context, v savedBytes) { o.high = []byte(loadBytes(v)) }
++
++func (o *compatNATTarget) saveInfoData() savedBytes { return saveBytes(o.infoData) }
++
++func (o *compatNATTarget) loadInfoData(_ context.Context, v savedBytes) {
++	o.infoData = []byte(loadBytes(v))
++}
++
++func (o *Table) saveUserData() savedBytes { return saveBytes(o.userData) }
++
++func (o *Table) loadUserData(_ context.Context, v savedBytes) { o.userData = []byte(loadBytes(v)) }
++
++func (o *Chain) saveUserData() savedBytes { return saveBytes(o.userData) }
++
++func (o *Chain) loadUserData(_ context.Context, v savedBytes) { o.userData = []byte(loadBytes(v)) }
++
++func (o *Rule) saveUdata() savedBytes { return saveBytes(o.udata) }
++
++func (o *Rule) loadUdata(_ context.Context, v savedBytes) { o.udata = []byte(loadBytes(v)) }
++
++func (o *ExprInfo) saveExprData() savedBytes { return saveBytes(o.ExprData) }
++
++func (o *ExprInfo) loadExprData(_ context.Context, v savedBytes) {
++	o.ExprData = nlmsg.AttrsView(loadBytes(v))
++}
++
++func (o *nftSet) saveUdata() savedBytes { return saveBytes(o.udata) }
++
++func (o *nftSet) loadUdata(_ context.Context, v savedBytes) { o.udata = []byte(loadBytes(v)) }
++
++func (o *dataOrVerdict) saveData() savedBytes { return saveBytes(o.data) }
++
++func (o *dataOrVerdict) loadData(_ context.Context, v savedBytes) { o.data = []byte(loadBytes(v)) }
++
++func (o *nftSetElem) saveStartKey() savedBytes { return saveBytes(o.startKey) }
++
++func (o *nftSetElem) loadStartKey(_ context.Context, v savedBytes) { o.startKey = []byte(loadBytes(v)) }
++
++func (o *nftSetElem) saveEndKey() savedBytes { return saveBytes(o.endKey) }
++
++func (o *nftSetElem) loadEndKey(_ context.Context, v savedBytes) { o.endKey = []byte(loadBytes(v)) }
++
++func (o *nftSetElem) saveUserData() savedBytes { return saveBytes(o.userData) }
++
++func (o *nftSetElem) loadUserData(_ context.Context, v savedBytes) { o.userData = []byte(loadBytes(v)) }
++
++func (o *compatTransportMatch) saveInfoData() savedBytes { return saveBytes(o.infoData) }
++
++func (o *compatTransportMatch) loadInfoData(_ context.Context, v savedBytes) {
++	o.infoData = []byte(loadBytes(v))
++}
++
++func (o *compatMASQTarget) saveInfoData() savedBytes { return saveBytes(o.infoData) }
++
++func (o *compatMASQTarget) loadInfoData(_ context.Context, v savedBytes) {
++	o.infoData = []byte(loadBytes(v))
++}
++
++func (o *compatCTMatch) saveInfoData() savedBytes { return saveBytes(o.infoData) }
++
++func (o *compatCTMatch) loadInfoData(_ context.Context, v savedBytes) {
++	o.infoData = []byte(loadBytes(v))
++}
+diff --git a/pkg/tcpip/nftables/save_restore_test.go b/pkg/tcpip/nftables/save_restore_test.go
+new file mode 100644
+index 0000000..8e0ced1
+--- /dev/null
++++ b/pkg/tcpip/nftables/save_restore_test.go
+@@ -0,0 +1,142 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package nftables
++
++import (
++	"gvisor.dev/gvisor/pkg/tcpip/header"
++	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
++	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
++	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
++
++	"bytes"
++	"context"
++	"testing"
++
++	"gvisor.dev/gvisor/pkg/abi/linux"
++	"gvisor.dev/gvisor/pkg/rand"
++	"gvisor.dev/gvisor/pkg/state"
++	"gvisor.dev/gvisor/pkg/tcpip"
++	"gvisor.dev/gvisor/pkg/tcpip/stack"
++)
++
++func TestSaveRestoreNFTables(t *testing.T) {
++	clock := tcpip.NewStdClock()
++	st := stack.New(stack.Options{Clock: clock})
++	nf := NewNFTables(st, clock, rand.RNGFrom(rand.Reader))
++	st.SetNFTables(nf)
++	table, err := nf.AddTable(stack.IP, "saved", false)
++	if err != nil {
++		t.Fatal(err)
++	}
++	chain, err := nf.AddChainToTable(table, "output", NewBaseChainInfo(BaseChainTypeFilter, stack.NFOutput, NewIntPriority(0), "", false), "checkpoint", false, 0, nil, linux.NF_ACCEPT)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// Views from a single received netlink packet overlap. Saving them must
++	// retain their bytes without asking stateify to reconstruct packet aliases.
++	packet := make([]byte, 372)
++	copy(packet[40:], []byte("snapshot metadata"))
++	table.userData = packet[40:57]
++	chain.userData = packet[43:55]
++	rule := &Rule{udata: packet[40:52]}
++	rule.addOperation(newCounter(12345, 17))
++	rule.addOperation(mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
++	if err := chain.RegisterRule(rule, -1); err != nil {
++		t.Fatal(err)
++	}
++	nf.InitConnTrackOnce()
++	nf.Pause()
++	var buf bytes.Buffer
++	if _, err := state.Save(context.Background(), &buf, &st); err != nil {
++		t.Fatal(err)
++	}
++	var restored *stack.Stack
++	if _, err := state.Load(context.Background(), &buf, &restored); err != nil {
++		t.Fatal(err)
++	}
++	rnf := restored.NFTables().(*NFTables)
++	rnf.Resume()
++	defer rnf.Pause()
++	if rnf.stack != restored || rnf.connTrack == nf.connTrack || rnf.connTrack == nil {
++		t.Fatal("restored stack or conntrack references are incorrect")
++	}
++	rchain := rnf.filters[stack.IP].tables["saved"].chains["output"]
++	if rchain.table.afFilter.nftState != rnf {
++		t.Fatal("ruleset back-reference was lost")
++	}
++	if !bytes.Equal(rchain.table.userData, packet[40:57]) || !bytes.Equal(rchain.userData, packet[43:55]) || !bytes.Equal(rchain.rules[0].udata, packet[40:52]) {
++		t.Fatal("overlapping netlink metadata was not retained")
++	}
++	savedCounter := rchain.rules[0].ops[0].(*counter)
++	if savedCounter.bytes.Load() != 12345 || savedCounter.packets.Load() != 17 {
++		t.Fatal("rule counters lost")
++	}
++	pkt := makeArbitraryIPv4Packet()
++	defer pkt.DecRef()
++	verdict, evalErr := rnf.EvaluateHook(stack.IP, stack.NFOutput, pkt, nil)
++	if evalErr != nil || verdict.Code != VC(linux.NF_DROP) {
++		t.Fatalf("restored DROP rule: verdict=%v, err=%v", verdict, evalErr)
++	}
++	if savedCounter.packets.Load() != 18 {
++		t.Fatal("restored rule counter did not advance")
++	}
++	if rule.ops[0].(*counter).packets.Load() != 17 {
++		t.Fatal("restore modified the original ruleset")
++	}
++}
++
++func TestSaveRestoreInterfaceAddressesAndRoutes(t *testing.T) {
++	st := stack.New(stack.Options{Clock: tcpip.NewStdClock(), NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol}})
++	defer st.Destroy()
++	if err := st.CreateNIC(1, ethernet.New(loopback.New())); err != nil {
++		t.Fatal(err)
++	}
++	address := tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: tcpip.AddrFrom4([4]byte{127, 0, 0, 9}), PrefixLen: 8}}
++	if err := st.AddProtocolAddress(1, address, stack.AddressProperties{}); err != nil {
++		t.Fatal(err)
++	}
++	st.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: 1}})
++	st.Pause()
++	defer st.Resume()
++	var saved bytes.Buffer
++	if _, err := state.Save(context.Background(), &saved, &st); err != nil {
++		t.Fatal(err)
++	}
++	var restored *stack.Stack
++	if _, err := state.Load(context.Background(), &saved, &restored); err != nil {
++		t.Fatal(err)
++	}
++	restored.Restore()
++	defer restored.Destroy()
++	info, ok := restored.SingleNICInfo(1)
++	if !ok || len(info.ProtocolAddresses) != 1 || info.ProtocolAddresses[0] != address {
++		t.Fatalf("restored interface addresses: %+v", info)
++	}
++	routes := restored.GetRouteTable()
++	if len(routes) != 1 || routes[0].Destination != header.IPv4EmptySubnet || routes[0].NIC != 1 {
++		t.Fatalf("restored routes: %+v", routes)
++	}
++	// Rebinding the boot transport must retain the saved loopback configuration.
++	restored.ResetConfig()
++	if err := restored.CreateNICWithOptions(1, ethernet.New(loopback.New()), stack.NICOptions{}); err != nil {
++		t.Fatal(err)
++	}
++	restored.SetRouteTable(nil)
++	restored.Restore()
++	info, _ = restored.SingleNICInfo(1)
++	if len(info.ProtocolAddresses) != 1 || len(restored.GetRouteTable()) != 1 {
++		t.Fatal("boot network rebinding lost saved configuration")
++	}
++}
+diff --git a/pkg/tcpip/stack/addressable_endpoint_state.go b/pkg/tcpip/stack/addressable_endpoint_state.go
+index 54bf44b..e042d08 100644
+--- a/pkg/tcpip/stack/addressable_endpoint_state.go
++++ b/pkg/tcpip/stack/addressable_endpoint_state.go
+@@ -41,12 +41,10 @@ type AddressableEndpointState struct {
+ 	// AddressableEndpointState.mu
+ 	//   addressState.mu
+ 	mu addressableEndpointStateRWMutex `state:"nosave"`
+-	// TODO(b/361075310): Enable s/r for the below fields.
+-	//
+ 	// +checklocks:mu
+-	endpoints map[tcpip.Address]*addressState `state:"nosave"`
++	endpoints map[tcpip.Address]*addressState
+ 	// +checklocks:mu
+-	primary []*addressState `state:"nosave"`
++	primary []*addressState
+ }
+ 
+ // AddressableEndpointStateOptions contains options used to configure an
+@@ -738,6 +736,8 @@ func (a *AddressableEndpointState) Cleanup() {
+ var _ AddressEndpoint = (*addressState)(nil)
+ 
+ // addressState holds state for an address.
++//
++// +stateify savable
+ type addressState struct {
+ 	addressableEndpointState *AddressableEndpointState
+ 	addr                     tcpip.AddressWithPrefix
+@@ -748,7 +748,7 @@ type addressState struct {
+ 	//
+ 	// AddressableEndpointState.mu
+ 	//   addressState.mu
+-	mu   addressStateRWMutex
++	mu   addressStateRWMutex `state:"nosave"`
+ 	refs addressStateRefs
+ 	// +checklocks:mu
+ 	kind AddressKind
+diff --git a/pkg/tcpip/stack/bridge.go b/pkg/tcpip/stack/bridge.go
+index fa7fd56..302fd8d 100644
+--- a/pkg/tcpip/stack/bridge.go
++++ b/pkg/tcpip/stack/bridge.go
+@@ -32,6 +32,8 @@ type bridgePort struct {
+ type BridgeFDBKey tcpip.LinkAddress
+ 
+ // BridgeFDBEntry consists of all metadata for a FDB record.
++//
++// +stateify savable
+ type BridgeFDBEntry struct {
+ 	port *bridgePort
+ }
+diff --git a/pkg/tcpip/stack/conntrack.go b/pkg/tcpip/stack/conntrack.go
+index f96c147..1430964 100644
+--- a/pkg/tcpip/stack/conntrack.go
++++ b/pkg/tcpip/stack/conntrack.go
+@@ -972,14 +972,68 @@ func NewConnTrack(clock tcpip.Clock, rng connTrackRNG, seed *uint32) *ConnTrack
+ // Reaper garbage collects unused connections.
+ func NewConnTrackWithReaper(clock tcpip.Clock, rng connTrackRNG, seed *uint32) (*ConnTrack, tcpip.Timer) {
+ 	ct := NewConnTrack(clock, rng, seed)
+-	var reaper tcpip.Timer
+-	bucket := 0
+-	interval := 1 * time.Second
+-	reaper = ct.clock.AfterFunc(interval, func() {
+-		bucket, interval = ct.reapUnused(bucket, interval)
+-		reaper.Reset(interval)
+-	})
+-	return ct, reaper
++	return ct, ct.StartReaper()
++}
++
++// RestoreState replaces host RNG state and rehashes saved tuples with a fresh
++// seed. Call only while packet processing and reaping are stopped.
++func (ct *ConnTrack) RestoreState(rng connTrackRNG) {
++	ct.rng = rng
++	ct.seed = rng.Uint32()
++	old := ct.buckets
++	ct.buckets = make([]bucket, len(old))
++	for i := range old {
++		for t := old[i].tuples.Front(); t != nil; t = old[i].tuples.Front() {
++			old[i].tuples.Remove(t)
++			ct.buckets[ct.bucket(t.tupleID)].tuples.PushBack(t)
++			if t.conn.finalizeResult.Load() != 0 {
++				t.conn.finalizeOnce.Do(func() {})
++			}
++		}
++	}
++}
++
++// connTrackReaper coordinates Stop with the callback, unlike a bare Timer.
++type connTrackReaper struct {
++	mu       sync.Mutex
++	timer    tcpip.Timer
++	ct       *ConnTrack
++	bucket   int
++	interval time.Duration
++	stopped  bool
++}
++
++// StartReaper starts a timer whose Stop waits for any current reaping to finish.
++func (ct *ConnTrack) StartReaper() tcpip.Timer {
++	r := &connTrackReaper{ct: ct, interval: time.Second}
++	r.mu.Lock()
++	r.timer = ct.clock.AfterFunc(r.interval, r.tick)
++	r.mu.Unlock()
++	return r
++}
++
++func (r *connTrackReaper) tick() {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.stopped {
++		return
++	}
++	r.bucket, r.interval = r.ct.reapUnused(r.bucket, r.interval)
++	r.timer.Reset(r.interval)
++}
++
++func (r *connTrackReaper) Stop() bool {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.stopped = true
++	return r.timer.Stop()
++}
++
++func (r *connTrackReaper) Reset(interval time.Duration) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.stopped = false
++	r.timer.Reset(interval)
+ }
+ 
+ // NfConnTrackPriority returns the priority of the conntrack hook.
+diff --git a/pkg/tcpip/stack/iptables.go b/pkg/tcpip/stack/iptables.go
+index 8dded8a..3d8368d 100644
+--- a/pkg/tcpip/stack/iptables.go
++++ b/pkg/tcpip/stack/iptables.go
+@@ -15,7 +15,6 @@
+ package stack
+ 
+ import (
+-	"context"
+ 	"fmt"
+ 	"math/rand"
+ 	"reflect"
+@@ -674,26 +673,28 @@ func (it *IPTables) check(table Table, hook Hook, pkt *PacketBuffer, r *Route, a
+ 	}
+ }
+ 
+-// beforeSave is invoked by stateify.
+-func (it *IPTables) beforeSave() {
+-	// Ensure the reaper exits cleanly.
+-	it.reaper.Stop()
+-	// Prevent others from modifying the connection table.
+-	it.connections.mu.Lock()
++// Pause waits for connection reaping to finish before saving the ruleset.
++func (it *IPTables) Pause() {
++	if it.reaper != nil {
++		it.reaper.Stop()
++	}
+ }
+ 
+-// afterLoad is invoked by stateify.
+-func (it *IPTables) afterLoad(context.Context) {
+-	it.startReaper(reaperDelay)
++// resume restores host RNG state and restarts the synchronized reaper.
++func (it *IPTables) resume(rng connTrackRNG) {
++	if it.reaper == nil {
++		it.connections.RestoreState(rng)
++		if it.modified {
++			it.startReaper(reaperDelay)
++		}
++	} else {
++		it.reaper.Reset(reaperDelay)
++	}
+ }
+ 
+-// startReaper periodically reaps timed out connections.
+ func (it *IPTables) startReaper(interval time.Duration) {
+-	bucket := 0
+-	it.reaper = it.connections.clock.AfterFunc(interval, func() {
+-		bucket, interval = it.connections.reapUnused(bucket, interval)
+-		it.reaper.Reset(interval)
+-	})
++	it.reaper = it.connections.StartReaper()
++	it.reaper.Reset(interval)
+ }
+ 
+ // maxJumps is the maximum allowed depth of recursion when jumping between
+diff --git a/pkg/tcpip/stack/nat.go b/pkg/tcpip/stack/nat.go
+index bc60cab..41e4154 100644
+--- a/pkg/tcpip/stack/nat.go
++++ b/pkg/tcpip/stack/nat.go
+@@ -266,6 +266,8 @@ func IPTHandlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
+ 
+ // PortOrIdentRange represents a range of ports or idents
+ // range to use for NAT.
++//
++// +stateify savable
+ type PortOrIdentRange struct {
+ 	Start uint16
+ 	Size  uint32
+diff --git a/pkg/tcpip/stack/neighbor_entry.go b/pkg/tcpip/stack/neighbor_entry.go
+index 427dd05..5ded6ad 100644
+--- a/pkg/tcpip/stack/neighbor_entry.go
++++ b/pkg/tcpip/stack/neighbor_entry.go
+@@ -15,6 +15,7 @@
+ package stack
+ 
+ import (
++	"context"
+ 	"fmt"
+ 	"time"
+ 
+@@ -657,3 +658,16 @@ func (e *neighborEntry) getRemoteLinkAddress() (tcpip.LinkAddress, bool) {
+ 		panic(fmt.Sprintf("invalid state for neighbor entry %v: %v", e.mu.neigh, e.mu.neigh.State))
+ 	}
+ }
++
++// afterLoad keeps learned link addresses but revalidates dynamic neighbors.
++// Host timer callbacks and resolution wait channels cannot be serialized.
++// Static entries retain their exact state.
++func (e *neighborEntry) afterLoad(context.Context) {
++	e.mu.timer = timer{}
++	switch e.mu.neigh.State {
++	case Reachable, Delay, Probe:
++		e.mu.neigh.State = Stale
++	case Incomplete:
++		e.mu.neigh.State = Unknown
++	}
++}
+diff --git a/pkg/tcpip/stack/nftables_types.go b/pkg/tcpip/stack/nftables_types.go
+index f75732a..3a47847 100644
+--- a/pkg/tcpip/stack/nftables_types.go
++++ b/pkg/tcpip/stack/nftables_types.go
+@@ -20,6 +20,8 @@ import (
+ 
+ // NFTablesInterface is an interface for evaluating chains.
+ type NFTablesInterface interface {
++	Pause()
++	Resume()
+ 	CheckPrerouting(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+ 	CheckInput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+ 	CheckForward(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+diff --git a/pkg/tcpip/stack/nic.go b/pkg/tcpip/stack/nic.go
+index 7a6bd80..554a3e7 100644
+--- a/pkg/tcpip/stack/nic.go
++++ b/pkg/tcpip/stack/nic.go
+@@ -15,6 +15,7 @@
+ package stack
+ 
+ import (
++	"context"
+ 	"fmt"
+ 	"reflect"
+ 	"sort"
+@@ -39,7 +40,8 @@ var _ NetworkDispatcher = (*nic)(nil)
+ //
+ // +stateify savable
+ type nic struct {
+-	NetworkLinkEndpoint
++	NetworkLinkEndpoint `state:".(savedNICLink)"`
++	external            bool
+ 
+ 	stack   *Stack
+ 	id      tcpip.NICID
+@@ -81,7 +83,7 @@ type nic struct {
+ 	// +checklocks:packetEPsMu
+ 	packetEPs map[tcpip.NetworkProtocolNumber]*packetEndpointList
+ 
+-	qDisc QueueingDiscipline
++	qDisc QueueingDiscipline `state:".(savedNICQueue)"`
+ 
+ 	// deliverLinkPackets specifies whether this NIC delivers packets to
+ 	// packet sockets. It is immutable.
+@@ -184,6 +186,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
+ 	// of IPv6 is supported on this endpoint's LinkEndpoint.
+ 	nic := &nic{
+ 		NetworkLinkEndpoint:       ep,
++		external:                  ep.Capabilities()&CapabilitySaveRestore == 0,
+ 		stack:                     stack,
+ 		id:                        id,
+ 		name:                      opts.Name,
+@@ -1133,3 +1136,27 @@ type CoordinatorNIC interface {
+ 	// DelNIC deletes the specified NIC device.
+ 	DelNIC(n *nic) tcpip.Error
+ }
++
++// +stateify savable
++type savedNICLink struct{ Link NetworkLinkEndpoint }
++
++func (n *nic) saveNetworkLinkEndpoint() savedNICLink {
++	if n.external {
++		return savedNICLink{}
++	}
++	return savedNICLink{Link: n.NetworkLinkEndpoint}
++}
++func (n *nic) loadNetworkLinkEndpoint(_ context.Context, v savedNICLink) {
++	n.NetworkLinkEndpoint = v.Link
++}
++
++// +stateify savable
++type savedNICQueue struct{ Queue QueueingDiscipline }
++
++func (n *nic) saveQDisc() savedNICQueue {
++	if n.external {
++		return savedNICQueue{}
++	}
++	return savedNICQueue{Queue: n.qDisc}
++}
++func (n *nic) loadQDisc(_ context.Context, v savedNICQueue) { n.qDisc = v.Queue }
+diff --git a/pkg/tcpip/stack/nud.go b/pkg/tcpip/stack/nud.go
+index f8e3856..481beb9 100644
+--- a/pkg/tcpip/stack/nud.go
++++ b/pkg/tcpip/stack/nud.go
+@@ -15,6 +15,7 @@
+ package stack
+ 
+ import (
++	"context"
+ 	"math"
+ 	"math/rand"
+ 	"sync"
+@@ -434,3 +435,8 @@ func (s *NUDState) recomputeReachableTimeLocked() {
+ 
+ 	s.mu.expiration = s.clock.NowMonotonic().Add(2 * time.Hour)
+ }
++
++// afterLoad restores the host random generator used for reachability jitter.
++func (s *NUDState) afterLoad(context.Context) {
++	s.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
++}
+diff --git a/pkg/tcpip/stack/pending_packets.go b/pkg/tcpip/stack/pending_packets.go
+index 6f7909c..e51bf0f 100644
+--- a/pkg/tcpip/stack/pending_packets.go
++++ b/pkg/tcpip/stack/pending_packets.go
+@@ -15,6 +15,7 @@
+ package stack
+ 
+ import (
++	"context"
+ 	"fmt"
+ 
+ 	"gvisor.dev/gvisor/pkg/tcpip"
+@@ -58,8 +59,9 @@ type packetsPendingLinkResolutionMu struct {
+ //
+ // +stateify savable
+ type packetsPendingLinkResolution struct {
+-	nic *nic
+-	mu  packetsPendingLinkResolutionMu `state:"nosave"`
++	nic           *nic
++	mu            packetsPendingLinkResolutionMu `state:".(savedPendingPackets)"`
++	loadedPackets []pendingPacket                `state:"nosave"`
+ }
+ 
+ func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(pkt *PacketBuffer) {
+@@ -227,3 +229,34 @@ func (f *packetsPendingLinkResolution) dequeuePackets(packets []pendingPacket, l
+ 		p.pkt.DecRef()
+ 	}
+ }
++
++// +stateify savable
++type savedPendingPackets struct{ Packets []pendingPacket }
++
++func (f *packetsPendingLinkResolution) saveMu() savedPendingPackets {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	var saved savedPendingPackets
++	for _, packets := range f.mu.packets {
++		saved.Packets = append(saved.Packets, packets...)
++	}
++	return saved
++}
++func (f *packetsPendingLinkResolution) loadMu(_ context.Context, saved savedPendingPackets) {
++	f.mu.packets = make(map[<-chan struct{}][]pendingPacket)
++	// Pointer fixups complete after this callback. Replay only after full load.
++	f.loadedPackets = saved.Packets
++}
++func (f *packetsPendingLinkResolution) replay() {
++	for _, p := range f.loadedPackets {
++		r, err := f.nic.stack.FindRoute(f.nic.id, p.routeInfo.LocalAddress, p.routeInfo.RemoteAddress, p.pkt.NetworkProtocolNumber, false)
++		if err == nil {
++			_ = f.enqueue(r, p.pkt)
++			r.Release()
++		} else {
++			f.incrementOutgoingPacketErrors(p.pkt)
++		}
++		p.pkt.DecRef()
++	}
++	f.loadedPackets = nil
++}
+diff --git a/pkg/tcpip/stack/save_restore.go b/pkg/tcpip/stack/save_restore.go
+index 48ed8c7..999b3c4 100644
+--- a/pkg/tcpip/stack/save_restore.go
++++ b/pkg/tcpip/stack/save_restore.go
+@@ -22,6 +22,17 @@ import (
+ 	cryptorand "gvisor.dev/gvisor/pkg/rand"
+ )
+ 
++// +stateify savable
++type savedNFTables struct {
++	Tables NFTablesInterface
++}
++
++func (s *Stack) saveNftables() savedNFTables { return savedNFTables{Tables: s.NFTables()} }
++
++func (s *Stack) loadNftables(_ context.Context, tables savedNFTables) {
++	s.SetNFTables(tables.Tables)
++}
++
+ // beforeSave is invoked by stateify.
+ func (s *Stack) beforeSave() {
+ 	// removeConf will be set only in case of save/restore.
+diff --git a/pkg/tcpip/stack/stack.go b/pkg/tcpip/stack/stack.go
+index dbe0e83..8c4be15 100644
+--- a/pkg/tcpip/stack/stack.go
++++ b/pkg/tcpip/stack/stack.go
+@@ -91,18 +91,20 @@ type Stack struct {
+ 
+ 	// routeTable is a list of routes sorted by prefix length, longest (most specific) first.
+ 	// +checklocks:routeMu
+-	routeTable tcpip.RouteList `state:"nosave"`
++	routeTable tcpip.RouteList
+ 
+ 	mu stackRWMutex `state:"nosave"`
+ 	// +checklocks:mu
+-	nics map[tcpip.NICID]*nic `state:"nosave"`
++	nics map[tcpip.NICID]*nic
+ 	// +checklocks:mu
+-	loopbackNIC *nic `state:"nosave"`
++	loopbackNIC *nic
+ 	// +checklocks:mu
+ 	defaultForwardingEnabled map[tcpip.NetworkProtocolNumber]struct{}
+ 
+ 	// nicIDGen is used to generate NIC IDs.
+-	nicIDGen atomicbitops.Int32 `state:"nosave"`
++	nicIDGen     atomicbitops.Int32
++	restoring    atomicbitops.Bool `state:"nosave"`
++	restoreNICID int32             `state:"nosave"`
+ 
+ 	// cleanupEndpointsMu protects cleanupEndpoints.
+ 	cleanupEndpointsMu cleanupEndpointsMutex `state:"nosave"`
+@@ -118,12 +120,11 @@ type Stack struct {
+ 	handleLocal bool
+ 
+ 	// tables are the iptables packet filtering and manipulation rules.
+-	// TODO(gvisor.dev/issue/4595): S/R this field.
+-	tables *IPTables `state:"nosave"`
++	tables *IPTables
+ 
+ 	// nftables is the nftables interface for packet filtering and manipulation rules.
+ 	// Using atomic.Pointer for RCU lock-free reads.
+-	nftables atomic.Pointer[NFTablesInterface] `state:"nosave"`
++	nftables atomic.Pointer[NFTablesInterface] `state:".(savedNFTables)"`
+ 
+ 	// nftablesUpdateMu serializes concurrent netlink batch modifications to nftables.
+ 	nftablesUpdateMu sync.Mutex `state:"nosave"`
+@@ -779,6 +780,9 @@ func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
+ //
+ // This method takes ownership of the table.
+ func (s *Stack) SetRouteTable(table []tcpip.Route) {
++	if s.restoring.Load() {
++		return
++	}
+ 	s.routeMu.Lock()
+ 	defer s.routeMu.Unlock()
+ 	s.routeTable.Reset()
+@@ -954,6 +958,19 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
+ 	if id == 0 {
+ 		return &tcpip.ErrInvalidNICID{}
+ 	}
++	if n := s.nics[id]; n != nil && s.restoring.Load() {
++		if n.name != opts.Name {
++			return &tcpip.ErrInvalidEndpointState{}
++		}
++		if n.external {
++			n.NetworkLinkEndpoint = ep
++			n.qDisc = &delegatingQueueingDiscipline{LinkWriter: ep}
++			ep.Attach(n)
++		} else {
++			ep.Close()
++		}
++		return nil
++	}
+ 	// Make sure id is unique.
+ 	if _, ok := s.nics[id]; ok {
+ 		return &tcpip.ErrDuplicateNICID{}
+@@ -1328,6 +1345,9 @@ type NICStateFlags struct {
+ // AddProtocolAddress adds an address to the specified NIC, possibly with extra
+ // properties.
+ func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress, properties AddressProperties) tcpip.Error {
++	if s.restoring.Load() {
++		return nil
++	}
+ 	s.mu.RLock()
+ 	defer s.mu.RUnlock()
+ 
+@@ -2090,9 +2110,20 @@ func (s *Stack) Destroy() {
+ 
+ // Pause pauses any protocol level background workers.
+ func (s *Stack) Pause() {
++	if s.tables != nil {
++		s.tables.Pause()
++	}
++	if nft := s.NFTables(); nft != nil {
++		nft.Pause()
++	}
+ 	for _, p := range s.transportProtocols {
+ 		p.proto.Pause()
+ 	}
++	for _, n := range s.nics {
++		if ep, ok := n.NetworkLinkEndpoint.(interface{ Pause() }); ok {
++			ep.Pause()
++		}
++	}
+ }
+ 
+ func (s *Stack) getNICs() map[tcpip.NICID]*nic {
+@@ -2105,11 +2136,10 @@ func (s *Stack) getNICs() map[tcpip.NICID]*nic {
+ 
+ // ResetConfig resets the stack's NICs and ID generator.
+ func (s *Stack) ResetConfig() {
+-	nics := make(map[tcpip.NICID]*nic)
+-	s.mu.Lock()
+-	defer s.mu.Unlock()
+-	s.nics = nics
+-	s.loopbackNIC = nil
++	// Keep the saved virtual topology. The boot network configuration only
++	// reattaches host transports to the corresponding external NICs.
++	s.restoring.Store(true)
++	s.restoreNICID = s.nicIDGen.Load()
+ 	s.nicIDGen.Store(0)
+ }
+ 
+@@ -2128,8 +2158,12 @@ func (s *Stack) ReplaceConfig(st *Stack) {
+ 	defer s.mu.Unlock()
+ 
+ 	// Update iptables and nftables.
+-	s.tables = st.IPTables()
+-	s.SetNFTables(st.NFTables())
++	if s.tables == nil {
++		s.tables = st.IPTables()
++	}
++	if s.NFTables() == nil {
++		s.SetNFTables(st.NFTables())
++	}
+ 	for id, nic := range nics {
+ 		nic.stack = s
+ 		s.nics[id] = nic
+@@ -2145,6 +2179,24 @@ func (s *Stack) ReplaceConfig(st *Stack) {
+ // Restore restarts the stack after a restore. This must be called after the
+ // entire system has been restored.
+ func (s *Stack) Restore() {
++	if s.tables != nil {
++		s.tables.resume(&s.secureRNG)
++	}
++	if s.restoring.Load() {
++		s.nicIDGen.Store(s.restoreNICID)
++		s.restoring.Store(false)
++	}
++	for _, n := range s.nics {
++		if n.NetworkLinkEndpoint == nil {
++			panic(fmt.Sprintf("saved external NIC %d (%s, kind=%s) has no replacement transport", n.id, n.name, n.kind))
++		}
++		if ep, ok := n.NetworkLinkEndpoint.(interface{ Resume() }); ok {
++			ep.Resume()
++		}
++	}
++	if nft := s.NFTables(); nft != nil {
++		nft.Resume()
++	}
+ 	// RestoredEndpoint.Restore() may call other methods on s, so we can't hold
+ 	// s.mu while restoring the endpoints.
+ 	s.mu.Lock()
+@@ -2163,10 +2215,24 @@ func (s *Stack) Restore() {
+ 	for _, p := range s.transportProtocols {
+ 		p.proto.Restore()
+ 	}
++	for _, n := range s.nics {
++		n.linkResQueue.replay()
++	}
+ }
+ 
+ // Resume resumes the stack after a save.
+ func (s *Stack) Resume() {
++	if s.tables != nil {
++		s.tables.resume(&s.secureRNG)
++	}
++	for _, n := range s.nics {
++		if ep, ok := n.NetworkLinkEndpoint.(interface{ Resume() }); ok {
++			ep.Resume()
++		}
++	}
++	if nft := s.NFTables(); nft != nil {
++		nft.Resume()
++	}
+ 	s.mu.Lock()
+ 	eps := s.resumableEndpoints
+ 	s.resumableEndpoints = nil
+diff --git a/pkg/tcpip/transport/tcp/endpoint_state.go b/pkg/tcpip/transport/tcp/endpoint_state.go
+index d2a8c6d..75942cf 100644
+--- a/pkg/tcpip/transport/tcp/endpoint_state.go
++++ b/pkg/tcpip/transport/tcp/endpoint_state.go
+@@ -263,6 +263,15 @@ func (e *Endpoint) Restore(s *stack.Stack) {
+ 			connectedLoading.Done()
+ 			return
+ 		}
++		// connect reinitializes GSO for the new route. There is no new
++		// handshake/sender to restore the negotiated segment size here.
++		if e.snd != nil {
++			e.snd.gso = e.gso.Type != stack.GSONone
++			if e.snd.gso {
++				e.gso.MSS = uint16(e.snd.MaxPayloadSize)
++			}
++			e.snd.updateMaxPayloadSize(int(e.route.MTU()), 0)
++		}
+ 		e.state.Store(e.origEndpointState)
+ 		log.Infof("connect success: %+v", e.TransportEndpointInfo.ID)
+ 		// For FIN-WAIT-2 and TIME-WAIT we need to start the appropriate timers so
+diff --git a/pkg/tcpip/transport/tcpconntrack/BUILD b/pkg/tcpip/transport/tcpconntrack/BUILD
+index 50b3e90..3a5f000 100644
+--- a/pkg/tcpip/transport/tcpconntrack/BUILD
++++ b/pkg/tcpip/transport/tcpconntrack/BUILD
+@@ -22,6 +22,7 @@ go_test(
+     deps = [
+         ":tcpconntrack",
+         "//pkg/refs",
++        "//pkg/state",
+         "//pkg/tcpip/header",
+     ],
+ )
+diff --git a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go
+index 4d74a6d..d1c9aad 100644
+--- a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go
++++ b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go
+@@ -61,11 +61,9 @@ type TCB struct {
+ 	reply    stream
+ 	original stream
+ 
+-	// State handlers. hdr is not guaranteed to contain bytes beyond the TCP
+-	// header itself, i.e. it may not contain the payload.
+-	// TODO(b/341946753): Restore them when netstack is savable.
+-	handlerReply    func(tcb *TCB, hdr header.TCP, dataLen int) Result `state:"nosave"`
+-	handlerOriginal func(tcb *TCB, hdr header.TCP, dataLen int) Result `state:"nosave"`
++	// synReplySeen selects the established-state handlers. Keep this separate
++	// from state: a reset can occur both before and after the SYN reply.
++	synReplySeen bool
+ 
+ 	// firstFin holds a pointer to the first stream to send a FIN.
+ 	firstFin *stream
+@@ -76,8 +74,7 @@ type TCB struct {
+ 
+ // Init initializes the state of the TCB according to the initial SYN.
+ func (t *TCB) Init(initialSyn header.TCP, dataLen int) Result {
+-	t.handlerReply = synSentStateReply
+-	t.handlerOriginal = synSentStateOriginal
++	t.synReplySeen = false
+ 
+ 	iss := seqnum.Value(initialSyn.SequenceNumber())
+ 	t.original.una = iss
+@@ -101,7 +98,11 @@ func (t *TCB) Init(initialSyn header.TCP, dataLen int) Result {
+ // UpdateStateReply updates the state of the TCB based on the supplied reply
+ // segment.
+ func (t *TCB) UpdateStateReply(tcp header.TCP, dataLen int) Result {
+-	st := t.handlerReply(t, tcp, dataLen)
++	handler := synSentStateReply
++	if t.synReplySeen {
++		handler = allOtherReply
++	}
++	st := handler(t, tcp, dataLen)
+ 	if st != ResultDrop {
+ 		t.state = st
+ 	}
+@@ -111,7 +112,11 @@ func (t *TCB) UpdateStateReply(tcp header.TCP, dataLen int) Result {
+ // UpdateStateOriginal updates the state of the TCB based on the supplied
+ // original segment.
+ func (t *TCB) UpdateStateOriginal(tcp header.TCP, dataLen int) Result {
+-	st := t.handlerOriginal(t, tcp, dataLen)
++	handler := synSentStateOriginal
++	if t.synReplySeen {
++		handler = allOtherOriginal
++	}
++	st := handler(t, tcp, dataLen)
+ 	if st != ResultDrop {
+ 		t.state = st
+ 	}
+@@ -231,9 +236,7 @@ func synSentStateReply(t *TCB, tcp header.TCP, dataLen int) Result {
+ 		}
+ 	}
+ 
+-	// Update handlers so that new calls will be handled by new state.
+-	t.handlerReply = allOtherReply
+-	t.handlerOriginal = allOtherOriginal
++	t.synReplySeen = true
+ 
+ 	return ResultAlive
+ }
+diff --git a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go
+index 2bda57b..7e07085 100644
+--- a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go
++++ b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go
+@@ -15,10 +15,13 @@
+ package tcpconntrack_test
+ 
+ import (
++	"bytes"
++	"context"
+ 	"os"
+ 	"testing"
+ 
+ 	"gvisor.dev/gvisor/pkg/refs"
++	"gvisor.dev/gvisor/pkg/state"
+ 	"gvisor.dev/gvisor/pkg/tcpip/header"
+ 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack"
+ )
+@@ -524,3 +527,47 @@ func TestMain(m *testing.M) {
+ 	refs.DoLeakCheck()
+ 	os.Exit(code)
+ }
++
++// Exercise both directions after serialization in each handler phase, including
++// a reset before establishment (which cannot be distinguished by Result alone).
++func TestCheckpointStateHandlers(t *testing.T) {
++	packet := func(seq, ack uint32, flags header.TCPFlags) header.TCP {
++		tcp := make(header.TCP, header.TCPMinimumSize)
++		tcp.Encode(&header.TCPFields{SeqNum: seq, AckNum: ack, DataOffset: header.TCPMinimumSize, Flags: flags, WindowSize: 30000})
++		return tcp
++	}
++	syn := packet(1234, 0, header.TCPFlagSyn)
++	synAck := packet(789, 1235, header.TCPFlagSyn|header.TCPFlagAck)
++	ack := packet(1235, 790, header.TCPFlagAck)
++	replyAck := packet(790, 1235, header.TCPFlagAck)
++	for _, phase := range []string{"syn", "established", "reset-before-syn-reply"} {
++		t.Run(phase, func(t *testing.T) {
++			original := &tcpconntrack.TCB{}
++			original.Init(syn, 0)
++			if phase == "established" {
++				original.UpdateStateReply(synAck, 0)
++				original.UpdateStateOriginal(ack, 0)
++			} else if phase == "reset-before-syn-reply" {
++				original.UpdateStateReply(packet(789, 1235, header.TCPFlagRst|header.TCPFlagAck), 0)
++			}
++			var saved bytes.Buffer
++			if _, err := state.Save(context.Background(), &saved, &original); err != nil {
++				t.Fatal(err)
++			}
++			var restored *tcpconntrack.TCB
++			if _, err := state.Load(context.Background(), &saved, &restored); err != nil {
++				t.Fatal(err)
++			}
++			first, reply := syn, synAck
++			if phase == "established" {
++				first, reply = ack, replyAck
++			}
++			if got, want := restored.UpdateStateOriginal(first, 0), original.UpdateStateOriginal(first, 0); got != want {
++				t.Fatalf("original direction: got %v want %v", got, want)
++			}
++			if got, want := restored.UpdateStateReply(reply, 0), original.UpdateStateReply(reply, 0); got != want {
++				t.Fatalf("reply direction: got %v want %v", got, want)
++			}
++		})
++	}
++}
+diff --git a/runsc/boot/BUILD b/runsc/boot/BUILD
+index 479bfc0..854bb07 100644
+--- a/runsc/boot/BUILD
++++ b/runsc/boot/BUILD
+@@ -18,6 +18,7 @@ go_library(
+         "fscheckpoint.go",
+         "limits.go",
+         "loader.go",
++        "memory_guard.go",
+         "mount_hints.go",
+         "network.go",
+         "nvproxy.go",
+diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
+index ae644c4..844b663 100644
+--- a/runsc/boot/controller.go
++++ b/runsc/boot/controller.go
+@@ -276,6 +276,10 @@ func (c *controller) stop() {
+ 
+ // containerManager manages sandbox containers.
+ type containerManager struct {
++	// CPU controller pauses are independently owned and idempotent so a host
++	// controller can safely recover after losing a response or reconnecting.
++	cpuPauseMu sync.Mutex
++	cpuPaused  bool
+ 	// startChan is used to signal when the root container process should
+ 	// be started.
+ 	startChan chan struct{}
+@@ -626,7 +630,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
+ 	}
+ 
+ 	// Create the main MemoryFile.
+-	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
++	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP, cm.l.root.conf.AppMemoryLimit)
+ 	if err != nil {
+ 		return fmt.Errorf("creating memory file: %v", err)
+ 	}
+@@ -898,6 +902,23 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
+ 	return nil
+ }
+ 
++// SetCPUPaused is a host-only scheduling hook. Unlike host SIGSTOP, this
++// interrupts application contexts safely without cancelling seccomp requests.
++func (cm *containerManager) SetCPUPaused(paused *bool, _ *struct{}) error {
++	cm.cpuPauseMu.Lock()
++	defer cm.cpuPauseMu.Unlock()
++	if *paused == cm.cpuPaused {
++		return nil
++	}
++	if *paused {
++		cm.l.k.Pause()
++	} else {
++		cm.l.k.Unpause()
++	}
++	cm.cpuPaused = *paused
++	return nil
++}
++
+ // Pause pauses all tasks, blocking until they are stopped.
+ func (cm *containerManager) Pause(_, _ *struct{}) error {
+ 	cm.l.k.Pause()
+diff --git a/runsc/boot/loader.go b/runsc/boot/loader.go
+index d78a960..31f824d 100644
+--- a/runsc/boot/loader.go
++++ b/runsc/boot/loader.go
+@@ -576,8 +576,10 @@ func shouldEnableClockMonotonicRaw(spec *specs.Spec, conf *config.Config) bool {
+ // New initializes a new kernel loader configured by spec.
+ // New also handles setting up a kernel for restoring a container.
+ func New(args Args) (*Loader, error) {
++	stopMemoryGuard := startRuntimeMemoryGuard(args.Conf.RuntimeMemoryLimit)
+ 	stopProfilingRuntime := profile.Start(args.ProfileOpts)
+ 	stopProfiling := func() {
++		stopMemoryGuard()
+ 		stopProfilingRuntime()
+ 		metric.StopProfilingMetrics()
+ 	}
+@@ -745,7 +747,7 @@ func New(args Args) (*Loader, error) {
+ 	}
+ 
+ 	// Create memory file.
+-	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP)
++	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP, args.Conf.AppMemoryLimit)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("creating memory file: %w", err)
+ 	}
+@@ -1103,7 +1105,7 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
+ 	})
+ }
+ 
+-func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {
++func createMemoryFile(appHugePages bool, hostTHP HostTHP, limit uint64) (*pgalloc.MemoryFile, error) {
+ 	const memfileName = "runsc-memory"
+ 	memfd, err := memutil.CreateMemFD(memfileName, 0)
+ 	if err != nil {
+@@ -1112,10 +1114,19 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile,
+ 	memfile := os.NewFile(uintptr(memfd), memfileName)
+ 
+ 	mfopts := pgalloc.MemoryFileOpts{
++		LimitBytes: limit,
+ 		// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
+ 		// there are memory cgroups specified, because at this point we're already
+ 		// in a mount namespace in which the relevant cgroupfs is not visible.
+ 	}
++	if limit != 0 {
++		if hostTHP.ShmemEnabled == "force" {
++			return nil, fmt.Errorf("memory limit requires host to honor MADV_NOHUGEPAGE")
++		}
++		// Prevent khugepaged from populating uncharged adjacent small pages.
++		appHugePages = false
++		mfopts.AdviseNoHugepage = true
++	}
+ 	if appHugePages {
+ 		switch hostTHP.ShmemEnabled {
+ 		case "":
+diff --git a/runsc/boot/memory_guard.go b/runsc/boot/memory_guard.go
+new file mode 100644
+index 0000000..a9deb96
+--- /dev/null
++++ b/runsc/boot/memory_guard.go
+@@ -0,0 +1,66 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package boot
++
++import (
++	"os"
++	runtimeDebug "runtime/debug"
++	"runtime/metrics"
++	"time"
++
++	"gvisor.dev/gvisor/pkg/log"
++)
++
++// startRuntimeMemoryGuard covers Go allocations, including guest kernel
++// metadata, which are not allocated through pgalloc. This is a sampled guard:
++// it permits transient overshoot and cannot replace a kernel cgroup ceiling.
++// Immutable image cache and allocations outside the Go runtime are excluded.
++func startRuntimeMemoryGuard(limit uint64) func() {
++	if limit == 0 {
++		return func() {}
++	}
++	previous := runtimeDebug.SetMemoryLimit(int64(limit - limit/5))
++	stop, done := make(chan struct{}), make(chan struct{})
++	go func() {
++		defer close(done)
++		ticker := time.NewTicker(100 * time.Millisecond)
++		defer ticker.Stop()
++		samples := []metrics.Sample{{Name: "/memory/classes/total:bytes"}, {Name: "/memory/classes/heap/released:bytes"}}
++		used := func() uint64 {
++			metrics.Read(samples)
++			return samples[0].Value.Uint64() - samples[1].Value.Uint64()
++		}
++		for {
++			select {
++			case <-stop:
++				return
++			case <-ticker.C:
++				if used() <= limit {
++					continue
++				}
++				runtimeDebug.FreeOSMemory()
++				if current := used(); current > limit {
++					log.Warningf("Runtime memory guard exceeded after reclaim: used=%d limit=%d; terminating sandbox", current, limit)
++					os.Exit(137)
++				}
++			}
++		}
++	}()
++	return func() {
++		close(stop)
++		<-done
++		runtimeDebug.SetMemoryLimit(previous)
++	}
++}
+diff --git a/runsc/boot/vfs.go b/runsc/boot/vfs.go
+index f320cd9..bb976e8 100644
+--- a/runsc/boot/vfs.go
++++ b/runsc/boot/vfs.go
+@@ -1542,14 +1542,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
+ 	return l.k.VFS().RmdirAt(ctx, creds, &pop)
+ }
+ 
++// cgroupV1Mounts co-mounts CPU accounting with CPU control as expected by
++// systemd's legacy hierarchy setup.
++var cgroupV1Mounts = []string{"cpu,cpuacct", "cpuset", "devices", "job", "memory", "pids"}
++
+ // mountCgroupMounts mounts the cgroups which are shared across all containers.
+ // Postcondition: Initialized k.cgroupMounts on success.
+ func (l *Loader) mountCgroupMounts(conf *config.Config, creds *auth.Credentials) error {
+ 	ctx := l.k.SupervisorContext()
+-	for _, sopts := range kernel.CgroupCtrls {
++	for _, sopts := range cgroupV1Mounts {
+ 		var internalData any
+ 		switch string(sopts) {
+-		case "cpu":
++		case "cpu,cpuacct":
+ 			if defaults := cgroupfsCPUDefaults(l.cpuQuota, l.cpuPeriod); defaults != nil {
+ 				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
+ 				log.Infof("Setting cgroupfs cpu defaults: quota=%d, period=%d (raw quota=%d, raw period=%d)", defaults["cpu.cfs_quota_us"], defaults["cpu.cfs_period_us"], l.cpuQuota, l.cpuPeriod)
+@@ -1618,7 +1622,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+ 
+ 	// Mount all the cgroup controllers in the container's mount namespace.
+ 	mountCtx := vfs.WithRoot(vfs.WithMountNamespace(ctx, mns), root)
+-	for _, ctrl := range kernel.CgroupCtrls {
++	for _, ctrl := range cgroupV1Mounts {
+ 		ctrlName := string(ctrl)
+ 		cgroupMnt := c.l.k.GetCgroupMount(ctrlName)
+ 		if cgroupMnt == nil {
+@@ -1655,6 +1659,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+ 			log.Infof("error in bind mounting %v", err)
+ 			return err
+ 		}
++		if ctrlName == "cpu,cpuacct" {
++			for _, alias := range []string{"cpu", "cpuacct"} {
++				pop := &vfs.PathOperation{Root: root, Start: root, Path: fspath.Parse("/sys/fs/cgroup/" + alias)}
++				if err := c.l.k.VFS().SymlinkAt(mountCtx, creds, pop, ctrlName); err != nil {
++					return err
++				}
++			}
++		}
+ 	}
+ 	c.cgroupsMounted = true
+ 	return nil
+diff --git a/runsc/config/config.go b/runsc/config/config.go
+index 0fbf027..803e880 100644
+--- a/runsc/config/config.go
++++ b/runsc/config/config.go
+@@ -124,6 +124,10 @@ type Config struct {
+ 	// Network indicates what type of network to use.
+ 	Network NetworkType `flag:"network"`
+ 
++	// NetworkSocketConfig supplies an Ethernet SOCK_SEQPACKET connection and
++	// guest interface configuration without inspecting host interfaces.
++	NetworkSocketConfig string `flag:"network-socket-config"`
++
+ 	// GoferNetworkNamespace controls the network namespace used by gofer
+ 	// processes. The default is the shared empty "null" network namespace.
+ 	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
+@@ -321,6 +325,18 @@ type Config struct {
+ 	// Don't configure cgroups.
+ 	IgnoreCgroups bool `flag:"ignore-cgroups"`
+ 
++	// AppMemoryLimit limits the sandbox page allocator independently of host
++	// cgroups. It does not include the Sentry heap or host file cache.
++	AppMemoryLimit uint64 `flag:"app-memory-limit"`
++
++	// RuntimeMemoryLimit adds a sampled fail-stop guard for the Sentry Go
++	// runtime, independently of application pages. Zero disables the guard.
++	RuntimeMemoryLimit uint64 `flag:"runtime-memory-limit"`
++
++	// ApplicationCPUs limits application execution parallelism independently
++	// of the eligible host CPU pool. Zero uses automatic detection.
++	ApplicationCPUs int `flag:"application-cpus"`
++
+ 	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
+ 	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
+ 
+@@ -493,6 +509,18 @@ type Config struct {
+ // Config.Override does not validate, so callers must call Validate once they
+ // are done overriding.
+ func (c *Config) Validate() error {
++	if c.RuntimeMemoryLimit != 0 && (c.RuntimeMemoryLimit < 32<<20 || c.RuntimeMemoryLimit > 1<<62) {
++		return fmt.Errorf("runtime-memory-limit must be zero or between 32 MiB and 4 EiB")
++	}
++	if c.ApplicationCPUs < 0 {
++		return fmt.Errorf("application-cpus must be nonnegative")
++	}
++	if c.AppMemoryLimit%4096 != 0 {
++		return fmt.Errorf("app-memory-limit must be page aligned")
++	}
++	if c.NetworkSocketConfig != "" && c.Network != NetworkSandbox {
++		return fmt.Errorf("network-socket-config requires network=sandbox")
++	}
+ 	if c.Overlay && c.Overlay2.Enabled() {
+ 		// Deprecated flag was used together with flag that replaced it.
+ 		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
+diff --git a/runsc/config/flags.go b/runsc/config/flags.go
+index f4852a7..7f5d69d 100644
+--- a/runsc/config/flags.go
++++ b/runsc/config/flags.go
+@@ -148,6 +148,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+ 	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
+ 
+ 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
++	flagSet.Uint64("runtime-memory-limit", 0, "Sentry Go runtime memory guard in bytes: soft GC target plus sampled termination after failed reclaim; zero disables.")
++	flagSet.Uint64("app-memory-limit", 0, "Maximum bytes in the sandbox page allocator, excluding runtime heap and host file cache; zero disables.")
++	flagSet.Int("application-cpus", 0, "Application execution parallelism, independent of CPU affinity; zero autodetects.")
+ 	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
+ 	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
+ 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
+@@ -156,6 +159,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+ 	flagSet.Bool("TESTONLY-nftables", false, "TEST ONLY; Enables nftables support in the sentry.")
+ 
+ 	// Flags that control sandbox runtime behavior: network related.
++	flagSet.String("network-socket-config", "", "JSON configuration for an unprivileged Ethernet SOCK_SEQPACKET connection; replaces host interface setup with network=sandbox")
+ 	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
+ 	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
+ 	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
+diff --git a/runsc/sandbox/BUILD b/runsc/sandbox/BUILD
+index 387957f..899c79a 100644
+--- a/runsc/sandbox/BUILD
++++ b/runsc/sandbox/BUILD
+@@ -9,6 +9,7 @@ go_library(
+     name = "sandbox",
+     srcs = [
+         "network.go",
++        "network_socket.go",
+         "network_unsafe.go",
+         "no_xdp.go",
+         "sandbox.go",
+@@ -72,6 +73,7 @@ go_test(
+     size = "small",
+     srcs = [
+         "network_test.go",
++        "network_socket_test.go",
+     ],
+     library = ":sandbox",
+     deps = [
+diff --git a/runsc/sandbox/network.go b/runsc/sandbox/network.go
+index 989bb24..5de050c 100644
+--- a/runsc/sandbox/network.go
++++ b/runsc/sandbox/network.go
+@@ -62,6 +62,9 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
+ 			return fmt.Errorf("creating default loopback interface: %v", err)
+ 		}
+ 	case config.NetworkSandbox:
++		if conf.NetworkSocketConfig != "" {
++			return createSocketNetwork(conn, conf, isRestore)
++		}
+ 		// Build the path to the net namespace of the sandbox process.
+ 		// This is what we will copy.
+ 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
+diff --git a/runsc/sandbox/network_socket.go b/runsc/sandbox/network_socket.go
+new file mode 100644
+index 0000000..c3bb425
+--- /dev/null
++++ b/runsc/sandbox/network_socket.go
+@@ -0,0 +1,119 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package sandbox
++
++import (
++	"encoding/json"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"path/filepath"
++
++	"golang.org/x/sys/unix"
++	"gvisor.dev/gvisor/pkg/urpc"
++	"gvisor.dev/gvisor/runsc/boot"
++	"gvisor.dev/gvisor/runsc/config"
++)
++
++// socketNetworkConfig describes a single IPv4 Ethernet link. The peer carries
++// complete Ethernet frames, one frame per SOCK_SEQPACKET message, without a
++// virtio header or segmentation/checksum offload. The peer owns host transport.
++type socketNetworkConfig struct {
++	Socket  string `json:"socket"`
++	Address string `json:"address"`
++	Gateway string `json:"gateway"`
++	MAC     string `json:"mac"`
++	MTU     int    `json:"mtu"`
++}
++
++func socketNetworkArgs(r io.Reader, conf *config.Config, isRestore bool) (boot.CreateLinksAndRoutesArgs, string, error) {
++	var cfg socketNetworkConfig
++	dec := json.NewDecoder(r)
++	dec.DisallowUnknownFields()
++	if err := dec.Decode(&cfg); err != nil {
++		return boot.CreateLinksAndRoutesArgs{}, "", fmt.Errorf("decoding socket network configuration: %w", err)
++	}
++	if err := dec.Decode(new(any)); err != io.EOF {
++		return boot.CreateLinksAndRoutesArgs{}, "", fmt.Errorf("expected exactly one socket network configuration")
++	}
++	if !filepath.IsAbs(cfg.Socket) {
++		return boot.CreateLinksAndRoutesArgs{}, "", fmt.Errorf("network socket path must be absolute")
++	}
++	ip, subnet, err := net.ParseCIDR(cfg.Address)
++	if err != nil || ip.To4() == nil {
++		return boot.CreateLinksAndRoutesArgs{}, "", fmt.Errorf("network socket address must be an IPv4 CIDR")
++	}
++	gw := net.ParseIP(cfg.Gateway)
++	if gw.To4() == nil || !subnet.Contains(gw) || gw.Equal(ip) {
++		return boot.CreateLinksAndRoutesArgs{}, "", fmt.Errorf("network socket gateway must be a distinct IPv4 address in the guest subnet")
++	}
++	mac, err := net.ParseMAC(cfg.MAC)
++	if err != nil || len(mac) != 6 || mac[0]&1 != 0 {
++		return boot.CreateLinksAndRoutesArgs{}, "", fmt.Errorf("network socket MAC must be a unicast Ethernet address")
++	}
++	if cfg.MTU < 576 || cfg.MTU > 9000 {
++		return boot.CreateLinksAndRoutesArgs{}, "", fmt.Errorf("network socket MTU must be between 576 and 9000")
++	}
++	prefix, _ := subnet.Mask.Size()
++	args := boot.CreateLinksAndRoutesArgs{
++		LoopbackLinks: []boot.LoopbackLink{boot.DefaultLoopbackLink},
++		FDBasedLinks: []boot.FDBasedLink{{
++			Name: "eth0", MTU: cfg.MTU, LinkAddress: mac,
++			Addresses:   []boot.IPWithPrefix{{Address: ip.To4(), PrefixLen: prefix}},
++			Routes:      []boot.Route{{Destination: *subnet}},
++			NumChannels: 1, IsPacket: []bool{false}, PreConfigured: true,
++			ProcessorsPerChannel: conf.NetworkProcessorsPerChannel,
++			QDisc:                conf.QDisc, TBFRate: conf.TBFRate, TBFBurst: uint32(conf.TBFBurst),
++		}},
++		Defaultv4Gateway: boot.DefaultRoute{
++			Name: "eth0", Route: boot.Route{
++				Destination: net.IPNet{IP: net.IPv4zero.To4(), Mask: net.CIDRMask(0, 32)},
++				Gateway:     gw.To4(),
++			},
++		},
++		LogPackets:              conf.LogPackets,
++		PauseExternalNetworking: conf.PauseExternalNetworking,
++		AllowConnectedOnSave:    conf.AllowConnectedOnSave,
++		IsRestore:               isRestore,
++	}
++	return args, cfg.Socket, nil
++}
++
++func createSocketNetwork(conn *urpc.Client, conf *config.Config, isRestore bool) error {
++	f, err := os.Open(conf.NetworkSocketConfig)
++	if err != nil {
++		return fmt.Errorf("opening socket network configuration: %w", err)
++	}
++	defer f.Close()
++	args, socketPath, err := socketNetworkArgs(f, conf, isRestore)
++	if err != nil {
++		return err
++	}
++	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
++	if err != nil {
++		return fmt.Errorf("creating network socket: %w", err)
++	}
++	linkFile := os.NewFile(uintptr(fd), "ethernet-socket")
++	defer linkFile.Close()
++	if err := unix.Connect(fd, &unix.SockaddrUnix{Name: socketPath}); err != nil {
++		return fmt.Errorf("connecting network socket %q: %w", socketPath, err)
++	}
++	args.FilePayload.Files = []*os.File{linkFile}
++	if err := conn.Call(boot.ContMgrSetNetworkArgs, &args, nil); err != nil {
++		return fmt.Errorf("creating socket network: %w", err)
++	}
++	return nil
++}
+diff --git a/runsc/sandbox/network_socket_test.go b/runsc/sandbox/network_socket_test.go
+new file mode 100644
+index 0000000..02a983d
+--- /dev/null
++++ b/runsc/sandbox/network_socket_test.go
+@@ -0,0 +1,80 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package sandbox
++
++import (
++	"encoding/json"
++	"strings"
++	"testing"
++
++	"gvisor.dev/gvisor/runsc/config"
++)
++
++func TestSocketNetworkConfiguration(t *testing.T) {
++	valid := socketNetworkConfig{
++		Socket: "/tmp/ethernet.sock", Address: "10.0.2.15/24",
++		Gateway: "10.0.2.2", MAC: "02:00:00:00:00:01", MTU: 1500,
++	}
++	for _, tc := range []struct {
++		name   string
++		change func(*socketNetworkConfig)
++	}{
++		{"relative-socket", func(c *socketNetworkConfig) { c.Socket = "relative.sock" }},
++		{"invalid-address", func(c *socketNetworkConfig) { c.Address = "10.0.2.15" }},
++		{"ipv6-address", func(c *socketNetworkConfig) { c.Address = "fd00::1/64" }},
++		{"off-subnet-gateway", func(c *socketNetworkConfig) { c.Gateway = "10.1.2.2" }},
++		{"self-gateway", func(c *socketNetworkConfig) { c.Gateway = "10.0.2.15" }},
++		{"invalid-gateway", func(c *socketNetworkConfig) { c.Gateway = "invalid" }},
++		{"multicast-mac", func(c *socketNetworkConfig) { c.MAC = "01:00:00:00:00:01" }},
++		{"invalid-mac", func(c *socketNetworkConfig) { c.MAC = "invalid" }},
++		{"small-mtu", func(c *socketNetworkConfig) { c.MTU = 575 }},
++		{"large-mtu", func(c *socketNetworkConfig) { c.MTU = 9001 }},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := valid
++			tc.change(&cfg)
++			data, err := json.Marshal(cfg)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if _, _, err := socketNetworkArgs(strings.NewReader(string(data)), &config.Config{}, false); err == nil {
++				t.Fatal("invalid configuration accepted")
++			}
++		})
++	}
++	data, err := json.Marshal(valid)
++	if err != nil {
++		t.Fatal(err)
++	}
++	args, path, err := socketNetworkArgs(strings.NewReader(string(data)), &config.Config{}, true)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if path != valid.Socket || !args.IsRestore || len(args.FDBasedLinks) != 1 || len(args.LoopbackLinks) != 1 {
++		t.Fatalf("incorrect link configuration: %+v", args)
++	}
++	link := args.FDBasedLinks[0]
++	if link.GSOMaxSize != 0 || link.GVisorGSOEnabled || link.TXChecksumOffload || link.RXChecksumOffload || !link.PreConfigured || link.IsPacket[0] {
++		t.Fatalf("socket link requires complete frames without offload: %+v", link)
++	}
++	if link.Addresses[0].String() != valid.Address || link.Routes[0].Destination.String() != "10.0.2.0/24" || args.Defaultv4Gateway.Route.Gateway.String() != valid.Gateway {
++		t.Fatalf("incorrect addressing and routes: %+v", args)
++	}
++	for _, bad := range []string{string(data) + " {}", strings.Replace(string(data), "\"socket\"", "\"unknown\"", 1)} {
++		if _, _, err := socketNetworkArgs(strings.NewReader(bad), &config.Config{}, false); err == nil {
++			t.Fatal("unexpected JSON accepted")
++		}
++	}
++}
+diff --git a/runsc/sandbox/sandbox.go b/runsc/sandbox/sandbox.go
+index bcc7287..9c0bbfe 100644
+--- a/runsc/sandbox/sandbox.go
++++ b/runsc/sandbox/sandbox.go
+@@ -1383,6 +1383,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
+ 			mem = memLimit
+ 		}
+ 	}
++	if conf.AppMemoryLimit != 0 && conf.AppMemoryLimit < mem {
++		mem = conf.AppMemoryLimit
++	}
++	if conf.ApplicationCPUs > 0 {
++		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(conf.ApplicationCPUs))
++	}
+ 	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
+ 
+ 	if args.Attached {

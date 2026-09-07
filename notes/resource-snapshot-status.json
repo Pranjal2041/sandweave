@@ -1,0 +1,91 @@
+{
+  "updated": "2026-09-07T05:10:38.409605+00:00",
+  "scope": "lab only; no KVM, no host sudo/admin changes, original Linux environments",
+  "baseline_checkpoint": "checkpoints/baseline-ae303ca/manifest.json",
+  "committed_source": "8c8b1437b27ce0fb61a9db17c5feb33242b7bde3",
+  "network": {
+    "status": "PASS: outside-guest public IPv4/host-denial policy, tested after full restore from guest, outer Docker and nested MariaDB. Restored offline variant blocks public TCP and DNS, allows forwarded Moodle HTTP200.",
+    "limits": "IPv4; fragments/options/VLAN/IPv6 fail closed; original user desktops retain old policy until replacement",
+    "evidence": [
+      "runs/gvisor/snapdocker12-restored/network-acceptance.json",
+      "runs/gvisor/ready-offline1/network-acceptance.json",
+      "runs/gvisor/ready-offline1/http-offline.jsonl"
+    ]
+  },
+  "memory": {
+    "status": "Guest allocator budget committed and tested. Go runtime guard (soft GC target + 100ms sampled fail-stop) live passed: guest UDP socket allocation terminated only its Sentry at 86,083,864 bytes vs 67,108,864 budget. New transport helpers each have 512MiB RLIMIT_AS.",
+    "limits": "Guest pages have allocator enforcement. Runtime guard permits transient overshoot; host kernel allocations, systrap mappings and immutable shared image cache are outside the Go guard. No claim of a host cgroup-equivalent total RSS ceiling.",
+    "test_failures": "Bazel boot fixture uses nontraversable /tmp. Same built boot_test binary passed with TMPDIR=/local/gvisor-public-testtmp; see runs/gvisor-boot-direct-public-tests.log. Earlier anonymous fault and test teardown issues fixed."
+  },
+  "cpu": {
+    "status": "Weighted sharing is the new launch default; optional sampled CPU-equivalent quota and unrestricted shared mode. Controller uses safe guest pauses, tree-local host accounting, readiness gating and checkpoint suspension.",
+    "finding": "nice 0 vs 5 gives ~3:1 with 4 workers each, but ~0.76:1 with 4 vs16; per-thread nice is not environment fairness",
+    "evidence": "runs/gvisor-cpu-broker-optimized.log; runs/gvisor-cpu-idle.log",
+    "invalid_evidence": "runs/gvisor/cpu-sharing-invalid-guest-accounting.json: guest CPU clock exceeded available host capacity; do not use",
+    "results": "20 sec: equal 4/4 CPU ratio 1.007, equal 4/16 0.901, 3:1 ratio 2.823; quotas 0.9925/0.997 CPU; idle borrowing 3.901/4 CPUs.",
+    "gui_contention": "PASS: Firefox login/course navigation with another 16-worker environment on same four CPUs; 20 Moodle requests, warm median22.5ms max134.4ms.",
+    "controller_failure": "PASS: quota-paused systemd test, broker SIGKILL, all runtime descendants stopped in3.255s. Evidence runs/gvisor/cpu-failure-systemd3/failure-acceptance.json. Prior FUSE-helper leak fixed.",
+    "peer_failure": "PASS: deterministic peer control-socket failure stops only that peer; same broker, observer state probe and VNC survived. Evidence runs/gvisor/ready-clone2/peer-failure-acceptance.json.",
+    "cleanup_history": "Closing test guest socket initially killed older shared broker and ready-clone1. Corrected per-job error handling and registration-removal race. Original user desktops unaffected; new handoff ready-clone2."
+  },
+  "snapshots": {
+    "status": "PASS: full desktop restore, then snapshot of restored logged-in desktop and second restore. RAM/PID, open unlinked file/offset, owner/mode, queued abstract Unix data, established cross-netns TCP, independent clone, Moodle/nested Docker/MariaDB, Firefox VNC navigation all passed. Offline policy override on another restored clone also passed.",
+    "recommended": "snapshots/full-desktop-ready",
+    "first_accepted": "snapshots/snapdocker12-whole",
+    "tests": "Nine focused Go suites passed; twelve Python checks passed; full boot test binary passed with public TMPDIR fixture.",
+    "evidence": [
+      "runs/gvisor/snapdocker12/snapshot-acceptance.json",
+      "runs/gvisor/ready-clone1/snapshot-acceptance.json",
+      "runs/gvisor/ready-clone1/snapshot-participants.png"
+    ],
+    "diagnostic_failures": "Retained snapshots9-11 are explicitly unvalidated failures. Earlier missing namespace/topology, IP addresses, pending packet fixups, neighbor timers, TCP GSO and conntrack handlers fixed. Trial11 also exposed stale Sentry staging; publisher now builds every binary.",
+    "external_peers": "External connections may need reconnection; outside systems do not roll back. Snapshot pins exact runtime and immutable base-image hashes.",
+    "verification": {
+      "mode": "post-save detached worker; normal restore uses metadata checks; optional explicit full verification",
+      "format": 2,
+      "legacy_format_1_supported": true,
+      "incremental": "deferred",
+      "local_capture_reuse": "unchanged file identities on same node; persistent fallback tested",
+      "evidence": "notes/asynchronous-snapshot-verification.md"
+    },
+    "performance": {
+      "save_command_seconds": 15.133415541,
+      "restore_setup_seconds": 0.433965106,
+      "restore_state_probe_seconds": 7.043644798,
+      "persistent_fallback_probe_seconds": 9.556344772,
+      "limitation": "short runs under variable shared-node load; not cold-cache benchmarks"
+    }
+  },
+  "protected_desktops": [
+    "moodle-user1",
+    "earth-user1"
+  ],
+  "implementation_checkpoint": "checkpoints/async-snapshots-8c8b143/manifest.json",
+  "live_handoff": {
+    "name": "ready-clone2",
+    "vnc_port": 47217,
+    "cpus": "4-7 shared",
+    "guest_cpus": 4,
+    "page_budget_mib": 8192,
+    "runtime_guard_mib": 1024,
+    "network": "internet",
+    "cpu_policy": "weighted",
+    "weight": 100
+  },
+  "qualification_remaining": [
+    "Original Gym Anything environment/task integration (main codebase unchanged)",
+    "Deployment on an actually KVM-less node (current controlled test hides KVM)",
+    "Broader workload/reliability qualification; no host-cgroup-equivalent hard aggregate RSS or CPU cap"
+  ],
+  "recovery": {
+    "passed": true,
+    "evidence": "runs/gvisor-recovery-acceptance.json",
+    "detail": "Separate reconstructed lab and fresh NVMe runtime directory; exact source commit, original RAM/open-file/IPC/internal TCP, Moodle/nested MariaDB and VNC passed; temporary recovered guest stopped afterward.",
+    "bundle": "checkpoints/resources-snapshots-8c8b143-r3"
+  },
+  "snapshot_wrapper_recovery": {
+    "bundle": "checkpoints/async-snapshots-8c8b143",
+    "verified": true,
+    "evidence": "runs/gvisor-async-archive-verification.json"
+  }
+}

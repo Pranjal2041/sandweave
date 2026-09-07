@@ -1,0 +1,7 @@
+8a0bf533206e61ec1178db74f2293fbaec0304c21939e55c75c0ebb01f069c12  downloads/libvdeplug-slirp_0.1.0-3+b1_amd64.deb
+01291e2c8e28e91eac6b59c983a3a44e29ad0ddb8622699fbb84cbd5f26334a4  downloads/libvdeplug2t64_4.0.1-5.1+b1_amd64.deb
+53339f839fbaeb88655d1e0f0900f09ce2a15eeec53649ab179d6cf0271b9065  downloads/libvdeslirp0_0.1.1-2+b1_amd64.deb
+c83525b2a7131004104e89ff238b80b26b0cf1c953d23124d022b6fcb44e9e67  downloads/user-mode-linux_7.1um1_amd64.deb
+0cdae2adf2c37009ec494f8fbc9e6688a2f41465af49c091c663a80382feec83  downloads/vdeplug_4.0.1-5.1+b1_amd64.deb
+1cd60b0ab7675fd5898d590b83490661565267ddad603d0ae85aeced8fb8e7eb  tools/debian-trixie.sif
+284dc5ca92eb7d996937a23f42acf48d958b896a688a304631d9d630d52b84ad  tools/uml-smp/bin/linux-net-before-seccomp-fix

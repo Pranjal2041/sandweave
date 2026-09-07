@@ -1,0 +1,29 @@
+# Downloaded dependencies, build products and local tool environments.
+/downloads/
+/tools/
+/sources/gvisor/
+/sources/linux-7.1.3/
+/sources/virglrenderer-1.3.0/
+/sources/graphics-inspection/
+
+# Running environments and large recovery/snapshot artifacts stay outside Git.
+/runs/
+/snapshots/
+/checkpoints/
+/images/*
+!/images/README
+!/images/*.json
+
+# Generated caches, logs and machine-local credentials/configuration.
+__pycache__/
+*.py[cod]
+*.log
+.pytest_cache/
+.venv/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*

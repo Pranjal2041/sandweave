@@ -1,0 +1,11 @@
+--- a/arch/um/include/asm/syscall-generic.h
++++ b/arch/um/include/asm/syscall-generic.h
+@@ -29,7 +29,7 @@
+ static inline void syscall_rollback(struct task_struct *task,
+ 				    struct pt_regs *regs)
+ {
+-	/* do nothing */
++	PT_REGS_SET_SYSCALL_RETURN(regs, PT_REGS_SYSCALL_NR(regs));
+ }
+ 
+ static inline long syscall_get_error(struct task_struct *task,

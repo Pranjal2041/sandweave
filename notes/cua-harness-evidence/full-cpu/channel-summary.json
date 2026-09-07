@@ -1,0 +1,35 @@
+{
+  "repetitions": {
+    "pass": 470,
+    "fail": 5
+  },
+  "visual_details": {
+    "screenshot faithfully shows the probe's final state": 450,
+    "raw tap is headless": 20,
+    "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions": 5
+  },
+  "motion_density_raw_corroborated_repetitions": 5,
+  "catalog_groups": {
+    "clicks": {
+      "pass": 16,
+      "not_measurable": 2
+    },
+    "drags": {
+      "pass": 11
+    },
+    "keys": {
+      "pass": 34
+    },
+    "scrolls": {
+      "pass": 9,
+      "not_measurable": 3
+    },
+    "sequences": {
+      "pass": 8
+    },
+    "typing": {
+      "pass": 16,
+      "fail": 1
+    }
+  }
+}

@@ -185,6 +185,10 @@ latency run are retained separately; their variation is intentional evidence.
 
 ## Validation and scope
 
+The subsequent [100-case cua-auto-harness audit](cua-harness-fast-io.md)
+records broader action coverage and a reproduced limit: spare Unicode keycodes
+can be exhausted across a sequence of otherwise short text actions.
+
 Passed live checks include actual GTK text (ASCII, punctuation, accents, Greek
 and CJK codepoints), Ctrl-drag delivery at the correct endpoint, repeated clicks,
 scrolling, atomic rejection of an invalid batch, owned-image stability, fresh

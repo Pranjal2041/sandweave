@@ -1,0 +1,197 @@
+[
+ {
+  "verdict": {
+   "entry_id": "type_emoji_zwj",
+   "rep": 0,
+   "status": "fail",
+   "event_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "visual_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "raw_channel": null,
+   "notes": "sut_execution_error"
+  },
+  "source_directory": "runs/cua-harness-cold-text/entries/type_emoji_zwj/rep0",
+  "entry": {
+   "id": "type_emoji_zwj",
+   "actions": [
+    {
+     "kind": "type_text",
+     "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+    }
+   ],
+   "instruction": null,
+   "expect": {
+    "check": "type_text",
+    "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+   },
+   "tags": [
+    "known_hard",
+    "optional"
+   ],
+   "notes": "ZWJ sequence (family emoji is 5 codepoints joined by U+200D) and a skin-tone modifier pair. The hardest text-injection case: astral characters plus invisible joiners."
+  }
+ },
+ {
+  "verdict": {
+   "entry_id": "type_emoji_zwj",
+   "rep": 1,
+   "status": "fail",
+   "event_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "visual_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "raw_channel": null,
+   "notes": "sut_execution_error"
+  },
+  "source_directory": "runs/cua-harness-cold-text/entries/type_emoji_zwj/rep1",
+  "entry": {
+   "id": "type_emoji_zwj",
+   "actions": [
+    {
+     "kind": "type_text",
+     "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+    }
+   ],
+   "instruction": null,
+   "expect": {
+    "check": "type_text",
+    "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+   },
+   "tags": [
+    "known_hard",
+    "optional"
+   ],
+   "notes": "ZWJ sequence (family emoji is 5 codepoints joined by U+200D) and a skin-tone modifier pair. The hardest text-injection case: astral characters plus invisible joiners."
+  }
+ },
+ {
+  "verdict": {
+   "entry_id": "type_emoji_zwj",
+   "rep": 2,
+   "status": "fail",
+   "event_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "visual_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "raw_channel": null,
+   "notes": "sut_execution_error"
+  },
+  "source_directory": "runs/cua-harness-cold-text/entries/type_emoji_zwj/rep2",
+  "entry": {
+   "id": "type_emoji_zwj",
+   "actions": [
+    {
+     "kind": "type_text",
+     "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+    }
+   ],
+   "instruction": null,
+   "expect": {
+    "check": "type_text",
+    "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+   },
+   "tags": [
+    "known_hard",
+    "optional"
+   ],
+   "notes": "ZWJ sequence (family emoji is 5 codepoints joined by U+200D) and a skin-tone modifier pair. The hardest text-injection case: astral characters plus invisible joiners."
+  }
+ },
+ {
+  "verdict": {
+   "entry_id": "type_emoji_zwj",
+   "rep": 3,
+   "status": "fail",
+   "event_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "visual_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "raw_channel": null,
+   "notes": "sut_execution_error"
+  },
+  "source_directory": "runs/cua-harness-cold-text/entries/type_emoji_zwj/rep3",
+  "entry": {
+   "id": "type_emoji_zwj",
+   "actions": [
+    {
+     "kind": "type_text",
+     "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+    }
+   ],
+   "instruction": null,
+   "expect": {
+    "check": "type_text",
+    "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+   },
+   "tags": [
+    "known_hard",
+    "optional"
+   ],
+   "notes": "ZWJ sequence (family emoji is 5 codepoints joined by U+200D) and a skin-tone modifier pair. The hardest text-injection case: astral characters plus invisible joiners."
+  }
+ },
+ {
+  "verdict": {
+   "entry_id": "type_emoji_zwj",
+   "rep": 4,
+   "status": "fail",
+   "event_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "visual_channel": {
+    "status": "fail",
+    "detail": "SUT raised while actuating the action: RuntimeError: no unused keycode for text; close fast I/O and split the text into smaller sessions",
+    "evidence": {}
+   },
+   "raw_channel": null,
+   "notes": "sut_execution_error"
+  },
+  "source_directory": "runs/cua-harness-cold-text/entries/type_emoji_zwj/rep4",
+  "entry": {
+   "id": "type_emoji_zwj",
+   "actions": [
+    {
+     "kind": "type_text",
+     "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+    }
+   ],
+   "instruction": null,
+   "expect": {
+    "check": "type_text",
+    "text": "hi 👨‍👩‍👧 ok 👋🏽 end"
+   },
+   "tags": [
+    "known_hard",
+    "optional"
+   ],
+   "notes": "ZWJ sequence (family emoji is 5 codepoints joined by U+200D) and a skin-tone modifier pair. The hardest text-injection case: astral characters plus invisible joiners."
+  }
+ }
+]

@@ -1,0 +1,117 @@
+{
+ "adapter": {
+  "name": "GVisorXvncAdapter",
+  "class": "GenericProbeAdapter"
+ },
+ "raw_tap": true,
+ "totals": {
+  "entries": 7,
+  "pass": 3,
+  "fail": 0,
+  "flaky": 4,
+  "error": 0,
+  "not_measurable": 0
+ },
+ "entries": [
+  {
+   "entry_id": "key_kp_enter",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_kp_add",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_unicode_bmp",
+   "reps": 5,
+   "passes": 3,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "fail",
+    "fail"
+   ],
+   "flaky": true,
+   "final": "flaky"
+  },
+  {
+   "entry_id": "type_emoji",
+   "reps": 5,
+   "passes": 4,
+   "statuses": [
+    "pass",
+    "pass",
+    "fail",
+    "pass",
+    "pass"
+   ],
+   "flaky": true,
+   "final": "flaky"
+  },
+  {
+   "entry_id": "type_rtl",
+   "reps": 5,
+   "passes": 3,
+   "statuses": [
+    "fail",
+    "fail",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": true,
+   "final": "flaky"
+  },
+  {
+   "entry_id": "type_combining",
+   "reps": 5,
+   "passes": 4,
+   "statuses": [
+    "fail",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": true,
+   "final": "flaky"
+  },
+  {
+   "entry_id": "type_emoji_zwj",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  }
+ ],
+ "not_measurable": [],
+ "agent": null
+}

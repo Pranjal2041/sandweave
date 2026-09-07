@@ -1,0 +1,140 @@
+{
+  "harness": {
+    "repository": "https://github.com/gym-anything/cua-auto-harness",
+    "commit": "fc07c2d3a10e56c0fc0578280df9563af6f49d1f",
+    "version": "0.4.12",
+    "core_file_sha256": {
+      "backend.py": "a62331160f79bee440374823f8a7db3aad37932cec26ea22fb1e8474bb16bdd9",
+      "driver.py": "dfde38bed3b770e57a9b7c4777b2e9b23c3c1d193decb9ce490868749e293ffd",
+      "contracts.py": "d046933310c4f27c4c496e472c7d6343e3b653faa81a9dab5b56f75cb35aa26e",
+      "checker/events.py": "08fba9082fae0d92ca53e020c41618d07aac7caeeefd75382c24fc126bb4234a",
+      "checker/visual.py": "5ea5215a62f8d7989f2ee0eed88078f88f2d9293e5259befe4057f7d8ee73df7",
+      "probes/desktop_tk.py": "458d1612d7ae42094cb9efcd4e5ae8d2317746550e38f582f68a79f2741aa3a3"
+    }
+  },
+  "tested_lab_commit": "a96804c377b42603c8a723148a508def81023ef1",
+  "engine": {
+    "path": "sources/gvisor",
+    "upstream": "https://github.com/google/gvisor.git",
+    "branch": "experiment/no-kvm-slurm",
+    "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
+    "commit": "59487a05f5e858d5b20a36d980036ccea2ad82ab",
+    "patch": "notes/gvisor-no-kvm-prototype.patch",
+    "runtime_build": "tools/runtime-builds/dae2b000bd86b4757abc79fc2da0d563910dd4ccc9afc2c4765e47c3b8447431",
+    "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
+    "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow"
+  },
+  "fast_io_build": {
+    "sha256": {
+      "sources/xvnc-fast-io.c": "6a1ecbefc50daf7098911eb9d602c3109ad1f8d15b9cf7bebc8a847d17c9f94e",
+      "tools/fast-io/bridge": "ae1b439a17b114609739a5ace010f574342f5361e8d5834d1591a0557d9aeda0",
+      "tools/fast-io/libxcb-xtest.so.0": "399346c2b1a019326d1f1d2e84508f13b39d5deab76aba132600d80e8ad0f763"
+    },
+    "compiler": "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-14)",
+    "system_packages": [
+      "libxcb-1.13.1-9.el9.x86_64",
+      "libxcb-devel-1.13.1-9.el9.x86_64",
+      "glibc-2.34-272.el9_8.x86_64"
+    ]
+  },
+  "node": "babel-u5-28",
+  "python": "3.13.0",
+  "packages": {
+    "Pillow": "12.0.0",
+    "numpy": "2.5.2",
+    "rich": "14.2.0",
+    "textual": "7.5.0",
+    "python-dotenv": "1.1.0",
+    "tqdm": "4.67.1"
+  },
+  "desktop": {
+    "resolution": [
+      1920,
+      1080
+    ],
+    "gpu": false,
+    "display": ":1",
+    "application_cpus": 4,
+    "guest_memory_mib": 8192,
+    "runtime_guard_mib": 1024
+  },
+  "raw_tap": true,
+  "skip_optional": false,
+  "skip_known_hard": false,
+  "agent": null,
+  "catalog_entry_count": 100,
+  "repetitions_per_exercised_entry": 5,
+  "primary_run": "runs/cua-harness-full-cpu",
+  "supplementary_runs": {
+    "reference-text": "xdotool-reference",
+    "cold-text": "fastio",
+    "emoji-isolated": "fastio"
+  },
+  "adapter_note": "The full run loaded the adapter before its dependency check was consolidated into one shell conjunction. A constructor guard rejecting unknown runners was added after the runs and checked without booting. The tested input/screenshot paths did not change.",
+  "launch_command": [
+    "taskset",
+    "-c",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,44,45,46,47,48,49,50,51,52,53,54,55,56,57",
+    "/data/user_data/pranjala/general-vm/scripts/gvisor-host.sh",
+    "/lab/tools/runtime-builds/dae2b000bd86b4757abc79fc2da0d563910dd4ccc9afc2c4765e47c3b8447431/runsc",
+    "--platform=systrap",
+    "--directfs=false",
+    "--network=sandbox",
+    "--network-socket-config=/local/gvisor/bundles/fastio-harness-full-cpu/network.json",
+    "--ignore-cgroups",
+    "--allow-suid",
+    "--allow-rootfs-tar-annotation",
+    "--runtime-memory-limit=1073741824",
+    "--application-cpus=4",
+    "--app-memory-limit=8589934592",
+    "--in-sandbox-cgroup=v2",
+    "--net-raw",
+    "--allow-packet-socket-write",
+    "--sidecar-usage-policy=STRICT",
+    "--root=/local/gvisor/state",
+    "--debug=false",
+    "--debug-log=/lab/runs/gvisor/fastio-harness-full-cpu/%COMMAND%.log",
+    "--systrap-disable-syscall-patching",
+    "run",
+    "--bundle=/local/gvisor/bundles/fastio-harness-full-cpu",
+    "fastio-harness-full-cpu"
+  ],
+  "guest_packages": {
+    "gnome-shell": "42.9-0ubuntu2.3",
+    "libx11-6": "2:1.7.5-1ubuntu0.3",
+    "libxcb1": "1.14-3ubuntu3",
+    "python3-tk": "3.10.8-1~22.04",
+    "python3-xlib": "0.29-1",
+    "tigervnc-standalone-server": "1.12.0+dfsg-4ubuntu0.22.04.1",
+    "xdotool": "1:3.20160805.1-4"
+  },
+  "unsupported_actions": {
+    "click_button_back": [
+      "fast I/O has no 1x back click"
+    ],
+    "click_button_forward": [
+      "fast I/O has no 1x forward click"
+    ],
+    "scroll_left_3": [
+      "fast I/O has no horizontal-scroll action"
+    ],
+    "scroll_right_3": [
+      "fast I/O has no horizontal-scroll action"
+    ],
+    "scroll_diagonal": [
+      "fast I/O has no horizontal-scroll action"
+    ]
+  },
+  "full_run_exit_code": 1,
+  "full_run_result": {
+    "entries": 95,
+    "pass": 94,
+    "fail": 1,
+    "flaky": 0,
+    "error": 0,
+    "not_measurable": 5
+  },
+  "adapter_sha256": "0fdb0f23067dfed79d020dae0ebf16f86d523d2835f22442516b884d8eb7ea3c",
+  "completed_utc": "2026-09-07T22:48:59.273538+00:00",
+  "elapsed_including_boot_seconds": 2143.545
+}

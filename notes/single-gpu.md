@@ -47,8 +47,12 @@ driver installation, administrator change or NVIDIA runtime hook is involved.
 
 `stage-gpu.sh` copies matching host NVIDIA user-space libraries, extracts pinned
 VirtualGL 3.1.5 and installs the pinned Python packages. The guest receives these
-as a read-only `/opt/engine-gpu` mount. `engine-gpu` sets library/ICD/Python paths
-for a command. For graphics, `vglrun -d egl0` renders offscreen with NVIDIA EGL
+as a read-only `/opt/engine-gpu` mount. Before executing the requested guest
+entrypoint, `engine-gpu-init` registers the matching driver libraries first in
+the guest linker cache and links its `nvidia-smi` into `/usr/local/bin`.
+Ordinary guest commands can therefore load CUDA/NVML without a wrapper.
+`engine-gpu` additionally sets library/ICD/Python paths for a command.
+For graphics, `vglrun -d egl0` renders offscreen with NVIDIA EGL
 and transfers the frames to the existing guest Xvnc display. The application,
 Firefox content processes, desktop and Xvnc all remain inside gVisor.
 
@@ -129,6 +133,41 @@ bound the same three devices and same `/opt/engine-gpu` directory, selected CUDA
 device zero, and ran this same probe under Python 3.10. Its private `/tmp` was
 bound to node-local `gpu-native-tmp` so model serialization did not use the full
 home filesystem. Raw run logs remain under `runs/gpu-training-*.jsonl`.
+
+### Ordinary-terminal NVIDIA driver resolution
+
+On 2026-09-07 at 06:04:12 guest time, `ga` ran `apt install nvidia-utils-390`.
+The transaction also installed `libnvidia-compute-390`, both version
+390.157-0ubuntu0.22.04.2. Plain `nvidia-smi` then loaded the new guest NVML
+390.157 and failed with `Driver/library version mismatch` against host driver
+610.43.02. Those old libraries came from this apt transaction, not the base
+image. Accelerated Firefox continued to use the matching staged driver through
+`engine-gpu`.
+
+GPU launches now put `/opt/engine-gpu/driver/lib` in
+`/etc/ld.so.conf.d/00-engine-nvidia.conf`, rebuild the cache, and expose the
+matching binary at `/usr/local/bin/nvidia-smi`. This configuration was also
+applied to `gpu-ready1` without restarting its desktop or Firefox. The installed
+390 packages remain in the guest; no host packages or driver were changed.
+An existing shell can run `hash -r` to forget the old executable path.
+VirtualGL remains an application launch choice; this does not globally preload
+it or claim acceleration for the desktop compositor.
+
+[Driver-resolution evidence](gpu-evidence/driver-resolution.json) records tests
+as ordinary UID1000, with no `LD_LIBRARY_PATH` or `LD_PRELOAD`: plain
+`nvidia-smi`, successful NVML/CUDA initialization, one CUDA device, and loaded
+library paths pointing to driver 610.43.02. Both the existing desktop (after
+another plain `ldconfig`, simulating the cache rebuild from a package install)
+and a fresh disposable GPU launch passed. The old `/usr/bin/nvidia-smi -L`
+also succeeded after the cache fix. Reproduce the ordinary-user probe after
+staging dependencies:
+
+```bash
+scripts/gvisor-host.sh --gpu 0 /lab/tools/gvisor-socket/runsc \
+  --root=/local/gvisor/state exec my-gpu runuser -u ga -- \
+  env -u LD_LIBRARY_PATH -u LD_PRELOAD \
+  python3 /opt/engine-gpu/probes/gpu-driver-probe.py
+```
 
 ## Outstanding work and limits
 

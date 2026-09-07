@@ -24,6 +24,6 @@ UV_CACHE_DIR="$lab_root/downloads/uv-gpu-cache" uv pip install --link-mode=copy 
   --python-version 3.10 --python-platform x86_64-manylinux_2_35 \
   --target tools/gpu/python --index-url https://download.pytorch.org/whl/cu128 \
   --requirement notes/gpu-python-requirements.txt
-cp scripts/gpu-training-probe.py scripts/gpu-device-probe.py scripts/gpu-webgl.html tools/gpu/probes/
+cp scripts/gpu-training-probe.py scripts/gpu-device-probe.py scripts/gpu-driver-probe.py scripts/gpu-webgl.html tools/gpu/probes/
 chmod -R a+rX tools/gpu
 uv pip list --target tools/gpu/python --format freeze > tools/gpu/python-packages.txt

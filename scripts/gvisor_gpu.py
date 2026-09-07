@@ -99,6 +99,7 @@ def configure(spec, index, resources, lab):
                            'options': ['bind', 'ro']})
     spec['process']['env'] += [f'NVIDIA_VISIBLE_DEVICES={identity["uuid"]}', 'CUDA_VISIBLE_DEVICES=0',
                                'NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,video']
+    spec['process']['args'] = ['/usr/local/bin/engine-gpu-init', *spec['process']['args']]
     spec['annotations']['dev.gvisor.internal.nvproxy'] = 'true'
     return {**identity, 'driver_version': driver['driver_version'],
             'resources': str(resources), 'devices': devices,

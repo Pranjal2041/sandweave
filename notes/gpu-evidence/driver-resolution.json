@@ -1,0 +1,43 @@
+{
+  "recorded_at": "2026-09-07T06:13:50.946204+00:00",
+  "node": "babel-u5-28",
+  "cause": {
+    "guest_command": "apt install nvidia-utils-390",
+    "guest_apt_start": "2026-09-07 06:04:12",
+    "installed_packages": [
+      "nvidia-utils-390",
+      "libnvidia-compute-390"
+    ],
+    "package_version": "390.157-0ubuntu0.22.04.2",
+    "host_driver": "610.43.02",
+    "plain_command_error": "Failed to initialize NVML: Driver/library version mismatch"
+  },
+  "live_guest_after_cache_rebuild": {
+    "name": "gpu-ready1",
+    "passed": true,
+    "uid": 1000,
+    "driver_version": "610.43.02",
+    "cuda_device_count": 1,
+    "loaded_libraries": [
+      "/opt/engine-gpu/driver/lib/libcuda.so.610.43.02",
+      "/opt/engine-gpu/driver/lib/libnvidia-ml.so.610.43.02"
+    ],
+    "nvidia_smi": "NVIDIA L40S, 610.43.02, GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5",
+    "library_environment_override": false
+  },
+  "fresh_guest": {
+    "name": "gpu-terminal1",
+    "exit_code": 0,
+    "passed": true,
+    "uid": 1000,
+    "driver_version": "610.43.02",
+    "cuda_device_count": 1,
+    "loaded_libraries": [
+      "/opt/engine-gpu/driver/lib/libcuda.so.610.43.02",
+      "/opt/engine-gpu/driver/lib/libnvidia-ml.so.610.43.02"
+    ],
+    "nvidia_smi": "NVIDIA L40S, 610.43.02, GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5",
+    "library_environment_override": false
+  },
+  "legacy_usr_bin_nvidia_smi_L_passed": true
+}

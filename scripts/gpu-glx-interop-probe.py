@@ -2,6 +2,7 @@
 """Exercise a root-visual OpenGL context and CUDA/OpenGL buffer sharing."""
 import ctypes as C
 import json
+import os
 import statistics
 import sys
 import time
@@ -54,6 +55,14 @@ print(json.dumps({'phase': 'opengl', 'root_visual': hex(visual_id),
                   'renderer': renderer, 'pixel': list(pixel), 'passed': True}), flush=True)
 
 
+if '--hold-gl' in sys.argv:
+    print(json.dumps({'phase': 'holding_gl', 'pid': os.getpid()}), flush=True)
+    while True:
+        function(gl, 'glReadPixels', None, integer, integer, integer, integer, C.c_uint, C.c_uint, ptr)(0, 0, 1, 1, 0x1908, 0x1401, pixel)
+        assert all(abs(a-b) <= 1 for a,b in zip(pixel, [64,128,191,255])), list(pixel)
+        print(json.dumps({'phase': 'gl_alive', 'pid': os.getpid(), 'time': time.time(), 'pixel': list(pixel)}), flush=True)
+        time.sleep(2)
+
 def gl_extension(name, result, *arguments):
     address = function(gl, 'glXGetProcAddressARB', ptr, C.c_char_p)(name.encode())
     assert address, name
@@ -84,6 +93,15 @@ cu('cuGraphicsUnmapResources', [C.c_uint, C.POINTER(ptr), ptr], 1, C.byref(resou
 readback = (C.c_ubyte * 256)()
 gl_extension('glGetBufferSubData', None, C.c_uint, C.c_ssize_t, C.c_ssize_t, ptr)(0x8892, 0, 256, readback)
 assert bytes(readback) == b'*' * 256
+if '--hold-interop' in sys.argv:
+    print(json.dumps({'phase': 'holding_interop', 'pid': os.getpid()}), flush=True)
+    while True:
+        cu('cuGraphicsMapResources', [C.c_uint, C.POINTER(ptr), ptr], 1, C.byref(resource), None)
+        cu('cuGraphicsUnmapResources', [C.c_uint, C.POINTER(ptr), ptr], 1, C.byref(resource), None)
+        gl_extension('glGetBufferSubData', None, C.c_uint, C.c_ssize_t, C.c_ssize_t, ptr)(0x8892, 0, 256, readback)
+        assert bytes(readback) == b'*' * 256
+        print(json.dumps({'phase': 'interop_alive', 'pid': os.getpid(), 'time': time.time(), 'value': readback[0]}), flush=True)
+        time.sleep(2)
 if '--benchmark' in sys.argv:
     samples = {name: [] for name in ('map', 'memset', 'unmap', 'gl_read')}
     for attempt in range(110):

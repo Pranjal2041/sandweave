@@ -14,6 +14,7 @@ import shutil
 import cpu_broker
 import runtime_store
 import snapshot_store
+import filesystem_snapshot
 import gvisor_gpu
 import gvisor_mps
 import signal
@@ -49,6 +50,8 @@ parser.add_argument('--docker-data', action='store_true')
 parser.add_argument('--docker-archive', type=Path, help='previously exported Docker state archive')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
+parser.add_argument('--filesystem-runtime-current', action='store_true', help='explicitly test a cold filesystem snapshot with the currently staged runtime')
+parser.add_argument('--experimental-gpu-live', action='store_true', help='allow restoring an experimental CUDA-aware live capture')
 parser.add_argument('--verify', action='store_true', help='explicitly verify all snapshot/dependency hashes before restoring')
 parser.add_argument('--cgroup', choices=['v1', 'v2'], default='v2')
 parser.add_argument('--gpu', type=int, help='one allocated /dev/nvidiaN device minor; N can differ from nvidia-smi index')
@@ -72,8 +75,6 @@ if args.verify and not args.restore:
     parser.error('--verify requires --restore')
 if args.gpu is not None:
     gvisor_gpu.allocated_device(args.gpu)
-    if args.restore:
-        parser.error('GPU restore is not qualified; start a fresh GPU environment')
 if args.restore and not args.detach and (args.restore / 'snapshot-manifest.json').is_file():
     if args.verify:
         verification = snapshot_store.verify(lab, args.restore)
@@ -88,6 +89,19 @@ if args.restore and (args.restore / 'launch-settings.json').is_file():
         option = '--' + key.replace('_', '-')
         if not any(x == option or x.startswith(option + '=') for x in sys.argv[1:]):
             setattr(args, key, value)
+filesystem_restore = bool(snapshot_manifest and snapshot_manifest.get('kind') == 'filesystem')
+if args.filesystem_runtime_current and not args.detach and not filesystem_restore:
+    parser.error('--filesystem-runtime-current requires a filesystem snapshot')
+if saved_settings and saved_settings.get('gpu'):
+    if saved_settings['gpu'].get('mps'):
+        parser.error('MPS snapshots are not qualified')
+    if not args.detach and not filesystem_restore and not args.experimental_gpu_live:
+        parser.error('live GPU restore requires --experimental-gpu-live')
+    if args.gpu is None:
+        args.gpu = saved_settings['gpu']['device_minor']
+    gvisor_gpu.allocated_device(args.gpu)
+if args.restore and not args.detach and not filesystem_restore and args.gpu is not None and not saved_settings.get('gpu'):
+    parser.error('a live CPU snapshot cannot acquire a new GPU; use a filesystem snapshot')
 if args.runtime_memory_mib < 32:
     parser.error('runtime-memory-mib must be at least 32')
 if args.guest_cpus < 1 or args.memory_mib < 64 or not 0 <= args.host_nice <= 19:
@@ -126,8 +140,8 @@ if args.docker_data:
 bundle_flags = ['--docker-data'] if args.docker_data else []
 subprocess.run([sys.executable, str(lab / 'scripts/make-gvisor-bundle.py'), *bundle_flags, args.name, *args.command], check=True)
 bundle = local / 'gvisor/bundles' / args.name
-runtime = saved_settings['runtime'] if saved_settings else json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
-runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore))
+runtime = saved_settings['runtime'] if saved_settings and not args.filesystem_runtime_current else json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
+runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore) or args.filesystem_runtime_current)
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 launch_settings = {'settings': settings, 'runtime': runtime}
@@ -141,9 +155,9 @@ if args.restore:
         parser.error('checkpoint needs lab-spec.json copied from its original bundle config.json')
     (bundle / 'config.json').write_bytes(saved_spec.read_bytes())
     if (args.restore / 'fixtures.tar').exists():
-        (bundle / 'fixtures.tar').write_bytes((args.restore / 'fixtures.tar').read_bytes())
+        shutil.copy2(args.restore / 'fixtures.tar', bundle / 'fixtures.tar')
 spec = json.loads((bundle / 'config.json').read_text())
-if args.restore:
+if args.restore and not filesystem_restore:
     base = lab / snapshot_manifest['base_image']['path']
     # Older lab snapshots used node-local aliases. Materialize those immutable
     # inputs without changing OCI annotations or replacing different contents.
@@ -173,10 +187,24 @@ elif not args.restore:
         shutil.copy2(bundle / 'fixtures.tar', fixture_object)
     spec['annotations']['dev.gvisor.tar.rootfs.upper'] = '/lab/' + str(fixture_object.relative_to(lab))
     spec['annotations']['dev.gvisor.spec.rootfs.source'] = '/lab/images/gvisor-ubuntu-ready-ae303ca.erofs'
+if filesystem_restore:
+    checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
+    spec['annotations']['dev.gvisor.spec.rootfs.source'] = '/lab/' + snapshot_manifest['base_image']['path']
+    spec['annotations']['dev.gvisor.tar.rootfs.upper'] = filesystem_snapshot.inside(checkpoint / 'rootfs-upper.tar', lab, local)
+    filesystem_snapshot.prepare_boot(spec, args.command)
+if args.restore and saved_settings.get('gpu'):
+    # Configure the current allocated device exactly once on cold boot. Live
+    # restore keeps the saved process state and requires the same GPU identity.
+    spec['mounts'] = [m for m in spec['mounts'] if m['destination'] != '/opt/engine-gpu']
+    spec['process']['env'] = [e for e in spec['process']['env'] if not e.startswith(('NVIDIA_VISIBLE_DEVICES=', 'CUDA_VISIBLE_DEVICES=', 'NVIDIA_DRIVER_CAPABILITIES='))]
+    if spec['process']['args'][0] == '/usr/local/bin/engine-gpu-init':
+        spec['process']['args'].pop(0)
 spec['linux']['resources']['cpu'] = {}
 spec['linux']['resources']['memory']['limit'] = args.memory_mib * 1024**2
 if args.gpu is not None:
     launch_settings['gpu'] = gvisor_gpu.configure(spec, args.gpu, lab / 'tools/gpu', lab)
+    if args.restore and not filesystem_restore and (launch_settings['gpu']['uuid'] != saved_settings['gpu']['uuid'] or launch_settings['gpu']['driver_version'] != saved_settings['gpu']['driver_version']):
+        raise ValueError('live GPU restore requires the saved GPU and driver')
     (bundle / 'launch-settings.json').write_text(json.dumps(launch_settings, indent=2) + '\n')
 (bundle / 'config.json').write_text(json.dumps(spec, indent=2) + '\n')
 mark('restore_inputs_seconds')
@@ -322,7 +350,7 @@ try:
                     '--nvproxy-allowed-driver-capabilities=compute,utility,graphics,video' + (',profiling' if mps else '')]
         if mps:
             command += mps.flags()
-    if args.restore:
+    if args.restore and not filesystem_restore:
         checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
         timings['snapshot_storage'] = str(checkpoint)
         if checkpoint.is_relative_to(local):
@@ -353,6 +381,20 @@ try:
         guest = subprocess.Popen(command, cwd=lab, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  start_new_session=True)
         children.append(guest)
+        if filesystem_restore:
+            def restore_mounts():
+                control = [str(lab / 'scripts/gvisor-host.sh')]
+                if args.gpu is not None:
+                    control += ['--gpu', str(args.gpu)]
+                control += [runtime_arg, '--root=/local/gvisor/state']
+                try:
+                    filesystem_snapshot.finish_boot(control, args.name, checkpoint, snapshot_manifest, lab, local, guest, watch_done)
+                    snapshot_store.write_json(logs / 'filesystem-ready.json', {'ready_at': time.time()})
+                except Exception as error:
+                    (logs / 'filesystem-restore-error.txt').write_text(str(error) + '\n')
+                    cpu_broker.terminate_trees([guest.pid])
+            threading.Thread(target=restore_mounts, daemon=True).start()
+
         if mps_failed.is_set():
             cpu_broker.terminate_trees([guest.pid])
         for line in guest.stdout:

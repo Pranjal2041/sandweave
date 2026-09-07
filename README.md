@@ -46,8 +46,12 @@ WebGL/WebRender, Google Earth Pro rendering/search, and CUDA/OpenGL buffer shari
 passed on this node's L40S and driver 610.43.02. Earth has a recorded shutdown
 crash requiring further investigation. Resolve's CUDA/OpenGL processing and a
 five-second 1080p ProRes export passed; games are not yet tested.
-GPU snapshots are deferred and the wrapper refuses them before
-pausing a GPU guest. Existing CPU-only snapshots are unchanged.
+GPU environments now support whole persistent-filesystem snapshots and cold
+restore, including separate Docker storage mounts. Use
+`python scripts/checkpoint-gvisor.py --filesystem ENV LABEL`, then the normal
+`run-gvisor.py --restore` command. Small CUDA live-state restore passed an
+experimental control; Firefox/Earth/Resolve live graphics snapshots failed.
+See [GPU filesystem snapshots and live-state evidence](notes/gpu-filesystem-snapshots.md).
 
 See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
 The [sharing and partitioning investigation](notes/gpu-sharing-partitioning.md)
@@ -58,7 +62,7 @@ for eight SMs on this L40S; optionally add
 `--experimental-gpu-client-memory-mib 1024` for a per-CUDA-client memory limit.
 Two concurrent guests, CUDA kernels, allocation rejection and lifecycle cleanup
 passed. These are cooperative CUDA controls; graphics and memory bandwidth stay
-shared, and GPU snapshots remain deferred. Ordinary GPU launches keep their
+shared, and MPS snapshots remain deferred. Ordinary GPU launches keep their
 existing behavior.
 The [GPU application investigation](notes/gpu-applications.md) records Earth's
 VirtualGL fixes and interactive checks. [Resolve setup and acceptance](notes/resolve-gpu.md)

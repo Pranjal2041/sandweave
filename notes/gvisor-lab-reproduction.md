@@ -157,3 +157,8 @@ The benchmark's ZRLE decoder was repaired in `scripts/vnc_zrle.py` to respect
 byte padding at the end of every palette row (RFC6143). This affects only our
 measurement client; ordinary VNC viewers use their own decoders. Tests:
 `tools/visual-bench-venv/bin/python scripts/test-vnc-zrle.py`.
+
+GPU environments also support `checkpoint-gvisor.py --filesystem ENV LABEL` and
+normal `run-gvisor.py --restore` cold boot. The persistent Docker mounts are
+included. See [GPU filesystem snapshots](gpu-filesystem-snapshots.md) for exact
+scope, validated commands and the separate unsuccessful live graphics attempts.

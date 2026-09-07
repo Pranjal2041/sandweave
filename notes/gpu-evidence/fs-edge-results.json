@@ -1,0 +1,6 @@
+{
+  "base_file_whiteout": true,
+  "cold_metadata_roundtrip": true,
+  "live_snapshot_after_cold_restore": true,
+  "live_restore_metadata_check": "{\"action\": \"check\", \"passed\": true}"
+}

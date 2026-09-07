@@ -12,6 +12,7 @@ import time
 import uuid
 import runtime_store
 import snapshot_store
+import filesystem_snapshot
 
 started = phase = time.perf_counter()
 timings = {}
@@ -28,6 +29,8 @@ lab = Path(__file__).resolve().parent.parent
 local = Path((lab / 'runs/local-path.txt').read_text().strip())
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--local-only', action='store_true', help='diagnostic snapshot in node-local storage only')
+p.add_argument('--filesystem', action='store_true', help='save persistent filesystems; restore boots fresh processes')
+p.add_argument('--experimental-gpu-live', action='store_true', help='diagnostic CUDA-aware live snapshot; graphics is not qualified')
 p.add_argument('name')
 p.add_argument('checkpoint')
 a = p.parse_args()
@@ -36,8 +39,14 @@ for name in (a.name, a.checkpoint):
         p.error('names must use letters, digits, dash or underscore')
 bundle = local / 'gvisor/bundles' / a.name
 settings = json.loads((bundle / 'launch-settings.json').read_text())
-if settings.get('gpu'):
-    p.error('GPU snapshots are not qualified; refusing to pause this GPU environment')
+if a.filesystem and a.experimental_gpu_live:
+    p.error('choose filesystem or experimental live capture')
+if a.experimental_gpu_live and not settings.get('gpu'):
+    p.error('--experimental-gpu-live requires a GPU environment')
+if settings.get('gpu', {}).get('mps'):
+    p.error('MPS snapshots are not qualified')
+if settings.get('gpu') and not (a.filesystem or a.experimental_gpu_live):
+    p.error('use --filesystem for GPU environments; live GPU capture needs --experimental-gpu-live')
 runtime = settings['runtime']
 runtime_root = runtime_store.validate(lab, runtime, verify=False)
 state = json.loads((local / 'gvisor/state' / f'{a.name}_sandbox:{a.name}.state').read_text())
@@ -53,6 +62,18 @@ for source, target in [('config.json', 'lab-spec.json'), ('fixtures.tar', 'fixtu
                        ('launch-settings.json', 'launch-settings.json'), ('network-policy.json', 'network-policy.json')]:
     shutil.copy2(bundle / source, dest / target)
 spec = json.loads((dest / 'lab-spec.json').read_text())
+if not a.filesystem:
+    # A cold-restored guest starts from its saved upper archive, not the small
+    # launch fixture tar. Live restore must retain that exact immutable input.
+    upper = spec['annotations']['dev.gvisor.tar.rootfs.upper']
+    if upper.startswith('/local/'):
+        upper_source = local / upper.removeprefix('/local/')
+    elif upper.startswith('/lab/'):
+        upper_source = lab / upper.removeprefix('/lab/')
+    else:
+        raise ValueError('unknown rootfs upper input location')
+    if not os.path.samefile(upper_source, bundle / 'fixtures.tar'):
+        shutil.copy2(upper_source, dest / 'fixtures.tar')
 base = spec['annotations']['dev.gvisor.spec.rootfs.source']
 if base.startswith('/local/'):
     original_base = local / base.removeprefix('/local/')
@@ -92,16 +113,24 @@ try:
             if time.monotonic() > deadline:
                 raise TimeoutError('CPU controller did not release checkpoint scheduling')
             time.sleep(.05)
-    command = [str(lab / 'scripts/gvisor-host.sh'), '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc',
-               '--root=/local/gvisor/state', 'checkpoint', '--leave-running',
-               '--image-path=/local/gvisor/checkpoints/' + a.checkpoint, a.name]
+    command = [str(lab / 'scripts/gvisor-host.sh')]
+    if settings.get('gpu'):
+        command += ['--gpu', str(settings['gpu']['device_minor'])]
+    command += ['/lab/' + str(runtime_root.relative_to(lab)) + '/runsc', '--root=/local/gvisor/state']
     mark('controller_release_seconds')
     start = time.perf_counter()
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+    filesystem = None
+    if a.filesystem:
+        filesystem = filesystem_snapshot.capture(command, a.name, dest, spec, lab, local)
+    else:
+        extra = ['--cuda-checkpoint-path=/opt/engine-gpu/bin/cuda-checkpoint', '--cuda-checkpoint-sequential'] if a.experimental_gpu_live else []
+        result = subprocess.run([*command, 'checkpoint', '--leave-running', *extra,
+                                 '--image-path=/local/gvisor/checkpoints/' + a.checkpoint, a.name],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+        (dest / 'checkpoint.log').write_bytes(result.stdout)
+        print(result.stdout.decode(errors='replace'), end='')
+        result.check_returncode()
     pause_seconds = time.perf_counter() - start
-    (dest / 'checkpoint.log').write_bytes(result.stdout)
-    print(result.stdout.decode(errors='replace'), end='')
-    result.check_returncode()
 finally:
     for marker in suspensions:
         marker.unlink(missing_ok=True)
@@ -109,12 +138,17 @@ mark('checkpoint_seconds')
 
 captured = {f.name: snapshot_store.signature(f) for f in dest.iterdir() if f.is_file()}
 files = {name: {'size': stat['st_size']} for name, stat in captured.items()}
-assert 'checkpoint.img' in files and 'pages.img' in files
-manifest = {'format': 2, 'snapshot_id': uuid.uuid4().hex, 'container': a.name, 'pause_seconds': pause_seconds,
+required = {'rootfs-upper.tar'} if a.filesystem else {'checkpoint.img', 'pages.img'}
+if not required <= files.keys():
+    raise ValueError('capture did not produce its required payloads')
+manifest = {'format': 2, 'kind': 'filesystem' if a.filesystem else 'live',
+            'experimental_gpu_live': a.experimental_gpu_live, 'filesystem': filesystem,
+            'snapshot_id': uuid.uuid4().hex, 'container': a.name, 'pause_seconds': pause_seconds,
             'runtime': runtime, 'base_image': base_info, 'files': files,
             'verification_source': {'hostname': socket.gethostname(), 'path': str(dest),
                                     'files': captured, 'base_path': str(original_base), 'base_stat': base_stat},
-            'external_connections': 'Host transport connections reconnect after restore; saved internal virtual networks remain inside the snapshot.'}
+            'external_connections': ('Fresh network stack on cold boot.' if a.filesystem else
+                                     'Host transport connections reconnect after restore; saved internal virtual networks remain inside the snapshot.')}
 snapshot_store.write_json(dest / 'snapshot-manifest.json', manifest)
 snapshot_store.pending(dest, manifest)
 mark('manifest_seconds')

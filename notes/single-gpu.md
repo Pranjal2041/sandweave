@@ -19,7 +19,7 @@ needed for the successful GPU workloads.
 | CUDA/OpenGL interop | CUDA wrote a mapped OpenGL buffer; OpenGL readback verified all 256 bytes. Native and gVisor pass with VirtualGL `-nodl`; both fail without it. |
 | Resolve | CUDA/OpenGL, timeline playback, color adjustment, project reopening and ProRes export passed; see [Resolve acceptance and limits](resolve-gpu.md). |
 | Games / Vulkan window presentation | Not tested yet. |
-| GPU process/context snapshots | Deferred at the user's request. Launcher refuses GPU restore; checkpoint wrapper refuses GPU capture before pausing the guest. |
+| GPU snapshots | Persistent-filesystem cold restore is tested. Small CUDA live restore passed experimentally; graphics live restore failed. See [current snapshot results](gpu-filesystem-snapshots.md). |
 
 [Machine-readable training evidence](gpu-evidence/training-comparison.json),
 [device test](gpu-evidence/device-boundary.json),

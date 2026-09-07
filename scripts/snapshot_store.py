@@ -47,7 +47,14 @@ def inspect(lab, snapshot, *, allow_failed=False):
     manifest = json.loads((snapshot / 'snapshot-manifest.json').read_text())
     if manifest.get('format') not in (1, 2):
         raise ValueError('unsupported snapshot format')
-    required = {'checkpoint.img', 'pages.img', 'lab-spec.json', 'launch-settings.json', 'fixtures.tar'}
+    required = {'lab-spec.json', 'launch-settings.json', 'fixtures.tar'}
+    if manifest.get('kind', 'live') == 'filesystem':
+        required.add('rootfs-upper.tar')
+        required.update(m['file'] for m in manifest['filesystem']['mounts'])
+    elif manifest.get('kind', 'live') == 'live':
+        required.update(('checkpoint.img', 'pages.img'))
+    else:
+        raise ValueError('unsupported snapshot kind')
     if not required <= manifest['files'].keys():
         raise ValueError('snapshot manifest is missing required files')
     for name, info in manifest['files'].items():

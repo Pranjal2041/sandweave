@@ -1,0 +1,137 @@
+{
+  "driver": "610.43.02",
+  "gpu_uuid": "GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5",
+  "cuda_utility": {
+    "revision": "00d5cce84c628088d6caa203fc4af40c1538b6f7",
+    "url": "https://raw.githubusercontent.com/NVIDIA/cuda-checkpoint/00d5cce84c628088d6caa203fc4af40c1538b6f7/bin/x86_64_Linux/cuda-checkpoint",
+    "sha256": "707fa7f54136824d6c1d6dd724b9b1717610f831033c00d06da474de363a06db"
+  },
+  "gvisor_cuda_roundtrip": {
+    "passed": true,
+    "saved_nonce": "623485c64e6d49a0a785fe1758a672eb",
+    "restored_nonce": "623485c64e6d49a0a785fe1758a672eb",
+    "guest_pid": 742,
+    "gpu_address": 139996151414784,
+    "bytes": 4096,
+    "byte_value": 73,
+    "original_after_save_count": 2,
+    "restored_first_request_count": 2,
+    "snapshot": "gpu-cuda-qualified-attempt"
+  },
+  "gvisor_graphics_rejections": {
+    "opengl": "checkpoint failed: checkpointing container \"gpu-snapshot-probe\": encoding error: nvproxy: object handle 0xc1d10397:0xbfef0001 (class 0x000090f1, type *nvproxy.miscObject) is not restorable:",
+    "cuda_opengl_interop": "checkpoint failed: checkpointing container \"gpu-snapshot-probe\": encoding error: nvproxy: object handle 0xc1d103b1:0xbfef0001 (class 0x000090f1, type *nvproxy.miscObject) is not restorable:",
+    "firefox": "checkpoint failed: checkpointing container \"fs-gpu-final\": encoding error: nvproxy: object handle 0xc1d104ae:0xbfef0001 (class 0x000090f1, type *nvproxy.miscObject) is not restorable:",
+    "earth": "checkpoint failed: checkpointing container \"fs-gpu-final\": encoding error: nvproxy: object handle 0xc1d104da:0xbfef0001 (class 0x000090f1, type *nvproxy.miscObject) is not restorable:",
+    "resolve_project": "checkpoint failed: checkpointing container \"fs-gpu-docker-restored\": encoding error: nvproxy: object handle 0xc1d104e1:0xbfef0001 (class 0x000090f1, type *nvproxy.miscObject) is not restorable:"
+  },
+  "native_cuda": {
+    "before": {
+      "nonce": "19d955f09b674052b01769b8d745a5d2",
+      "count": 1,
+      "pid": 28,
+      "address": 1100027527168,
+      "value": 73
+    },
+    "actions": [
+      {
+        "action": "lock",
+        "rc": 0,
+        "out": "",
+        "err": ""
+      },
+      {
+        "action": "checkpoint",
+        "rc": 0,
+        "out": "",
+        "err": ""
+      },
+      {
+        "action": "restore",
+        "rc": 0,
+        "out": "",
+        "err": ""
+      },
+      {
+        "action": "unlock",
+        "rc": 0,
+        "out": "",
+        "err": ""
+      }
+    ],
+    "after": {
+      "nonce": "19d955f09b674052b01769b8d745a5d2",
+      "count": 2,
+      "pid": 28,
+      "address": 1100027527168,
+      "value": 73
+    }
+  },
+  "native_interop": [
+    {
+      "args": [
+        "--get-state"
+      ],
+      "rc": 0,
+      "out": "running\n",
+      "err": ""
+    },
+    {
+      "args": [
+        "--action",
+        "lock",
+        "--timeout",
+        "5000"
+      ],
+      "rc": 0,
+      "out": "",
+      "err": ""
+    },
+    {
+      "args": [
+        "--action",
+        "checkpoint"
+      ],
+      "rc": 0,
+      "out": "",
+      "err": ""
+    },
+    {
+      "args": [
+        "--get-state"
+      ],
+      "rc": 0,
+      "out": "checkpointed\n",
+      "err": ""
+    },
+    {
+      "checkpointed_gpu_fds": {
+        "4": "/dev/nvidiactl",
+        "5": "/dev/nvidia0",
+        "6": "/dev/nvidia0",
+        "7": "/dev/nvidia0",
+        "8": "/dev/nvidiactl",
+        "9": "/dev/nvidia0",
+        "10": "/dev/nvidia0",
+        "11": "/dev/nvidiactl",
+        "12": "/dev/nvidia0",
+        "13": "/dev/nvidia0",
+        "15": "/dev/nvidia0",
+        "16": "/session/cache/nvidia/GLCache/e1bb26999df6904f49dd468d22c7da7b/9db221f8473d11aa/d130063c54442396.toc",
+        "17": "/session/cache/nvidia/GLCache/e1bb26999df6904f49dd468d22c7da7b/9db221f8473d11aa/d130063c54442396.bin"
+      }
+    },
+    {
+      "action": "restore",
+      "rc": 1,
+      "out": "",
+      "err": "Could not restore on process ID 328792: \"invalid argument\"\n"
+    },
+    {
+      "action": "unlock",
+      "rc": 1,
+      "out": "",
+      "err": "Could not unlock on process ID 328792: \"the operation cannot be performed in the present state\"\n"
+    }
+  ]
+}

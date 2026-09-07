@@ -103,7 +103,7 @@ def configure(spec, index, resources, lab):
     spec['annotations']['dev.gvisor.internal.nvproxy'] = 'true'
     return {**identity, 'driver_version': driver['driver_version'],
             'resources': str(resources), 'devices': devices,
-            'snapshot_support': 'not qualified; GPU snapshotting is deferred'}
+            'snapshot_support': 'persistent filesystem cold restore; experimental CUDA live restore; graphics live restore unsupported'}
 
 
 if __name__ == '__main__':

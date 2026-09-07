@@ -45,6 +45,22 @@ class SnapshotStoreTest(unittest.TestCase):
         snapshot_store.write_json(self.snapshot / 'snapshot-manifest.json', self.manifest)
         snapshot_store.pending(self.snapshot, self.manifest)
 
+    def test_filesystem_manifest_requires_every_mount_archive(self):
+        self.manifest.update(kind='filesystem', filesystem={'mounts': [{'file': 'mount-0.tar'}]})
+        self.manifest['files']['rootfs-upper.tar'] = {'size': 4}
+        (self.snapshot / 'rootfs-upper.tar').write_bytes(b'root')
+        snapshot_store.write_json(self.snapshot / 'snapshot-manifest.json', self.manifest)
+        with self.assertRaisesRegex(ValueError, 'required files'):
+            snapshot_store.inspect(self.lab, self.snapshot)
+        self.manifest['files']['mount-0.tar'] = {'size': 5}
+        (self.snapshot / 'mount-0.tar').write_bytes(b'mount')
+        snapshot_store.write_json(self.snapshot / 'snapshot-manifest.json', self.manifest)
+        with mock.patch.object(runtime_store, 'digest', side_effect=AssertionError('blocking hash')):
+            snapshot_store.inspect(self.lab, self.snapshot)
+        (self.snapshot / 'mount-0.tar').write_bytes(b'bad')
+        with self.assertRaisesRegex(ValueError, 'size mismatch'):
+            snapshot_store.inspect(self.lab, self.snapshot)
+
     def test_pending_restore_never_hashes_payloads(self):
         with mock.patch.object(runtime_store, 'digest', side_effect=AssertionError('blocking hash')):
             snapshot_store.inspect(self.lab, self.snapshot)

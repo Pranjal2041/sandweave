@@ -1,0 +1,71 @@
+{
+  "fs-gpu-final-save": {
+    "bytes": 11164564202,
+    "save": {
+      "input_setup_seconds": 0.0029978729435242712,
+      "controller_release_seconds": 0.2519511670107022,
+      "checkpoint_seconds": 9.616744833998382,
+      "manifest_seconds": 0.0017760510090738535,
+      "publication_seconds": 34.847067194990814,
+      "verifier_start_seconds": 0.003774017037358135,
+      "total_seconds": 44.72431983699789
+    },
+    "exports": {
+      "/": 5.0729649479617365,
+      "/var/lib/docker": 1.2167496139882132,
+      "/var/lib/containerd": 2.8190718200057745
+    },
+    "restore_setup_seconds": 0.5051295469747856,
+    "restore_filesystems_seconds": 14.5388765335083,
+    "verification": "passed"
+  },
+  "fs-gpu-supported-save": {
+    "bytes": 11189835425,
+    "save": {
+      "input_setup_seconds": 0.017018056998495013,
+      "controller_release_seconds": 0.20105841901386157,
+      "checkpoint_seconds": 9.179479073965922,
+      "manifest_seconds": 0.000913135998416692,
+      "publication_seconds": 16.381239859038033,
+      "verifier_start_seconds": 0.0014844359830021858,
+      "total_seconds": 25.781194250972476
+    },
+    "exports": {
+      "/": 4.471464057976846,
+      "/var/lib/docker": 0.965754892968107,
+      "/var/lib/containerd": 3.1697894239914604
+    },
+    "restore_setup_seconds": 0.5233361669816077,
+    "restore_filesystems_seconds": 9.528443336486816,
+    "verification": "passed"
+  },
+  "acceptance": {
+    "metadata": [
+      "content",
+      "uid",
+      "gid",
+      "mode",
+      "mtime_ns",
+      "binary_xattr",
+      "empty_xattr",
+      "equals_xattr_name",
+      "file_capability",
+      "posix_acl",
+      "hardlink",
+      "symlink",
+      "fifo",
+      "sparse_contents",
+      "whiteout",
+      "opaque_directory",
+      "both_docker_mounts"
+    ],
+    "metadata_roundtrip_passed": true,
+    "moodle_http": 200,
+    "nested_container": "moodle-mariadb",
+    "rejected_unknown_mount_and_resumed": "{\"action\": \"check\", \"passed\": true}",
+    "prepaused_source": {
+      "status_after_save": "paused",
+      "passed": true
+    }
+  }
+}

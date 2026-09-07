@@ -12,6 +12,8 @@ import gvisor_gpu
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--bind', action='append', default=[],
+                    help='additional Apptainer bind for a native comparison')
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
@@ -36,6 +38,8 @@ with socket.socket() as reservation:
 binds = []
 for device in devices:
     binds += ['--bind', device['path'] + ':' + device['path']]
+for bind in args.bind:
+    binds += ['--bind', bind]
 startup = '''set -eu
 test ! -e /dev/kvm
 export HOME=/session/home DISPLAY=:97 XDG_RUNTIME_DIR=/session/runtime
@@ -67,6 +71,6 @@ launch = ['apptainer', 'exec', '--userns', '--containall', '--cleanenv', '--no-h
 with (session / 'launcher.log').open('wb') as output:
     child = subprocess.Popen(launch, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
 metadata = {'pid': child.pid, 'vnc_port': port, 'session': str(session), 'gpu': identity,
-            'command': command}
+            'command': command, 'binds': args.bind}
 (lab / 'runs' / (args.name + '.json')).write_text(json.dumps(metadata, indent=2) + '\n')
 print(json.dumps(metadata))

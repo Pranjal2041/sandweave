@@ -26,10 +26,12 @@ and the NVIDIA OpenGL renderer.
 
 **Playback remains below real time:** the Resolve viewer reported roughly
 8.7–8.9 fps, both before and after the audio setup correction. Frames advance
-and scrubbing works, but 24 fps playback is not qualified. No equivalent native
-Resolve performance control has been run, so this is not yet attributed to
-gVisor, VirtualGL, resource settings or GPU contention. Other host jobs occupy
-most of this GPU's VRAM. No other users' jobs or devices were changed.
+and scrubbing works, but 24 fps playback is not qualified. A subsequent native
+control reached 24 fps on this same GPU, including with four-core affinity.
+Profiling found spare GPU compute and fast VirtualGL readback/blitting, while
+a fresh guest reproduced the slowdown. The exact remaining cause is unresolved;
+see [the measurements and control differences](resolve-playback-performance.md).
+Other jobs occupy most of this GPU's VRAM, but no other jobs or devices were changed.
 
 The test does not cover arbitrary codecs, plugins, long projects, games, multi-GPU
 operation or CUDA video codec acceleration. Resolve logged an NvEncodeAPI load

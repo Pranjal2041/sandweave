@@ -5,6 +5,7 @@
 /sources/linux-7.1.3/
 /sources/virglrenderer-1.3.0/
 /sources/graphics-inspection/
+/sources/virtualgl/
 
 # Running environments and large recovery/snapshot artifacts stay outside Git.
 /runs/

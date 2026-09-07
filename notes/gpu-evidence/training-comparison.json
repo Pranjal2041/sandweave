@@ -1,0 +1,34 @@
+{
+  "native": {
+    "event": "passed",
+    "steps": 1600,
+    "warmup_steps": 10,
+    "measured_seconds": 5.181253006012412,
+    "steps_per_second": 306.8755758799923,
+    "first_loss": 0.39674949645996094,
+    "last_loss": 6.1082369029463734e-06,
+    "peak_gpu_allocated_bytes": 655463424,
+    "total_seconds": 10.769180755014531,
+    "model_optimizer_file_roundtrip": true
+  },
+  "gvisor": {
+    "event": "passed",
+    "steps": 1600,
+    "warmup_steps": 10,
+    "measured_seconds": 5.22351641100002,
+    "steps_per_second": 304.3926494902313,
+    "first_loss": 0.39674949645996094,
+    "last_loss": 6.1082369029463734e-06,
+    "peak_gpu_allocated_bytes": 655463424,
+    "total_seconds": 14.943017507000008,
+    "model_optimizer_file_roundtrip": true
+  },
+  "sampled_losses_identical": true,
+  "throughput_ratio": 0.9919090126914109,
+  "device": "/dev/nvidia0",
+  "uuid": "GPU-203c2df2-d777-ba3e-e218-dfc79347f5a5",
+  "host_nvml_index": 3,
+  "memory_mib": 16384,
+  "guest_cpus": 4,
+  "gpu_snapshot_tested": false
+}

@@ -14,6 +14,7 @@ import shutil
 import cpu_broker
 import runtime_store
 import snapshot_store
+import gvisor_gpu
 
 started = phase = time.perf_counter()
 started_at = time.time()
@@ -48,6 +49,9 @@ parser.add_argument('--guest-gs', action='store_true', help='preserve applicatio
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
 parser.add_argument('--verify', action='store_true', help='explicitly verify all snapshot/dependency hashes before restoring')
 parser.add_argument('--cgroup', choices=['v1', 'v2'], default='v2')
+parser.add_argument('--gpu', type=int, help='one allocated /dev/nvidiaN device minor; N can differ from nvidia-smi index')
+parser.add_argument('--runtime-debug', action=argparse.BooleanOptionalAction, default=True,
+                    help='verbose engine logging; disable when measuring GPU throughput')
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
@@ -55,6 +59,10 @@ saved_settings = None
 snapshot_manifest = None
 if args.verify and not args.restore:
     parser.error('--verify requires --restore')
+if args.gpu is not None:
+    gvisor_gpu.allocated_device(args.gpu)
+    if args.restore:
+        parser.error('GPU restore is not qualified; start a fresh GPU environment')
 if args.restore and not args.detach and (args.restore / 'snapshot-manifest.json').is_file():
     if args.verify:
         verification = snapshot_store.verify(lab, args.restore)
@@ -110,7 +118,7 @@ bundle = local / 'gvisor/bundles' / args.name
 runtime = saved_settings['runtime'] if saved_settings else json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
 runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore))
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
-settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice')}
+settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 launch_settings = {'settings': settings, 'runtime': runtime}
 if snapshot_manifest is not None:
     launch_settings['base_image'] = snapshot_manifest['base_image']
@@ -156,6 +164,9 @@ elif not args.restore:
     spec['annotations']['dev.gvisor.spec.rootfs.source'] = '/lab/images/gvisor-ubuntu-ready-ae303ca.erofs'
 spec['linux']['resources']['cpu'] = {}
 spec['linux']['resources']['memory']['limit'] = args.memory_mib * 1024**2
+if args.gpu is not None:
+    launch_settings['gpu'] = gvisor_gpu.configure(spec, args.gpu, lab / 'tools/gpu', lab)
+    (bundle / 'launch-settings.json').write_text(json.dumps(launch_settings, indent=2) + '\n')
 (bundle / 'config.json').write_text(json.dumps(spec, indent=2) + '\n')
 mark('restore_inputs_seconds')
 logs = lab / 'runs/gvisor' / args.name
@@ -263,11 +274,15 @@ try:
                f'--runtime-memory-limit={args.runtime_memory_mib * 1024**2}', f'--application-cpus={args.guest_cpus}', f'--app-memory-limit={args.memory_mib * 1024**2}',
                f'--in-sandbox-cgroup={args.cgroup}', '--net-raw', '--allow-packet-socket-write',
                '--sidecar-usage-policy=STRICT', '--root=/local/gvisor/state',
-               '--debug', f'--debug-log=/lab/runs/gvisor/{args.name}/%COMMAND%.log']
+               f'--debug={str(args.runtime_debug).lower()}', f'--debug-log=/lab/runs/gvisor/{args.name}/%COMMAND%.log']
     if args.nftables:
         command.append('--TESTONLY-nftables')
     if args.guest_gs:
         command.append('--systrap-disable-syscall-patching')
+    if args.gpu is not None:
+        command[4:4] = ['--gpu', str(args.gpu)]
+        command += ['--nvproxy', '--nvproxy-allow-unsupported-driver',
+                    '--nvproxy-allowed-driver-capabilities=compute,utility,graphics,video']
     if args.restore:
         checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
         timings['snapshot_storage'] = str(checkpoint)
@@ -283,7 +298,8 @@ try:
     if args.docker_data:
         if not args.restore:
             command += ['--pass-fd=3:3']
-            command[4:4] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
+            wrapper_end = 6 if args.gpu is not None else 4
+            command[wrapper_end:wrapper_end] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
     command += [f'--bundle=/local/gvisor/bundles/{args.name}', args.name]
     (logs / 'launch.json').write_text(json.dumps(command, indent=2) + '\n')
     print(f'RUNNING {args.name}; logs: {logs}', flush=True)

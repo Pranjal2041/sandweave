@@ -36,6 +36,8 @@ for name in (a.name, a.checkpoint):
         p.error('names must use letters, digits, dash or underscore')
 bundle = local / 'gvisor/bundles' / a.name
 settings = json.loads((bundle / 'launch-settings.json').read_text())
+if settings.get('gpu'):
+    p.error('GPU snapshots are not qualified; refusing to pause this GPU environment')
 runtime = settings['runtime']
 runtime_root = runtime_store.validate(lab, runtime, verify=False)
 state = json.loads((local / 'gvisor/state' / f'{a.name}_sandbox:{a.name}.state').read_text())

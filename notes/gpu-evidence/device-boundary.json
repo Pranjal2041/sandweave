@@ -1,0 +1,1 @@
+{"passed": true, "devices": ["/dev/nvidia-uvm", "/dev/nvidia0", "/dev/nvidiactl"], "kvm_present": false, "unselected_device_open": {"errno": 2, "message": "[Errno 2] No such file or directory: '/dev/nvidia1'", "mknod_succeeded": true}}

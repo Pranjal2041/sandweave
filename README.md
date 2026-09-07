@@ -38,6 +38,17 @@ Save returns after publication and starts checksum verification in a detached, l
 
 For explicit verification, use `python scripts/verify-snapshot.py snapshots/my-checkpoint`, or add `--verify` to a restore to wait for full verification first. [Timing breakdown and verification behavior](notes/asynchronous-snapshot-verification.md) document the checks and live measurements. Incremental checkpoints remain deferred.
 
+## Single-GPU experiment
+
+The lab can expose one allocated NVIDIA GPU through gVisor `nvproxy`, still using
+systrap without KVM or host sudo. PyTorch GPU training and interactive Firefox
+WebGL/WebRender passed on this node's L40S and driver 610.43.02. Google Earth Pro
+currently fails GLX context creation through VirtualGL; games and Resolve are
+not yet tested. GPU snapshots are deferred and the wrapper refuses them before
+pausing a GPU guest. Existing CPU-only snapshots are unchanged.
+
+See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
+
 ## Recovery and history
 
 This lab is tracked on branch `experiment/no-kvm-slurm`. Scripts, tests, notes,

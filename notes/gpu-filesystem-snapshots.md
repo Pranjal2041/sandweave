@@ -18,6 +18,11 @@ python scripts/checkpoint-gvisor.py --filesystem ENV LABEL
 python scripts/run-gvisor.py --detach --restore snapshots/LABEL NEW_ENV
 ```
 
+Capture requires an environment launched on the updated engine. Staging a new
+binary does not upgrade an already-running Sentry. The original `resolve-optfix`
+and `resolve-gpu2` desktops were preserved on their older runtimes; the wrapper
+rejects filesystem capture there before pausing them.
+
 Use a fresh environment name. `--restore` detects the snapshot kind and restores
 its GPU allocation, resource settings and network policy. A filesystem restore
 boots `/sbin/init`; an explicit command after `NEW_ENV --` overrides that boot

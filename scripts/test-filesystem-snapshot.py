@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check cold-snapshot mount coverage and boot staging."""
 import unittest
+from unittest import mock
+from pathlib import Path
 import filesystem_snapshot as fs
 
 class FilesystemSnapshotTest(unittest.TestCase):
@@ -13,6 +15,13 @@ class FilesystemSnapshotTest(unittest.TestCase):
             '4 1 0:4 / /opt/engine-gpu ro - 9p none ro',
             '5 3 0:5 / /var/lib/docker/overlay2/test/merged rw - overlay none rw',
         ])
+    def test_old_runtime_rejected_before_pause(self):
+        with mock.patch.object(fs.subprocess, 'run', return_value=mock.Mock(stdout='old tar help', stderr='')) as call:
+            with self.assertRaisesRegex(ValueError, 'has not been paused'):
+                fs.capture(['runtime'], 'env', Path('/unused'), self.spec, Path('/lab'), Path('/local'))
+            self.assertEqual(call.call_count, 1)
+            self.assertNotIn('pause', call.call_args.args[0])
+
     def test_includes_separate_docker_mount(self):
         saved = fs.inventory(self.spec, self.mounts)
         self.assertEqual([x['destination'] for x in saved], ['/var/lib/docker'])

@@ -54,6 +54,10 @@ def inventory(spec, mountinfo):
 
 
 def capture(command, name, dest, spec, lab, local):
+    help_result = subprocess.run([*command, 'tar', 'rootfs-upper', '--help'],
+                                 capture_output=True, text=True, timeout=30)
+    if 'restore-mount' not in help_result.stdout + help_result.stderr:
+        raise ValueError('filesystem capture requires the updated runtime; this existing environment has not been paused')
     state = json.loads(subprocess.check_output([*command, 'state', name], timeout=30, text=True))
     if state['status'] not in ('running', 'paused'):
         raise ValueError('filesystem snapshot requires a running or paused environment')

@@ -55,6 +55,11 @@ force a host NVIDIA kernel thread out of uninterruptible sleep. Game-unit live
 acceptance is recorded below. The default remains 45 seconds; explicit timeouts
 up to 1,800 seconds allow longer level-loading and interaction probes.
 
+Alyx now accepts explicit `--dxvk-config` and `--wine-debug` diagnostic options.
+Long-running commands inherit the probe's output stream, preserving logs as
+they arrive instead of buffering the entire run until exit. Small readiness
+and preparation RPCs still capture their bounded output.
+
 ## L40S replacement
 
 Job `10361186` requests exactly one L40S, 8 CPUs and 64 GiB for three hours
@@ -151,8 +156,22 @@ calibration and level entry are still under investigation. The 14.977-second
 main-menu sample recorded 647 application submissions, **43.13/s**; this is not
 a gameplay measurement. Evidence includes `alyx-eyes-startup.png`,
 `alyx-02-continue-positive-offset.png`, `alyx-menu-metrics.json` and the
-`alyx-run-01.log`/`alyx-run-02.log` probe logs. Both games used the explicit
+`alyx-run-01.log`. The second probe's buffered log was not flushed before the
+node failure described below; its empty `alyx-run-02.log` is not completion
+evidence. Both games used the explicit
 experimental Primus-VK API-version option; this is not conformance validation.
+
+### RTX node failure
+
+Slurm marked job `10361287` **NODE_FAIL** at 20:23:46 UTC, naming
+`babel-z5-20` as the failed node. The last successful guest/capture operations
+were at approximately 20:18:41 UTC; the node subsequently stopped answering
+SSH and Slurm steps. Its state included `NOT_RESPONDING`. Shared run artifacts
+remain available, but the test environments on that node are no longer
+accessible. No host/kernel diagnostic after the failure was available, so the
+cause is unknown. This is not evidence that the earlier driver-wait problem
+was repaired or that this experiment caused the node failure. No host reset or
+cancellation of another user's job was attempted.
 
 ## L40S live control
 
@@ -169,4 +188,49 @@ stereo views were opened and inspected (`open-saber-after-input.png` and
 `open-saber-now.png` under `runs/racing/preempt-10361186/`). A 14.988-second
 window recorded 1,019 application submissions, **67.92/s**, at a 90 Hz target.
 These separate allocations differ in CPU hardware and load; this is not a
-controlled comparison of GPU speed. A fresh Alyx probe is now running there.
+controlled comparison of GPU speed.
+
+Alyx also reached its stereo main menu on the L40S. Controller input accepted
+the performance prompt, selected Continue, and accepted the load-save dialog.
+The console then reported restoration of `s0/autosave` and spawning
+`a1_intro_world_2` at 20:31:02 UTC. The first 900-second probe expired at
+20:32:20 UTC while level loading still showed a black stereo frame. Its unit
+ended with the expected timeout and the runtime remained responsive. A second
+1,800-second probe reproduced the same menu interaction, then exited 139 at
+20:35:00 UTC during level loading, after 2min 20.836s. Wine reported
+`_wassert (!status && "vkCreateGraphicsPipelines")` in
+`winevulkan/loader_thunks.c:3095`. This is a game-process failure before the
+probe deadline. Ordinary guest exec and Monado remained responsive; a host
+thread check found no uninterruptible Sentry thread. The post-exit stack dump
+is not a stack trace of the failing game. No Alyx level gameplay is established.
+
+An attempted `dxvk.conf` in the game directory also exited 139, but its log did
+not confirm reading that file; it is not a valid configuration comparison. The
+test-created file was removed after verifying its exact content. A subsequent
+run used `--dxvk-config 'dxvk.enableGraphicsPipelineLibrary = False'` and
+`--wine-debug=-all,err+all,+seh`. DXVK explicitly logged that effective setting.
+This run loaded further resources, then exited 139 after 1min 57.438s. The
+first traced access violation was a write at `0x1c69a0000` from
+`0x6ffffa2f96e7`, followed by repeated faults during Wine exception unwinding.
+The next run's module-load addresses identify this code region as
+`animationsystem.dll`; disassembly of offset `0x1b96e7` is `rep movsb`.
+This does not establish the cause of the invalid access. Trace and pre-failure
+memory mappings are in `alyx-run-04-no-gpl-seh.log` and `alyx-04-maps.log`.
+The DXVK diagnostic setting is described in the upstream
+[v2.5.3 configuration](https://github.com/doitsujin/dxvk/blob/v2.5.3/dxvk.conf).
+
+For this head pose/menu layout, the working right-controller position is
+`0 1.3 -0.25`, with `--aim-pitch-offset 55`. Empirically calibrated targets:
+
+| Action | `--aim-at` |
+| --- | --- |
+| Performance prompt Accept | `0.09 1.37 -0.73` |
+| Continue | `-0.065 1.43 -0.68` |
+| Load-save Accept | `0.09 1.39 -0.73` |
+
+Use `vr-lab.py NAME input -- --device right ... --click trigger --hold 0.4`.
+These coordinates are specific to the observed menu arrangement, not a
+general Alyx interaction mapping. Opened and inspected evidence includes
+`alyx-accept-near-plane.png`, `alyx-continue-adjusted.png`,
+`alyx-load-accepted.png`, `alyx-after-load.png` and `alyx-load-later.png` in
+`runs/racing/preempt-10361186/`.

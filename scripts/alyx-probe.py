@@ -70,6 +70,9 @@ def main():
                         help='maximum probe lifetime, 5..1800 seconds')
     parser.add_argument('--experimental-vulkan13', action='store_true',
                         help='temporarily permit Primus-VK for Vulkan 1.3; not conformance validation')
+    parser.add_argument('--dxvk-config', help='explicit DXVK_CONFIG for a Windows diagnostic run')
+    parser.add_argument('--wine-debug', default='-all,err+all',
+                        help='Wine debug channels, e.g. +seh for exception diagnostics')
     args = parser.parse_args()
     manager = EnvironmentManager()
     state = manager.status(args.name)
@@ -79,10 +82,13 @@ def main():
         parser.error('timeout must be 5..1800 seconds')
     if args.experimental_vulkan13 and args.command not in ('windows', 'cube'):
         parser.error('the API-version experiment applies to windows or cube')
+    if args.dxvk_config is not None and args.command != 'windows':
+        parser.error('the DXVK configuration applies to windows')
     prefix = [*manager._command(args.name), 'exec', args.name]
 
-    def guest(*command, payload=None, check=True, timeout=30):
-        result = subprocess.run([*prefix, *command], input=payload, stdout=subprocess.PIPE,
+    def guest(*command, payload=None, check=True, timeout=30, stream=False):
+        result = subprocess.run([*prefix, *command], input=payload,
+                                stdout=None if stream else subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, timeout=timeout)
         if check and result.returncode:
             raise RuntimeError(result.stdout)
@@ -90,10 +96,12 @@ def main():
 
     user = ['runuser', '-u', 'ga', '--', 'env', 'HOME=/home/ga', 'DISPLAY=:1',
             'XAUTHORITY=/home/ga/.Xauthority', 'XDG_RUNTIME_DIR=/run/user/1000',
-            'WINEPREFIX=/home/ga/.local/share/alyx-wine', 'WINEDEBUG=-all,err+all',
+            'WINEPREFIX=/home/ga/.local/share/alyx-wine', 'WINEDEBUG='+args.wine_debug,
             'WINEDLLOVERRIDES=mscoree,mshtml=;dxgi,d3d11,d3d9,d3d10core=n',
             'XR_RUNTIME_JSON=/opt/vr/monado/share/openxr/1/openxr_monado.json',
             'PROTON_VR_RUNTIME=/opt/engine-gpu/vr/xrizer-v0.5']
+    if args.dxvk_config is not None:
+        user.append('DXVK_CONFIG='+args.dxvk_config)
     wine = '/opt/engine-gpu/vr/GE-Proton9-27/files/bin/wine64'
     if args.command == 'prepare':
         print(guest('python3', '-c', PREPARE, payload=args.manifest.read_text()).stdout, end='')
@@ -140,11 +148,10 @@ def main():
             result = guest('systemd-run', '--unit=alyx-probe', '--collect', '--wait', '--pipe',
                            '--property=RuntimeMaxSec='+str(args.timeout),
                            '--property=TimeoutStopSec=3', *user, *command,
-                           check=False, timeout=args.timeout+30)
+                           check=False, timeout=args.timeout+30, stream=True)
         else:
             result = guest(*user, 'timeout', '-k', '3', str(args.timeout), *command,
-                           check=False, timeout=args.timeout+15)
-        print(result.stdout, end='')
+                           check=False, timeout=args.timeout+15, stream=True)
         print(json.dumps({'probe': args.command, 'exit_code': result.returncode,
                           'experimental_vulkan13': args.experimental_vulkan13}))
     finally:

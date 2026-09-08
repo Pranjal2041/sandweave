@@ -1,8 +1,12 @@
 # Display architecture after removing KVM
 
-Follow-up: the user chose to implement and qualify Xvnc first. That work is now
-recorded in [Xvnc fast I/O](xvnc-fast-io.md). The recommendation below is retained
-as research history; Mutter/Wayland implementation remains deferred.
+Follow-up: Xvnc was implemented and qualified first, as recorded in
+[Xvnc fast I/O](xvnc-fast-io.md). The user has now requested investigation of
+Wayland as an additional backend, with Monado/XR also in scope for future VR
+support. [The subsequent source investigation](wayland-source-investigation.md)
+records concrete upstream changes, device operations and integration gaps.
+The recommendations below are historical, not a current backend-selection
+decision. No Wayland runtime has been tested in this lab yet.
 
 Research dated 2026-09-07. Existing desktops were preserved. This investigation
 read local and upstream source, documentation and issue discussions, and made

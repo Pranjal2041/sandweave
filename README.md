@@ -1,6 +1,6 @@
 # General VM: no-KVM Slurm lab
 
-Current runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's repository remains untouched.
+Current runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's runtime code remains untouched.
 
 Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Earth Pro 7.3.7 have been exercised. The user requested closing those desktops. The current fixed desktop is `resolve-optfix`, running GPU-accelerated DaVinci Resolve 21.0.4 at **24 fps** on the tested project, up from 8.9 fps after repairing GPU completion notifications. Import, color grading, project reopening and ProRes export also passed. The original `resolve-gpu2` remains available. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
 
@@ -32,6 +32,11 @@ passes **100/100 cases and 500/500 repetitions**, with no unsupported cases.
 [Display architecture research](notes/display-architecture-research.md) compares
 Xvnc with headless GNOME/Mutter and records the host render-node capabilities
 and gVisor device support needed for a GPU compositor.
+[The Wayland source investigation](notes/wayland-source-investigation.md)
+identifies upstream headless-session fixes, NVIDIA DMA-BUF/timeline operations,
+and the missing engine and packaging integration. Wayland is an additional
+backend under investigation; Xvnc remains available. No Wayland runtime result
+is claimed. Controller and Monado/XR support are separate additional capabilities.
 
 ## Pause, resume and stop
 

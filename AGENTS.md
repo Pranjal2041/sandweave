@@ -4,6 +4,18 @@ Work here is independent of Gym Anything's main repository. Runtime experiments
 use the existing Slurm allocation without host sudo or KVM. Preserve user-facing
 desktops when testing; use separate disposable environments for new tests.
 
+## Communication and scope
+
+- Do not give recommendations unless the user explicitly asks for them. Answer
+  information requests with findings, evidence, limitations and open questions.
+- When the user asks to investigate, carry out the authorized investigation;
+  do not substitute a recommendation to investigate later.
+- Display backends are complementary options. Preserve Xvnc support while
+  investigating Wayland; Monado/XR and controller support are additional
+  capabilities, not reasons to select a single exclusive desktop backend.
+- Respect explicit research-only or no-execution instructions. Source and
+  documentation findings must not be presented as successful runtime tests.
+
 ## Git hygiene
 
 The user expects every completed change to be committed, with generated or local

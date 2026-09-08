@@ -1,0 +1,21 @@
+{
+  "unicode": {
+    "distinct_codepoints": 1024,
+    "exact_match": true,
+    "action_median_ms": 34.03950549545698,
+    "action_p95_ms": 66.67055399157107
+  },
+  "oversized_batch_atomic": true,
+  "stalled_previous_consumer": {
+    "rejected": true,
+    "elapsed_s": 3.0204900260432623
+  },
+  "retry_after_stall": true,
+  "held_unicode_detach_recovery": true,
+  "pause_resume": true,
+  "live_restore": {
+    "snapshot": "/tmp/general-vm.2710891.mkpcMH/gvisor/checkpoints/fastio-harness-keymap-live-v4-live",
+    "text_and_nonce_preserved": true
+  },
+  "passed": true
+}

@@ -1,0 +1,1419 @@
+{
+ "adapter": {
+  "name": "GVisorXvncAdapter",
+  "class": "GenericProbeAdapter"
+ },
+ "raw_tap": true,
+ "totals": {
+  "entries": 100,
+  "pass": 100,
+  "fail": 0,
+  "flaky": 0,
+  "error": 0,
+  "not_measurable": 0
+ },
+ "entries": [
+  {
+   "entry_id": "click_left_center",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_right",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_middle",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_double_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_triple_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_ctrl_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_shift_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_alt_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_ctrl_shift_right",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_corner_topleft",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_corner_bottomright",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "press_hold_release_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "move_only",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "press_hold_release_right",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_burst_5",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_double_slow",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_button_back",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_button_forward",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_short",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_long_diagonal",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_multipoint_l_shape",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_right_button",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_shift_held",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_slow_small",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_vertical",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_to_corner",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_ctrl_held",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_middle_button",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "drag_alt_held",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_enter",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_esc",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_tab",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_f5",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_arrow_up",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_arrow_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_home",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_pageup",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_pagedown",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_delete",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_ctrl_c",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_ctrl_a",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_ctrl_shift_t",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_ctrl_shift_arrow",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_shift_tab",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_alt_f4",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_super_d",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_f1",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_f9",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_f12",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_insert",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_space_chord",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_end",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_arrow_down",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_arrow_right",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_ctrl_home",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_shift_arrow_left",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_ctrl_alt_shift_r",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_alt_tab",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_kp_enter",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_kp_add",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_shift_alone",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "chord_ctrl_alone",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "key_menu",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_down_1",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_down_3",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_down_10",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_up_3",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_left_3",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_right_3",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_ctrl_down_3",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_shift_down_3",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_at_offcenter_position",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_down_25",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_down_then_up_net_zero",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "scroll_diagonal",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "no_action_control",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_two_positions_ordered",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "click_then_type",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "mixed_gesture_state",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "seq_type_chord_type",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "seq_drag_then_click",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "seq_long_mixed",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "caps_lock_roundtrip",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_plain",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_shell_hostile",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_symbols_shifted",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_unicode_bmp",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_multiline_tabs",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_long_200",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_emoji",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_rtl",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_combining",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_emoji_zwj",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_with_correction",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_single_char",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_spaces",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_repeated_chars",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_mixed_case",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_digits",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  },
+  {
+   "entry_id": "type_long_500",
+   "reps": 5,
+   "passes": 5,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  }
+ ],
+ "not_measurable": [],
+ "agent": null
+}

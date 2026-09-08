@@ -1,0 +1,144 @@
+[
+  {
+    "run": "runs/fastio-harness-unicode-cache-v1",
+    "totals": {
+      "entries": 1,
+      "pass": 0,
+      "fail": 1,
+      "flaky": 0,
+      "error": 0,
+      "not_measurable": 0
+    },
+    "repetitions": [
+      {
+        "rep": 0,
+        "status": "fail",
+        "event_detail": "typed text mismatch at position 260",
+        "visual_detail": "screenshot faithfully shows seq 5 of 2053: the SUT screenshot lags the probe",
+        "actual_length": 1024,
+        "mismatched_positions": 704
+      },
+      {
+        "rep": 1,
+        "status": "fail",
+        "event_detail": "typed text mismatch at position 303",
+        "visual_detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+        "actual_length": 1024,
+        "mismatched_positions": 622
+      },
+      {
+        "rep": 2,
+        "status": "fail",
+        "event_detail": "typed text mismatch at position 271",
+        "visual_detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+        "actual_length": 1024,
+        "mismatched_positions": 671
+      }
+    ]
+  },
+  {
+    "run": "runs/fastio-harness-unicode-drain-v1",
+    "totals": {
+      "entries": 1,
+      "pass": 0,
+      "fail": 1,
+      "flaky": 0,
+      "error": 0,
+      "not_measurable": 0
+    },
+    "repetitions": [
+      {
+        "rep": 0,
+        "status": "fail",
+        "event_detail": "SUT raised while actuating the action: RuntimeError: cannot safely recycle Unicode keycodes: application did not answer _NET_WM_PING within 3 seconds",
+        "visual_detail": "SUT raised while actuating the action: RuntimeError: cannot safely recycle Unicode keycodes: application did not answer _NET_WM_PING within 3 seconds"
+      },
+      {
+        "rep": 1,
+        "status": "fail",
+        "event_detail": "SUT raised while actuating the action: RuntimeError: cannot safely recycle Unicode keycodes: application did not answer _NET_WM_PING within 3 seconds",
+        "visual_detail": "SUT raised while actuating the action: RuntimeError: cannot safely recycle Unicode keycodes: application did not answer _NET_WM_PING within 3 seconds"
+      },
+      {
+        "rep": 2,
+        "status": "fail",
+        "event_detail": "SUT raised while actuating the action: RuntimeError: cannot safely recycle Unicode keycodes: application did not answer _NET_WM_PING within 3 seconds",
+        "visual_detail": "SUT raised while actuating the action: RuntimeError: cannot safely recycle Unicode keycodes: application did not answer _NET_WM_PING within 3 seconds"
+      }
+    ]
+  },
+  {
+    "run": "runs/fastio-harness-unicode-drain-v2",
+    "totals": {
+      "entries": 1,
+      "pass": 0,
+      "fail": 0,
+      "flaky": 1,
+      "error": 0,
+      "not_measurable": 0
+    },
+    "repetitions": [
+      {
+        "rep": 0,
+        "status": "pass",
+        "event_detail": "",
+        "visual_detail": "screenshot faithfully shows seq 5 of 2053: the SUT screenshot lags the probe",
+        "actual_length": 1024,
+        "mismatched_positions": 0
+      },
+      {
+        "rep": 1,
+        "status": "fail",
+        "event_detail": "typed text mismatch at position 659",
+        "visual_detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+        "actual_length": 1024,
+        "mismatched_positions": 2
+      },
+      {
+        "rep": 2,
+        "status": "pass",
+        "event_detail": "",
+        "visual_detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+        "actual_length": 1024,
+        "mismatched_positions": 0
+      }
+    ]
+  },
+  {
+    "run": "runs/fastio-harness-unicode-drain-v3",
+    "totals": {
+      "entries": 1,
+      "pass": 1,
+      "fail": 0,
+      "flaky": 0,
+      "error": 0,
+      "not_measurable": 0
+    },
+    "repetitions": [
+      {
+        "rep": 0,
+        "status": "pass",
+        "event_detail": "",
+        "visual_detail": "screenshot faithfully shows seq 5 of 2053: the SUT screenshot lags the probe",
+        "actual_length": 1024,
+        "mismatched_positions": 0
+      },
+      {
+        "rep": 1,
+        "status": "pass",
+        "event_detail": "",
+        "visual_detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+        "actual_length": 1024,
+        "mismatched_positions": 0
+      },
+      {
+        "rep": 2,
+        "status": "pass",
+        "event_detail": "",
+        "visual_detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+        "actual_length": 1024,
+        "mismatched_positions": 0
+      }
+    ]
+  }
+]

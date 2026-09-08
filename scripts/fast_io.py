@@ -84,9 +84,10 @@ def events_for_action(action):
         for kind, value in mouse.items():
             if kind == 'move':
                 motion(value)
-            elif kind in ('left_click', 'middle_click', 'right_click', 'double_click', 'triple_click'):
+            elif kind in ('left_click', 'middle_click', 'right_click', 'back_click', 'forward_click',
+                          'double_click', 'triple_click'):
                 motion(value)
-                number = {'middle_click': 2, 'right_click': 3}.get(kind, 1)
+                number = {'middle_click': 2, 'right_click': 3, 'back_click': 8, 'forward_click': 9}.get(kind, 1)
                 for _ in range({'double_click': 2, 'triple_click': 3}.get(kind, 1)):
                     button(number, True); button(number, False)
             elif kind in ('left_click_drag', 'right_click_drag'):
@@ -101,20 +102,27 @@ def events_for_action(action):
                         motion([round(start[d] + (end[d] - start[d]) * step / 8) for d in (0, 1)])
                 button(number, False)
             elif kind == 'scroll':
-                if type(value) is not int or abs(value) > 1000:
-                    raise ValueError('scroll must be an integer in -1000..1000; positive scrolls down')
-                for _ in range(abs(value)):
-                    button(5 if value > 0 else 4, True); button(5 if value > 0 else 4, False)
+                if isinstance(value, dict) and not set(value) - {'dx', 'dy'}:
+                    dx, dy = value.get('dx', 0), value.get('dy', 0)
+                else:
+                    dx, dy = 0, value
+                if any(type(v) is not int or abs(v) > 1000 for v in (dx, dy)):
+                    raise ValueError('scroll requires an integer or {dx, dy} ticks in -1000..1000')
+                steps = max(abs(dx), abs(dy))
+                for step in range(steps):
+                    for ticks, number in ((dx, 7 if dx > 0 else 6), (dy, 5 if dy > 0 else 4)):
+                        if (step + 1) * abs(ticks) // steps > step * abs(ticks) // steps:
+                            button(number, True); button(number, False)
             elif kind == 'buttons':
                 values = [value] if isinstance(value, str) else value
                 for entry in values:
                     try:
                         name, direction = entry.rsplit('_', 1)
-                        number = {'left': 1, 'middle': 2, 'right': 3}[name]
+                        number = {'left': 1, 'middle': 2, 'right': 3, 'back': 8, 'forward': 9}[name]
                         if direction not in ('down', 'up'):
                             raise ValueError()
                     except (KeyError, ValueError, AttributeError):
-                        raise ValueError('buttons require left/middle/right_down/up') from None
+                        raise ValueError('buttons require left/middle/right/back/forward_down/up') from None
                     button(number, direction == 'down')
             else:
                 raise ValueError('unknown mouse action: ' + kind)
@@ -322,6 +330,10 @@ class Bridge:
             if self.broken:
                 raise RuntimeError('previous guest I/O detach failed; refusing a snapshot with uncertain shared-buffer state')
             return
+        if self.ready and not self.broken and self.process.poll() is None:
+            # Rejection is recoverable: preserve the helper and SHM attachment
+            # until the caller releases a Unicode key or the app answers again.
+            self.request(4, [])
         try:
             if self.process.poll() is None and not self.process.stdin.closed:
                 try:

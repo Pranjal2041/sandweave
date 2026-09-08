@@ -5,7 +5,16 @@ with patched gVisor systrap on `babel-u5-28`. It does not use Gym Anything's QEM
 runner, KVM, host sudo, or a model. The user's Resolve desktops are separate
 from the disposable audit environment.
 
-## Full result, 2026-09-07
+The [subsequent action repairs](fast-io-action-fixes.md) add the five unsupported
+mouse actions and repair session-long Unicode mapping exhaustion. The original
+audit and its attribution evidence below are preserved as the pre-fix baseline.
+
+**Current rerun: 100/100 cases and 500/500 repetitions passed, with zero failures,
+flaky cases, errors or unsupported actions.** All 480 application-observable
+captures showed the final recorded state; 20 desktop-shortcut repetitions used
+the raw observer. See the [complete rerun report](cua-harness-evidence/fixes/full-cpu/report.md).
+
+## Original full result, 2026-09-07
 
 **94 passed, 1 failed, 0 flaky, 0 harness errors, 5 unsupported.** The complete
 100-entry catalog was selected; its 95 supported entries ran five times each:

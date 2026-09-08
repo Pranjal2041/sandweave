@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "renderer": "NVIDIA GeForce 8800 GTX, or similar",
+  "distinct_codepoints": 1024,
+  "exact_address_bar_match": true,
+  "clipboard_used_only_to_observe": true
+}

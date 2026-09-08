@@ -1,0 +1,95 @@
+{
+  "repetitions": {
+    "pass": 500
+  },
+  "visual_details": {
+    "screenshot faithfully shows the probe's final state": 480,
+    "raw tap is headless": 20
+  },
+  "fixed_cases": {
+    "click_button_back": {
+      "entry_id": "click_button_back",
+      "reps": 5,
+      "passes": 5,
+      "statuses": [
+        "pass",
+        "pass",
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "flaky": false,
+      "final": "pass"
+    },
+    "click_button_forward": {
+      "entry_id": "click_button_forward",
+      "reps": 5,
+      "passes": 5,
+      "statuses": [
+        "pass",
+        "pass",
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "flaky": false,
+      "final": "pass"
+    },
+    "scroll_left_3": {
+      "entry_id": "scroll_left_3",
+      "reps": 5,
+      "passes": 5,
+      "statuses": [
+        "pass",
+        "pass",
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "flaky": false,
+      "final": "pass"
+    },
+    "scroll_right_3": {
+      "entry_id": "scroll_right_3",
+      "reps": 5,
+      "passes": 5,
+      "statuses": [
+        "pass",
+        "pass",
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "flaky": false,
+      "final": "pass"
+    },
+    "scroll_diagonal": {
+      "entry_id": "scroll_diagonal",
+      "reps": 5,
+      "passes": 5,
+      "statuses": [
+        "pass",
+        "pass",
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "flaky": false,
+      "final": "pass"
+    },
+    "type_emoji_zwj": {
+      "entry_id": "type_emoji_zwj",
+      "reps": 5,
+      "passes": 5,
+      "statuses": [
+        "pass",
+        "pass",
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "flaky": false,
+      "final": "pass"
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "harness": {
+    "repository": "https://github.com/gym-anything/cua-auto-harness",
+    "commit": "fc07c2d3a10e56c0fc0578280df9563af6f49d1f",
+    "version": "0.4.12",
+    "core_file_sha256": {
+      "backend.py": "a62331160f79bee440374823f8a7db3aad37932cec26ea22fb1e8474bb16bdd9",
+      "driver.py": "dfde38bed3b770e57a9b7c4777b2e9b23c3c1d193decb9ce490868749e293ffd",
+      "contracts.py": "d046933310c4f27c4c496e472c7d6343e3b653faa81a9dab5b56f75cb35aa26e",
+      "checker/events.py": "08fba9082fae0d92ca53e020c41618d07aac7caeeefd75382c24fc126bb4234a",
+      "checker/visual.py": "5ea5215a62f8d7989f2ee0eed88078f88f2d9293e5259befe4057f7d8ee73df7",
+      "probes/desktop_tk.py": "458d1612d7ae42094cb9efcd4e5ae8d2317746550e38f582f68a79f2741aa3a3"
+    }
+  },
+  "engine": {
+    "path": "sources/gvisor",
+    "upstream": "https://github.com/google/gvisor.git",
+    "branch": "experiment/no-kvm-slurm",
+    "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
+    "commit": "59487a05f5e858d5b20a36d980036ccea2ad82ab",
+    "patch": "notes/gvisor-no-kvm-prototype.patch",
+    "runtime_build": "tools/runtime-builds/dae2b000bd86b4757abc79fc2da0d563910dd4ccc9afc2c4765e47c3b8447431",
+    "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
+    "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow"
+  },
+  "node": "babel-u5-28",
+  "baseline_commit": "2b1f93be9115efd004e4279554c30382544be139",
+  "build": {
+    "sha256": {
+      "sources/xvnc-fast-io.c": "70990eb1a1695cf83aad5f94e05a1fefb2ac017fd349baff3f707a98af0100f8",
+      "tools/fast-io/bridge": "4dd2e34cbce7f8b045e9d3637d1624768475881696932eb0e6fec96e44864212",
+      "tools/fast-io/libxcb-xtest.so.0": "399346c2b1a019326d1f1d2e84508f13b39d5deab76aba132600d80e8ad0f763"
+    },
+    "compiler": "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-14)",
+    "system_packages": [
+      "libxcb-1.13.1-9.el9.x86_64",
+      "libxcb-devel-1.13.1-9.el9.x86_64",
+      "glibc-2.34-272.el9_8.x86_64"
+    ]
+  },
+  "source_sha256": {
+    "scripts/fast_io.py": "13d61fb41a672f637d73188f590d12ba2a0eedc5dde0b78b31781f87abc95ec0",
+    "scripts/cua_harness_adapter.py": "22607ecc301cbc6e5c47ad860ee592d416a7d03484c25d160f711c56b2631ed5",
+    "sources/xvnc-fast-io.c": "70990eb1a1695cf83aad5f94e05a1fefb2ac017fd349baff3f707a98af0100f8"
+  },
+  "canonical_run": {
+    "path": "runs/cua-harness-fixed-full",
+    "name": "fastio-harness-fixed-full",
+    "reps": 5,
+    "selected_entries": 100,
+    "filters": null,
+    "result": {
+      "entries": 100,
+      "pass": 100,
+      "fail": 0,
+      "flaky": 0,
+      "error": 0,
+      "not_measurable": 0
+    },
+    "repetitions": 500
+  },
+  "validation_source_sha256": {
+    "scripts/test-fast-io.py": "1bbbe4b32a015743d03c31051a5949d25f8aced29c9ed29c3469b29429e92147",
+    "sources/test-fast-io-keymap.c": "94ed7b2d7dc7027f89680ff727170678d444d473865245e838bdf8d2748a2b21",
+    "scripts/test-fast-io-unicode.py": "d536db33fc448098dc29e89a5e9c7a8428a54ff602d8b2e803eda1b0f49e7ee8",
+    "scripts/test-fast-io-keymap-live.py": "9b2a227a900ff10e38d4d9492c916b83589de9fef1d06144248a87fceff0c668",
+    "scripts/test-fast-io-firefox-unicode.py": "9ecf6903ba0803580d8040c0ae41bd70573546436855540edc8677226349c250"
+  },
+  "host_checks": {
+    "fast_io": 13,
+    "lifecycle": 9,
+    "filesystem_snapshot": 5,
+    "snapshot_store": 15,
+    "cpu_broker": 3,
+    "all_passed": true,
+    "c_allocator_check": "passed with -Wall -Wextra -Werror"
+  }
+}

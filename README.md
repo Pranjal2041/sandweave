@@ -24,7 +24,10 @@ GPU 1080p tail latency remains above 10 ms. Pause/save detaches the shared buffe
 and resume/load reconnects it. Use the `scripts/fastio.py` CLI or
 `EnvironmentManager().fast_io(ENV)`.
 [The cua-auto-harness audit](notes/cua-harness-fast-io.md) records canonical
-action coverage, reference comparisons, and the remaining Unicode keymap limit.
+action coverage and reference comparisons. [The action repairs](notes/fast-io-action-fixes.md)
+add back/forward buttons, horizontal/diagonal scrolling and reusable Unicode
+mappings, with explicit synchronization and per-batch limits. The full rerun
+passes **100/100 cases and 500/500 repetitions**, with no unsupported cases.
 [Fast-I/O research](notes/fast-io-research.md) records the preceding source analysis.
 [Display architecture research](notes/display-architecture-research.md) compares
 Xvnc with headless GNOME/Mutter and records the host render-node capabilities

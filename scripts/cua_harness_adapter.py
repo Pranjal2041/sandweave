@@ -26,13 +26,14 @@ def translate(action):
 
     if isinstance(action, Click):
         names = {(1,'left'):'left_click', (1,'middle'):'middle_click', (1,'right'):'right_click',
+                 (1,'back'):'back_click', (1,'forward'):'forward_click',
                  (2,'left'):'double_click', (3,'left'):'triple_click'}
         kind = names.get((action.count, action.button))
         if kind is None:
             raise UnsupportedActionError(f'fast I/O has no {action.count}x {action.button} click')
         return wrap(action.modifiers, [{'mouse': {kind: [action.x, action.y]}}])
     if isinstance(action, (ButtonPress, ButtonRelease)):
-        if action.button not in ('left','middle','right'):
+        if action.button not in ('left','middle','right','back','forward'):
             raise UnsupportedActionError('fast I/O has no ' + action.button + ' button state')
         direction = 'down' if isinstance(action, ButtonPress) else 'up'
         return [{'mouse': {'move': [action.x, action.y], 'buttons': action.button + '_' + direction}}]
@@ -53,9 +54,8 @@ def translate(action):
             core.append({'mouse': {'buttons': 'middle_up'}})
         return wrap(action.modifiers, core)
     if isinstance(action, Scroll):
-        if action.dx_ticks:
-            raise UnsupportedActionError('fast I/O has no horizontal-scroll action')
-        return wrap(action.modifiers, [{'mouse': {'move': [action.x, action.y], 'scroll': action.dy_ticks}}])
+        return wrap(action.modifiers, [{'mouse': {'move': [action.x, action.y],
+                    'scroll': {'dx': action.dx_ticks, 'dy': action.dy_ticks}}}])
     if isinstance(action, KeyChord):
         # Canonical aliases to X keysyms; the public API already accepts these.
         return [{'keyboard': {'keys': [XDOTOOL_KEYSYM.get(k, k) for k in action.keys]}}]

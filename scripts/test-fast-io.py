@@ -83,6 +83,20 @@ class FastIOTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'uncertain shared-buffer state'):
                 bridge.close()
 
+    def test_rejected_detach_preflight_preserves_the_channel_for_retry(self):
+        bridge = Bridge.__new__(Bridge)
+        bridge.closed = bridge.broken = False
+        bridge.ready = True
+        bridge.process = mock.Mock()
+        bridge.process.poll.return_value = None
+        with mock.patch.object(bridge, 'request', side_effect=ValueError('release temporary Unicode keys')):
+            with self.assertRaisesRegex(ValueError, 'release temporary Unicode keys'):
+                bridge.close()
+        bridge.process.stdin.write.assert_not_called()
+        bridge.process.stdin.close.assert_not_called()
+        self.assertFalse(bridge.closed)
+        self.assertFalse(bridge.broken)
+
     def test_guest_cannot_overrun_host_image_dimensions(self):
         self.client._map = mmap.mmap(-1, FRAME_BYTES)
         self.client._generation = 'test'
@@ -108,6 +122,21 @@ class FastIOTests(unittest.TestCase):
             events_for_action({'mouse': {'scroll':1001}})
         with self.assertRaises(ValueError):
             events_for_action({'mouse': {'move':[float('nan'), 0]}})
+
+    def test_extended_buttons_and_diagonal_wheel_preserve_order(self):
+        events = events_for_action([{'mouse': {'back_click': [10,20]}},
+                                   {'mouse': {'forward_click': [10,20]}},
+                                   {'mouse': {'scroll': {'dx': 2, 'dy': -1}}}])
+        self.assertEqual([(e[0], e[1]) for e in events if e[0] != 1],
+                         [(2,8),(3,8),(2,9),(3,9),(2,7),(3,7),(2,7),(3,7),(2,4),(3,4)])
+        self.assertEqual(events_for_action({'mouse': {'scroll': {'dx': 0, 'dy': 0}}}), [])
+
+    def test_invalid_scroll_axis_rejects_the_whole_action(self):
+        for value in ({'dx': True}, {'dy': 1001}, {'dx': 1.5}, {'dy': 1, 'typo': 2}):
+            with self.subTest(value=value), mock.patch('fast_io._rpc') as send:
+                with self.assertRaises(ValueError):
+                    self.client.action([{'mouse': {'back_click': [1,2]}}, {'mouse': {'scroll': value}}])
+                send.assert_not_called()
 
 
 if __name__ == '__main__':

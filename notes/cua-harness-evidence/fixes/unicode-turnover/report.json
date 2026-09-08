@@ -1,0 +1,31 @@
+{
+ "adapter": {
+  "name": "fastio-unicode-turnover",
+  "class": "GenericProbeAdapter"
+ },
+ "raw_tap": true,
+ "totals": {
+  "entries": 1,
+  "pass": 1,
+  "fail": 0,
+  "flaky": 0,
+  "error": 0,
+  "not_measurable": 0
+ },
+ "entries": [
+  {
+   "entry_id": "unicode_cache_turnover",
+   "reps": 3,
+   "passes": 3,
+   "statuses": [
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "flaky": false,
+   "final": "pass"
+  }
+ ],
+ "not_measurable": [],
+ "agent": null
+}

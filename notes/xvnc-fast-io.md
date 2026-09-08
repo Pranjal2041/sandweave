@@ -50,16 +50,40 @@ it has a working implementation. This is a lab API, not an integration into
 Gym Anything's runner yet.
 
 Supported actions follow the existing mouse/keyboard dictionary convention:
-move; left/middle/right click; double/triple click; left/right drag through a
-list of points; vertical scroll (positive means down); explicit button down/up;
+move; left/middle/right/back/forward click; double/triple click; left/right drag through a
+list of points; vertical, horizontal and diagonal scroll; explicit button down/up;
 keyboard text, key chords, and keys down/up. A list combines them into one
 ordered batch and one acknowledgment. Coordinates are absolute desktop pixels.
+An integer `scroll` retains its original meaning (positive means down). Use
+`{"scroll":{"dx":3,"dy":-2}}` for three rightward and two upward wheel ticks;
+the axes are interleaved proportionally. Back/forward clicks use X11 buttons
+8/9; their explicit states are `back_down`, `back_up`, `forward_down`, and
+`forward_up` inside `mouse.buttons`.
+
 The helper validates the whole batch before emitting input. Text uses US-layout
-key events, including temporary unused keycodes for otherwise unmapped Unicode.
-A large set of distinct unmapped characters can exhaust those spare keycodes;
-the request is rejected before input, and closing the service restores the map.
+key events, including temporary keycodes for otherwise unmapped Unicode.
+These mappings now use a bounded reusable cache, protecting held keys and every
+symbol needed anywhere in the current batch. Before eviction, the helper waits
+for the previous receiving windows to answer `_NET_WM_PING`; after installing
+new mappings, it waits for the current window to pass the mapping notifications.
+This avoids both overwriting mappings for queued input and typing against an
+application's old mapping cache. Normal mouse actions and ASCII do not need
+these window pings.
+
+This path is qualified for the tested Tk, GTK and Firefox event loops, not arbitrary X11
+clients, raw observers, input-method daemons, keyboard grabs or concurrent focus
+changes inside a batch. Unicode needing new mappings requires a managed focused
+window that answers the ping protocol. A stalled or unsupported recipient causes
+an explicit rejection after three seconds, before sending the new input.
+Resume the application and retry the rejected action. One batch still cannot
+exceed the available spare keycodes (19 in this desktop image); session-long
+typing can reuse them across actions. This is not a universal Unicode input
+method. It preserves exact codepoints, without clipboard substitution.
+
 Close the service before changing keyboard layouts. Lock keys and already-held
-modifiers retain their normal X11 effects. This is not clipboard substitution.
+modifiers retain their normal X11 effects. Release held temporary Unicode keys
+before closing, pausing or saving; a rejected detach leaves the helper usable
+so the key can be released and the lifecycle operation retried.
 
 ## Data path and acknowledgments
 
@@ -127,6 +151,9 @@ keys/buttons are not deliberately released. The desktop applications remain
 resident. The next operation after resume or restore creates a new helper,
 shared buffer and generation. The persistent guest installation is ordinary
 filesystem state and is included in filesystem snapshots.
+Detachment first checks for held temporary keys and drains pending mapped input.
+An application that does not answer the drain marker causes a recoverable
+preflight rejection; the helper remains connected until a later successful retry.
 
 Lifecycle operations take an exclusive per-environment lock; fast I/O takes a
 shared lock for each operation. A lifecycle operation in progress rejects new
@@ -150,6 +177,8 @@ warm-up captures. Times include the local Python request, acknowledgment, and,
 for screenshots/steps, an owned PIL RGB image. The GPU page animates continuously
 in Firefox WebGL and reports `NVIDIA L40S/PCIe/SSE2`. Other host and GPU workloads
 were present; these are observed distributions, not isolated throughput limits.
+These timings predate the action repairs. Cold Unicode mapping/recycling adds
+client synchronization; its later measurement is in [action repairs](fast-io-action-fixes.md).
 
 Values are **median / p95 milliseconds**:
 
@@ -185,9 +214,10 @@ latency run are retained separately; their variation is intentional evidence.
 
 ## Validation and scope
 
-The subsequent [100-case cua-auto-harness audit](cua-harness-fast-io.md)
-records broader action coverage and a reproduced limit: spare Unicode keycodes
-can be exhausted across a sequence of otherwise short text actions.
+The [100-case cua-auto-harness audit](cua-harness-fast-io.md) records broader
+action coverage and the original session-long Unicode exhaustion failure.
+The subsequent [action repairs](fast-io-action-fixes.md) document the new mouse
+actions, cache reuse, live regressions and rerun evidence.
 
 Passed live checks include actual GTK text (ASCII, punctuation, accents, Greek
 and CJK codepoints), Ctrl-drag delivery at the correct endpoint, repeated clicks,

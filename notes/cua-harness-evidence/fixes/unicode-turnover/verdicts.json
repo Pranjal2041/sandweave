@@ -1,0 +1,89 @@
+[
+  {
+    "entry_id": "unicode_cache_turnover",
+    "rep": 0,
+    "status": "pass",
+    "event_channel": {
+      "status": "pass",
+      "detail": "",
+      "evidence": {
+        "expected_len": 1024,
+        "got_len": 1024
+      }
+    },
+    "visual_channel": {
+      "status": "pass",
+      "detail": "screenshot faithfully shows seq 5 of 2053: the SUT screenshot lags the probe",
+      "evidence": {
+        "decoded": {
+          "buf_crc": 65535,
+          "aux": 0,
+          "y": 0,
+          "x": 0,
+          "kind": 12,
+          "seq": 5
+        }
+      }
+    },
+    "raw_channel": null,
+    "notes": ""
+  },
+  {
+    "entry_id": "unicode_cache_turnover",
+    "rep": 1,
+    "status": "pass",
+    "event_channel": {
+      "status": "pass",
+      "detail": "",
+      "evidence": {
+        "expected_len": 1024,
+        "got_len": 1024
+      }
+    },
+    "visual_channel": {
+      "status": "unavailable",
+      "detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+      "evidence": {
+        "decoded": {
+          "buf_crc": 65535,
+          "aux": 0,
+          "y": 0,
+          "x": 0,
+          "kind": 12,
+          "seq": 5
+        }
+      }
+    },
+    "raw_channel": null,
+    "notes": ""
+  },
+  {
+    "entry_id": "unicode_cache_turnover",
+    "rep": 2,
+    "status": "pass",
+    "event_channel": {
+      "status": "pass",
+      "detail": "",
+      "evidence": {
+        "expected_len": 1024,
+        "got_len": 1024
+      }
+    },
+    "visual_channel": {
+      "status": "unavailable",
+      "detail": "screenshot shows probe state seq 5, which is not in this rep's log: a stale frame from before the rep started",
+      "evidence": {
+        "decoded": {
+          "buf_crc": 65535,
+          "aux": 0,
+          "y": 0,
+          "x": 0,
+          "kind": 12,
+          "seq": 5
+        }
+      }
+    },
+    "raw_channel": null,
+    "notes": ""
+  }
+]

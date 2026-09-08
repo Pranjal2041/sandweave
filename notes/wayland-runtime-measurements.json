@@ -1,0 +1,553 @@
+{
+  "scope": "Exploratory shared-GPU comparison, not an exclusive or causal benchmark. Presentation failures are retained and excluded from accepted desktop comparisons.",
+  "sandbox": "vr-wayland-01",
+  "host": "babel-u5-28",
+  "slurm_allocation": 10333558,
+  "gvisor_revision_unchanged": "59487a05f5e858d5b20a36d980036ccea2ad82ab",
+  "renderer": "NVIDIA L40S/PCIe/SSE2",
+  "renderer_version": "OpenGL ES 3.2 NVIDIA 610.43.02",
+  "working_configuration": {
+    "compositor": "GNOME Shell / Mutter 42.9 surfaceless EGL",
+    "cogl_driver": "gles2",
+    "xwayland_no_glamor": true,
+    "game_renderer": "NVIDIA through VirtualGL",
+    "desktop_transport": "Xwayland shared memory",
+    "stereo_observation": "Monado v2 paired ring, 960x1080 per eye",
+    "physical_headset": false,
+    "host_sudo": false,
+    "kvm": false
+  },
+  "runs": [
+    {
+      "name": "xvnc-pbo-1",
+      "qualification": "working Xvnc baseline",
+      "options": {
+        "name": "vr-wayland-01",
+        "seconds": 20.0,
+        "warmup": 20.0,
+        "fps": 120.0,
+        "input_hz": 120.0,
+        "hz": 120,
+        "width": 960,
+        "height": 1080,
+        "mirror": "pbo",
+        "x11_display": ":1",
+        "xauthority": "/home/ga/.Xauthority",
+        "output": "runs/wayland/xvnc-pbo-1",
+        "record": true,
+        "video": false
+      },
+      "observations": 1453,
+      "stereo_pairs_per_second": 72.62174051991444,
+      "application_submissions_per_second": 46.06459020579163,
+      "compositor_reused_frame_fraction": 0.5837971552257266,
+      "input_updates": 2388,
+      "input_updates_per_second": 119.3851048259495,
+      "ring_frames_skipped": 0,
+      "recording": {
+        "saved": 1453,
+        "dropped": 0,
+        "queue_capacity": 32
+      },
+      "latency_ms": {
+        "gpu_readback": {
+          "p50": 2.405412,
+          "p95": 7.857968,
+          "p99": 162.386784,
+          "max": 414.72733
+        },
+        "ring_publish_copy": {
+          "p50": 0.54568,
+          "p95": 0.881336,
+          "p99": 1.215931,
+          "max": 1.816902
+        },
+        "host_owned_copy": {
+          "p50": 0.870845,
+          "p95": 3.94253,
+          "p99": 5.818193,
+          "max": 9.848674
+        },
+        "publish_to_host_observed": {
+          "p50": 1.228761,
+          "p95": 4.603271,
+          "p99": 6.731049,
+          "max": 12.237656
+        },
+        "capture_begin_to_host_observed": {
+          "p50": 4.963408,
+          "p95": 11.077475,
+          "p99": 163.982713,
+          "max": 416.680285
+        },
+        "input_ack_round_trip": {
+          "p50": 0.805755,
+          "p95": 4.53652,
+          "p99": 6.872191,
+          "max": 104.474119
+        },
+        "observation_interval": {
+          "p50": 9.936916,
+          "p95": 18.866194,
+          "p99": 169.957078,
+          "max": 429.678524
+        }
+      }
+    },
+    {
+      "name": "xvnc-pbo-2",
+      "qualification": "working Xvnc; preceding Wayland cleanup overlapped startup",
+      "options": {
+        "name": "vr-wayland-01",
+        "seconds": 20.0,
+        "warmup": 20.0,
+        "fps": 120.0,
+        "input_hz": 120.0,
+        "hz": 120,
+        "width": 960,
+        "height": 1080,
+        "mirror": "pbo",
+        "x11_display": ":1",
+        "xauthority": "/home/ga/.Xauthority",
+        "output": "runs/wayland/xvnc-pbo-2",
+        "record": true,
+        "video": false
+      },
+      "observations": 1457,
+      "stereo_pairs_per_second": 73.19688718819322,
+      "application_submissions_per_second": 45.58574623385583,
+      "compositor_reused_frame_fraction": 0.5906499429874572,
+      "input_updates": 2386,
+      "input_updates_per_second": 119.28834534597097,
+      "ring_frames_skipped": 0,
+      "recording": {
+        "saved": 1457,
+        "dropped": 0,
+        "queue_capacity": 32
+      },
+      "latency_ms": {
+        "gpu_readback": {
+          "p50": 2.582196,
+          "p95": 7.885341,
+          "p99": 170.408973,
+          "max": 298.002684
+        },
+        "ring_publish_copy": {
+          "p50": 0.56139,
+          "p95": 0.864816,
+          "p99": 1.234192,
+          "max": 2.471014
+        },
+        "host_owned_copy": {
+          "p50": 0.765164,
+          "p95": 2.914933,
+          "p99": 4.655754,
+          "max": 7.041766
+        },
+        "publish_to_host_observed": {
+          "p50": 1.133277,
+          "p95": 3.56045,
+          "p99": 5.211761,
+          "max": 7.820567
+        },
+        "capture_begin_to_host_observed": {
+          "p50": 4.880615,
+          "p95": 10.042647,
+          "p99": 172.08531,
+          "max": 299.457008
+        },
+        "input_ack_round_trip": {
+          "p50": 0.836194,
+          "p95": 4.50366,
+          "p99": 6.304013,
+          "max": 120.65386
+        },
+        "observation_interval": {
+          "p50": 10.187123,
+          "p95": 18.656924,
+          "p99": 171.228125,
+          "max": 311.000487
+        }
+      }
+    },
+    {
+      "name": "gnome-shm-pbo-1",
+      "qualification": "visually verified GNOME Wayland with Xwayland SHM",
+      "options": {
+        "name": "vr-wayland-01",
+        "seconds": 20.0,
+        "warmup": 20.0,
+        "fps": 120.0,
+        "input_hz": 120.0,
+        "hz": 120,
+        "width": 960,
+        "height": 1080,
+        "mirror": "pbo",
+        "x11_display": ":0",
+        "xauthority": "/run/user/1000/wayland-gnome/.mutter-Xwaylandauth.YEBSU3",
+        "output": "runs/wayland/gnome-shm-pbo-1",
+        "record": true,
+        "video": false
+      },
+      "observations": 1682,
+      "stereo_pairs_per_second": 84.05321381665689,
+      "application_submissions_per_second": 40.86510246279254,
+      "compositor_reused_frame_fraction": 0.638995084653195,
+      "input_updates": 2384,
+      "input_updates_per_second": 119.20480793891223,
+      "ring_frames_skipped": 1,
+      "recording": {
+        "saved": 1682,
+        "dropped": 0,
+        "queue_capacity": 32
+      },
+      "latency_ms": {
+        "gpu_readback": {
+          "p50": 2.650808,
+          "p95": 6.689061,
+          "p99": 137.377949,
+          "max": 265.772055
+        },
+        "ring_publish_copy": {
+          "p50": 0.611771,
+          "p95": 1.011468,
+          "p99": 1.507768,
+          "max": 5.111322
+        },
+        "host_owned_copy": {
+          "p50": 0.787395,
+          "p95": 3.86445,
+          "p99": 6.12414,
+          "max": 17.418643
+        },
+        "publish_to_host_observed": {
+          "p50": 1.169882,
+          "p95": 4.628529,
+          "p99": 7.117875,
+          "max": 20.450106
+        },
+        "capture_begin_to_host_observed": {
+          "p50": 5.072253,
+          "p95": 9.97985,
+          "p99": 139.009949,
+          "max": 267.978087
+        },
+        "input_ack_round_trip": {
+          "p50": 1.023548,
+          "p95": 4.468821,
+          "p99": 7.815101,
+          "max": 115.646388
+        },
+        "observation_interval": {
+          "p50": 9.013442,
+          "p95": 17.928872,
+          "p99": 144.048099,
+          "max": 268.977634
+        }
+      }
+    },
+    {
+      "name": "gnome-xwayland-pbo-2",
+      "qualification": "rejected desktop comparison: EGLStream mirror was invisible",
+      "options": {
+        "name": "vr-wayland-01",
+        "seconds": 20.0,
+        "warmup": 20.0,
+        "fps": 120.0,
+        "input_hz": 120.0,
+        "hz": 120,
+        "width": 960,
+        "height": 1080,
+        "mirror": "pbo",
+        "x11_display": ":0",
+        "xauthority": "/run/user/1000/wayland-gnome/.mutter-Xwaylandauth.VBNUU3",
+        "output": "runs/wayland/gnome-xwayland-pbo-2",
+        "record": true,
+        "video": false
+      },
+      "observations": 1121,
+      "stereo_pairs_per_second": 55.44351971868912,
+      "application_submissions_per_second": 19.71187248149307,
+      "compositor_reused_frame_fraction": 0.7691711851278079,
+      "input_updates": 2364,
+      "input_updates_per_second": 116.96520898038436,
+      "ring_frames_skipped": 2,
+      "recording": {
+        "saved": 1121,
+        "dropped": 0,
+        "queue_capacity": 32
+      },
+      "latency_ms": {
+        "gpu_readback": {
+          "p50": 3.000103,
+          "p95": 12.722505,
+          "p99": 346.494975,
+          "max": 396.655219
+        },
+        "ring_publish_copy": {
+          "p50": 0.618391,
+          "p95": 0.883825,
+          "p99": 1.328423,
+          "max": 2.83643
+        },
+        "host_owned_copy": {
+          "p50": 0.749793,
+          "p95": 3.663575,
+          "p99": 5.433506,
+          "max": 11.012675
+        },
+        "publish_to_host_observed": {
+          "p50": 1.122564,
+          "p95": 4.475544,
+          "p99": 6.615241,
+          "max": 11.410475
+        },
+        "capture_begin_to_host_observed": {
+          "p50": 5.458361,
+          "p95": 14.36594,
+          "p99": 347.989486,
+          "max": 398.62721
+        },
+        "input_ack_round_trip": {
+          "p50": 0.871055,
+          "p95": 3.852468,
+          "p99": 8.249656,
+          "max": 171.462334
+        },
+        "observation_interval": {
+          "p50": 9.58173,
+          "p95": 21.103104,
+          "p99": 352.847294,
+          "max": 397.714809
+        }
+      }
+    },
+    {
+      "name": "gnome-xwayland-pbo-3",
+      "qualification": "rejected desktop comparison: EGLStream mirror was invisible",
+      "options": {
+        "name": "vr-wayland-01",
+        "seconds": 20.0,
+        "warmup": 20.0,
+        "fps": 120.0,
+        "input_hz": 120.0,
+        "hz": 120,
+        "width": 960,
+        "height": 1080,
+        "mirror": "pbo",
+        "x11_display": ":0",
+        "xauthority": "/run/user/1000/wayland-gnome/.mutter-Xwaylandauth.HWOZU3",
+        "output": "runs/wayland/gnome-xwayland-pbo-3",
+        "record": true,
+        "video": false
+      },
+      "observations": 1386,
+      "stereo_pairs_per_second": 70.41588825861501,
+      "application_submissions_per_second": 31.951418702100497,
+      "compositor_reused_frame_fraction": 0.6869129618033814,
+      "input_updates": 2306,
+      "input_updates_per_second": 115.24316655272041,
+      "ring_frames_skipped": 1,
+      "recording": {
+        "saved": 1386,
+        "dropped": 0,
+        "queue_capacity": 32
+      },
+      "latency_ms": {
+        "gpu_readback": {
+          "p50": 3.316729,
+          "p95": 8.776647,
+          "p99": 191.090652,
+          "max": 342.518758
+        },
+        "ring_publish_copy": {
+          "p50": 0.56858,
+          "p95": 1.006058,
+          "p99": 1.486177,
+          "max": 3.228978
+        },
+        "host_owned_copy": {
+          "p50": 0.903697,
+          "p95": 4.296967,
+          "p99": 6.7193,
+          "max": 12.107166
+        },
+        "publish_to_host_observed": {
+          "p50": 1.309816,
+          "p95": 4.861977,
+          "p99": 8.275599,
+          "max": 12.79635
+        },
+        "capture_begin_to_host_observed": {
+          "p50": 5.900716,
+          "p95": 12.538333,
+          "p99": 192.917244,
+          "max": 343.987575
+        },
+        "input_ack_round_trip": {
+          "p50": 0.949577,
+          "p95": 3.733587,
+          "p99": 7.214079,
+          "max": 266.755195
+        },
+        "observation_interval": {
+          "p50": 9.327107,
+          "p95": 19.461119,
+          "p99": 189.098955,
+          "max": 346.622354
+        }
+      }
+    },
+    {
+      "name": "gnome-xwayland-visible",
+      "qualification": "rejected desktop comparison: EGLStream mirror was invisible",
+      "options": {
+        "name": "vr-wayland-01",
+        "seconds": 20.0,
+        "warmup": 20.0,
+        "fps": 120.0,
+        "input_hz": 120.0,
+        "hz": 120,
+        "width": 960,
+        "height": 1080,
+        "mirror": "pbo",
+        "x11_display": ":0",
+        "xauthority": "/run/user/1000/wayland-gnome/.mutter-Xwaylandauth.OKUAV3",
+        "output": "runs/wayland/gnome-xwayland-visible",
+        "record": true,
+        "video": false
+      },
+      "observations": 1232,
+      "stereo_pairs_per_second": 62.165384214485286,
+      "application_submissions_per_second": 32.388791527675394,
+      "compositor_reused_frame_fraction": 0.683381088825215,
+      "input_updates": 2306,
+      "input_updates_per_second": 115.26596487788562,
+      "ring_frames_skipped": 1,
+      "recording": {
+        "saved": 1232,
+        "dropped": 0,
+        "queue_capacity": 32
+      },
+      "latency_ms": {
+        "gpu_readback": {
+          "p50": 2.610867,
+          "p95": 12.325702,
+          "p99": 274.661067,
+          "max": 401.723405
+        },
+        "ring_publish_copy": {
+          "p50": 0.53771,
+          "p95": 0.796544,
+          "p99": 1.105979,
+          "max": 2.23651
+        },
+        "host_owned_copy": {
+          "p50": 0.728583,
+          "p95": 3.388791,
+          "p99": 4.762006,
+          "max": 9.812127
+        },
+        "publish_to_host_observed": {
+          "p50": 1.100413,
+          "p95": 4.113509,
+          "p99": 5.632225,
+          "max": 10.754669
+        },
+        "capture_begin_to_host_observed": {
+          "p50": 4.78402,
+          "p95": 14.421574,
+          "p99": 276.135129,
+          "max": 403.614315
+        },
+        "input_ack_round_trip": {
+          "p50": 0.937867,
+          "p95": 3.979722,
+          "p99": 7.463014,
+          "max": 296.5054
+        },
+        "observation_interval": {
+          "p50": 8.87351,
+          "p95": 21.879134,
+          "p99": 278.356884,
+          "max": 406.023953
+        }
+      }
+    }
+  ],
+  "native_probes": {
+    "opengl3": {
+      "command": [
+        "runuser",
+        "-u",
+        "ga",
+        "--",
+        "env",
+        "WAYLAND_DISPLAY=/run/user/1000/wayland-gnome/wayland-gnome",
+        "/usr/local/bin/engine-gpu",
+        "timeout",
+        "-k",
+        "2",
+        "10",
+        "sh",
+        "/opt/vr/vr-monado-guest.sh",
+        "game",
+        "--display-driver",
+        "wayland",
+        "--rendering-driver",
+        "opengl3",
+        "--rendering-method",
+        "gl_compatibility",
+        "--verbose",
+        "--audio-driver",
+        "Dummy"
+      ],
+      "returncode": 124,
+      "log": "native-opengl3.log"
+    },
+    "vulkan": {
+      "command": [
+        "runuser",
+        "-u",
+        "ga",
+        "--",
+        "env",
+        "WAYLAND_DISPLAY=/run/user/1000/wayland-gnome/wayland-gnome",
+        "/usr/local/bin/engine-gpu",
+        "timeout",
+        "-k",
+        "2",
+        "10",
+        "sh",
+        "/opt/vr/vr-monado-guest.sh",
+        "game",
+        "--display-driver",
+        "wayland",
+        "--rendering-driver",
+        "vulkan",
+        "--rendering-method",
+        "mobile",
+        "--verbose",
+        "--audio-driver",
+        "Dummy"
+      ],
+      "returncode": 132,
+      "log": "native-vulkan.log"
+    }
+  },
+  "diagnostics": {
+    "egl_wayland_1_1_21": "getServerProtocolsInfo requires protocols->drm_name; eglGetDisplay fails with EGL_BAD_ALLOC.",
+    "egl_wayland_1_1_9": "Explicit legacy-library selection also failed; root cause not isolated.",
+    "mutter_eglstream": "COGL_FEATURE_ID_TEXTURE_EGL_IMAGE_EXTERNAL only enabled for EGL_DEVICE mode; surfaceless assertion and EGL_BAD_STATE_KHR during Xwayland presentation.",
+    "native_opengl3": "NVIDIA EGL failed, Mesa llvmpipe fallback produced invalid framebuffer/shader errors; timed out after 10s.",
+    "native_vulkan": "No device supported graphics and presentation together; Godot aborted after indexing the empty device list."
+  },
+  "visual_artifact": "runs/wayland/gnome-shm-gameplay.png",
+  "validation": {
+    "vr_stream_tests": 12,
+    "fast_io_tests": 13,
+    "environment_tests": 9,
+    "desktop_screenshot_inspected": true,
+    "stereo_gameplay_inspected": true
+  }
+}

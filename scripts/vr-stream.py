@@ -45,6 +45,8 @@ def main():
     p.add_argument('--width', type=int, default=960, help='width per eye; both eyes are captured')
     p.add_argument('--height', type=int, default=1080, help='height per eye')
     p.add_argument('--mirror', choices=['none', 'pbo', 'sync'], default='none')
+    p.add_argument('--x11-display', default=':1', help='local game display: Xvnc or an existing Xwayland server')
+    p.add_argument('--xauthority', default='/home/ga/.Xauthority', help='guest authority file for the selected display')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--record', action='store_true')
     p.add_argument('--video', action='store_true')
@@ -57,7 +59,8 @@ def main():
     recorder = None
     try:
         with VRStream(args.name, width=args.width, height=args.height, fps=args.fps,
-                      hz=args.hz, mirror=args.mirror) as vr:
+                      hz=args.hz, mirror=args.mirror,
+                      x11_display=args.x11_display, xauthority=args.xauthority) as vr:
             print('VR stream ready; warming up the game', flush=True)
             time.sleep(args.warmup)
             vr.latest().image().save(args.output/'menu.png')

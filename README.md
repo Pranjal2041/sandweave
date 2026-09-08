@@ -34,9 +34,11 @@ Xvnc with headless GNOME/Mutter and records the host render-node capabilities
 and gVisor device support needed for a GPU compositor.
 [The Wayland source investigation](notes/wayland-source-investigation.md)
 identifies upstream headless-session fixes, NVIDIA DMA-BUF/timeline operations,
-and the missing engine and packaging integration. Wayland is an additional
-backend under investigation; Xvnc remains available. No Wayland runtime result
-is claimed. Controller and Monado/XR support are separate additional capabilities.
+and the missing engine and packaging integration. [The Wayland runtime experiment](notes/wayland-runtime-experiment.md)
+now verifies headless GNOME GPU composition and Open Saber through Xwayland SHM
+with the existing VirtualGL renderer, controller input and stereo recording.
+Native GPU Wayland presentation remains unresolved, and no overall speedup is
+established. Xvnc remains available. Controller and Monado/XR support are separate capabilities.
 
 [The first VR experiment](notes/vr-monado-experiment.md) runs the published
 Open Saber game through Monado with a virtual headset and controllers, using

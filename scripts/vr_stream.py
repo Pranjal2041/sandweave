@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import platform
 import queue
+import re
 import select
 import struct
 import subprocess
@@ -148,14 +149,18 @@ class FrameRing:
 
 class VRStream:
     def __init__(self, name, *, manager=None, width=960, height=1080, fps=90,
-                 hz=120, mirror='none', slots=8):
+                 hz=120, mirror='none', slots=8, x11_display=':1',
+                 xauthority='/home/ga/.Xauthority'):
         if not name.startswith('vr-'):
             raise ValueError('use a disposable VR sandbox named vr-*')
         if hz not in (60, 72, 90, 120, 144) or mirror not in ('none', 'pbo', 'sync'):
             raise ValueError('invalid compositor rate or mirror mode')
+        if not re.fullmatch(r':[0-9]+(?:\.[0-9]+)?', x11_display) or not xauthority.startswith('/'):
+            raise ValueError('select a local X11 display and absolute guest Xauthority path')
         self.manager, self.name = manager or EnvironmentManager(), name
         self.options = dict(width=width, height=height, fps=fps, slots=slots)
         self.hz, self.mirror = hz, mirror
+        self.x11_display, self.xauthority = x11_display, xauthority
         self.monado = self.bridge = self.ring = self.owner = self.lifecycle = None
         self.started_game = False
         self.broken = False
@@ -188,10 +193,10 @@ class VRStream:
             raise RuntimeError('Monado is running: stop the VR experiment before opening a stream')
         payload = io.BytesIO()
         with tarfile.open(fileobj=payload, mode='w') as tar:
-            for name in ('vr_input.py', 'vr_stream_guest.py', 'vr-remote-input.py'):
+            for name in ('vr_input.py', 'vr_stream_guest.py', 'vr-remote-input.py', 'vr-monado-guest.sh'):
                 tar.add(self.manager.lab/'scripts'/name, arcname=name)
         subprocess.run([*self.manager._command(self.name), 'exec', self.name, 'sh', '-c',
-                        'umask 022; tar -xf - -C /opt/vr; chmod a+r /opt/vr/*.py'],
+                        'umask 022; tar -xf - -C /opt/vr; chmod a+r /opt/vr/*.py /opt/vr/vr-monado-guest.sh'],
                        input=payload.getvalue(), capture_output=True, check=True, timeout=15)
         self.guest('test', '!', '-e', '/dev/kvm')
         self.guest('rm', '-f', '/run/user/1000/monado_comp_ipc')
@@ -231,7 +236,9 @@ class VRStream:
             samples.append((received-sent, (sent+received)//2-reply['guest_ns']))
         self.clock_rtt_ns, self.guest_to_host_ns = min(samples)
         self.guest('systemd-run', '--unit=vr-open-saber-live', '--uid=ga', '--collect',
-                   '--setenv=VGL_READBACK='+self.mirror, '/usr/local/bin/engine-gpu-gl',
+                   '--setenv=VGL_READBACK='+self.mirror,
+                   '--setenv=VR_X11_DISPLAY='+self.x11_display,
+                   '--setenv=VR_XAUTHORITY='+self.xauthority, '/usr/local/bin/engine-gpu-gl',
                    'sh', '/opt/vr/vr-monado-guest.sh', 'game')
         self.started_game = True
         self.ring.latest(timeout=30)

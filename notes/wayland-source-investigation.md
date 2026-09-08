@@ -1,5 +1,10 @@
 # Wayland source investigation
 
+Runtime follow-up: [the separate Wayland experiment](wayland-runtime-experiment.md)
+now verifies surfaceless NVIDIA GNOME composition and a working Xwayland SHM /
+VirtualGL game path. Native GPU client presentation remains unresolved. The
+source-only findings below are preserved as the preceding investigation.
+
 Research date: 2026-09-07. Scope: add display and device capabilities to the
 existing no-KVM, no-host-sudo Slurm architecture. Xvnc remains an available
 backend; Wayland is an additional backend. Monado/XR remains in scope for VR.

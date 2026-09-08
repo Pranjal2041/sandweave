@@ -1,5 +1,9 @@
 # Display architecture after removing KVM
 
+[The subsequent runtime experiment](wayland-runtime-experiment.md) qualifies a
+specific headless GNOME/Xwayland configuration. The no-runtime statements below
+describe this earlier source investigation, not the current lab state.
+
 Follow-up: Xvnc was implemented and qualified first, as recorded in
 [Xvnc fast I/O](xvnc-fast-io.md). The user has now requested investigation of
 Wayland as an additional backend, with Monado/XR also in scope for future VR

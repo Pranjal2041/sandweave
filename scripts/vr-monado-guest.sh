@@ -14,7 +14,7 @@ case "${1:-}" in
     exec /opt/vr/monado/bin/monado-service
     ;;
   game)
-    export DISPLAY=:1 XAUTHORITY=/home/ga/.Xauthority
+    export DISPLAY=${VR_X11_DISPLAY:-:1} XAUTHORITY=${VR_XAUTHORITY:-/home/ga/.Xauthority}
     export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
     export XR_RUNTIME_JSON=/opt/vr/monado/share/openxr/1/openxr_monado.json
     export OXR_LAB_ALLOW_MISSING_GLX_CONFIG=1

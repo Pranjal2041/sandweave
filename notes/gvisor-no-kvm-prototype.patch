@@ -356,10 +356,36 @@ index 0000000..ced89f3
 +	}
 +}
 diff --git a/pkg/sentry/arch/arch_amd64.go b/pkg/sentry/arch/arch_amd64.go
-index 6240b68..13996fe 100644
+index 6240b68..d936d7c 100644
 --- a/pkg/sentry/arch/arch_amd64.go
 +++ b/pkg/sentry/arch/arch_amd64.go
-@@ -171,6 +171,16 @@ func (c *Context64) SetTLS(value uintptr) bool {
+@@ -106,6 +106,12 @@ const (
+ // +stateify savable
+ type Context64 struct {
+ 	State
++
++	// Last application-visible hardware exception, as in Linux thread_struct.
++	signalTrapno     uint64
++	signalError      uint64
++	signalCr2        uint64
++	signalContextSet bool
+ }
+ 
+ // Arch implements Context.Arch.
+@@ -120,9 +126,9 @@ func (c *Context64) FloatingPointData() *fpu.State {
+ 
+ // Fork returns an exact copy of this context.
+ func (c *Context64) Fork() *Context64 {
+-	return &Context64{
+-		State: c.State.Fork(),
+-	}
++	child := *c
++	child.State = c.State.Fork()
++	return &child
+ }
+ 
+ // Return returns the current syscall return value.
+@@ -171,6 +177,16 @@ func (c *Context64) SetTLS(value uintptr) bool {
  	return true
  }
  
@@ -376,6 +402,60 @@ index 6240b68..13996fe 100644
  // SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
  func (c *Context64) SetOldRSeqInterruptedIP(value uintptr) {
  	c.Regs.R10 = uint64(value)
+diff --git a/pkg/sentry/arch/arch_x86.go b/pkg/sentry/arch/arch_x86.go
+index 3aef3e4..699bb26 100644
+--- a/pkg/sentry/arch/arch_x86.go
++++ b/pkg/sentry/arch/arch_x86.go
+@@ -397,7 +397,7 @@ func New(arch Arch) *Context64 {
+ 	switch arch {
+ 	case AMD64:
+ 		return &Context64{
+-			State{
++			State: State{
+ 				fpState: fpu.NewState(),
+ 				// Set initial registers for compatibility with Linux
+ 				// (as done in arch/x86/kernel/process_64.c:start_thread()).
+diff --git a/pkg/sentry/arch/signal_amd64.go b/pkg/sentry/arch/signal_amd64.go
+index bb8545d..011e779 100644
+--- a/pkg/sentry/arch/signal_amd64.go
++++ b/pkg/sentry/arch/signal_amd64.go
+@@ -86,6 +86,17 @@ type UContext64 struct {
+ 	Sigset   linux.SignalSet
+ }
+ 
++// SetSignalContext records an application-visible x86 exception. Only page
++// faults update CR2; other signals retain the previous fault address.
++func (c *Context64) SetSignalContext(trapno, errorCode, faultAddr uint64) {
++	c.signalTrapno = trapno
++	c.signalError = errorCode
++	if trapno == 14 { // X86_TRAP_PF
++		c.signalCr2 = faultAddr
++	}
++	c.signalContextSet = true
++}
++
+ // SignalSetup implements Context.SignalSetup. (Compare to Linux's
+ // arch/x86/kernel/signal.c:__setup_rt_frame().)
+ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet, featureSet cpuid.FeatureSet) error {
+@@ -143,11 +154,13 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
+ 		uc.Flags |= _UC_FP_XSTATE
+ 	}
+ 
+-	// TODO(gvisor.dev/issue/159): Set SignalContext64.Err, Trapno, and Cr2
+-	// based on the fault that caused the signal. For now, leave Err and
+-	// Trapno unset and assume CR2 == info.Addr() for SIGSEGVs and
+-	// SIGBUSes.
+-	if linux.Signal(info.Signo) == linux.SIGSEGV || linux.Signal(info.Signo) == linux.SIGBUS {
++	if c.signalContextSet {
++		uc.MContext.Trapno = c.signalTrapno
++		uc.MContext.Err = c.signalError
++		uc.MContext.Cr2 = c.signalCr2
++	} else if linux.Signal(info.Signo) == linux.SIGSEGV || linux.Signal(info.Signo) == linux.SIGBUS {
++		// TODO(gvisor.dev/issue/159): Platforms without SignalContextSaver
++		// still lack hardware exception metadata.
+ 		uc.MContext.Cr2 = info.Addr()
+ 	}
+ 
 diff --git a/pkg/sentry/control/BUILD b/pkg/sentry/control/BUILD
 index c99d770..8490518 100644
 --- a/pkg/sentry/control/BUILD
@@ -1922,7 +2002,7 @@ index 2b6b42d..ebfb60c 100644
  	}
  	if flags&linux.CLONE_NEWNS != 0 {
 diff --git a/pkg/sentry/kernel/task_run.go b/pkg/sentry/kernel/task_run.go
-index eb266fc..d955c00 100644
+index eb266fc..0240467 100644
 --- a/pkg/sentry/kernel/task_run.go
 +++ b/pkg/sentry/kernel/task_run.go
 @@ -283,6 +283,14 @@ func (app *runApp) execute(t *Task) taskRunState {
@@ -1940,6 +2020,16 @@ index eb266fc..d955c00 100644
  
  			// Is this a vsyscall that we need emulate?
  			//
+@@ -331,6 +339,9 @@ func (app *runApp) execute(t *Task) taskRunState {
+ 
+ 		switch sig {
+ 		case linux.SIGILL, linux.SIGSEGV, linux.SIGBUS, linux.SIGFPE, linux.SIGTRAP:
++			if saver, ok := t.p.(platform.SignalContextSaver); ok {
++				saver.SaveSignalContext(t.Arch(), info)
++			}
+ 			// Synchronous signal. Send it to ourselves. Assume the signal is
+ 			// legitimate and force it (work around the signal being ignored or
+ 			// blocked) like Linux does. Conveniently, this is even the correct
 diff --git a/pkg/sentry/pgalloc/BUILD b/pkg/sentry/pgalloc/BUILD
 index feb4941..4fbbc07 100644
 --- a/pkg/sentry/pgalloc/BUILD
@@ -2193,6 +2283,25 @@ index 0700060..f44532d 100644
  	f.subreleased = make(map[uint64]uint64, len(pb.Subreleased))
  	for k, v := range pb.Subreleased {
  		f.subreleased[k] = v
+diff --git a/pkg/sentry/platform/platform.go b/pkg/sentry/platform/platform.go
+index 22c8dc1..0d0bad8 100644
+--- a/pkg/sentry/platform/platform.go
++++ b/pkg/sentry/platform/platform.go
+@@ -208,6 +208,14 @@ type MemoryManager interface {
+ 	FindVMAByName(ar hostarch.AddrRange, hint string) (hostarch.Addr, uint64, error)
+ }
+ 
++// SignalContextSaver is implemented by platforms that can preserve hardware
++// exception metadata in the architecture's signal frame. The kernel calls this
++// only for an exception delivered to the application, after ruling out faults
++// handled internally (including demand paging and instruction emulation).
++type SignalContextSaver interface {
++	SaveSignalContext(ac *arch.Context64, info *linux.SignalInfo)
++}
++
+ // Context represents the execution context for a single thread.
+ type Context interface {
+ 	// Switch resumes execution of the thread specified by the arch.Context64
 diff --git a/pkg/sentry/platform/systrap/subprocess_amd64.go b/pkg/sentry/platform/systrap/subprocess_amd64.go
 index 070d84d..2fa568d 100644
 --- a/pkg/sentry/platform/systrap/subprocess_amd64.go
@@ -2220,7 +2329,7 @@ index 070d84d..2fa568d 100644
  }
  
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
-index 5d6b4ce..4e3418d 100644
+index 5d6b4ce..b6cd5f6 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 +++ b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 @@ -161,6 +161,26 @@ static void set_fsbase(uint64_t fsbase) {
@@ -2250,7 +2359,7 @@ index 5d6b4ce..4e3418d 100644
  // switch_context_amd64 is a wrapper of switch_context() which does checks
  // specific to amd64.
  struct thread_context *switch_context_amd64(
-@@ -241,6 +261,9 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
+@@ -241,7 +261,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
    if (signo != SIGCHLD ||
        ucontext->uc_mcontext.gregs[REG_RIP] < __export_stub_start) {
      ctx->ptregs.fs_base = fs_base;
@@ -2258,9 +2367,12 @@ index 5d6b4ce..4e3418d 100644
 +      ctx->ptregs.gs_base = get_gsbase();
 +    }
      ctx->err = 0;
++    ctx->exception_error = ucontext->uc_mcontext.gregs[REG_ERR];
++    ctx->exception_trapno = ucontext->uc_mcontext.gregs[REG_TRAPNO];
      gregs_to_ptregs(ucontext, &ctx->ptregs);
      memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
-@@ -348,6 +371,11 @@ init:
+            __export_arch_state.fp_len);
+@@ -348,6 +373,11 @@ init:
      ucontext->uc_mcontext.fpregs = (void *)ctx->fpstate;
    }
    ptregs_to_gregs(ucontext, &ctx->ptregs);
@@ -2272,6 +2384,62 @@ index 5d6b4ce..4e3418d 100644
  }
  
  void __syshandler() {
+diff --git a/pkg/sentry/platform/systrap/sysmsg/sysmsg.go b/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
+index 5601d38..6547e5e 100644
+--- a/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
++++ b/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
+@@ -281,6 +281,11 @@ type ThreadContext struct {
+ 	Debug uint64
+ 	// SigError is an error code that clarifies the nature of the signal.
+ 	SigError uint64
++
++	// ExceptionError and ExceptionTrapno are the raw x86 exception metadata.
++	// Unlike SigError, these also describe non-page-fault exceptions.
++	ExceptionError  uint64
++	ExceptionTrapno uint64
+ }
+ 
+ // StubError are values that represent known stub-thread failure modes.
+diff --git a/pkg/sentry/platform/systrap/sysmsg/sysmsg.h b/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
+index 88170a1..b6347ba 100644
+--- a/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
++++ b/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
+@@ -100,6 +100,8 @@ struct thread_context {
+   uint64_t tls;
+   uint64_t debug;
+   uint64_t err;
++  uint64_t exception_error;
++  uint64_t exception_trapno;
+ };
+ 
+ enum stub_error {
+diff --git a/pkg/sentry/platform/systrap/systrap_amd64.go b/pkg/sentry/platform/systrap/systrap_amd64.go
+index 7cb8c23..d6c8d57 100644
+--- a/pkg/sentry/platform/systrap/systrap_amd64.go
++++ b/pkg/sentry/platform/systrap/systrap_amd64.go
+@@ -15,9 +15,22 @@
+ package systrap
+ 
+ import (
++	"gvisor.dev/gvisor/pkg/abi/linux"
+ 	"gvisor.dev/gvisor/pkg/sentry/arch"
++	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
+ )
+ 
++// SaveSignalContext implements platform.SignalContextSaver.
++func (c *platformContext) SaveSignalContext(ac *arch.Context64, info *linux.SignalInfo) {
++	// Synthetic vsyscall faults and userspace-generated signals do not supply
++	// new hardware exception metadata. Never expose a stub's unrelated CR2.
++	if c.sharedContext.state() != sysmsg.ContextStateFault || c.signalInfo.Code <= 0 {
++		return
++	}
++	shared := c.sharedContext.shared
++	ac.SetSignalContext(shared.ExceptionTrapno, shared.ExceptionError, info.Addr())
++}
++
+ func stackPointer(r *arch.Registers) uintptr {
+ 	return uintptr(r.Rsp)
+ }
 diff --git a/pkg/sentry/socket/netlink/netfilter/protocol.go b/pkg/sentry/socket/netlink/netfilter/protocol.go
 index 2105a92..37109a9 100644
 --- a/pkg/sentry/socket/netlink/netfilter/protocol.go

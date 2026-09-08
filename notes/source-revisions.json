@@ -4,9 +4,9 @@
     "upstream": "https://github.com/google/gvisor.git",
     "branch": "experiment/no-kvm-slurm",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "59487a05f5e858d5b20a36d980036ccea2ad82ab",
+    "commit": "b3ffebb8a1a1245b3e373f3b25309532804a6bbd",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/dae2b000bd86b4757abc79fc2da0d563910dd4ccc9afc2c4765e47c3b8447431",
+    "runtime_build": "tools/runtime-builds/19dfb215bc34b326d948e9ca54e7d8a5d2549e1e016aa008ae265cd67293e657",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow"
   }

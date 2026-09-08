@@ -117,12 +117,16 @@ def main():
                        '--property=TimeoutStopSec=3', *user,
                        'sh', '/opt/vr/vr-vulkan-xvnc.sh', 'sh', '-c', command, check=False)
         print(result.stdout, end='')
-        print(json.dumps({'exit_code': result.returncode, 'vr': not args.novr,
+        crash = any(marker in result.stdout for marker in
+                    ('wine: Unhandled', 'Unhandled exception:', 'Unhandled page fault'))
+        print(json.dumps({'service_exit_code': result.returncode,
+                          'crash_reported': crash, 'novr_argument': args.novr,
+                          'gameplay_verified': False,
                           'experimental_vulkan13': args.experimental_vulkan13}))
     finally:
         if original is not None:
             guest('sh', '-c', 'cat > "$1"', 'sh', manifest, payload=original)
-    raise SystemExit(result.returncode)
+    raise SystemExit(result.returncode or (1 if crash else 0))
 
 
 if __name__ == '__main__':

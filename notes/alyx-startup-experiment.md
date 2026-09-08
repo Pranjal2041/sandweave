@@ -205,3 +205,17 @@ is a regular file owned by ga and writable by that user; source assets remain
 read-only. Game configuration saving still needs verification on the next launch.
 Ignored evidence includes console-at30.log, windows-at30.log, startup-at30.png,
 prepare-writable-cfg.log and import-targeted-startup.log.
+
+At 07:36 UTC all four targeted archives were complete. Set the remote headset
+explicitly to (0, 1.6, 0), identity orientation, with both virtual controllers
+active and optional hand-skeleton simulation disabled. The next Windows probe
+no longer logged any of those six missing resources. It successfully saved
+cfg/video.txt (482 bytes), establishing the writable-configuration repair.
+
+Actual Xvnc output was a black game window with an **Unable To Start Game** dialog
+reporting a missing/corrupted game file. A fresh 1920x1080 paired-eye capture was
+also black. Opened and inspected both screenshots. Dismissed the dialog through
+Fast I/O; the probe exited 1 with a minidump. Full asset import remains necessary
+before attributing this remaining failure to runtime compatibility. This is not
+gameplay or stereo-rendering acceptance. Evidence: runs/alyx/windows-targeted.log,
+console-targeted.log, startup-targeted.png and eyes-targeted.png.

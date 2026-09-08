@@ -66,6 +66,10 @@ sign-in error stating that Steam is not running. Racing gameplay remains
 unverified; the earlier host NVIDIA wait is a separate unresolved observation.
 The startup investigation also exposed a Wine exception-classification gap;
 the engine repair passes Windows fault recovery and a live CPU restore test.
+The [Linux Steam client check](notes/steam-client-experiment.md) found a separate
+startup blocker: its 32-bit bootstrap is rejected by the current 64-bit-only
+gVisor executable loader. Alyx itself has a native Linux build; its earlier
+Linux launch stopped at Steam initialization.
 
 [Continuous VR I/O](notes/vr-continuous-io.md) delivers paired left/right eye
 images to a host Python client through a bounded, size-sealed shared-memory ring,

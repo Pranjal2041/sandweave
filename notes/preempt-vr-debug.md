@@ -260,6 +260,11 @@ many `mmap() error Cannot allocate memory` messages and an assertion in
 failed with mapping-allocation errors. This is not a successful native game
 control, nor proof of a gVisor-only game bug.
 
+Here, **native Apptainer** means the Windows game through Wine outside gVisor.
+These controls did not run Alyx's separate native Linux executable. That earlier
+Linux-executable probe stopped at Steam initialization; see the
+[Steam client experiment](steam-client-experiment.md).
+
 `scripts/native-alyx-control.sh` runs in the private session made by
 `run-native-gpu-app.py`, with an isolated Xvnc, Monado socket/config, input port,
 and a 900-second game limit. Its cleanup stops only that native Wine prefix
@@ -296,8 +301,10 @@ automatic verifier had remained pending after its Slurm step ended; a first
 explicit attempt on the login node correctly rejected initial verification
 away from the frozen source. The subsequent original-node run checked all
 seven files and passed. It does not preserve a live GPU context or a running game. Native
-extraction exercised its file contents; a new gVisor cold restore of this
-particular snapshot has not yet been tested. Unprivileged native extraction
+extraction exercised its file contents. A subsequent gVisor cold restore into
+`vr-steam-l40s-01` booted and accepted guest commands for the Steam probe; its
+first Xvnc capture showed a black desktop with the clipboard settings window,
+so this does not establish full desktop or game readiness. Unprivileged native extraction
 skipped special device nodes, and the overlay tar reported only the expected
 Docker `backingFsBlockDev` mknod failure. Native Apptainer supplies its own
 isolated `/dev` and the allocated GPU binds.

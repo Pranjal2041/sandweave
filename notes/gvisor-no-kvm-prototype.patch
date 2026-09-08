@@ -1,8 +1,18 @@
 diff --git a/pkg/abi/nvgpu/ctrl.go b/pkg/abi/nvgpu/ctrl.go
-index fc07881..00ea262 100644
+index fc07881..eda0c6c 100644
 --- a/pkg/abi/nvgpu/ctrl.go
 +++ b/pkg/abi/nvgpu/ctrl.go
-@@ -816,6 +816,7 @@ const (
+@@ -58,6 +58,9 @@ type HasCtrlInfoList interface {
+ 	CtrlInfoList() P64
+ }
+ 
++// From src/common/sdk/nvidia/inc/ctrl/ctrl0090.h:
++const NV0090_CTRL_CMD_SET_LG_SECTOR_PROMOTION = 0x90010b
++
+ // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000client.h:
+ const (
+ 	NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE        = 0xd01
+@@ -816,6 +819,7 @@ const (
  	NV83DE_CTRL_CMD_DEBUG_SUSPEND_CONTEXT           = 0x83de0317
  	NV83DE_CTRL_CMD_DEBUG_RESUME_CONTEXT            = 0x83de0318
  	NV83DE_CTRL_CMD_DEBUG_SET_MODE_ERRBAR_DEBUG     = 0x83de031f
@@ -757,7 +767,7 @@ index 85652e6..52408c7 100644
  	}
  	abspath := filepath.Join("/dev", relpath)
 diff --git a/pkg/sentry/devices/nvproxy/version.go b/pkg/sentry/devices/nvproxy/version.go
-index 5e1b63c..8cd9053 100644
+index 5e1b63c..d9f2a7a 100644
 --- a/pkg/sentry/devices/nvproxy/version.go
 +++ b/pkg/sentry/devices/nvproxy/version.go
 @@ -341,6 +341,7 @@ func Init() {
@@ -776,6 +786,24 @@ index 5e1b63c..8cd9053 100644
  							nvgpu.NV906F_CTRL_GET_CLASS_ENGINEID:                                   simpleIoctlInfo("NV906F_CTRL_GET_CLASS_ENGINEID", "NV906F_CTRL_GET_CLASS_ENGINEID_PARAMS"),
  							nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL:                                    simpleIoctlInfo("NV906F_CTRL_CMD_RESET_CHANNEL", "NV906F_CTRL_CMD_RESET_CHANNEL_PARAMS"),
  							nvgpu.NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE:                         simpleIoctlInfo("NV9096_CTRL_CMD_GET_ZBC_CLEAR_TABLE_SIZE", "NV9096_CTRL_GET_ZBC_CLEAR_TABLE_SIZE_PARAMS"),
+@@ -1173,6 +1175,9 @@ func Init() {
+ 
+ 		v610_43_02 := addUnsupportedDriverABI(610, 43, 02, func() *driverABI {
+ 			abi := v595_71_05()
++			// Blackwell graphics initialization sets a context's sector promotion
++			// policy. The parameter is one enum (4 bytes), with no embedded pointers.
++			abi.controlCmd[nvgpu.NV0090_CTRL_CMD_SET_LG_SECTOR_PROMOTION] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
+ 			// UVM range groups were removed in 610.43.02.
+ 			delete(abi.uvmIoctl, nvgpu.UVM_CREATE_RANGE_GROUP)
+ 			delete(abi.uvmIoctl, nvgpu.UVM_DESTROY_RANGE_GROUP)
+@@ -1206,6 +1211,7 @@ func Init() {
+ 
+ 				// BSP/MSENC structs were renamed to NVDEC/NVENC in 610.43.02.
+ 
++				info.ControlInfos[nvgpu.NV0090_CTRL_CMD_SET_LG_SECTOR_PROMOTION] = simpleIoctlInfo("NV0090_CTRL_CMD_SET_LG_SECTOR_PROMOTION", "NV0090_CTRL_SET_LG_SECTOR_PROMOTION_PARAMS")
+ 				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_BSP_GET_CAPS_V2] = simpleIoctlInfo("NV0080_CTRL_CMD_BSP_GET_CAPS_V2", "NV0080_CTRL_NVDEC_GET_CAPS_PARAMS_V2")
+ 				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_MSENC_GET_CAPS] = ioctlInfoWithStructName("NV0080_CTRL_CMD_MSENC_GET_CAPS", nvgpu.NV0080_CTRL_GET_CAPS_PARAMS{}, "NV0080_CTRL_NVENC_GET_CAPS_PARAMS")
+ 
 diff --git a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go b/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
 index d5d2f4d..941bef4 100644
 --- a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go

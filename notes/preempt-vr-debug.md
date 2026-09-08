@@ -95,3 +95,37 @@ Native extraction skipped device-node creation because the host user is
 unprivileged. Apptainer supplies its isolated `/dev` and the explicitly allocated
 GPU devices; the skipped Docker device node is unrelated to the Vulkan control.
 Only new disposable directories on this node were created.
+
+## Blackwell graphics control repair
+
+Engine commit `c2f78eb` adds `NV0090_CTRL_CMD_SET_LG_SECTOR_PROMOTION` to the
+610.43.02 graphics control table. The matching driver header
+`src/common/sdk/nvidia/inc/ctrl/ctrl0090.h` declares one enum parameter,
+`promoType`, with no embedded pointers. The existing simple-control handler
+copies the parameter and invokes the driver's normal validation. The command
+is gated on the graphics capability. Its ABI information entry is also recorded.
+
+The full five-binary build and nvproxy tests pass. Candidate build
+`d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7` cold-booted
+`vr-racing-rtx-sector-01` on the same RTX GPU as the failing control. Headless
+Vulkan now exits 0, Monado initializes, and Open Saber renders on Xvnc and in
+paired-eye captures. A controller-trigger input started the Time Lapse level;
+the later paired-eye screenshot visibly shows gameplay and a score of 140.
+This comparison identifies the rejected sector-promotion control as a startup
+blocker on this Blackwell GPU. The runtime also contains the earlier
+scheduler-aware ioctl change; recovery from the previous host driver wait is
+still untested.
+
+In a 14.992-second gameplay window, Monado recorded 1,348 application frame
+submissions (**89.85/s**) at a 90 Hz target, with median/p95/p99 intervals
+11.12/12.63/14.83 ms. The compositor's reuse fraction was 4.16%. This is an
+OpenXR submission measurement, not physical-headset scanout timing. Opened and
+inspected `open-saber-desktop.png`, `open-saber-eyes.png`,
+`open-saber-after-play.png` and `open-saber-play-later.png` under
+`runs/racing/preempt-10361287/`. The last is gameplay; the immediate post-input
+capture still showed the menu. Measurements: `open-saber-metrics.json`.
+
+The default runtime selector remains `19dfb215...`; candidate launches specify
+their immutable build explicitly. The older control sandbox remains available
+for comparison. Subsequent game probes stop only this test's Open Saber service,
+keeping its Monado instance for the new game.

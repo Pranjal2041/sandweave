@@ -73,6 +73,10 @@ Linux launch stopped at Steam initialization.
 The [standalone Linux VR shortlist](notes/standalone-linux-vr-games.md) records
 free game candidates, their Linux/XR evidence, and outstanding offline/runtime
 checks; Open Saber remains the only game on that list tested in this lab.
+The [broader Linux VR catalogue](notes/linux-vr-catalog-and-build-options.md)
+separates native games, community VR ports, reported Proton gameplay, and
+original games we could build for training. It records source, store, input,
+and compatibility limitations; Windows VM work is paused.
 The [Windows-without-KVM investigation](notes/windows-without-kvm-research.md)
 examines fast Windows execution, Drawbridge's user-mode NT precedent, the new
 Helios GPU stack, and separate CPU, graphics and XR requirements. The

@@ -4,17 +4,28 @@ Research date: **2026-09-08**. The user requires Windows **here**, with fast
 execution, and explicitly excludes TCG. The lab's no-KVM/no-host-sudo objective
 remains in force. A slow emulated boot would not satisfy this task.
 
-This is source/documentation research plus a read-only device check,
-**not a Windows boot or graphics acceptance result**. The accepted Linux game
-order remains Clone IT, FlightGear, Locomancer; Windows investigation takes
-precedence for now. No Windows image or emulator was downloaded or launched.
+This initial survey is supplemented by the
+[native Windows kernel experiments](windows-native-kernel-experiments.md).
+Five routines from Microsoft's Windows 11 kernel now execute correctly inside
+the existing gVisor sandbox after a restricted memory-access rewrite. The
+follow-up includes actual timing, syscall dispatch and shadow-mapping probes.
+**Windows itself has not booted; no Windows graphics acceptance is claimed.**
+The accepted Linux game order remains Clone IT, FlightGear, Locomancer;
+Windows investigation takes precedence. A kernel binary was downloaded directly
+from Microsoft; no complete Windows installation image was acquired or booted.
 
 **No deployable fast full-Windows solution has been established under all
-these constraints.** There is strong architectural precedent for moving
+these constraints.** The follow-up investigates native application execution
+with selective rewriting of Microsoft's kernel, including FAUmachine's earlier
+mechanism and concrete address-translation experiments. There is also strong
+architectural precedent for moving
 Windows services into userspace while executing application instructions
 directly: Microsoft's Drawbridge. The missing piece is a usable Windows
 runtime with that adaptation, together with modern graphics and XR support.
-This is not evidence that such an architecture is impossible.
+This is not evidence that such an architecture is impossible. The actual
+remaining gates and limits of the successful component tests are recorded in
+the follow-up; absence of a packaged runtime is not treated as the end of the
+investigation.
 
 ## Direct execution through a Windows library OS
 

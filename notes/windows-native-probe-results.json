@@ -1,0 +1,466 @@
+{
+  "date": "2026-09-08",
+  "scope": "Architectural probes; Windows has not booted",
+  "constraints": {
+    "kvm_used": false,
+    "tcg_used": false,
+    "host_sudo_used": false
+  },
+  "node": "babel-o9-20",
+  "cpu": "AMD EPYC 9354",
+  "host_kernel": "5.14.0-687.25.1.el9_8.x86_64",
+  "cpu_affinity": [
+    12
+  ],
+  "gvisor_source_commit": "c2f78eb0077f8394917b9bcdece2e521e3150d76",
+  "runtime_build": "d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
+  "runsc_sha256": "680408c88b46625debdafdaa4cef2784705ee42cc2689ed703707792f234a5e5",
+  "address_probe": {
+    "name": "windows-address-1788906098042330573",
+    "node": "babel-o9-20",
+    "affinity": [
+      12
+    ],
+    "runsc_sha256": "680408c88b46625debdafdaa4cef2784705ee42cc2689ed703707792f234a5e5",
+    "probe_sha256": "fc9698f061a37c709435e411c0760f4fdd0e777dcd41750130c1d59d9be35fdb",
+    "guest_exit": 0,
+    "evidence": "/data/user_data/pranjala/general-vm/runs/gvisor/windows-address-1788906098042330573",
+    "results": {
+      "native": [
+        {
+          "case": "low-alias",
+          "mapped": true,
+          "correct": true,
+          "guest_pointer": "0xffff800000100000",
+          "bias": "0x800000000000",
+          "gs_prctl_errno": 0,
+          "wrgsbase_used": false,
+          "user_alias_coherent": null,
+          "loads_per_sample": 8000000,
+          "samples": [
+            {
+              "native_ns": 8994327,
+              "shifted_ns": 11083021
+            },
+            {
+              "native_ns": 8965936,
+              "shifted_ns": 11094131
+            },
+            {
+              "native_ns": 8959727,
+              "shifted_ns": 11072270
+            },
+            {
+              "native_ns": 8957166,
+              "shifted_ns": 11068841
+            },
+            {
+              "native_ns": 8954696,
+              "shifted_ns": 11078150
+            },
+            {
+              "native_ns": 8952466,
+              "shifted_ns": 11086511
+            },
+            {
+              "native_ns": 8962816,
+              "shifted_ns": 11080561
+            }
+          ],
+          "median_shifted_over_native": 1.2362812089414756
+        },
+        {
+          "case": "wide-alias",
+          "mapped": true,
+          "correct": true,
+          "guest_pointer": "0xffff800000100000",
+          "bias": "0x1000000000000",
+          "gs_prctl_errno": 0,
+          "wrgsbase_used": false,
+          "user_alias_coherent": true,
+          "loads_per_sample": 8000000,
+          "samples": [
+            {
+              "native_ns": 8976436,
+              "shifted_ns": 11074401
+            },
+            {
+              "native_ns": 8959766,
+              "shifted_ns": 11099341
+            },
+            {
+              "native_ns": 8955767,
+              "shifted_ns": 11068310
+            },
+            {
+              "native_ns": 8958976,
+              "shifted_ns": 11075221
+            },
+            {
+              "native_ns": 8959647,
+              "shifted_ns": 11082961
+            },
+            {
+              "native_ns": 8957497,
+              "shifted_ns": 11072260
+            },
+            {
+              "native_ns": 8957696,
+              "shifted_ns": 11069891
+            }
+          ],
+          "median_shifted_over_native": 1.2360886082350906
+        },
+        {
+          "case": "syscall-user-dispatch",
+          "supported": true,
+          "calls": 20000,
+          "caught": 20000,
+          "elapsed_ns": 37429231,
+          "ns_per_dispatch": 1871.46155
+        },
+        {
+          "case": "seccomp-dispatch",
+          "supported": true,
+          "calls": 20000,
+          "caught": 20000,
+          "elapsed_ns": 38109522,
+          "ns_per_dispatch": 1905.4761
+        }
+      ],
+      "guest": [
+        {
+          "case": "low-alias",
+          "mapped": true,
+          "correct": true,
+          "guest_pointer": "0xffff800000100000",
+          "bias": "0x800000000000",
+          "gs_prctl_errno": 1,
+          "wrgsbase_used": true,
+          "user_alias_coherent": null,
+          "loads_per_sample": 8000000,
+          "samples": [
+            {
+              "native_ns": 9070358,
+              "shifted_ns": 11166882
+            },
+            {
+              "native_ns": 9022147,
+              "shifted_ns": 11164482
+            },
+            {
+              "native_ns": 9016527,
+              "shifted_ns": 11162352
+            },
+            {
+              "native_ns": 9024718,
+              "shifted_ns": 11159202
+            },
+            {
+              "native_ns": 9037968,
+              "shifted_ns": 11163122
+            },
+            {
+              "native_ns": 9022547,
+              "shifted_ns": 11169822
+            },
+            {
+              "native_ns": 9015387,
+              "shifted_ns": 11159472
+            }
+          ],
+          "median_shifted_over_native": 1.2374529033942807
+        },
+        {
+          "case": "wide-alias",
+          "mapped": false,
+          "errno": 12
+        },
+        {
+          "case": "syscall-user-dispatch",
+          "supported": false,
+          "errno": 22
+        },
+        {
+          "case": "seccomp-dispatch",
+          "supported": true,
+          "calls": 20000,
+          "caught": 20000,
+          "elapsed_ns": 401745987,
+          "ns_per_dispatch": 20087.29935
+        }
+      ]
+    }
+  },
+  "kernel_routines": {
+    "name": "windows-kernel-leaves-1788906284821098605",
+    "node": "babel-o9-20",
+    "affinity": [
+      12
+    ],
+    "runsc_sha256": "680408c88b46625debdafdaa4cef2784705ee42cc2689ed703707792f234a5e5",
+    "probe_sha256": "34ad05e7310981349189fc7137e0746da88203ed01cdf670e563b581566f0c7d",
+    "guest_exit": 0,
+    "evidence": "/data/user_data/pranjala/general-vm/runs/gvisor/windows-kernel-leaves-1788906284821098605",
+    "results": {
+      "native": [
+        {
+          "case": "microsoft-nt-kernel-leaves",
+          "bias_mode": "low",
+          "correct": true,
+          "gs_prctl_errno": 0,
+          "kernel_booted": false,
+          "bitmap_operations": 10000,
+          "splay_differential_operations": 10000,
+          "splay_timed_operations": 200000,
+          "samples": [
+            {
+              "native_ns": 8786235,
+              "shifted_ns": 9303443
+            },
+            {
+              "native_ns": 8792145,
+              "shifted_ns": 9260202
+            },
+            {
+              "native_ns": 8776824,
+              "shifted_ns": 9221412
+            },
+            {
+              "native_ns": 8756924,
+              "shifted_ns": 9178552
+            },
+            {
+              "native_ns": 8744864,
+              "shifted_ns": 9221842
+            },
+            {
+              "native_ns": 8755564,
+              "shifted_ns": 11007831
+            },
+            {
+              "native_ns": 10812699,
+              "shifted_ns": 9265473
+            }
+          ],
+          "median_shifted_over_native": 1.053235814468483
+        }
+      ],
+      "guest": [
+        {
+          "case": "microsoft-nt-kernel-leaves",
+          "bias_mode": "low",
+          "correct": true,
+          "gs_prctl_errno": 1,
+          "kernel_booted": false,
+          "bitmap_operations": 10000,
+          "splay_differential_operations": 10000,
+          "splay_timed_operations": 200000,
+          "samples": [
+            {
+              "native_ns": 10785638,
+              "shifted_ns": 9225342
+            },
+            {
+              "native_ns": 8802655,
+              "shifted_ns": 9473207
+            },
+            {
+              "native_ns": 8789035,
+              "shifted_ns": 9227442
+            },
+            {
+              "native_ns": 8791664,
+              "shifted_ns": 9210562
+            },
+            {
+              "native_ns": 8714593,
+              "shifted_ns": 9206132
+            },
+            {
+              "native_ns": 8720894,
+              "shifted_ns": 9201182
+            },
+            {
+              "native_ns": 8716144,
+              "shifted_ns": 9223492
+            }
+          ],
+          "median_shifted_over_native": 1.0550732528110076
+        }
+      ]
+    }
+  },
+  "kernel_routines_host_wide": {
+    "case": "microsoft-nt-kernel-leaves",
+    "bias_mode": "wide",
+    "correct": true,
+    "gs_prctl_errno": 0,
+    "kernel_booted": false,
+    "bitmap_operations": 10000,
+    "splay_differential_operations": 10000,
+    "splay_timed_operations": 200000,
+    "samples": [
+      {
+        "native_ns": 8779064,
+        "shifted_ns": 9284273
+      },
+      {
+        "native_ns": 8792404,
+        "shifted_ns": 9272023
+      },
+      {
+        "native_ns": 8756815,
+        "shifted_ns": 9291753
+      },
+      {
+        "native_ns": 8779805,
+        "shifted_ns": 9194271
+      },
+      {
+        "native_ns": 8746093,
+        "shifted_ns": 9203012
+      },
+      {
+        "native_ns": 8777945,
+        "shifted_ns": 9201781
+      },
+      {
+        "native_ns": 8772584,
+        "shifted_ns": 9209822
+      }
+    ],
+    "median_shifted_over_native": 1.05224264137141
+  },
+  "kernel_source_and_rewrite": {
+    "source": "https://msdl.microsoft.com/download/symbols/ntoskrnl.exe/4CA4F63D1450000/ntoskrnl.exe",
+    "sha256": "f9215193d514541abdacec7c19e3f8f765894f7abb517b3845a39cf61ddb3066",
+    "version": "10.0.26100.9278",
+    "code_base": "0x50000000",
+    "routines": [
+      {
+        "name": "RtlInitializeBitMap",
+        "rva": "0x46ce20",
+        "instructions": 3,
+        "variants": [
+          {
+            "shifted": false,
+            "offset": 4096,
+            "bytes": 8,
+            "memory_prefixes": 0
+          },
+          {
+            "shifted": true,
+            "offset": 8192,
+            "bytes": 10,
+            "memory_prefixes": 2
+          }
+        ]
+      },
+      {
+        "name": "RtlSetBit",
+        "rva": "0x44a510",
+        "instructions": 8,
+        "variants": [
+          {
+            "shifted": false,
+            "offset": 12288,
+            "bytes": 25,
+            "memory_prefixes": 0
+          },
+          {
+            "shifted": true,
+            "offset": 16384,
+            "bytes": 28,
+            "memory_prefixes": 3
+          }
+        ]
+      },
+      {
+        "name": "RtlClearBit",
+        "rva": "0x4437d0",
+        "instructions": 8,
+        "variants": [
+          {
+            "shifted": false,
+            "offset": 20480,
+            "bytes": 25,
+            "memory_prefixes": 0
+          },
+          {
+            "shifted": true,
+            "offset": 24576,
+            "bytes": 28,
+            "memory_prefixes": 3
+          }
+        ]
+      },
+      {
+        "name": "RtlTestBit",
+        "rva": "0x422c20",
+        "instructions": 9,
+        "variants": [
+          {
+            "shifted": false,
+            "offset": 28672,
+            "bytes": 27,
+            "memory_prefixes": 0
+          },
+          {
+            "shifted": true,
+            "offset": 32768,
+            "bytes": 29,
+            "memory_prefixes": 2
+          }
+        ]
+      },
+      {
+        "name": "RtlSplay",
+        "rva": "0x3c21a0",
+        "instructions": 154,
+        "variants": [
+          {
+            "shifted": false,
+            "offset": 36864,
+            "bytes": 524,
+            "memory_prefixes": 0
+          },
+          {
+            "shifted": true,
+            "offset": 40960,
+            "bytes": 624,
+            "memory_prefixes": 89
+          }
+        ]
+      }
+    ],
+    "blob_sha256": "9ff4feff877c45b2646428544262f85117bf9209a2c7cd6ab8a91f7a9884a6aa"
+  },
+  "shadow_mapping": {
+    "node": "babel-o9-20",
+    "max_map_count": 65530,
+    "shadow_mappings": [
+      {
+        "permuted": false,
+        "guest_pages": 2048,
+        "host_vmas": 1,
+        "mapping_ns": 8254916,
+        "alias_correct": true
+      },
+      {
+        "permuted": true,
+        "guest_pages": 2048,
+        "host_vmas": 2048,
+        "mapping_ns": 9610749,
+        "alias_correct": true
+      }
+    ],
+    "userfaultfd": {
+      "user_mode_only": true,
+      "opened": true,
+      "api": 170,
+      "features": "0x4fff",
+      "ioctls": "0x8000000000000003"
+    }
+  }
+}

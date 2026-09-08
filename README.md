@@ -75,8 +75,13 @@ free game candidates, their Linux/XR evidence, and outstanding offline/runtime
 checks; Open Saber remains the only game on that list tested in this lab.
 The [Windows-without-KVM investigation](notes/windows-without-kvm-research.md)
 examines fast Windows execution, Drawbridge's user-mode NT precedent, the new
-Helios GPU stack, and separate CPU, graphics and XR requirements. TCG is
-excluded by the user. No fast full-Windows runtime has been established here.
+Helios GPU stack, and separate CPU, graphics and XR requirements. The
+[native Windows kernel experiments](notes/windows-native-kernel-experiments.md)
+now execute five actual Microsoft kernel routines inside gVisor with selective
+memory-access rewriting. A 10,000-operation differential tree check passes;
+the selected tree benchmark measures about 5.5% overhead. This is a component
+result: Windows has not booted, and VM/game performance remains unestablished.
+KVM and TCG remain excluded.
 
 [Continuous VR I/O](notes/vr-continuous-io.md) delivers paired left/right eye
 images to a host Python client through a bounded, size-sealed shared-memory ring,

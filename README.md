@@ -38,7 +38,10 @@ and the missing engine and packaging integration. [The Wayland runtime experimen
 now verifies headless GNOME GPU composition and Open Saber through Xwayland SHM
 with the existing VirtualGL renderer, controller input and stereo recording.
 Native GPU Wayland presentation remains unresolved, and no overall speedup is
-established. Xvnc remains available. Controller and Monado/XR support are separate capabilities.
+established. **Xvnc is the default for future testing.** Wayland remains an
+explicit experimental option through `scripts/wayland-lab.py` and the VR stream's
+`--x11-display` / `--xauthority` arguments. Controller and Monado/XR support are
+separate capabilities.
 
 [The first VR experiment](notes/vr-monado-experiment.md) runs the published
 Open Saber game through Monado with a virtual headset and controllers, using

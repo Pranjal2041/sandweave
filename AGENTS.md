@@ -22,6 +22,8 @@ desktops when testing; use separate disposable environments for new tests.
 - Display backends are complementary options. Preserve Xvnc support while
   investigating Wayland; Monado/XR and controller support are additional
   capabilities, not reasons to select a single exclusive desktop backend.
+- Use Xvnc for future testing by default. Keep the experimental Wayland path
+  available as an explicit option; switch when the user requests Wayland testing.
 - Respect explicit research-only or no-execution instructions. Source and
   documentation findings must not be presented as successful runtime tests.
 

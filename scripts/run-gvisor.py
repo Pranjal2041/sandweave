@@ -50,7 +50,10 @@ parser.add_argument('--docker-data', action='store_true')
 parser.add_argument('--docker-archive', type=Path, help='previously exported Docker state archive')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
-parser.add_argument('--filesystem-runtime-current', action='store_true', help='explicitly test a cold filesystem snapshot with the currently staged runtime')
+runtime_choice = parser.add_mutually_exclusive_group()
+runtime_choice.add_argument('--filesystem-runtime-current', action='store_true', help='explicitly test a cold filesystem snapshot with the currently staged runtime')
+runtime_choice.add_argument('--runtime-build', type=Path,
+                           help='verified immutable build for this fresh launch or cold restore; does not change the default runtime')
 parser.add_argument('--experimental-gpu-live', action='store_true', help='allow restoring an experimental CUDA-aware live capture')
 parser.add_argument('--verify', action='store_true', help='explicitly verify all snapshot/dependency hashes before restoring')
 parser.add_argument('--cgroup', choices=['v1', 'v2'], default='v2')
@@ -92,6 +95,11 @@ if args.restore and (args.restore / 'launch-settings.json').is_file():
 filesystem_restore = bool(snapshot_manifest and snapshot_manifest.get('kind') == 'filesystem')
 if args.filesystem_runtime_current and not args.detach and not filesystem_restore:
     parser.error('--filesystem-runtime-current requires a filesystem snapshot')
+if args.runtime_build and args.restore:
+    runtime_snapshot = json.loads((args.restore / 'snapshot-manifest.json').read_text())
+    if runtime_snapshot.get('kind', 'live') != 'filesystem':
+        parser.error('--runtime-build cannot replace the runtime of a live snapshot')
+runtime_override = runtime_store.from_directory(lab, args.runtime_build) if args.runtime_build else None
 if saved_settings and saved_settings.get('gpu'):
     if saved_settings['gpu'].get('mps'):
         parser.error('MPS snapshots are not qualified')
@@ -145,7 +153,12 @@ logs.mkdir(parents=True, exist_ok=True)
 snapshot_store.write_json(logs / 'launcher.json', {
     'pid': os.getpid(), 'start': cpu_broker.process_table([os.getpid()])[os.getpid()]['start'],
     'hostname': socket.gethostname(), 'started_at': started_at})
-runtime = saved_settings['runtime'] if saved_settings and not args.filesystem_runtime_current else json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
+if runtime_override:
+    runtime = runtime_override
+elif saved_settings and not args.filesystem_runtime_current:
+    runtime = saved_settings['runtime']
+else:
+    runtime = json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
 runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore) or args.filesystem_runtime_current)
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}

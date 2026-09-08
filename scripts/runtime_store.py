@@ -12,6 +12,18 @@ def digest(path):
         return hashlib.file_digest(source, 'sha256').hexdigest()
 
 
+def from_directory(lab, path):
+    """Select and verify an existing immutable build without publishing it."""
+    lab = Path(lab).resolve()
+    root = (lab / path).resolve()
+    if not root.is_relative_to((lab / 'tools/runtime-builds').resolve()):
+        raise ValueError('runtime must be in the immutable build store')
+    descriptor = {'path': str(root.relative_to(lab)),
+                  'sha256': json.loads((root / 'manifest.json').read_text())}
+    validate(lab, descriptor, verify=True)
+    return descriptor
+
+
 def publish(lab, files):
     hashes = {name: digest(source) for name, source in files.items()}
     identity = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()

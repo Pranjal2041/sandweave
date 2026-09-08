@@ -30,6 +30,13 @@ Opt-in external MPS client support follows in `0330d55`; see
 driver qualification, tests and limits. Existing desktops retain their original
 runtime; new launches use the currently staged immutable build.
 
+To test an already published candidate without changing that default, pass
+`--runtime-build tools/runtime-builds/BUILD_ID` to `run-gvisor.py`. This verifies
+the build's manifest and artifact hashes and records the selection in the new
+environment. It supports fresh launches and cold filesystem restores; live
+snapshots must retain their recorded runtime. The option is mutually exclusive
+with `--filesystem-runtime-current`.
+
 ```bash
 cd ~/scratch/general-vm
 python scripts/stage-gvisor.py

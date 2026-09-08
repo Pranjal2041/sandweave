@@ -44,10 +44,10 @@ index 18633f1..4d5da5e 100644
  	dit->base.has_images = target_has_images;
  	dit->base.acquire = target_acquire;
 diff --git a/src/xrt/compositor/main/comp_mirror_to_debug_gui.c b/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
-index 16ffa4e..db5b419 100644
+index 16ffa4e..b6e555e 100644
 --- a/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
 +++ b/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
-@@ -18,6 +18,130 @@
+@@ -18,6 +18,132 @@
  
  #include "render/render_interface.h"
  
@@ -103,7 +103,7 @@ index 16ffa4e..db5b419 100644
 +	}
 +}
 +
-+/* Ring v1 is little-endian x86_64, RGBA8, 256-byte header, 64-byte slot
++/* Ring v2 is little-endian x86_64, stereo side-by-side RGBX8, 256-byte header, 64-byte slot
 + * metadata. Aligned sequence words publish complete frames with a seqlock.
 + * A slow reader skips frames; neither model nor disk I/O blocks this writer. */
 +static bool
@@ -126,13 +126,14 @@ index 16ffa4e..db5b419 100644
 +	uint32_t *config = (uint32_t *)((uint8_t *)map + 8);
 +	uint32_t width = config[1], height = config[2], slots = config[3], slot_bytes = config[4];
 +	uint64_t expected = 256ull + slots * (uint64_t)slot_bytes;
-+	if (memcmp(map, "VRRING1\0", 8) || config[0] != 1 || config[5] != 256 ||
-+	    width < 16 || width > 4096 || height < 16 || height > 4096 ||
++	if (memcmp(map, "VRRING2\0", 8) || config[0] != 2 || config[5] != 256 ||
++	    width < 32 || width > 8192 || width % 2 || height < 16 || height > 4096 ||
 +	    slots < 2 || slots > 64 || slot_bytes != 64ull + width * (uint64_t)height * 4 ||
 +	    slot_bytes % 64 || expected != (uint64_t)st.st_size) {
 +		munmap(map, st.st_size);
 +		return false;
 +	}
++	m->lab_views = 2;
 +	m->lab_ring = map;
 +	m->lab_ring_size = st.st_size;
 +	m->lab_slots = slots;
@@ -171,6 +172,7 @@ index 16ffa4e..db5b419 100644
 +		memcpy(pixels + y * frame->width * 4, frame->data + y * frame->stride, frame->width * 4);
 +	}
 +	slot[6] = os_monotonic_get_ns();
++	slot[7] = m->lab_views;
 +	__atomic_store_n(&slot[0], seq * 2, __ATOMIC_RELEASE);
 +	__atomic_store_n(&((uint64_t *)m->lab_ring)[4], seq, __ATOMIC_RELEASE);
 +}
@@ -178,10 +180,12 @@ index 16ffa4e..db5b419 100644
  
  /*
   *
-@@ -292,6 +416,10 @@ comp_mirror_init(struct comp_mirror_to_debug_gui *m,
+@@ -292,6 +418,12 @@ comp_mirror_init(struct comp_mirror_to_debug_gui *m,
  		m->image_extent.width += 1;
  	}
  
++	m->lab_views = debug_get_option_lab_eye_capture() != NULL ? 2 : 1;
++	m->image_extent.width *= m->lab_views;
 +	if (!lab_ring_init(m)) {
 +		return VK_ERROR_INITIALIZATION_FAILED;
 +	}
@@ -189,7 +193,16 @@ index 16ffa4e..db5b419 100644
  	vk_image_readback_to_xf_pool_create( //
  	    vk,                              // vk_bundle
  	    m->image_extent,                 // extent
-@@ -420,6 +548,9 @@ comp_mirror_is_ready_and_active(struct comp_mirror_to_debug_gui *m,
+@@ -313,7 +445,7 @@ comp_mirror_init(struct comp_mirror_to_debug_gui *m,
+ 	    .sampler_per_descriptor_count = 1,
+ 	    .storage_image_per_descriptor_count = 1,
+ 	    .storage_buffer_per_descriptor_count = 0,
+-	    .descriptor_count = 1,
++	    .descriptor_count = 2,
+ 	    .freeable = false,
+ 	};
+ 
+@@ -420,6 +552,9 @@ comp_mirror_is_ready_and_active(struct comp_mirror_to_debug_gui *m,
                                  struct comp_compositor *c,
                                  uint64_t predicted_display_time_ns)
  {
@@ -199,7 +212,15 @@ index 16ffa4e..db5b419 100644
  	if (!c->mirroring_to_debug_gui || !u_sink_debug_is_active(&m->debug_sink)) {
  		return false;
  	}
-@@ -452,6 +583,16 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+@@ -445,13 +580,21 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+                     struct vk_bundle *vk,
+                     uint64_t frame_id,
+                     uint64_t predicted_display_time_ns,
+-                    VkImage from_image,
+-                    VkImageView from_view,
++                    const VkImageView *from_views,
+                     VkSampler from_sampler,
+-                    VkExtent2D from_extent,
                      struct xrt_normalized_rect from_rect)
  {
  	COMP_TRACE_MARKER();
@@ -216,7 +237,165 @@ index 16ffa4e..db5b419 100644
  
  	VkResult ret;
  
-@@ -675,6 +816,8 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+@@ -465,19 +608,16 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+ 		return XRT_ERROR_VULKAN;
+ 	}
+ 
+-	VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+-	ret = vk_create_descriptor_set(    //
+-	    vk,                            //
+-	    m->blit.descriptor_pool,       // descriptor_pool
+-	    m->blit.descriptor_set_layout, // descriptor_set_layout
+-	    &descriptor_set);              // descriptor_set
+-	if (ret != VK_SUCCESS) {
+-		VK_ERROR(vk, "vk_create_descriptor_set: %s", vk_result_string(ret));
+-		return XRT_ERROR_VULKAN;
++	VkDescriptorSet descriptor_sets[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
++	for (uint32_t eye = 0; eye < m->lab_views; eye++) {
++		ret = vk_create_descriptor_set(vk, m->blit.descriptor_pool,
++		                               m->blit.descriptor_set_layout, &descriptor_sets[eye]);
++		if (ret != VK_SUCCESS) {
++			vk->vkResetDescriptorPool(vk->device, m->blit.descriptor_pool, 0);
++			return XRT_ERROR_VULKAN;
++		}
+ 	}
+ 
+-	VK_NAME_DESCRIPTOR_SET(vk, descriptor_set, "comp_mirror_to_debug_ui blit descriptor set");
+-
+ 	struct vk_cmd_pool *pool = &m->cmd_pool;
+ 
+ 	// For writing and submitting commands.
+@@ -516,66 +656,29 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+ 	    .image = wrap->image,
+ 	};
+ 
+-	VkImageLayout old_layout;
+-	VkPipelineStageFlags src_stage_mask;
+-	VkAccessFlags src_access_mask;
+-
+-#if 0
+-	// First mip view into the copy from image.
+-	struct vk_cmd_first_mip_image copy_from_fm_image = {
+-	    .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
+-	    .base_array_layer = 0,
+-	    .image = from_image,
+-	};
+-
+-	// Not completely removed just in case we need to go back on some platforms.
+-	if (!use_compute_blit) {
+-		// Blit arguments.
+-		struct vk_cmd_blit_image_info blit_info = {
+-		    .src.old_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+-		    .src.src_access_mask = VK_ACCESS_SHADER_READ_BIT,
+-		    .src.src_stage_mask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+-		    .src.fm_image = copy_from_fm_image,
+-
+-		    .src.rect.offset = {0, 0},
+-		    .src.rect.extent = {from_extent.width, from_extent.height},
+-
+-		    .dst.old_layout = VK_IMAGE_LAYOUT_UNDEFINED,
+-		    .dst.src_access_mask = VK_ACCESS_TRANSFER_READ_BIT,
+-		    .dst.src_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+-		    .dst.fm_image = bounce_fm_image,
+-
+-		    .dst.rect.offset = {0, 0},
+-		    .dst.rect.extent = {m->image_extent.width, m->image_extent.height},
+-		};
+-
+-		vk_cmd_blit_image_locked(vk, cmd, &blit_info);
+-
+-		old_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+-		src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
+-		src_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+-	} else
+-#endif
+-	{
+-		// Barrier bounce image so it can be safely written to.
+-		vk_cmd_image_barrier_locked(              //
+-		    vk,                                   // vk_bundle
+-		    cmd,                                  // cmdbuffer
+-		    bounce_fm_image.image,                // image
+-		    0,                                    // srcAccessMask
+-		    VK_ACCESS_SHADER_WRITE_BIT,           // dstAccessMask
+-		    VK_IMAGE_LAYOUT_UNDEFINED,            // oldImageLayout
+-		    VK_IMAGE_LAYOUT_GENERAL,              // newImageLayout
+-		    VK_PIPELINE_STAGE_TRANSFER_BIT,       // srcStageMask
+-		    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // dstStageMask
+-		    first_color_level_subresource_range); // subresourceRange
++	// Barrier bounce image so it can be safely written to.
++	vk_cmd_image_barrier_locked(              //
++	    vk,                                   // vk_bundle
++	    cmd,                                  // cmdbuffer
++	    bounce_fm_image.image,                // image
++	    0,                                    // srcAccessMask
++	    VK_ACCESS_SHADER_WRITE_BIT,           // dstAccessMask
++	    VK_IMAGE_LAYOUT_UNDEFINED,            // oldImageLayout
++	    VK_IMAGE_LAYOUT_GENERAL,              // newImageLayout
++	    VK_PIPELINE_STAGE_TRANSFER_BIT,       // srcStageMask
++	    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // dstStageMask
++	    first_color_level_subresource_range); // subresourceRange
+ 
++	const VkExtent2D eye_extent = {m->image_extent.width / m->lab_views, m->image_extent.height};
++	/* Both source views belong to this compositor frame. Write disjoint halves
++	 * before one combined transfer/fence wait and atomic ring publication. */
++	for (uint32_t eye = 0; eye < m->lab_views; eye++) {
+ 		update_blit_descriptor_set( //
+ 		    vk,                     //
+ 		    from_sampler,           //
+-		    from_view,              //
++		    from_views[eye],        //
+ 		    m->bounce.unorm_view,   //
+-		    descriptor_set);        //
++		    descriptor_sets[eye]);  //
+ 
+ 		vk->vkCmdBindPipeline(              //
+ 		    cmd,                            // commandBuffer
+@@ -588,13 +691,13 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+ 		    m->blit.pipeline_layout,        // layout
+ 		    0,                              // firstSet
+ 		    1,                              // descriptorSetCount
+-		    &descriptor_set,                // pDescriptorSets
++		    &descriptor_sets[eye],          // pDescriptorSets
+ 		    0,                              // dynamicOffsetCount
+ 		    NULL);                          // pDynamicOffsets
+ 
+ 		struct render_compute_blit_push_data constants = {
+ 		    from_rect,
+-		    {{0, 0}, {m->image_extent.width, m->image_extent.height}},
++		    {{eye * eye_extent.width, 0}, {eye_extent.width, eye_extent.height}},
+ 		};
+ 
+ 		vk->vkCmdPushConstants(          //
+@@ -606,7 +709,7 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+ 		    &constants);                 //
+ 
+ 		uint32_t w = 0, h = 0;
+-		calc_dispatch_dims(m->image_extent, &w, &h);
++		calc_dispatch_dims(eye_extent, &w, &h);
+ 		assert(w != 0 && h != 0);
+ 
+ 		vk->vkCmdDispatch( //
+@@ -615,16 +718,13 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+ 		    h,             // groupCountY
+ 		    1);            // groupCountZ
+ 
+-		old_layout = VK_IMAGE_LAYOUT_GENERAL;
+-		src_access_mask = VK_ACCESS_SHADER_WRITE_BIT;
+-		src_stage_mask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+ 	}
+ 
+ 	// Copy arguments.
+ 	struct vk_cmd_image_transfer_info transfer_info = {
+-	    .src.params.layout = old_layout,
+-	    .src.params.access_mask = src_access_mask,
+-	    .src.params.stage_mask = src_stage_mask,
++	    .src.params.layout = VK_IMAGE_LAYOUT_GENERAL,
++	    .src.params.access_mask = VK_ACCESS_SHADER_WRITE_BIT,
++	    .src.params.stage_mask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+ 	    .src.params.rect.extent = {.w = m->image_extent.width, .h = m->image_extent.height},
+ 	    .src.fm_image = bounce_fm_image,
+ 
+@@ -675,6 +775,8 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
  	struct xrt_frame *frame = &wrap->base_frame;
  	wrap = NULL;
  
@@ -225,7 +404,7 @@ index 16ffa4e..db5b419 100644
  	u_sink_debug_push_frame(&m->debug_sink, frame);
  
  	u_frame_times_widget_push_sample(&m->push_frame_times, predicted_display_time_ns);
-@@ -689,6 +832,10 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+@@ -689,6 +791,10 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
  void
  comp_mirror_fini(struct comp_mirror_to_debug_gui *m, struct vk_bundle *vk)
  {
@@ -237,7 +416,7 @@ index 16ffa4e..db5b419 100644
  	u_var_remove_root(m);
  
 diff --git a/src/xrt/compositor/main/comp_mirror_to_debug_gui.h b/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
-index 9a748e5..0489e4e 100644
+index 9a748e5..f2c7005 100644
 --- a/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
 +++ b/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
 @@ -24,6 +24,10 @@ extern "C" {
@@ -260,12 +439,24 @@ index 9a748e5..0489e4e 100644
 +	void *lab_ring;
 +	size_t lab_ring_size;
 +	uint64_t lab_sequence, lab_begin_ns, lab_period_ns, lab_next_ns;
-+	uint32_t lab_slots, lab_slot_bytes;
++	uint32_t lab_slots, lab_slot_bytes, lab_views;
  };
  
  /*!
+@@ -129,10 +139,8 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+                     struct vk_bundle *vk,
+                     uint64_t frame_id,
+                     uint64_t predicted_display_time_ns,
+-                    VkImage from_image,
+-                    VkImageView from_view,
++                    const VkImageView *from_views,
+                     VkSampler from_sampler,
+-                    VkExtent2D from_extent,
+                     struct xrt_normalized_rect from_rect);
+ 
+ /*!
 diff --git a/src/xrt/compositor/main/comp_renderer.c b/src/xrt/compositor/main/comp_renderer.c
-index 266ae0b..24e66d3 100644
+index 266ae0b..8c89363 100644
 --- a/src/xrt/compositor/main/comp_renderer.c
 +++ b/src/xrt/compositor/main/comp_renderer.c
 @@ -1094,7 +1094,7 @@ comp_renderer_draw(struct comp_renderer *r)
@@ -277,21 +468,42 @@ index 266ae0b..24e66d3 100644
  	bool do_timewarp = !c->debug.atw_off;
  
  	// Consistency check.
-@@ -1171,12 +1171,12 @@ comp_renderer_draw(struct comp_renderer *r)
+@@ -1171,12 +1171,18 @@ comp_renderer_draw(struct comp_renderer *r)
  
  	xrt_result_t xret = XRT_SUCCESS;
  	comp_mirror_fixup_ui_state(&r->mirror_to_debug_gui, c);
 -	if (comp_mirror_is_ready_and_active(&r->mirror_to_debug_gui, c, predicted_display_time_ns)) {
 +	if (!fast_path && comp_mirror_is_ready_and_active(&r->mirror_to_debug_gui, c, predicted_display_time_ns)) {
  
- 		uint32_t scratch_index = frame_state.scratch_state.views[0].index;
- 		struct comp_scratch_single_images *view = &c->scratch.views[0].cssi;
- 		struct render_scratch_color_image *rsci = &view->images[scratch_index];
+-		uint32_t scratch_index = frame_state.scratch_state.views[0].index;
+-		struct comp_scratch_single_images *view = &c->scratch.views[0].cssi;
+-		struct render_scratch_color_image *rsci = &view->images[scratch_index];
 -		VkExtent2D extent = {view->info.width, view->info.width};
-+		VkExtent2D extent = {view->info.width, view->info.height};
++		struct comp_mirror_to_debug_gui *mirror = &r->mirror_to_debug_gui;
++		if (mirror->lab_views > view_count) {
++			COMP_ERROR(c, "Stereo observation requires two compositor views");
++			return XRT_ERROR_VULKAN;
++		}
++		VkImageView source_views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
++		for (uint32_t eye = 0; eye < mirror->lab_views; eye++) {
++			uint32_t scratch_index = frame_state.scratch_state.views[eye].index;
++			source_views[eye] = c->scratch.views[eye].cssi.images[scratch_index].srgb_view;
++		}
  
  		// Used for both, want clamp to edge to no bring in black.
  		VkSampler clamp_to_edge = c->nr.samplers.clamp_to_edge;
+@@ -1189,10 +1195,8 @@ comp_renderer_draw(struct comp_renderer *r)
+ 		    &c->base.vk,               //
+ 		    frame_id,                  //
+ 		    predicted_display_time_ns, //
+-		    rsci->image,               //
+-		    rsci->srgb_view,           //
++		    source_views,              //
+ 		    clamp_to_edge,             //
+-		    extent,                    //
+ 		    rect);                     //
+ 	}
+ 
 diff --git a/src/xrt/state_trackers/oxr/oxr_verify.c b/src/xrt/state_trackers/oxr/oxr_verify.c
 index dcdb12d..d10430e 100644
 --- a/src/xrt/state_trackers/oxr/oxr_verify.c

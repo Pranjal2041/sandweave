@@ -21,7 +21,7 @@ class VRStreamTests(unittest.TestCase):
     def publish(self, ring, sequence, value, complete=True):
         offset = 256 + ((sequence-1) % ring.slots)*ring.slot_bytes
         struct.pack_into('<8Q', ring.map, offset, sequence*2 + (not complete), sequence,
-                         sequence+100, 400, 100, 200, 300, 0)
+                         sequence+100, 400, 100, 200, 300, 2)
         ring.map[offset+64:offset+ring.slot_bytes] = bytes([value])*(ring.slot_bytes-64)
         struct.pack_into('<Q', ring.map, 32, sequence)
 
@@ -41,8 +41,8 @@ class VRStreamTests(unittest.TestCase):
         frame = ring.latest(after=1, timeout=0)
         self.assertEqual((frame.sequence, frame.compositor_frame), (4, 104))
         self.publish(ring, 6, 6)
-        self.assertEqual(frame.rgba, bytes([4])*1024)
-        self.assertEqual(ring.latest(after=4, timeout=0).rgba, bytes([6])*1024)
+        self.assertEqual(frame.rgba, bytes([4])*2048)
+        self.assertEqual(ring.latest(after=4, timeout=0).rgba, bytes([6])*2048)
 
     def test_reader_rejects_incomplete_frame_and_no_new_frame(self):
         ring = FrameRing(self.path/'ring', 16, 16)
@@ -66,6 +66,52 @@ class VRStreamTests(unittest.TestCase):
         with mock.patch('vr_stream.struct.unpack_from', side_effect=unpack):
             with self.assertRaises(TimeoutError):
                 ring.latest(timeout=0)
+
+    def test_stereo_views_are_distinct_readonly_views_of_one_observation(self):
+        import numpy as np
+        ring = FrameRing(self.path/'ring', 16, 16)
+        self.addCleanup(ring.close)
+        self.publish(ring, 1, 0)
+        row = bytes([10, 20, 30, 255])*16 + bytes([90, 80, 70, 255])*16
+        ring.map[320:320+2048] = row*16
+        frame = ring.latest(timeout=0)
+        self.assertEqual((frame.eye_count, frame.width, frame.eye_width), (2, 32, 16))
+        self.assertEqual(frame.left.shape, (16, 16, 3))
+        self.assertEqual(frame.right.shape, (16, 16, 3))
+        np.testing.assert_array_equal(frame.left[0, 0], [10, 20, 30])
+        np.testing.assert_array_equal(frame.right[0, 0], [90, 80, 70])
+        self.assertFalse(frame.left.flags.writeable)
+        self.assertFalse(frame.right.flags.owndata)
+        np.testing.assert_array_equal(np.asarray(frame.image('right')), frame.right)
+        self.assertEqual(frame.image().size, (32, 16))
+
+    def test_incomplete_or_mono_payload_cannot_be_published_as_stereo(self):
+        ring = FrameRing(self.path/'ring', 16, 16)
+        self.addCleanup(ring.close)
+        self.publish(ring, 1, 8, complete=False)
+        # Only the left half was written. The transaction remains unpublished.
+        ring.map[320:320+64] = bytes([7])*64
+        with self.assertRaises(TimeoutError):
+            ring.latest(timeout=0)
+        self.publish(ring, 1, 8)
+        struct.pack_into('<Q', ring.map, 256+56, 1)
+        with self.assertRaises(TimeoutError):
+            ring.latest(timeout=0)
+
+    def test_historical_mono_recordings_remain_explicitly_mono(self):
+        import json
+        recorder = FrameRecorder(self.path/'frames')
+        frame = Frame(1, 1, 4, 1, 2, 3, 5, 1, 16, 16, bytes(1024))
+        recorder.submit(frame)
+        recorder.close()
+        path = self.path/'frames/frames.jsonl'
+        meta = json.loads(path.read_text())
+        del meta['eye_count']
+        path.write_text(json.dumps(meta)+'\n')
+        restored = RecordedFrames(self.path/'frames')[0]
+        self.assertEqual(restored.eye_count, 1)
+        with self.assertRaisesRegex(ValueError, 'right eye'):
+            restored.image('right')
 
     def test_state_validation_is_atomic_and_normalizes_quaternions(self):
         packet = Packet()
@@ -118,7 +164,7 @@ class VRStreamTests(unittest.TestCase):
 
     def test_recording_roundtrip_preserves_pixels_and_timestamps(self):
         recorder = FrameRecorder(self.path/'frames')
-        frame = Frame(1, 1, 4, 1, 2, 3, 5, 1, 16, 16, bytes(range(256))*4)
+        frame = Frame(1, 1, 4, 1, 2, 3, 5, 1, 32, 16, bytes(range(256))*8, eye_count=2)
         recorder.submit(frame)
         recorder.close()
         recording = RecordedFrames(self.path/'frames')

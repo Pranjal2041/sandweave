@@ -42,8 +42,8 @@ def main():
     p.add_argument('--fps', type=float, default=90, help='maximum observation rate')
     p.add_argument('--input-hz', type=float, default=120)
     p.add_argument('--hz', type=int, default=120)
-    p.add_argument('--width', type=int, default=960)
-    p.add_argument('--height', type=int, default=1080)
+    p.add_argument('--width', type=int, default=960, help='width per eye; both eyes are captured')
+    p.add_argument('--height', type=int, default=1080, help='height per eye')
     p.add_argument('--mirror', choices=['none', 'pbo', 'sync'], default='none')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--record', action='store_true')
@@ -113,6 +113,8 @@ def main():
             if errors:
                 raise errors[0]
             frame.image().save(args.output/'gameplay-end.png')
+            frame.image('left').save(args.output/'left-eye.png')
+            frame.image('right').save(args.output/'right-eye.png')
             elapsed = time.monotonic()-start
             metric_file = args.output/'monado-metrics.pb'
             raw = subprocess.run([*vr.manager._command(args.name), 'exec', args.name,
@@ -127,6 +129,9 @@ def main():
             (args.output/'observations.jsonl').write_text(''.join(json.dumps(f)+'\n' for f in frames))
             result = {'options': {k: str(v) if isinstance(v, Path) else v for k,v in vars(args).items()},
                       'seconds': elapsed, 'observations': len(frames),
+                      'observation_unit': 'stereo pair', 'eye_count': 2,
+                      'eye_width': args.width, 'eye_height': args.height,
+                      'packed_width': args.width*2, 'layout': 'left-right side-by-side',
                       'observation_fps': (len(frames)-1)*1e9/(frames[-1]['host_observed_ns']-frames[0]['host_observed_ns']),
                       'ring_frames_skipped': last-initial-len(frames),
                       'input_updates': len(actions), 'input_hz': (len(actions)-1)*1e9/(actions[-1]['host_sent_ns']-actions[0]['host_sent_ns']),

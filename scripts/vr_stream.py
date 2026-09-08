@@ -44,10 +44,43 @@ class Frame:
     width: int
     height: int
     rgba: bytes
+    eye_count: int = 1  # Historical mono recordings remain readable.
 
-    def image(self):
+    @property
+    def eye_width(self):
+        return self.width // self.eye_count
+
+    def _eye_index(self, eye):
+        if eye not in ('left', 'right'):
+            raise ValueError('eye must be left or right')
+        index = 0 if eye == 'left' else 1
+        if index >= self.eye_count:
+            raise ValueError('recording does not contain the right eye')
+        return index
+
+    def image(self, eye=None):
         from PIL import Image
-        return Image.frombytes('RGBX', (self.width, self.height), self.rgba).convert('RGB')
+        image = Image.frombytes('RGBX', (self.width, self.height), self.rgba)
+        if eye is not None:
+            x = self._eye_index(eye) * self.eye_width
+            image = image.crop((x, 0, x + self.eye_width, self.height))
+        return image.convert('RGB')
+
+    def array(self, eye=None):
+        import numpy as np
+        pixels = np.frombuffer(self.rgba, dtype=np.uint8).reshape(self.height, self.width, 4)
+        if eye is not None:
+            x = self._eye_index(eye) * self.eye_width
+            pixels = pixels[:, x:x+self.eye_width]
+        return pixels[:, :, :3]
+
+    @property
+    def left(self):
+        return self.array('left')
+
+    @property
+    def right(self):
+        return self.array('right')
 
     def metadata(self):
         return {key: value for key, value in vars(self).items() if key != 'rgba'}
@@ -56,7 +89,7 @@ class Frame:
 class FrameRing:
     def __init__(self, path, width=960, height=1080, slots=8, fps=90):
         if platform.machine() != 'x86_64':
-            raise ValueError('ring v1 is qualified on little-endian x86_64 only')
+            raise ValueError('ring v2 is qualified on little-endian x86_64 only')
         if any(type(v) is not int for v in (width, height, slots)):
             raise ValueError('dimensions/slots must be integers')
         if not (16 <= width <= 4096 and 16 <= height <= 4096 and 2 <= slots <= 64):
@@ -64,8 +97,8 @@ class FrameRing:
         if width * height % 16 or not 1 <= fps <= 240:
             raise ValueError('pixel count must be divisible by 16; fps must be in 1..240')
         self.path = Path(path)
-        self.width, self.height, self.slots = width, height, slots
-        self.slot_bytes = 64 + width * height * 4
+        self.width, self.height, self.slots = width * 2, height, slots
+        self.slot_bytes = 64 + self.width * height * 4
         self.size = HEADER_BYTES + slots * self.slot_bytes
         # Cluster Conda libc/Python lack memfd wrappers; x86_64 Linux ABI above.
         libc = ctypes.CDLL(None, use_errno=True)
@@ -85,7 +118,7 @@ class FrameRing:
         except BaseException:
             os.close(self.fd)
             raise
-        CONFIG.pack_into(self.map, 0, b'VRRING1\0', 1, width, height, slots, self.slot_bytes, HEADER_BYTES)
+        CONFIG.pack_into(self.map, 0, b'VRRING2\0', 2, self.width, height, slots, self.slot_bytes, HEADER_BYTES)
         struct.pack_into('<3Q', self.map, 32, 0, int(1e9/fps), 1)
 
     def latest(self, after=0, timeout=5):
@@ -95,14 +128,14 @@ class FrameRing:
             if sequence > after:
                 offset = HEADER_BYTES + ((sequence - 1) % self.slots) * self.slot_bytes
                 meta = SLOT_HEADER.unpack_from(self.map, offset)
-                if meta[0] == sequence * 2 and meta[1] == sequence:
+                if meta[0] == sequence * 2 and meta[1] == sequence and meta[7] == 2:
                     begin = time.monotonic_ns()
                     pixels = self.map[offset + 64:offset + self.slot_bytes]
                     done = time.monotonic_ns()
                     # Writer may have lapped us during the copy. Reject torn data.
                     if struct.unpack_from('<Q', self.map, offset)[0] == sequence * 2:
                         return Frame(sequence, *meta[2:7], done, done-begin,
-                                     self.width, self.height, pixels)
+                                     self.width, self.height, pixels, eye_count=2)
             if time.monotonic() >= deadline:
                 raise TimeoutError('no complete new VR frame before deadline')
             time.sleep(.0005)
@@ -308,7 +341,7 @@ class VRStream:
 
 class FrameRecorder:
     """Bounded background lossless RGBX/Zstandard images with an indexed timeline."""
-    def __init__(self, directory, *, capacity=32, workers=2):
+    def __init__(self, directory, *, capacity=32, workers=4):
         import zstandard  # Fail before starting worker threads if unavailable.
         if not (1 <= capacity <= 1024 and 1 <= workers <= 32):
             raise ValueError('invalid recorder capacity or worker count')
@@ -415,7 +448,8 @@ class RecordedFrames:
         import zstandard
         meta = self.metadata[index]
         width, height = meta['width'], meta['height']
-        if not (16 <= width <= 4096 and 16 <= height <= 4096):
+        eye_count = meta.get('eye_count', 1)
+        if eye_count not in (1, 2) or width % eye_count or not (16 <= width//eye_count <= 4096 and 16 <= height <= 4096):
             raise ValueError('invalid recorded image dimensions')
         if meta['codec'] != 'zstd' or meta['pixel_format'] != 'RGBX8':
             raise ValueError('unsupported recorded image encoding')
@@ -425,4 +459,5 @@ class RecordedFrames:
                                                      max_output_size=width*height*4)
         if len(raw) != width*height*4:
             raise ValueError('recorded image byte length mismatch')
-        return Frame(**{key: meta[key] for key in Frame.__dataclass_fields__ if key != 'rgba'}, rgba=raw)
+        return Frame(**{key: meta[key] for key in Frame.__dataclass_fields__ if key not in ('rgba', 'eye_count')},
+                     rgba=raw, eye_count=eye_count)

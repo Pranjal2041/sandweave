@@ -1,6 +1,6 @@
 # Continuous VR observations, inputs and recording
 
-The sandbox can deliver a continuous stream of composed VR eye images directly
+The sandbox delivers a continuous stream of paired left/right VR eye images directly
 to a host Python client while receiving controller/headset state on a persistent
 connection. Images are available independently of the optional Xvnc desktop
 mirror. This is an experimental Monado integration in the existing no-sudo,
@@ -13,22 +13,25 @@ Open Saber OpenXR stereo images → Monado GPU composition
                                   ├─ Vulkan readback → sealed shared-memory ring
                                   │                     ├─ model/client: latest owned image
                                   │                     └─ bounded background recorder
-                                  └─ optional one-shot eye capture
+                                  └─ optional one-shot stereo capture
 Open Saber desktop mirror → optional VirtualGL readback → Xvnc
 
 host client → persistent stdio bridge → Monado remote TCP → OpenXR device state
             ← acknowledged matching state after Monado installs it
 ```
 
-The game continues rendering both 1344×1512 eye views. The observation stream in
-these tests is the **composed left eye resized to 960×1080**, four bytes per pixel
-(RGBX8). It is an image stream, not a video-decoding interface. The video is a
-secondary visualization of the recorded images. Physical headset delivery and
+The game renders both 1344×1512 eye views. Current observations contain **both
+composed eyes, each resized to 960×1080**, packed left-then-right in a 1920×1080
+RGBX8 image. Both source views come from the same compositor frame state. Two
+GPU blits write disjoint halves of one image before one transfer/fence wait and
+one atomic publication. The side-by-side video visualizes those same pairs.
+[The stereo implementation and measurements](vr-stereo-io.md) supersede the
+historical monocular measurements below. Physical headset delivery and
 hardware tracking are not part of these tests.
 
 `VRStream.latest(after=sequence)` reads the newest complete frame. Each returned
 `Frame` owns its pixel bytes: a subsequent producer update cannot alter a model's
-observation. The ring has eight slots by default (about 31.6 MiB). A seqlock rejects
+observation. The ring has eight stereo slots by default (about 63.3 MiB). A seqlock rejects
 a frame overwritten during the copy. A slow consumer skips old frames instead of
 blocking the compositor or accumulating an unbounded observation backlog. The
 measurement script reports skipped ring sequences separately from recording
@@ -75,14 +78,17 @@ The input log records every submitted state and its acknowledgement timestamps.
 
 ## Background storage and video
 
-`FrameRecorder` has a bounded queue of 32 owned frames (about 126.6 MiB at the
-tested resolution) and two encoding/writing workers. Each image is saved as an
-independent, lossless `.rgba.zst` file. `frames.jsonl` identifies its filename,
-size, pixel format, sequence and timestamps. Storage errors propagate when the
+`FrameRecorder` has a bounded queue of 32 owned stereo pairs (about 253.1 MiB at
+the default resolution) and four encoding/writing workers. Each pair is saved as
+an independent, lossless `.rgba.zst` file containing both eyes. The index records
+`eye_count: 2`; files without that field are historical mono recordings.
+`frames.jsonl` identifies each file's name, size, pixel format, sequence and
+timestamps. Storage errors propagate when the
 recorder closes; queue overflow is counted explicitly rather than hidden.
 Model observations continue if the storage consumer falls behind.
 
-PNG encoding was a concrete recording bottleneck: a sampled gameplay image took
+In the historical mono tests, PNG encoding was a concrete recording bottleneck:
+a sampled gameplay image took
 45.6 ms to encode with Pillow's level-1 PNG, compared with 8.4 ms for level-1
 Zstandard on its RGBX bytes, at similar compressed size. Two PNG workers dropped
 152/1058 frames; four still dropped 60/1416 in another run. The first Zstandard
@@ -96,7 +102,7 @@ output; the image-demuxer timebase is explicitly 1 ms rather than its default
 25 Hz. The temporary PNGs are removed. Video encoding is lossy; source images
 remain lossless and independently accessible.
 
-## Observed delivery with continuous input
+## Historical monocular delivery measurements
 
 | Configuration | Images received/s | Game submissions/s | Input updates/s | Saved / delivered |
 |---|---:|---:|---:|---:|
@@ -134,7 +140,8 @@ advance, and the score changes from 0 to 100. Audio remains unavailable.
 
 ## Python and CLI use
 
-Host dependencies used here: Pillow 12.0.0, zstandard 0.24.0, protobuf, and ffmpeg
+Host dependencies used here: Pillow 12.0.0, zstandard 0.24.0, NumPy 2.5.2 for
+array access, protobuf, and ffmpeg
 for optional video export. The guest bridge uses only Python's standard library. Direct `runsc exec --user`
 retained guest capabilities and failed Vulkan initialization in the first launch;
 launching through `runuser` matched the working ordinary-user context. The
@@ -156,7 +163,8 @@ try:
         for _ in range(300):
             frame = vr.latest(after=last)
             last = frame.sequence
-            # frame.rgba is an owned RGBX byte buffer; frame.image() returns PIL RGB.
+            # frame.left and frame.right are read-only (1080, 960, 3) RGB arrays.
+            # Both view one owned buffer; frame.image() returns the side-by-side PIL image.
             recorder.submit(frame)
             ack = vr.input({'right': {'position': [0.2, 1.3, -0.5],
                                       'orientation': [0, 0, 0, 1]}})
@@ -181,8 +189,10 @@ from vr_stream import RecordedFrames
 
 frames = RecordedFrames('runs/vr/my-recording/frames')
 frame = frames[100]
-pixels = frame.rgba
-rgb_image = frame.image()
+left, right = frame.left, frame.right
+left_image = frame.image('left')
+right_image = frame.image('right')
+side_by_side = frame.image()
 print(frame.sequence, frame.capture_begin_ns, frame.host_observed_ns)
 ```
 
@@ -225,7 +235,9 @@ all observed stalls. Some readback sections took hundreds of milliseconds even
 with recording disabled; the host ring-copy and delivery sections were much
 shorter. The root cause of that tail has not been conclusively isolated.
 
-The CLI's `--fps` is a maximum capture cadence, not a throughput guarantee.
+The CLI's `--fps` is a maximum **stereo-pair** capture cadence, not a throughput
+guarantee. `--width` and `--height` specify each eye; `Frame.width` is the packed
+width, while `Frame.eye_width` is the individual width.
 A phase-preserving deadline replaced the initial last-frame-plus-period limiter,
 which inadvertently rounded a 90 Hz request toward 60 Hz on a 120 Hz compositor.
 Neither CPU affinity, GPU exclusivity nor the sandbox resource policies were

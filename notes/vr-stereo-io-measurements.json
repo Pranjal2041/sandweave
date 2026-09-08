@@ -1,0 +1,420 @@
+{
+  "scope": "Exploratory paired stereo capture and recording in a shared-GPU no-sudo/no-KVM gVisor sandbox; not a controlled throughput comparison or physical-headset test.",
+  "sandbox": "vr-monado-01",
+  "host": "babel-u5-28",
+  "slurm_allocation": 10333558,
+  "monado_upstream": "f8dfadfeaeb46df3eec17bd76b7abdf42a79108c",
+  "gvisor_revision_unchanged": "59487a05f5e858d5b20a36d980036ccea2ad82ab",
+  "runs": [
+    {
+      "recorder_workers": 2,
+      "summary": {
+        "options": {
+          "name": "vr-monado-01",
+          "seconds": 20.0,
+          "warmup": 20,
+          "fps": 120.0,
+          "input_hz": 120,
+          "hz": 120,
+          "width": 960,
+          "height": 1080,
+          "mirror": "none",
+          "output": "runs/vr/stereo-120-recorded",
+          "record": true,
+          "video": true
+        },
+        "seconds": 20.73344887699932,
+        "observations": 1797,
+        "observation_unit": "stereo pair",
+        "eye_count": 2,
+        "eye_width": 960,
+        "eye_height": 1080,
+        "packed_width": 1920,
+        "layout": "left-right side-by-side",
+        "observation_fps": 89.37935262990347,
+        "ring_frames_skipped": 1,
+        "input_updates": 2413,
+        "input_hz": 120.01444533868911,
+        "clock": {
+          "guest_to_host_ns": 289179520274762,
+          "minimum_ping_rtt_ns": 32630,
+          "offset_uncertainty_ns": 16315.0
+        },
+        "monado": {
+          "source": "runs/vr/stereo-120-recorded/monado-metrics.pb",
+          "session_id": 0,
+          "window_seconds": 19.992597549,
+          "application_frames": 1621,
+          "application_fps": 81.02999102690535,
+          "application_frame_interval_ms": {
+            "median": 10.720440499999999,
+            "p95": 19.854444,
+            "p99": 23.970057,
+            "max": 139.140197
+          },
+          "compositor_frames": 1847,
+          "compositor_gpu_ms": {
+            "median": 0.063456,
+            "p95": 0.073184,
+            "p99": 0.0744,
+            "max": 0.076224
+          },
+          "used_records": 1847,
+          "unique_application_frames_used": 1297,
+          "incomplete_trailing_bytes": 0,
+          "timing_ms": {
+            "runtime_wait": {
+              "median": 3.258018,
+              "p95": 8.576093,
+              "p99": 9.094552,
+              "max": 10.588988
+            },
+            "wait_return_to_begin": {
+              "median": 3.085255,
+              "p95": 5.767533,
+              "p99": 8.42759,
+              "max": 13.605183
+            },
+            "begin_to_end_frame": {
+              "median": 3.867249,
+              "p95": 7.243849,
+              "p99": 9.921086,
+              "max": 18.801264
+            },
+            "end_frame_to_gpu_completion_observed": {
+              "median": 0.00517,
+              "p95": 0.01416,
+              "p99": 0.02086,
+              "max": 0.072602
+            },
+            "end_frame_to_next_wait": {
+              "median": 0.47633400000000004,
+              "p95": 2.27018,
+              "p99": 4.126883,
+              "max": 120.845001
+            }
+          },
+          "scope": "OpenXR frame submissions and GPU timestamps; no physical headset scanout or transport timing",
+          "reused_frame_fraction": 0.29778018408229556,
+          "compositor_target_hz": 120.0000048000002
+        },
+        "latency_ms": {
+          "gpu_readback": {
+            "p50": 1.857393,
+            "p95": 5.322105,
+            "p99": 55.781423,
+            "max": 301.517607
+          },
+          "ring_publish_copy": {
+            "p50": 0.58141,
+            "p95": 1.477657,
+            "p99": 1.843403,
+            "max": 8.086584
+          },
+          "host_owned_copy": {
+            "p50": 1.1377,
+            "p95": 5.241963,
+            "p99": 5.920855,
+            "max": 8.556813
+          },
+          "publish_to_host_observed": {
+            "p50": 1.497769,
+            "p95": 5.553302,
+            "p99": 6.341637,
+            "max": 11.812644
+          },
+          "capture_begin_to_host_observed": {
+            "p50": 5.103095,
+            "p95": 9.879469,
+            "p99": 57.556209,
+            "max": 303.231081
+          },
+          "input_ack_round_trip": {
+            "p50": 0.55584,
+            "p95": 1.325743,
+            "p99": 3.962541,
+            "max": 12.151306
+          },
+          "observation_interval": {
+            "p50": 8.625394,
+            "p95": 16.2844,
+            "p99": 66.150218,
+            "max": 313.507841
+          }
+        },
+        "recording": {
+          "saved": 1515,
+          "dropped": 282,
+          "queue_capacity": 32
+        },
+        "video": "/data/user_data/pranjala/general-vm/runs/vr/stereo-120-recorded/frames/gameplay.mp4"
+      }
+    },
+    {
+      "recorder_workers": 4,
+      "summary": {
+        "options": {
+          "name": "vr-monado-01",
+          "seconds": 20.0,
+          "warmup": 20,
+          "fps": 120.0,
+          "input_hz": 120,
+          "hz": 120,
+          "width": 960,
+          "height": 1080,
+          "mirror": "none",
+          "output": "runs/vr/stereo-120-complete",
+          "record": true,
+          "video": true
+        },
+        "seconds": 20.404219089017715,
+        "observations": 1438,
+        "observation_unit": "stereo pair",
+        "eye_count": 2,
+        "eye_width": 960,
+        "eye_height": 1080,
+        "packed_width": 1920,
+        "layout": "left-right side-by-side",
+        "observation_fps": 71.79325837055066,
+        "ring_frames_skipped": 0,
+        "input_updates": 2376,
+        "input_hz": 118.66346188183132,
+        "clock": {
+          "guest_to_host_ns": 289179520277265,
+          "minimum_ping_rtt_ns": 33720,
+          "offset_uncertainty_ns": 16860.0
+        },
+        "monado": {
+          "source": "runs/vr/stereo-120-complete/monado-metrics.pb",
+          "session_id": 0,
+          "window_seconds": 19.999723045,
+          "application_frames": 1498,
+          "application_fps": 74.85103651844095,
+          "application_frame_interval_ms": {
+            "median": 12.537814,
+            "p95": 21.924241,
+            "p99": 28.364736,
+            "max": 217.979197
+          },
+          "compositor_frames": 1540,
+          "compositor_gpu_ms": {
+            "median": 0.063392,
+            "p95": 0.072736,
+            "p99": 0.074176,
+            "max": 0.09168
+          },
+          "used_records": 1540,
+          "unique_application_frames_used": 970,
+          "incomplete_trailing_bytes": 0,
+          "timing_ms": {
+            "runtime_wait": {
+              "median": 3.501267,
+              "p95": 8.610594,
+              "p99": 9.50536,
+              "max": 38.412285
+            },
+            "wait_return_to_begin": {
+              "median": 3.1775015,
+              "p95": 7.447343,
+              "p99": 12.840749,
+              "max": 202.39777
+            },
+            "begin_to_end_frame": {
+              "median": 3.741251,
+              "p95": 7.647246,
+              "p99": 11.752109,
+              "max": 16.669577
+            },
+            "end_frame_to_gpu_completion_observed": {
+              "median": 0.004745,
+              "p95": 0.01489,
+              "p99": 0.030501,
+              "max": 0.107972
+            },
+            "end_frame_to_next_wait": {
+              "median": 0.531719,
+              "p95": 3.686245,
+              "p99": 5.681261,
+              "max": 17.661746
+            }
+          },
+          "scope": "OpenXR frame submissions and GPU timestamps; no physical headset scanout or transport timing",
+          "reused_frame_fraction": 0.3701298701298701,
+          "compositor_target_hz": 120.0000048000002
+        },
+        "latency_ms": {
+          "gpu_readback": {
+            "p50": 2.167189,
+            "p95": 7.375282,
+            "p99": 256.751708,
+            "max": 306.408608
+          },
+          "ring_publish_copy": {
+            "p50": 0.5814,
+            "p95": 1.281583,
+            "p99": 1.805712,
+            "max": 5.011639
+          },
+          "host_owned_copy": {
+            "p50": 0.954377,
+            "p95": 4.554251,
+            "p99": 5.953246,
+            "max": 12.30911
+          },
+          "publish_to_host_observed": {
+            "p50": 1.325405,
+            "p95": 5.037471,
+            "p99": 7.335916,
+            "max": 14.353172
+          },
+          "capture_begin_to_host_observed": {
+            "p50": 5.05421,
+            "p95": 10.401417,
+            "p99": 258.165498,
+            "max": 308.117114
+          },
+          "input_ack_round_trip": {
+            "p50": 0.6092,
+            "p95": 2.168829,
+            "p99": 5.813183,
+            "max": 195.407546
+          },
+          "observation_interval": {
+            "p50": 8.802968,
+            "p95": 17.223058,
+            "p99": 260.628598,
+            "max": 311.311932
+          }
+        },
+        "recording": {
+          "saved": 1438,
+          "dropped": 0,
+          "queue_capacity": 32
+        },
+        "video": "/data/user_data/pranjala/general-vm/runs/vr/stereo-120-complete/frames/gameplay.mp4"
+      }
+    }
+  ],
+  "pair_validation": {
+    "recorded_pairs": 1438,
+    "all_metadata_stereo": true,
+    "packed_size": [
+      1920,
+      1080
+    ],
+    "eye_size": [
+      960,
+      1080
+    ],
+    "sampled_pairs": [
+      {
+        "sequence": 1900,
+        "compositor_frame": 2037,
+        "different_pixel_fraction": 0.5986506558641975
+      },
+      {
+        "sequence": 2000,
+        "compositor_frame": 2141,
+        "different_pixel_fraction": 0.6472984182098765
+      },
+      {
+        "sequence": 2100,
+        "compositor_frame": 2257,
+        "different_pixel_fraction": 0.7707204861111111
+      },
+      {
+        "sequence": 2200,
+        "compositor_frame": 2372,
+        "different_pixel_fraction": 0.6144145447530864
+      },
+      {
+        "sequence": 2300,
+        "compositor_frame": 2480,
+        "different_pixel_fraction": 0.6137403549382716
+      },
+      {
+        "sequence": 2400,
+        "compositor_frame": 2588,
+        "different_pixel_fraction": 0.5984413580246913
+      },
+      {
+        "sequence": 2500,
+        "compositor_frame": 2692,
+        "different_pixel_fraction": 0.617421875
+      },
+      {
+        "sequence": 2600,
+        "compositor_frame": 2802,
+        "different_pixel_fraction": 0.32058641975308644
+      },
+      {
+        "sequence": 2700,
+        "compositor_frame": 2914,
+        "different_pixel_fraction": 0.35888020833333334
+      },
+      {
+        "sequence": 2800,
+        "compositor_frame": 3014,
+        "different_pixel_fraction": 0.3669560185185185
+      },
+      {
+        "sequence": 2900,
+        "compositor_frame": 3118,
+        "different_pixel_fraction": 0.4245746527777778
+      },
+      {
+        "sequence": 3000,
+        "compositor_frame": 3227,
+        "different_pixel_fraction": 0.2927671682098765
+      },
+      {
+        "sequence": 3100,
+        "compositor_frame": 3338,
+        "different_pixel_fraction": 0.3131568287037037
+      },
+      {
+        "sequence": 3200,
+        "compositor_frame": 3444,
+        "different_pixel_fraction": 0.30506655092592594
+      },
+      {
+        "sequence": 3300,
+        "compositor_frame": 3567,
+        "different_pixel_fraction": 0.31806230709876543
+      },
+      {
+        "sequence": 3337,
+        "compositor_frame": 3610,
+        "different_pixel_fraction": 0.3103221450617284
+      }
+    ]
+  },
+  "video_probe": {
+    "programs": [],
+    "streams": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "avg_frame_rate": "179750/2473",
+        "nb_frames": "1438"
+      }
+    ],
+    "format": {
+      "duration": "19.785000",
+      "size": "63036580"
+    }
+  },
+  "visual_verification": {
+    "decoded_video_samples_seconds": [
+      5,
+      15
+    ],
+    "observed": "Distinct left/right views with consistent scenes and stereo parallax; moving controllers and advancing gameplay.",
+    "restored_live_stereo_capture": "runs/vr/stereo-one-shot.png"
+  },
+  "tests_passed": {
+    "vr_stream": 12,
+    "fast_io": 13,
+    "environment": 9
+  }
+}

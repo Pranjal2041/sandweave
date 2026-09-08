@@ -1,6 +1,6 @@
-# Automobilista 2 Demo 2026: preparation and import
+# Automobilista 2 Demo 2026: import and early startup
 
-Started September 8, 2026 UTC. **Game execution and VR acceptance are pending.**
+Started September 8, 2026 UTC. **Early startup only; gameplay is unvalidated.**
 
 The racing game from the earlier shortlist is Automobilista 2. Its full edition
 is paid; the [official Demo 2026 announcement](https://forum.reizastudios.com/threads/new-2026-automobilista-2-demo-is-out-now.36085/)
@@ -62,8 +62,45 @@ Installed `libprimus-vk1 mesa-vulkan-drivers` with apt **inside this guest**.
 Pinned Monado preparation completed and its service reached supported-format
 initialization. The staged GE-Proton9-27 and xrizer v0.5 are shared with the
 [Alyx startup experiment](alyx-startup-experiment.md). No engine changes.
-Game startup, actual driving, both-eye frames, input delivery and frame rate
-still need acceptance after import.
+Actual driving, both-eye frames, input delivery and frame rate still need
+acceptance after import.
+
+## Early startup while assets transfer
+
+Once the executable and libraries arrived, `ams2-probe.py` created guest-writable
+directories under /opt/ams2 with read-only links to staged assets, a dedicated
+ams2-wine prefix, and Proton's DXVK/OpenVR bridge. The first launch could not
+read the executable: tools/gpu/racing inherited mode 2750. Changing that one
+staging directory to 2755 allowed guest ga to traverse it. The probe now checks
+readability as ga, rather than only existence as guest root.
+
+The ordinary AMS2Demo.exe starts AMS2DemoAVX.exe and exits. The child initialized
+xrizer 0.5.0, created an actual Vulkan OpenXR session, received READY and began
+the session. Monado identifies the application as AMS2DemoAVX. DXVK
+v2.6-65-g20a6fae8a7f60e7 initialized its renderer on the L40S. Screenshots opened
+and inspected still showed the GNOME desktop: **no game frames or menu**.
+Most assets were absent, so this does not diagnose full-content startup.
+No Steam sign-in failure was observed at this early stage; later requirements
+remain unknown.
+
+The initial parent-only timeout missed the spawned AVX process. Stopped that
+dedicated Wine server, then changed the probe to put its Wine server, launcher,
+AVX child and wait wrapper in one guest systemd service with RuntimeMaxSec and
+TimeoutStopSec. The 25-second acceptance run terminated in **27.053 seconds**,
+reported timeout, and left no game/Wine server. The temporary experimental
+Primus-VK API manifest was restored to 1.2.0. This still uses the diagnostic
+Vulkan 1.3 opt-in described in the Alyx note, not a qualified Vulkan 1.3 layer.
+
+```bash
+chmod o+rx tools/gpu/racing
+python scripts/ams2-probe.py vr-racing-01 prepare
+# Monado must already be running. Run one probe at a time in this sandbox.
+python scripts/ams2-probe.py vr-racing-01 run --experimental-vulkan13 --timeout 45
+```
+
+`--novr` selects Steam's ordinary desktop launch argument. It has not yet been
+exercised. Ignored evidence: runs/racing/wine-prefix.log,
+startup-readable.log, startup-bounded.log, and inspected startup screenshots.
 
 ## Tracked helper tools
 

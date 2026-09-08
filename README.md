@@ -53,14 +53,17 @@ audio and virtual haptics remain unvalidated or unsupported.
 
 [The Alyx startup experiment](notes/alyx-startup-experiment.md) reuses an existing
 Windows installation through Wine, DXVK, xrizer and Monado. All assets are now
-imported and readable inside the sandbox. XR session and renderer initialization
-are established; gameplay acceptance remains blocked by the host NVIDIA wait.
-A native NVIDIA Vulkan cube was visibly rendered through Xvnc before that wait.
+imported and readable inside the sandbox. The
+[fresh-allocation investigation](notes/preempt-vr-debug.md) reaches the stereo
+main menu and accepts controller input on L40S and RTX PRO 6000. L40S level
+loading still fails, with evidence of host memory-mapping exhaustion. No Alyx
+level gameplay is established. Recovery of the earlier NVIDIA wait is untested.
 
 [The Automobilista 2 Demo experiment](notes/ams2-demo-experiment.md) has acquired
 and fully imported the free 2026 demo through the user's Windows Steam. A
-separate Xvnc/GPU/Monado sandbox reached the Reiza splash before a persistent
-host NVIDIA driver wait. Racing gameplay and stereo capture remain unverified.
+fresh RTX Xvnc/GPU/Monado sandbox passed the splash and rendered a stereo
+sign-in error stating that Steam is not running. Racing gameplay remains
+unverified; the earlier host NVIDIA wait is a separate unresolved observation.
 The startup investigation also exposed a Wine exception-classification gap;
 the engine repair passes Windows fault recovery and a live CPU restore test.
 

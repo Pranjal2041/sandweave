@@ -55,10 +55,16 @@ force a host NVIDIA kernel thread out of uninterruptible sleep. Game-unit live
 acceptance is recorded below. The default remains 45 seconds; explicit timeouts
 up to 1,800 seconds allow longer level-loading and interaction probes.
 
-Alyx now accepts explicit `--dxvk-config` and `--wine-debug` diagnostic options.
-Long-running commands inherit the probe's output stream, preserving logs as
-they arrive instead of buffering the entire run until exit. Small readiness
-and preparation RPCs still capture their bounded output.
+Alyx now accepts explicit `--dxvk-config`, `--wine-debug`, and `--map` diagnostic
+options. Long-running commands stream through a pipe copied by the parent,
+preserving logs as they arrive instead of buffering the entire run until exit.
+Small readiness and preparation RPCs still capture their bounded output.
+The first streaming attempt passed a regular file directly to guest exec; the
+guest's independent imported-file offset caused the final JSON summary to
+replace the beginning of run 05's log. Its subsequent exception trace remains
+available, but the original leading bytes were not preserved. The pipe repair
+passes incremental-output/order and timeout regressions, and run 07 preserves
+both its initial `Running as unit` line and final JSON summary in order.
 
 ## L40S replacement
 
@@ -234,3 +240,86 @@ general Alyx interaction mapping. Opened and inspected evidence includes
 `alyx-accept-near-plane.png`, `alyx-continue-adjusted.png`,
 `alyx-load-accepted.png`, `alyx-after-load.png` and `alyx-load-later.png` in
 `runs/racing/preempt-10361186/`.
+
+## Level-loading controls and host mapping pressure
+
+Run 05 selected Start New Game, Chapter 1, and Start Game without addons, then
+accepted creation of the private guest's new slot S2. It spawned
+`a1_intro_world`, rather than restoring the imported save. It failed with the
+same `animationsystem.dll+0x1b96e7` write fault and recursive Wine unwind faults,
+exiting 139 after 3min 23.291s. The imported save alone therefore does not
+explain the failure. Runs 06 and 07 use `--map a1_intro_world` to reproduce
+loading without menu navigation; both exited 139 before their deadlines.
+
+A private native Apptainer comparison uses the same base image, prepared
+filesystem, game asset binds, GE-Proton9-27, DXVK override, Primus manifest
+experiment, Monado and L40S. It reached the stereo main menu and accepted the
+same Continue/Accept inputs, then failed loading `a1_intro_world_2`. Wine logged
+many `mmap() error Cannot allocate memory` messages and an assertion in
+`ntdll/unix/virtual.c:create_view`. Direct native loads of `a1_intro_world` also
+failed with mapping-allocation errors. This is not a successful native game
+control, nor proof of a gVisor-only game bug.
+
+`scripts/native-alyx-control.sh` runs in the private session made by
+`run-native-gpu-app.py`, with an isolated Xvnc, Monado socket/config, input port,
+and a 900-second game limit. Its cleanup stops only that native Wine prefix
+and Monado child. Use `--foreground` inside a Slurm step; the initial detached
+attempt ended with its step before application startup. Bind the private
+root's entire `home` at `/home`, since Apptainer containment otherwise hides
+`/home/ga`. Native attempts 01 and 02 did not reach application startup; 03
+through 06 are the valid game controls. Native logs were copied into the shared
+run directory before handoff.
+
+The host's `/proc/sys/vm/max_map_count` is **65,530**. During sandbox run 07,
+`host-vma-probe.py` observed **65,415** mappings in a systrap application host
+process immediately before failure. The native game rapidly reached tens of
+thousands of mappings (sampled peaks 62,122 and 60,021 in runs 05 and 06), then
+reported `mmap` allocation failures. Sampling missed the native instantaneous
+peak. This strongly indicates the host mapping limit as a common blocker; a
+successful control with the limit relieved has not been run. The Linux
+[max_map_count documentation](https://docs.kernel.org/admin-guide/sysctl/vm.html#max-map-count)
+describes this per-process limit. The guest reports a synthetic value of
+2,147,483,647, which does not remove the host's limit on systrap processes.
+No host sysctl, sudo operation, or unrelated job was changed.
+
+`host-vma-probe.py PID --seconds 50` samples only the specified owned process
+and its descendants, checks its start time against PID reuse, and stops on
+exit. `run-native-gpu-app.py --foreground --vma-log PATH` applies this to its
+own native child. Evidence: `alyx-07-host-vmas.jsonl`,
+`native-05-vmas.jsonl`, `native-06-vmas.jsonl`, and the corresponding game logs.
+
+Prepared filesystem snapshot `snapshots/vr-l40s-alyx-prepared-10361186` was saved
+in 4.198 seconds with the source sandbox resumed. It contains the prepared
+Wine prefix and writable configuration; assets remain external read-only
+binds. Full verification passed on the original node in 8.065 seconds. The
+automatic verifier had remained pending after its Slurm step ended; a first
+explicit attempt on the login node correctly rejected initial verification
+away from the frozen source. The subsequent original-node run checked all
+seven files and passed. It does not preserve a live GPU context or a running game. Native
+extraction exercised its file contents; a new gVisor cold restore of this
+particular snapshot has not yet been tested. Unprivileged native extraction
+skipped special device nodes, and the overlay tar reported only the expected
+Docker `backingFsBlockDev` mknod failure. Native Apptainer supplies its own
+isolated `/dev` and the allocated GPU binds.
+
+## Handoff
+
+The L40S allocation `10361186` remains running on `babel-o9-20`, scheduled until
+23:04:29 UTC (19:04:29 EDT), subject to preemption. Sandbox
+`vr-racing-l40s-01` uses VNC port **60689**. Open Saber was restarted and its
+paired-eye gameplay was inspected again after the Alyx/native controls. Alyx
+probe units and native test applications have exited; Monado and Open Saber
+are the remaining test applications. All unrelated jobs and existing desktops
+were left in place.
+
+From this lab checkout, the verified node-specific SSH key file can be used as:
+
+```sh
+ssh -o UserKnownHostsFile="$PWD/runs/ssh-known-hosts-10361186" \
+    -o StrictHostKeyChecking=yes babel-o9-20
+```
+
+GPU operations on the node use `SLURM_JOB_GPUS=0` with `SLURM_STEP_GPUS` unset.
+The default runtime selector remains unchanged. The new runtime is an explicit
+candidate, with tested Open Saber gameplay, game-menu acceptance, and the
+remaining level-loading limitations documented above.

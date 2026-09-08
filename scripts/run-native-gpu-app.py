@@ -14,9 +14,15 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--bind', action='append', default=[],
                     help='additional Apptainer bind for a native comparison')
+parser.add_argument('--foreground', action='store_true',
+                    help='wait for the application, keeping an enclosing Slurm step alive')
+parser.add_argument('--vma-log', type=Path,
+                    help='with --foreground, sample this native process tree for up to 180 seconds')
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
+if args.vma_log and not args.foreground:
+    parser.error('--vma-log requires --foreground')
 if not re.fullmatch(r'[a-zA-Z0-9_-]+', args.name):
     parser.error('invalid session name')
 command = args.command
@@ -73,4 +79,13 @@ with (session / 'launcher.log').open('wb') as output:
 metadata = {'pid': child.pid, 'vnc_port': port, 'session': str(session), 'gpu': identity,
             'command': command, 'binds': args.bind}
 (lab / 'runs' / (args.name + '.json')).write_text(json.dumps(metadata, indent=2) + '\n')
-print(json.dumps(metadata))
+print(json.dumps(metadata), flush=True)
+if args.foreground:
+    if args.vma_log:
+        import sys
+        args.vma_log.parent.mkdir(parents=True, exist_ok=True)
+        with args.vma_log.open('w') as output:
+            subprocess.run([sys.executable, str(lab/'scripts/host-vma-probe.py'),
+                            str(child.pid), '--seconds', '180', '--interval', '.1'],
+                           stdout=output, check=True)
+    raise SystemExit(child.wait())

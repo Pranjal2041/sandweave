@@ -6,10 +6,41 @@ prepare-vr-lab.py. These are startup diagnostics, not gameplay acceptance.
 """
 import argparse
 import json
+import os
 from pathlib import Path
+import selectors
+import shlex
 import subprocess
+import sys
+import time
 
 from environment import EnvironmentManager
+
+
+def run_streamed(command, timeout):
+    """Copy a pipe in the parent so guest file offsets cannot overwrite logs."""
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as process:
+        deadline = time.monotonic() + timeout
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(command, timeout)
+                    if not selector.select(remaining):
+                        raise subprocess.TimeoutExpired(command, timeout)
+                    data = os.read(process.stdout.fileno(), 65536)
+                    if not data:
+                        break
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+            code = process.wait(timeout=max(0, deadline-time.monotonic()))
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+    return subprocess.CompletedProcess(command, code)
 
 PREPARE = r'''
 import json, os, shutil, sys
@@ -73,6 +104,7 @@ def main():
     parser.add_argument('--dxvk-config', help='explicit DXVK_CONFIG for a Windows diagnostic run')
     parser.add_argument('--wine-debug', default='-all,err+all',
                         help='Wine debug channels, e.g. +seh for exception diagnostics')
+    parser.add_argument('--map', help='load a map directly for a Windows level-loading diagnostic')
     args = parser.parse_args()
     manager = EnvironmentManager()
     state = manager.status(args.name)
@@ -84,11 +116,16 @@ def main():
         parser.error('the API-version experiment applies to windows or cube')
     if args.dxvk_config is not None and args.command != 'windows':
         parser.error('the DXVK configuration applies to windows')
+    if args.map is not None and args.command != 'windows':
+        parser.error('the map argument applies to windows')
     prefix = [*manager._command(args.name), 'exec', args.name]
 
     def guest(*command, payload=None, check=True, timeout=30, stream=False):
+        if stream:
+            assert payload is None and not check
+            return run_streamed([*prefix, *command], timeout)
         result = subprocess.run([*prefix, *command], input=payload,
-                                stdout=None if stream else subprocess.PIPE,
+                                stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, timeout=timeout)
         if check and result.returncode:
             raise RuntimeError(result.stdout)
@@ -125,9 +162,12 @@ def main():
         stopped = guest(*user, server, '-k', check=False)
         if stopped.returncode not in (0, 1) or stopped.stdout.strip():
             raise RuntimeError('Could not stop the dedicated Wine server: '+stopped.stdout)
+        game = [wine, 'bin/win64/hlvr.exe', '-vr', '-noasserts', '-nopassiveasserts',
+                '-console', '-condebug']
+        if args.map is not None:
+            game += ['+map', args.map]
         command = ['sh', '/opt/vr/vr-vulkan-xvnc.sh', 'sh', '-c',
-                   'cd /opt/alyx/game && '+wine+' bin/win64/hlvr.exe '
-                   '-vr -noasserts -nopassiveasserts -console -condebug; '
+                   'cd /opt/alyx/game && '+shlex.join(game)+'; '
                    'result=$?; '+server+' -w; exit "$result"']
     elif args.command == 'native':
         command = ['/usr/local/bin/engine-gpu', 'env', 'STEAM_RUNTIME=0',

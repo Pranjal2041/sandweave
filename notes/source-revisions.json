@@ -11,6 +11,6 @@
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
     "runtime_commit": "b3ffebb8a1a1245b3e373f3b25309532804a6bbd",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
-    "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 Vulkan, Monado, and Open Saber paired-eye gameplay accepted; host driver-wait recovery untested"
+    "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested"
   }
 }

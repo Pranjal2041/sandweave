@@ -38,6 +38,14 @@ and the missing engine and packaging integration. Wayland is an additional
 backend under investigation; Xvnc remains available. No Wayland runtime result
 is claimed. Controller and Monado/XR support are separate additional capabilities.
 
+[The first VR experiment](notes/vr-monado-experiment.md) runs the published
+Open Saber game through Monado with a virtual headset and controllers, using
+the existing gVisor GPU sandbox. Gameplay and a composed eye image were verified.
+The sampled game rate was 90 FPS with a 120 Hz compositor target and continuous
+desktop readback disabled; the live Xvnc mirror configuration measured 61 FPS.
+This uses an explicit experimental Monado patch. Physical headset delivery,
+audio and virtual haptics remain unvalidated or unsupported.
+
 ## Pause, resume and stop
 
 Use `python scripts/env.py pause ENV`, `resume ENV`, or `stop ENV`.

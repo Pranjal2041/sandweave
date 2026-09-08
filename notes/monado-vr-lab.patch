@@ -1,0 +1,222 @@
+--- a/src/xrt/compositor/main/comp_settings.c
++++ b/src/xrt/compositor/main/comp_settings.c
+@@ -27,6 +27,7 @@
+ DEBUG_GET_ONCE_NUM_OPTION(vk_display, "XRT_COMPOSITOR_FORCE_VK_DISPLAY", -1)
+ DEBUG_GET_ONCE_BOOL_OPTION(force_xcb, "XRT_COMPOSITOR_FORCE_XCB", false)
+ DEBUG_GET_ONCE_BOOL_OPTION(force_wayland, "XRT_COMPOSITOR_FORCE_WAYLAND", false)
++DEBUG_GET_ONCE_OPTION(force_target, "XRT_COMPOSITOR_FORCE_TARGET", NULL)
+ DEBUG_GET_ONCE_NUM_OPTION(force_gpu_index, "XRT_COMPOSITOR_FORCE_GPU_INDEX", -1)
+ DEBUG_GET_ONCE_NUM_OPTION(force_client_gpu_index, "XRT_COMPOSITOR_FORCE_CLIENT_GPU_INDEX", -1)
+ DEBUG_GET_ONCE_NUM_OPTION(desired_mode, "XRT_COMPOSITOR_DESIRED_MODE", -1)
+@@ -207,4 +208,7 @@
+ 		s->preferred.width /= 2;
+ 		s->preferred.height /= 2;
+ 	}
++	if (debug_get_option_force_target() != NULL) {
++		s->target_identifier = debug_get_option_force_target();
++	}
+ }
+--- a/src/xrt/compositor/main/comp_window_debug_image.c
++++ b/src/xrt/compositor/main/comp_window_debug_image.c
+@@ -73,6 +73,12 @@
+ target_check_ready(struct comp_target *ct)
+ {
+ 	return true; // Always ready.
++}
++
++static bool
++target_is_shared_presentable_image(struct comp_target *ct)
++{
++	return false;
+ }
+ 
+ static void
+@@ -361,6 +367,7 @@
+ 	dit->base.init_pre_vulkan = target_init_pre_vulkan;
+ 	dit->base.init_post_vulkan = target_init_post_vulkan;
+ 	dit->base.check_ready = target_check_ready;
++	dit->base.is_shared_presentable_image = target_is_shared_presentable_image;
+ 	dit->base.create_images = target_create_images;
+ 	dit->base.has_images = target_has_images;
+ 	dit->base.acquire = target_acquire;
+--- a/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
++++ b/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
+@@ -17,6 +17,54 @@
+ #include "cache/render_shader_specialization_helpers.h"
+ 
+ #include "render/render_interface.h"
++
++#include "util/u_debug.h"
++#include <stdio.h>
++#include <unistd.h>
++
++/* On-demand evidence capture using the existing GPU readback path. No capture
++ * work is added to ordinary frames unless the request file exists. */
++DEBUG_GET_ONCE_OPTION(lab_eye_capture, "XRT_LAB_EYE_CAPTURE", NULL)
++
++bool
++comp_mirror_lab_capture_requested(void)
++{
++	const char *path = debug_get_option_lab_eye_capture();
++	char request[4096];
++	if (path == NULL || snprintf(request, sizeof(request), "%s.request", path) >= sizeof(request)) {
++		return false;
++	}
++	return access(request, F_OK) == 0;
++}
++
++static void
++lab_capture_frame(struct xrt_frame *frame)
++{
++	if (!comp_mirror_lab_capture_requested()) {
++		return;
++	}
++	const char *path = debug_get_option_lab_eye_capture();
++	char temporary[4096], request[4096];
++	if (snprintf(temporary, sizeof(temporary), "%s.tmp", path) >= sizeof(temporary) ||
++	    snprintf(request, sizeof(request), "%s.request", path) >= sizeof(request)) {
++		return;
++	}
++	FILE *file = fopen(temporary, "wb");
++	if (file == NULL) {
++		return;
++	}
++	bool ok = fprintf(file, "P6\n%u %u\n255\n", frame->width, frame->height) > 0;
++	for (uint32_t y = 0; ok && y < frame->height; y++) {
++		const uint8_t *row = frame->data + y * frame->stride;
++		for (uint32_t x = 0; ok && x < frame->width; x++) {
++			ok = fwrite(row + x * 4, 3, 1, file) == 1;
++		}
++	}
++	ok = fclose(file) == 0 && ok;
++	if (ok && rename(temporary, path) == 0) {
++		unlink(request);
++	}
++}
+ 
+ 
+ /*
+@@ -420,6 +468,9 @@
+                                 struct comp_compositor *c,
+                                 uint64_t predicted_display_time_ns)
+ {
++	if (comp_mirror_lab_capture_requested()) {
++		return true;
++	}
+ 	if (!c->mirroring_to_debug_gui || !u_sink_debug_is_active(&m->debug_sink)) {
+ 		return false;
+ 	}
+@@ -675,6 +726,7 @@
+ 	struct xrt_frame *frame = &wrap->base_frame;
+ 	wrap = NULL;
+ 
++	lab_capture_frame(frame);
+ 	u_sink_debug_push_frame(&m->debug_sink, frame);
+ 
+ 	u_frame_times_widget_push_sample(&m->push_frame_times, predicted_display_time_ns);
+--- a/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
++++ b/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
+@@ -23,6 +23,9 @@
+ #endif
+ 
+ struct render_blit_pipeline_cache;
++
++bool
++comp_mirror_lab_capture_requested(void);
+ 
+ 
+ /*!
+--- a/src/xrt/compositor/main/comp_renderer.c
++++ b/src/xrt/compositor/main/comp_renderer.c
+@@ -1094,7 +1094,7 @@
+ 	const uint32_t view_count = c->nr.view_count;
+ 	enum comp_target_fov_source fov_source = COMP_TARGET_FOV_SOURCE_DISTORTION;
+ 
+-	bool fast_path = c->base.frame_params.one_projection_layer_fast_path;
++	bool fast_path = c->base.frame_params.one_projection_layer_fast_path && !comp_mirror_lab_capture_requested();
+ 	bool do_timewarp = !c->debug.atw_off;
+ 
+ 	// Consistency check.
+@@ -1171,12 +1171,12 @@
+ 
+ 	xrt_result_t xret = XRT_SUCCESS;
+ 	comp_mirror_fixup_ui_state(&r->mirror_to_debug_gui, c);
+-	if (comp_mirror_is_ready_and_active(&r->mirror_to_debug_gui, c, predicted_display_time_ns)) {
++	if (!fast_path && comp_mirror_is_ready_and_active(&r->mirror_to_debug_gui, c, predicted_display_time_ns)) {
+ 
+ 		uint32_t scratch_index = frame_state.scratch_state.views[0].index;
+ 		struct comp_scratch_single_images *view = &c->scratch.views[0].cssi;
+ 		struct render_scratch_color_image *rsci = &view->images[scratch_index];
+-		VkExtent2D extent = {view->info.width, view->info.width};
++		VkExtent2D extent = {view->info.width, view->info.height};
+ 
+ 		// Used for both, want clamp to edge to no bring in black.
+ 		VkSampler clamp_to_edge = c->nr.samplers.clamp_to_edge;
+--- a/src/xrt/state_trackers/oxr/oxr_verify.c
++++ b/src/xrt/state_trackers/oxr/oxr_verify.c
+@@ -654,6 +654,11 @@
+ 
+ #if defined(XR_USE_PLATFORM_XLIB) && defined(XR_USE_GRAPHICS_API_OPENGL)
+ 
++/* Lab-only compatibility for Godot issue #116254. The GLX client uses the
++ * supplied current context/drawable and does not consume these two fields.
++ * Leave specification validation enabled unless explicitly requested. */
++DEBUG_GET_ONCE_BOOL_OPTION(allow_missing_glx_config, "OXR_LAB_ALLOW_MISSING_GLX_CONFIG", false)
++
+ XrResult
+ oxr_verify_XrGraphicsBindingOpenGLXlibKHR(struct oxr_logger *log, const XrGraphicsBindingOpenGLXlibKHR *next)
+ {
+@@ -676,12 +681,12 @@
+ 		                 "XrGraphicsBindingOpenGLXlibKHR::glxDrawable is NULL");
+ 	}
+ 
+-	if (next->glxFBConfig == NULL) {
++	if (next->glxFBConfig == NULL && !debug_get_bool_option_allow_missing_glx_config()) {
+ 		return oxr_error(log, XR_ERROR_GRAPHICS_DEVICE_INVALID,
+ 		                 "XrGraphicsBindingOpenGLXlibKHR::glxFBConfig is NULL");
+ 	}
+ 
+-	if (next->visualid == 0) {
++	if (next->visualid == 0 && !debug_get_bool_option_allow_missing_glx_config()) {
+ 		return oxr_error(log, XR_ERROR_GRAPHICS_DEVICE_INVALID,
+ 		                 "XrGraphicsBindingOpenGLXlibKHR::visualid is 0");
+ 	}
+--- a/src/xrt/drivers/remote/r_device.c
++++ b/src/xrt/drivers/remote/r_device.c
+@@ -48,6 +48,18 @@
+ 
+ 	// Free this device with the helper.
+ 	u_device_free(&rd->base);
++}
++
++static xrt_result_t
++r_device_set_output(struct xrt_device *xdev, enum xrt_output_name name, const struct xrt_output_value *value)
++{
++	struct r_device *rd = r_device(xdev);
++	if (!rd->warned_missing_haptics) {
++		U_LOG_W("Remote controller haptic output is not implemented: %s", xdev->str);
++		rd->warned_missing_haptics = true;
++	}
++	// Preserve the upstream failure result; avoid logging each frame's stop command.
++	return XRT_ERROR_NOT_IMPLEMENTED;
+ }
+ 
+ static xrt_result_t
+@@ -195,6 +207,7 @@
+ 	// Setup the basics.
+ 	u_device_populate_function_pointers(&rd->base, r_device_get_tracked_pose, r_device_destroy);
+ 	rd->base.update_inputs = r_device_update_inputs;
++	rd->base.set_output = r_device_set_output;
+ 	rd->base.get_hand_tracking = r_device_get_hand_tracking;
+ 	rd->base.tracking_origin = &r->origin;
+ 	rd->base.supported.orientation_tracking = true;
+--- a/src/xrt/drivers/remote/r_internal.h
++++ b/src/xrt/drivers/remote/r_internal.h
+@@ -92,6 +92,7 @@
+ 	struct u_hand_tracking hand_tracking;
+ 
+ 	bool is_left;
++	bool warned_missing_haptics;
+ };
+ 
+ 

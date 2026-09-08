@@ -1,5 +1,14 @@
 # Standalone no-KVM lab
 
+The ultimate goal is fast, capable sandboxes without host sudo. This extends
+beyond the currently released Gym Anything environments to VR, robotics,
+physical embodiment and other workloads. Do not redefine the goal around an
+individual application or a current implementation choice. gVisor is an
+isolation engine; Xvnc/Wayland are display infrastructure and Monado is an XR
+runtime. Their roles are distinct, and multiple interaction backends belong
+in the scope. The current objective is running a real VR game at high frame
+rates, then comparing the relevant presentation paths.
+
 Work here is independent of Gym Anything's main repository. Runtime experiments
 use the existing Slurm allocation without host sudo or KVM. Preserve user-facing
 desktops when testing; use separate disposable environments for new tests.

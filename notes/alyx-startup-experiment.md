@@ -1,0 +1,163 @@
+# Alyx: existing standalone Windows installation
+
+Started September 8, 2026 UTC. **Startup investigation, not gameplay acceptance.**
+
+## Result so far
+
+The user's existing Windows executable runs under GE-Proton's Wine in gVisor,
+initializes xrizer 0.5.0, creates a Vulkan OpenXR session through Monado, and loads
+Alyx's action manifest and controller bindings. DXVK initializes its Direct3D 11
+renderer on the allocated L40S. An experimental Primus-VK manifest change gets
+past the Xvnc present-mode failure and creates a 1280x800 swapchain.
+
+The final probe exits while reporting missing packed resources, including the
+engine's error model/materials. The approximately 70.64 GiB installation is still
+transferring. No level, gameplay input, stereo game frames or Alyx frame rate has
+been validated. Loading bindings is not acceptance of those bindings.
+
+A separate native Linux Vulkan cube **was visibly rendered and animated** in
+GNOME/Xvnc. NVIDIA renders; Primus-VK copies the image to Mesa's CPU Vulkan driver
+for Xvnc presentation. Fast I/O captured two visibly different cube orientations.
+This establishes a Vulkan presentation path independently of unfinished Alyx
+testing; it does not establish its performance for Alyx.
+
+The disposable sandbox is `vr-alyx-01`: 8 advertised CPUs, weighted sharing,
+32 GiB guest-page budget, allocated L40S, Xvnc port 45089 (not forwarded to Mac).
+Existing Open Saber and Resolve desktops were preserved. No purchase, host sudo,
+KVM use or gVisor change. Engine revision remains
+`59487a05f5e858d5b20a36d980036ccea2ad82ab`.
+
+## Existing files and resumable transfer
+
+`ut help` and `ut ls` identified `pranjala-win`. Its running Steam has a non-Steam
+`hlvr` shortcut targeting the executable below. The user confirmed a standalone
+copy. The library window was visually inspected; no Steam authentication files
+were read. Source game files remain unchanged.
+
+```text
+C:\Program Files (x86)\Steam\steamapps\common\Half-Life Alyx\game\bin\win64\hlvr.exe
+```
+
+The installation also contains genuine ELF64 Linux binaries. The launcher and
+native server module headers were checked. There are 4,539 files totaling
+75,849,146,188 bytes. Windows had only about 0.11 GiB free; no archive was made
+there. A small JSON inventory was written to Windows TEMP and copied with ut.
+Generate equivalent records with PowerShell's `Get-ChildItem -Recurse -File`:
+each record has `path` relative to the installation root, with forward slashes,
+and `size` from the file's `Length`. The manifest is UTF-8 JSON without a BOM.
+
+[import-alyx.py](../scripts/import-alyx.py) uses ut's existing `/mesh/proxy` to the
+peer's `/fs/read`. Reading ut's source confirmed streaming `http.ServeContent`
+with byte ranges; ordinary ut cp buffers a whole file. The importer uses bounded
+8 MiB ranges, validates response ranges/lengths, resumes `.partial` files,
+atomically publishes completed files, and locks against concurrent importers.
+It does not hash the whole installation or detect same-size source-file edits.
+Keep the source unchanged during the copy.
+
+```bash
+python scripts/import-alyx.py runs/alyx/windows-files.json --workers 8 \
+  --priority '^game/(bin/|hlvr/bin/|core/|hlvr/shaders|hlvr/maps/startup\.vpk)' \
+  > runs/alyx/import-startup-first.log 2>&1
+```
+
+Initial throughput was about 2.4 MB/s, so full copying takes hours. File counts
+overstate progress because large packs hold most bytes. The current log reports
+completed bytes. Files are ignored under `tools/gpu/alyx`, exposed read-only at
+`/opt/engine-gpu/alyx`. Guest `/opt/alyx` holds writable directories and symlinks;
+available `.cfg`, `.vcfg` and `.json` files are copied writable. This avoids
+duplicating 70 GiB in the guest memory-backed writable filesystem. External
+assets must remain available when reusing this experimental sandbox.
+
+## Failures traced
+
+1. Native Linux executes with Ubuntu 22.04 libraries but stops at SteamAPI_Init
+   because there is no running Linux Steam client or steamclient.so. Its zero
+   exit status does not indicate gameplay. Linux files alone prove insufficient.
+2. GE-Proton11-6 requires GLIBC_2.38; this guest has 2.35. GE-Proton9-27 runs and
+   creates its Wine prefix. No host library upgrade was made.
+3. Proton's Windows VR bridge and Windows OpenVR path registry get the game to
+   the bridge. Error 105 then came from missing PROTON_VR_RUNTIME: Valve's bridge
+   requires that variable or its Wine registry equivalent. Pointing it at xrizer
+   fixes the error and creates the actual XR session.
+4. Direct Wine prefix creation omits DLLs normally staged by Proton's wrapper.
+   Preparation copies bundled DXVK/vkd3d helper DLLs and vrclient_x64.dll and
+   selects DXVK with Wine DLL overrides. Game and Steam checks were not patched.
+5. Direct NVIDIA presentation to Xvnc fails the Vulkan present-mode query with
+   VK_ERROR_UNKNOWN. Ubuntu libprimus-vk1 1.6.1-1 and mesa-vulkan-drivers
+   23.2.1-1ubuntu3.1~22.04.4 enable the native cube with explicit NVIDIA vendor
+   10de for rendering and Mesa vendor 10005 for presentation.
+6. DXVK requests Vulkan 1.3; Primus-VK advertises 1.2. The loader disables older
+   implicit layers for newer application API requests. VK_INSTANCE_LAYERS alone
+   did not fix this probe. Temporarily changing the guest manifest to 1.3 loads
+   the layer and permits swapchain creation. **This is a diagnostic, not Vulkan
+   1.3 conformance or general layer compatibility validation.** The probe restores
+   the original manifest afterward.
+7. The resulting startup encounters missing VPK resources. Asset transfer must
+   finish before diagnosing subsequent resource or gameplay failures.
+
+Wine also logs unsupported seccomp/netlink operations and virtual allocation
+failures. These did not prevent observed XR/renderer initialization; effects on
+sustained gameplay are unmeasured. xrizer logs unsupported internal interfaces,
+scroll bindings and some controller paths. All Alyx interaction remains untested.
+
+## Reproduction
+
+Pinned staged downloads:
+
+- [GE-Proton9-27](https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/GE-Proton9-27):
+  published tarball checked against the release's .sha512sum before extraction
+  to `tools/gpu/vr/GE-Proton9-27`.
+- [xrizer v0.5](https://github.com/Supreeeme/xrizer/releases/tag/v0.5): zip SHA256
+  `935ee21992d5cb99a2bce5b56014cc4d1f981bd9023f0eee65809b251ba7b1ee`,
+  extracted to `tools/gpu/vr/xrizer-v0.5`.
+- Monado and its existing patch are pinned in `scripts/prepare-vr-lab.py`.
+
+```bash
+python scripts/env.py start vr-alyx-example --launch-options \
+  --gpu 0 --guest-gs --guest-cpus 8 --memory-mib 32768 \
+  --cgroup v1 --no-runtime-debug
+python scripts/prepare-vr-lab.py vr-alyx-example
+```
+
+Install `libprimus-vk1` and `mesa-vulkan-drivers` with apt **inside that guest**.
+The original experiment installed the primus-vk metapackage, which additionally
+pulled Bumblebee/Xorg into the disposable guest; those are not required here.
+Use the EnvironmentManager's selected runtime command for guest execution, as
+the preparation and probe scripts do. With downloads and the manifest staged:
+
+```bash
+python scripts/alyx-probe.py vr-alyx-example prepare
+python scripts/alyx-probe.py vr-alyx-example cube
+python scripts/alyx-probe.py vr-alyx-example native
+python scripts/alyx-probe.py vr-alyx-example monado
+python scripts/alyx-probe.py vr-alyx-example windows --experimental-vulkan13
+```
+
+Let Monado finish initialization before Windows: its guest journal should show
+Supported formats. The monado action starts the service only; it neither launches
+Open Saber nor asserts readiness. Run one probe at a time per sandbox. Probes
+have guest timeouts and return their actual exit codes. Rerun prepare after import
+to materialize newly available writable configuration files.
+
+## Evidence and pending acceptance
+
+Ignored `runs/alyx/` contains inventory, transfer/startup logs and screenshots:
+
+- `native-initial.log`: missing Linux Steam client.
+- `wine-prefix-initial.log`: successful prefix creation.
+- `wine-startup.png`: visually inspected error 105 before its fix.
+- `wine-game-dxvk.log`: actual XR session and NVIDIA DXVK initialization.
+- `wine-game-dxvk-api13.log`: swapchain creation after the temporary override.
+- `vulkan-cube-a.png`, `vulkan-cube-b.png`: inspected moving cube in Xvnc.
+- `cube-script.log`, `windows-script-api13.log`: tracked probe reproduction.
+- `import-startup-first.log`: ongoing runtime/core/shader-prioritized transfer.
+
+Importer acceptance: resume a five-byte partial ELF, compare completed bytes to
+the initial copy, rerun transferring zero bytes, reject a competing importer.
+Native cube completed 60 frames. Pending: full assets, actual level, both composed
+eyes, controller gameplay, then application submission/capture measurements.
+Primus-VK with modern DXVK needs qualification beyond swapchain creation.
+
+Primary sources: [Primus-VK](https://github.com/felixdoerre/primus_vk),
+[loader API-version check](https://github.com/KhronosGroup/Vulkan-Loader/blob/v1.3.204/loader/loader.c),
+[Valve VR bridge](https://github.com/ValveSoftware/Proton/blob/proton_9.0/vrclient_x64/vrclient_main.c).

@@ -51,6 +51,11 @@ desktop readback disabled; the live Xvnc mirror configuration measured 61 FPS.
 This uses an explicit experimental Monado patch. Physical headset delivery,
 audio and virtual haptics remain unvalidated or unsupported.
 
+[The Alyx startup experiment](notes/alyx-startup-experiment.md) reuses an existing
+Windows installation through Wine, DXVK, xrizer and Monado. XR session and
+renderer initialization are established; asset transfer and gameplay acceptance
+remain pending. A native NVIDIA Vulkan cube was visibly rendered through Xvnc.
+
 [Continuous VR I/O](notes/vr-continuous-io.md) delivers paired left/right eye
 images to a host Python client through a bounded, size-sealed shared-memory ring,
 while accepting persistent acknowledged controller/headset state. Each pair has

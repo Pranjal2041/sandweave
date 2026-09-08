@@ -62,6 +62,12 @@ The ordinary status API uses leader liveness and can report stopped despite
 this residual kernel thread; inspecting `/proc/147142/task` is necessary here.
 Do not report the runtime as completely reaped until that thread disappears.
 
+The same thread still waited at **11:09 UTC**, after both game imports finished.
+No further GPU launch was attempted. At 10:10 UTC the preserved Open Saber,
+Resolve, original racing and Alyx sandboxes all answered ordinary exec calls;
+this checks responsiveness, not ongoing GPU frame rate. Complete asset access
+was subsequently verified as guest UID 1000 in both game sandboxes.
+
 Evidence: `runs/racing/vr-signal-fixed.log`, `hang-runtime-stacks.log`,
 `hang-gdb-stacks.log`, `stop-stalled-sandbox.log`; guest boot logs remain under
 `runs/gvisor/vr-racing-02/`. No changes were made to game executables.

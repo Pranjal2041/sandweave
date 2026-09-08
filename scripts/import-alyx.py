@@ -57,6 +57,21 @@ def main():
     except BlockingIOError:
         parser.error('another importer is writing this destination')
 
+    # Existing directories and inherited default ACLs can deny guest UID 1000
+    # access even with umask 022. Normalize only this manifest's asset parents.
+    directories = {destination}
+    for entry in selected:
+        target = destination / entry['path']
+        if not target.resolve().is_relative_to(destination):
+            raise ValueError('destination escapes through a symlink')
+        directories.update(parent for parent in target.parents
+                           if parent.is_relative_to(destination))
+    for directory in sorted(directories, key=lambda path: len(path.parts)):
+        if not directory.resolve().is_relative_to(destination):
+            raise ValueError('destination directory escapes through a symlink')
+        directory.mkdir(exist_ok=True)
+        directory.chmod(0o755)
+
     def copy(entry):
         target = destination / entry['path']
         if not target.resolve().is_relative_to(destination):

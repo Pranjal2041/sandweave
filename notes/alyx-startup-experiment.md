@@ -10,10 +10,12 @@ Alyx's action manifest and controller bindings. DXVK initializes its Direct3D 11
 renderer on the allocated L40S. An experimental Primus-VK manifest change gets
 past the Xvnc present-mode failure and creates a 1280x800 swapchain.
 
-The final probe exits while reporting missing packed resources, including the
-engine's error model/materials. The approximately 70.64 GiB installation is still
-transferring. No level, gameplay input, stereo game frames or Alyx frame rate has
-been validated. Loading bindings is not acceptance of those bindings.
+The last game probe displayed a missing/corrupted-file dialog after the targeted
+resource errors had been resolved. Full import subsequently completed, and a
+guest readability check found and repaired an additional directory-permission
+problem, described below. A persistent [host NVIDIA driver wait](ams2-driver-stall.md)
+prevents a fresh GPU run. No level, gameplay input, stereo game frames or Alyx
+frame rate has been validated. Loading bindings is not acceptance of those bindings.
 
 A separate native Linux Vulkan cube **was visibly rendered and animated** in
 GNOME/Xvnc. NVIDIA renders; Primus-VK copies the image to Mesa's CPU Vulkan driver
@@ -79,6 +81,39 @@ completed bytes. Files are ignored under `tools/gpu/alyx`, exposed read-only at
 available `.cfg`, `.vcfg` and `.json` files are copied writable. This avoids
 duplicating 70 GiB in the guest memory-backed writable filesystem. External
 assets must remain available when reusing this experimental sandbox.
+
+## Completed import and guest access
+
+At **11:08 UTC**, the importer finished with exit 0. All **4,539 files** totaling
+**75,849,146,188 bytes** match their manifest sizes, with no partial files left.
+The final resumed phase transferred 24,745,211,773 bytes in 5,042.2 seconds;
+this is a phase measurement, not the full multi-stage copy duration or a
+controlled comparison of queue ordering. Foreground import monitoring ended
+after observing process exit and complete files. Evidence:
+`runs/alyx/import-largest-first.log` and `import-complete-status.json`.
+
+The first guest UID 1000 check found **59 inaccessible files** behind older
+directories with mode 0750. They included `game/hlvr/bin/win64/client.dll`,
+`host.dll`, `server.dll`, editor modules and workshop assets. Their host files
+were complete, but the ordinary guest user could not traverse their parents.
+Setting umask for new copies had not repaired existing directories.
+
+The importer now sets the manifest's parent directories to 0755 under its
+destination lock, checking that resolved paths remain inside the destination.
+This happens before processing cached files too. Rerunning it over the complete
+installation transferred **zero bytes** and exited 0. A repeat check in
+`vr-alyx-01` as UID 1000 verified every source size and read access through both
+`/opt/engine-gpu/alyx` and `/opt/alyx`, with **no errors**. Writable configuration
+copies were checked for read access, not equality to their original sizes.
+The effect of this repair on gameplay remains untested while the driver waits.
+Evidence: `runs/alyx/guest-asset-readability-before-repair.json`,
+`guest-asset-readability.json` and `import-permissions-repair.log`.
+
+Bounded controls also rejected an escaping symlink without changing its target's
+mode, and verified new directory/file permissions under a restrictive inherited
+default ACL. The shared filesystem does not support setting that ACL, so the
+ACL control used node-local storage; resulting modes were 0755 for directories
+and 0644 for the empty test file. Evidence: `runs/alyx/import-permission-controls.json`.
 
 ## Failures traced
 
@@ -227,7 +262,7 @@ cfg/video.txt (482 bytes), establishing the writable-configuration repair.
 Actual Xvnc output was a black game window with an **Unable To Start Game** dialog
 reporting a missing/corrupted game file. A fresh 1920x1080 paired-eye capture was
 also black. Opened and inspected both screenshots. Dismissed the dialog through
-Fast I/O; the probe exited 1 with a minidump. Full asset import remains necessary
-before attributing this remaining failure to runtime compatibility. This is not
+Fast I/O; the probe exited 1 with a minidump. At that point full asset import was
+still needed before attributing the failure to runtime compatibility. This is not
 gameplay or stereo-rendering acceptance. Evidence: runs/alyx/windows-targeted.log,
 console-targeted.log, startup-targeted.png and eyes-targeted.png.

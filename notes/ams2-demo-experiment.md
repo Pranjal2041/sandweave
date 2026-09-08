@@ -42,6 +42,12 @@ Evidence: `runs/racing/import-menu-first.log` and `import-complete-status.json`.
 The last file was `PakFiles/TRACKS/interlagoskart1.bff`. No new GPU launch was
 attempted after completion while the prior driver's kernel waiter persisted.
 
+A subsequent check inside `vr-racing-01`, running as guest UID 1000 (`ga`),
+verified read access and expected sizes for all **2,371 files** through
+`/opt/ams2`, totaling **14,322,422,030 bytes**, with no errors. It performs no
+GPU work and does not establish gameplay. Evidence:
+`runs/racing/guest-asset-readability.json`.
+
 No Steam authentication files were read or copied. Acquiring the installation
 does not yet establish whether this demo needs an authenticated Steam client
 inside the sandbox to run. No game or Steam checks have been modified.

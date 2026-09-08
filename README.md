@@ -52,9 +52,10 @@ This uses an explicit experimental Monado patch. Physical headset delivery,
 audio and virtual haptics remain unvalidated or unsupported.
 
 [The Alyx startup experiment](notes/alyx-startup-experiment.md) reuses an existing
-Windows installation through Wine, DXVK, xrizer and Monado. XR session and
-renderer initialization are established; asset transfer and gameplay acceptance
-remain pending. A native NVIDIA Vulkan cube was visibly rendered through Xvnc.
+Windows installation through Wine, DXVK, xrizer and Monado. All assets are now
+imported and readable inside the sandbox. XR session and renderer initialization
+are established; gameplay acceptance remains blocked by the host NVIDIA wait.
+A native NVIDIA Vulkan cube was visibly rendered through Xvnc before that wait.
 
 [The Automobilista 2 Demo experiment](notes/ams2-demo-experiment.md) has acquired
 and fully imported the free 2026 demo through the user's Windows Steam. A

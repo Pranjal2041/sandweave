@@ -1,6 +1,8 @@
+diff --git a/src/xrt/compositor/main/comp_settings.c b/src/xrt/compositor/main/comp_settings.c
+index 22e2580..20dc664 100644
 --- a/src/xrt/compositor/main/comp_settings.c
 +++ b/src/xrt/compositor/main/comp_settings.c
-@@ -27,6 +27,7 @@
+@@ -27,6 +27,7 @@ DEBUG_GET_ONCE_OPTION(nvidia_display, "XRT_COMPOSITOR_FORCE_NVIDIA_DISPLAY", NUL
  DEBUG_GET_ONCE_NUM_OPTION(vk_display, "XRT_COMPOSITOR_FORCE_VK_DISPLAY", -1)
  DEBUG_GET_ONCE_BOOL_OPTION(force_xcb, "XRT_COMPOSITOR_FORCE_XCB", false)
  DEBUG_GET_ONCE_BOOL_OPTION(force_wayland, "XRT_COMPOSITOR_FORCE_WAYLAND", false)
@@ -8,7 +10,7 @@
  DEBUG_GET_ONCE_NUM_OPTION(force_gpu_index, "XRT_COMPOSITOR_FORCE_GPU_INDEX", -1)
  DEBUG_GET_ONCE_NUM_OPTION(force_client_gpu_index, "XRT_COMPOSITOR_FORCE_CLIENT_GPU_INDEX", -1)
  DEBUG_GET_ONCE_NUM_OPTION(desired_mode, "XRT_COMPOSITOR_DESIRED_MODE", -1)
-@@ -207,4 +208,7 @@
+@@ -207,4 +208,7 @@ comp_settings_init(struct comp_settings *s, struct xrt_device *xdev)
  		s->preferred.width /= 2;
  		s->preferred.height /= 2;
  	}
@@ -16,22 +18,24 @@
 +		s->target_identifier = debug_get_option_force_target();
 +	}
  }
+diff --git a/src/xrt/compositor/main/comp_window_debug_image.c b/src/xrt/compositor/main/comp_window_debug_image.c
+index 18633f1..4d5da5e 100644
 --- a/src/xrt/compositor/main/comp_window_debug_image.c
 +++ b/src/xrt/compositor/main/comp_window_debug_image.c
-@@ -73,6 +73,12 @@
- target_check_ready(struct comp_target *ct)
- {
+@@ -75,6 +75,12 @@ target_check_ready(struct comp_target *ct)
  	return true; // Always ready.
-+}
-+
+ }
+ 
 +static bool
 +target_is_shared_presentable_image(struct comp_target *ct)
 +{
 +	return false;
- }
- 
++}
++
  static void
-@@ -361,6 +367,7 @@
+ target_create_images(struct comp_target *ct,
+                      const struct comp_target_create_images_info *create_info,
+@@ -361,6 +367,7 @@ target_create(struct comp_compositor *c)
  	dit->base.init_pre_vulkan = target_init_pre_vulkan;
  	dit->base.init_post_vulkan = target_init_post_vulkan;
  	dit->base.check_ready = target_check_ready;
@@ -39,23 +43,28 @@
  	dit->base.create_images = target_create_images;
  	dit->base.has_images = target_has_images;
  	dit->base.acquire = target_acquire;
+diff --git a/src/xrt/compositor/main/comp_mirror_to_debug_gui.c b/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
+index 16ffa4e..db5b419 100644
 --- a/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
 +++ b/src/xrt/compositor/main/comp_mirror_to_debug_gui.c
-@@ -17,6 +17,54 @@
- #include "cache/render_shader_specialization_helpers.h"
+@@ -18,6 +18,130 @@
  
  #include "render/render_interface.h"
-+
+ 
 +#include "util/u_debug.h"
 +#include <stdio.h>
 +#include <unistd.h>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <stdlib.h>
++#include <string.h>
 +
 +/* On-demand evidence capture using the existing GPU readback path. No capture
 + * work is added to ordinary frames unless the request file exists. */
 +DEBUG_GET_ONCE_OPTION(lab_eye_capture, "XRT_LAB_EYE_CAPTURE", NULL)
 +
-+bool
-+comp_mirror_lab_capture_requested(void)
++static bool
++lab_file_capture_requested(void)
 +{
 +	const char *path = debug_get_option_lab_eye_capture();
 +	char request[4096];
@@ -68,7 +77,7 @@
 +static void
 +lab_capture_frame(struct xrt_frame *frame)
 +{
-+	if (!comp_mirror_lab_capture_requested()) {
++	if (!lab_file_capture_requested()) {
 +		return;
 +	}
 +	const char *path = debug_get_option_lab_eye_capture();
@@ -93,51 +102,182 @@
 +		unlink(request);
 +	}
 +}
- 
++
++/* Ring v1 is little-endian x86_64, RGBA8, 256-byte header, 64-byte slot
++ * metadata. Aligned sequence words publish complete frames with a seqlock.
++ * A slow reader skips frames; neither model nor disk I/O blocks this writer. */
++static bool
++lab_ring_init(struct comp_mirror_to_debug_gui *m)
++{
++	const char *option = getenv("XRT_LAB_STREAM_FD");
++	if (option == NULL) {
++		return true;
++	}
++	char *end = NULL;
++	long fd = strtol(option, &end, 10);
++	struct stat st;
++	if (*end || fd < 3 || fd > 1024 || fstat((int)fd, &st) || st.st_size < 256) {
++		return false;
++	}
++	void *map = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, (int)fd, 0);
++	if (map == MAP_FAILED) {
++		return false;
++	}
++	uint32_t *config = (uint32_t *)((uint8_t *)map + 8);
++	uint32_t width = config[1], height = config[2], slots = config[3], slot_bytes = config[4];
++	uint64_t expected = 256ull + slots * (uint64_t)slot_bytes;
++	if (memcmp(map, "VRRING1\0", 8) || config[0] != 1 || config[5] != 256 ||
++	    width < 16 || width > 4096 || height < 16 || height > 4096 ||
++	    slots < 2 || slots > 64 || slot_bytes != 64ull + width * (uint64_t)height * 4 ||
++	    slot_bytes % 64 || expected != (uint64_t)st.st_size) {
++		munmap(map, st.st_size);
++		return false;
++	}
++	m->lab_ring = map;
++	m->lab_ring_size = st.st_size;
++	m->lab_slots = slots;
++	m->lab_slot_bytes = slot_bytes;
++	m->lab_period_ns = ((uint64_t *)map)[5];
++	m->image_extent = (VkExtent2D){width, height};
++	return true;
++}
++
++bool
++comp_mirror_lab_capture_requested(struct comp_mirror_to_debug_gui *m)
++{
++	bool stream = m->lab_ring != NULL &&
++	              __atomic_load_n(&((uint64_t *)m->lab_ring)[6], __ATOMIC_ACQUIRE) != 0;
++	return (stream && (uint64_t)os_monotonic_get_ns() >= m->lab_next_ns) ||
++	       lab_file_capture_requested();
++}
++
++static void
++lab_publish_frame(struct comp_mirror_to_debug_gui *m, struct xrt_frame *frame, uint64_t ready_ns)
++{
++	if (m->lab_ring == NULL || !__atomic_load_n(&((uint64_t *)m->lab_ring)[6], __ATOMIC_ACQUIRE)) {
++		return;
++	}
++	uint64_t seq = ++m->lab_sequence;
++	uint64_t *slot = (uint64_t *)((uint8_t *)m->lab_ring + 256 +
++	                            ((seq - 1) % m->lab_slots) * m->lab_slot_bytes);
++	__atomic_store_n(&slot[0], seq * 2 + 1, __ATOMIC_SEQ_CST);
++	slot[1] = seq;
++	slot[2] = frame->source_sequence;
++	slot[3] = frame->timestamp;
++	slot[4] = m->lab_begin_ns;
++	slot[5] = ready_ns;
++	uint8_t *pixels = (uint8_t *)slot + 64;
++	for (uint32_t y = 0; y < frame->height; y++) {
++		memcpy(pixels + y * frame->width * 4, frame->data + y * frame->stride, frame->width * 4);
++	}
++	slot[6] = os_monotonic_get_ns();
++	__atomic_store_n(&slot[0], seq * 2, __ATOMIC_RELEASE);
++	__atomic_store_n(&((uint64_t *)m->lab_ring)[4], seq, __ATOMIC_RELEASE);
++}
++
  
  /*
-@@ -420,6 +468,9 @@
+  *
+@@ -292,6 +416,10 @@ comp_mirror_init(struct comp_mirror_to_debug_gui *m,
+ 		m->image_extent.width += 1;
+ 	}
+ 
++	if (!lab_ring_init(m)) {
++		return VK_ERROR_INITIALIZATION_FAILED;
++	}
++
+ 	vk_image_readback_to_xf_pool_create( //
+ 	    vk,                              // vk_bundle
+ 	    m->image_extent,                 // extent
+@@ -420,6 +548,9 @@ comp_mirror_is_ready_and_active(struct comp_mirror_to_debug_gui *m,
                                  struct comp_compositor *c,
                                  uint64_t predicted_display_time_ns)
  {
-+	if (comp_mirror_lab_capture_requested()) {
++	if (comp_mirror_lab_capture_requested(m)) {
 +		return true;
 +	}
  	if (!c->mirroring_to_debug_gui || !u_sink_debug_is_active(&m->debug_sink)) {
  		return false;
  	}
-@@ -675,6 +726,7 @@
+@@ -452,6 +583,16 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+                     struct xrt_normalized_rect from_rect)
+ {
+ 	COMP_TRACE_MARKER();
++	m->lab_begin_ns = os_monotonic_get_ns();
++	if (m->lab_ring != NULL) {
++		/* Advance the cadence, not last-frame + period: the latter rounds a
++		 * 90 Hz request down to 60 Hz on a 120 Hz compositor. Skip missed
++		 * deadlines without generating a burst of stale observations. */
++		if (m->lab_next_ns == 0 || m->lab_begin_ns > m->lab_next_ns + m->lab_period_ns) {
++			m->lab_next_ns = m->lab_begin_ns;
++		}
++		m->lab_next_ns += m->lab_period_ns;
++	}
+ 
+ 	VkResult ret;
+ 
+@@ -675,6 +816,8 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
  	struct xrt_frame *frame = &wrap->base_frame;
  	wrap = NULL;
  
++	lab_publish_frame(m, frame, os_monotonic_get_ns());
 +	lab_capture_frame(frame);
  	u_sink_debug_push_frame(&m->debug_sink, frame);
  
  	u_frame_times_widget_push_sample(&m->push_frame_times, predicted_display_time_ns);
+@@ -689,6 +832,10 @@ comp_mirror_do_blit(struct comp_mirror_to_debug_gui *m,
+ void
+ comp_mirror_fini(struct comp_mirror_to_debug_gui *m, struct vk_bundle *vk)
+ {
++	if (m->lab_ring != NULL) {
++		munmap(m->lab_ring, m->lab_ring_size);
++		m->lab_ring = NULL;
++	}
+ 	// Remove u_var root as early as possible.
+ 	u_var_remove_root(m);
+ 
+diff --git a/src/xrt/compositor/main/comp_mirror_to_debug_gui.h b/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
+index 9a748e5..0489e4e 100644
 --- a/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
 +++ b/src/xrt/compositor/main/comp_mirror_to_debug_gui.h
-@@ -23,6 +23,9 @@
- #endif
+@@ -24,6 +24,10 @@ extern "C" {
  
  struct render_blit_pipeline_cache;
-+
-+bool
-+comp_mirror_lab_capture_requested(void);
  
++struct comp_mirror_to_debug_gui;
++bool
++comp_mirror_lab_capture_requested(struct comp_mirror_to_debug_gui *m);
++
  
  /*!
+  * Helper struct for mirroring the compositors rendering to the debug ui,
+@@ -79,6 +83,12 @@ struct comp_mirror_to_debug_gui
+ 	} blit;
+ 
+ 	struct vk_cmd_pool cmd_pool;
++
++	/* Experimental host-shared observation ring, supplied through an explicit FD. */
++	void *lab_ring;
++	size_t lab_ring_size;
++	uint64_t lab_sequence, lab_begin_ns, lab_period_ns, lab_next_ns;
++	uint32_t lab_slots, lab_slot_bytes;
+ };
+ 
+ /*!
+diff --git a/src/xrt/compositor/main/comp_renderer.c b/src/xrt/compositor/main/comp_renderer.c
+index 266ae0b..24e66d3 100644
 --- a/src/xrt/compositor/main/comp_renderer.c
 +++ b/src/xrt/compositor/main/comp_renderer.c
-@@ -1094,7 +1094,7 @@
+@@ -1094,7 +1094,7 @@ comp_renderer_draw(struct comp_renderer *r)
  	const uint32_t view_count = c->nr.view_count;
  	enum comp_target_fov_source fov_source = COMP_TARGET_FOV_SOURCE_DISTORTION;
  
 -	bool fast_path = c->base.frame_params.one_projection_layer_fast_path;
-+	bool fast_path = c->base.frame_params.one_projection_layer_fast_path && !comp_mirror_lab_capture_requested();
++	bool fast_path = c->base.frame_params.one_projection_layer_fast_path && !comp_mirror_lab_capture_requested(&r->mirror_to_debug_gui);
  	bool do_timewarp = !c->debug.atw_off;
  
  	// Consistency check.
-@@ -1171,12 +1171,12 @@
+@@ -1171,12 +1171,12 @@ comp_renderer_draw(struct comp_renderer *r)
  
  	xrt_result_t xret = XRT_SUCCESS;
  	comp_mirror_fixup_ui_state(&r->mirror_to_debug_gui, c);
@@ -152,9 +292,11 @@
  
  		// Used for both, want clamp to edge to no bring in black.
  		VkSampler clamp_to_edge = c->nr.samplers.clamp_to_edge;
+diff --git a/src/xrt/state_trackers/oxr/oxr_verify.c b/src/xrt/state_trackers/oxr/oxr_verify.c
+index dcdb12d..d10430e 100644
 --- a/src/xrt/state_trackers/oxr/oxr_verify.c
 +++ b/src/xrt/state_trackers/oxr/oxr_verify.c
-@@ -654,6 +654,11 @@
+@@ -654,6 +654,11 @@ oxr_verify_XrSessionCreateInfo(struct oxr_logger *log,
  
  #if defined(XR_USE_PLATFORM_XLIB) && defined(XR_USE_GRAPHICS_API_OPENGL)
  
@@ -166,7 +308,7 @@
  XrResult
  oxr_verify_XrGraphicsBindingOpenGLXlibKHR(struct oxr_logger *log, const XrGraphicsBindingOpenGLXlibKHR *next)
  {
-@@ -676,12 +681,12 @@
+@@ -676,12 +681,12 @@ oxr_verify_XrGraphicsBindingOpenGLXlibKHR(struct oxr_logger *log, const XrGraphi
  		                 "XrGraphicsBindingOpenGLXlibKHR::glxDrawable is NULL");
  	}
  
@@ -181,14 +323,14 @@
  		return oxr_error(log, XR_ERROR_GRAPHICS_DEVICE_INVALID,
  		                 "XrGraphicsBindingOpenGLXlibKHR::visualid is 0");
  	}
+diff --git a/src/xrt/drivers/remote/r_device.c b/src/xrt/drivers/remote/r_device.c
+index 7bb66b8..5a93e4b 100644
 --- a/src/xrt/drivers/remote/r_device.c
 +++ b/src/xrt/drivers/remote/r_device.c
-@@ -48,6 +48,18 @@
- 
- 	// Free this device with the helper.
+@@ -50,6 +50,18 @@ r_device_destroy(struct xrt_device *xdev)
  	u_device_free(&rd->base);
-+}
-+
+ }
+ 
 +static xrt_result_t
 +r_device_set_output(struct xrt_device *xdev, enum xrt_output_name name, const struct xrt_output_value *value)
 +{
@@ -199,10 +341,42 @@
 +	}
 +	// Preserve the upstream failure result; avoid logging each frame's stop command.
 +	return XRT_ERROR_NOT_IMPLEMENTED;
- }
- 
++}
++
  static xrt_result_t
-@@ -195,6 +207,7 @@
+ r_device_update_inputs(struct xrt_device *xdev)
+ {
+@@ -57,7 +69,8 @@ r_device_update_inputs(struct xrt_device *xdev)
+ 	struct r_hub *r = rd->r;
+ 
+ 	uint64_t now = os_monotonic_get_ns();
+-	struct r_remote_controller_data *latest = rd->is_left ? &r->latest.left : &r->latest.right;
++	struct r_remote_data data = r_hub_read_latest(r);
++	struct r_remote_controller_data *latest = rd->is_left ? &data.left : &data.right;
+ 
+ 	// TODO: refactor those loops into one
+ 	if (!latest->active) {
+@@ -112,7 +125,8 @@ r_device_get_tracked_pose(struct xrt_device *xdev,
+ 		return XRT_ERROR_INPUT_UNSUPPORTED;
+ 	}
+ 
+-	struct r_remote_controller_data *latest = rd->is_left ? &r->latest.left : &r->latest.right;
++	struct r_remote_data data = r_hub_read_latest(r);
++	struct r_remote_controller_data *latest = rd->is_left ? &data.left : &data.right;
+ 
+ 	/*
+ 	 * It's easier to reason about angular velocity if it's controlled in
+@@ -152,7 +166,8 @@ r_device_get_hand_tracking(struct xrt_device *xdev,
+ 		return XRT_ERROR_INPUT_UNSUPPORTED;
+ 	}
+ 
+-	struct r_remote_controller_data *latest = rd->is_left ? &r->latest.left : &r->latest.right;
++	struct r_remote_data data = r_hub_read_latest(r);
++	struct r_remote_controller_data *latest = rd->is_left ? &data.left : &data.right;
+ 
+ 	struct u_hand_tracking_curl_values values = {
+ 	    .little = latest->hand_curl[0],
+@@ -195,6 +210,7 @@ r_device_create(struct r_hub *r, bool is_left)
  	// Setup the basics.
  	u_device_populate_function_pointers(&rd->base, r_device_get_tracked_pose, r_device_destroy);
  	rd->base.update_inputs = r_device_update_inputs;
@@ -210,9 +384,35 @@
  	rd->base.get_hand_tracking = r_device_get_hand_tracking;
  	rd->base.tracking_origin = &r->origin;
  	rd->base.supported.orientation_tracking = true;
+diff --git a/src/xrt/drivers/remote/r_internal.h b/src/xrt/drivers/remote/r_internal.h
+index b8970d1..473a37e 100644
 --- a/src/xrt/drivers/remote/r_internal.h
 +++ b/src/xrt/drivers/remote/r_internal.h
-@@ -92,6 +92,7 @@
+@@ -45,6 +45,7 @@ struct r_hub
+ 
+ 	//! The latest data received.
+ 	struct r_remote_data latest;
++	struct os_mutex latest_mutex;
+ 
+ 	//! Incoming connection socket.
+ 	r_socket_t accept_fd;
+@@ -66,6 +67,15 @@ struct r_hub
+ 	} gui;
+ };
+ 
++static inline struct r_remote_data
++r_hub_read_latest(struct r_hub *r)
++{
++	os_mutex_lock(&r->latest_mutex);
++	struct r_remote_data data = r->latest;
++	os_mutex_unlock(&r->latest_mutex);
++	return data;
++}
++
+ /*!
+  * HMD
+  *
+@@ -92,6 +102,7 @@ struct r_device
  	struct u_hand_tracking hand_tracking;
  
  	bool is_left;
@@ -220,3 +420,81 @@
  };
  
  
+diff --git a/src/xrt/drivers/remote/r_hub.c b/src/xrt/drivers/remote/r_hub.c
+index 2fc1c8e..624e0d9 100644
+--- a/src/xrt/drivers/remote/r_hub.c
++++ b/src/xrt/drivers/remote/r_hub.c
+@@ -345,7 +345,17 @@ run_thread(void *ptr)
+ 				break;
+ 			}
+ 
++			bool acknowledge = memcmp(&data.header, "mndack1\0", 8) == 0;
++			if (!acknowledge && data.header != R_HEADER_VALUE) {
++				break;
++			}
++			data.header = R_HEADER_VALUE;
++			os_mutex_lock(&r->latest_mutex);
+ 			r->latest = data;
++			os_mutex_unlock(&r->latest_mutex);
++			if (acknowledge && r_remote_connection_write_one(&r->rc, &data) < 0) {
++				break;
++			}
+ 		}
+ 	}
+ 
+@@ -395,6 +405,7 @@ r_hub_system_devices_destroy(struct xrt_system_devices *xsysd)
+ 		r->rc.fd = -1;
+ 	}
+ 
++	os_mutex_destroy(&r->latest_mutex);
+ 	free(r);
+ 
+ #if defined(XRT_OS_WINDOWS)
+@@ -416,6 +427,7 @@ r_create_devices(uint16_t port, uint32_t view_count, struct xrt_system_devices *
+ 	int ret;
+ 
+ 	struct r_hub *r = U_TYPED_CALLOC(struct r_hub);
++	os_mutex_init(&r->latest_mutex);
+ 
+ 	u_system_devices_populate_function_pointers(&r->base, r_hub_system_devices_get_roles,
+ 	                                            r_hub_system_devices_destroy);
+diff --git a/src/xrt/drivers/remote/r_hmd.c b/src/xrt/drivers/remote/r_hmd.c
+index 1d12936..8f463a0 100644
+--- a/src/xrt/drivers/remote/r_hmd.c
++++ b/src/xrt/drivers/remote/r_hmd.c
+@@ -38,7 +38,7 @@ r_hmd(struct xrt_device *xdev)
+ static inline void
+ copy_head_center_to_relation(struct r_hmd *rh, struct xrt_space_relation *out_relation)
+ {
+-	out_relation->pose = rh->r->latest.head.center;
++	out_relation->pose = r_hub_read_latest(rh->r).head.center;
+ 	out_relation->relation_flags = (enum xrt_space_relation_flags)(
+ 	    XRT_SPACE_RELATION_ORIENTATION_VALID_BIT | XRT_SPACE_RELATION_POSITION_VALID_BIT |
+ 	    XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT | XRT_SPACE_RELATION_POSITION_TRACKED_BIT);
+@@ -86,7 +86,8 @@ r_hmd_get_view_poses(struct xrt_device *xdev,
+ {
+ 	struct r_hmd *rh = r_hmd(xdev);
+ 
+-	if (!rh->r->latest.head.per_view_data_valid) {
++	struct r_remote_data latest = r_hub_read_latest(rh->r);
++	if (!latest.head.per_view_data_valid) {
+ 		return u_device_get_view_poses( //
+ 		    xdev,                       //
+ 		    default_eye_relation,       //
+@@ -98,13 +99,13 @@ r_hmd_get_view_poses(struct xrt_device *xdev,
+ 		    out_poses);                 //
+ 	}
+ 
+-	assert(view_count <= ARRAY_SIZE(rh->r->latest.head.views));
++	assert(view_count <= ARRAY_SIZE(latest.head.views));
+ 
+ 	copy_head_center_to_relation(rh, out_head_relation);
+ 
+ 	for (uint32_t i = 0; i < view_count; i++) {
+-		out_poses[i] = rh->r->latest.head.views[i].pose;
+-		out_fovs[i] = rh->r->latest.head.views[i].fov;
++		out_poses[i] = latest.head.views[i].pose;
++		out_fovs[i] = latest.head.views[i].fov;
+ 	}
+ 
+ 	return XRT_SUCCESS;

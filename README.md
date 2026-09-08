@@ -46,6 +46,14 @@ desktop readback disabled; the live Xvnc mirror configuration measured 61 FPS.
 This uses an explicit experimental Monado patch. Physical headset delivery,
 audio and virtual haptics remain unvalidated or unsupported.
 
+[Continuous VR I/O](notes/vr-continuous-io.md) now delivers timestamped composed
+left-eye images to a host Python client through a bounded, size-sealed shared
+memory ring, while accepting persistent acknowledged controller/headset state.
+The final recorded test delivered about 64 observations/s at 960×1080 and 120
+input updates/s, saving all 1280 delivered images losslessly and exporting a
+20-second video. Median readback-to-client latency was 3.6 ms; intermittent
+shared-GPU/readback stalls remain, so this is not a steady-rate latency guarantee.
+
 ## Pause, resume and stop
 
 Use `python scripts/env.py pause ENV`, `resume ENV`, or `stop ENV`.

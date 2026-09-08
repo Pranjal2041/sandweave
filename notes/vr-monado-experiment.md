@@ -224,3 +224,11 @@ The live experiment is `vr-monado-01`; its host VNC port is 41647. Consult
 `env.py status` for current ports after any recreation. Wayland, physical headset
 delivery, audio, haptics, robust XR action acknowledgements and broad VR-game
 compatibility have not been validated by this first experiment.
+
+## Continuous observation follow-up
+
+The original one-shot input/capture interface above remains available.
+[Continuous VR I/O](vr-continuous-io.md) adds a bounded host-memory image stream,
+lossless background recording, viewing video, and an opt-in Monado state-received
+acknowledgement for persistent input. Its measurements include observation costs;
+the no-readback game FPS above is not model-observation throughput.

@@ -14,46 +14,7 @@ import sys
 import time
 
 
-class Pose(C.Structure):
-    _fields_ = [('orientation', C.c_float * 4), ('position', C.c_float * 3)]
-
-
-class View(C.Structure):
-    _fields_ = [('fov', C.c_float * 4), ('pose', Pose), ('pad', C.c_uint32)]
-
-
-class Head(C.Structure):
-    _fields_ = [('views', View * 2), ('center', Pose), ('per_view_valid', C.c_bool),
-                ('pad', C.c_bool * 3)]
-
-
-class Controller(C.Structure):
-    _fields_ = [('pose', Pose), ('linear_velocity', C.c_float * 3),
-                ('angular_velocity', C.c_float * 3), ('hand_curl', C.c_float * 5),
-                ('trigger_value', C.c_float), ('squeeze_value', C.c_float),
-                ('squeeze_force', C.c_float), ('thumbstick', C.c_float * 2),
-                ('trackpad_force', C.c_float), ('trackpad', C.c_float * 2)] + [
-        (name, C.c_bool) for name in ('hand_tracking_active', 'active',
-        'system_click', 'system_touch', 'a_click', 'a_touch', 'b_click', 'b_touch',
-        'trigger_click', 'trigger_touch', 'thumbstick_click', 'thumbstick_touch',
-        'trackpad_touch', 'pad0', 'pad1', 'pad2')]
-
-
-class Packet(C.Structure):
-    _fields_ = [('header', C.c_uint64), ('head', Head),
-                ('left', Controller), ('right', Controller)]
-
-
-def receive(sock):
-    data = bytearray()
-    while len(data) < C.sizeof(Packet):
-        part = sock.recv(C.sizeof(Packet) - len(data))
-        if not part:
-            raise ConnectionError('Monado closed during state read')
-        data.extend(part)
-    if data[:8] != b'mndrmt3\0':
-        raise ValueError('unexpected Monado remote protocol version')
-    return Packet.from_buffer_copy(data)
+from vr_input import Packet, receive
 
 
 def main():

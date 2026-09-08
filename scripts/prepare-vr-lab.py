@@ -78,7 +78,7 @@ def main():
         for path in (game, stage/'vulkan.json', lab/'notes/monado-vr-lab.patch',
                      downloads/'metrics/proto/monado_metrics.proto'):
             archive.add(path, arcname=path.name)
-        for name in ('vr-monado-build.sh', 'vr-monado-guest.sh', 'vr-remote-input.py'):
+        for name in ('vr-monado-build.sh', 'vr-monado-guest.sh', 'vr-remote-input.py', 'vr_input.py', 'vr_stream_guest.py'):
             archive.add(lab/'scripts'/name, arcname=name)
     with payload.open('rb') as stream:
         subprocess.run([*prefix, 'tar', '-C', '/opt/vr', '-xf', '-'], stdin=stream, check=True)

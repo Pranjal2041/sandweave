@@ -161,3 +161,47 @@ Primus-VK with modern DXVK needs qualification beyond swapchain creation.
 Primary sources: [Primus-VK](https://github.com/felixdoerre/primus_vk),
 [loader API-version check](https://github.com/KhronosGroup/Vulkan-Loader/blob/v1.3.204/loader/loader.c),
 [Valve VR bridge](https://github.com/ValveSoftware/Proton/blob/proton_9.0/vrclient_x64/vrclient_main.c).
+
+## Probe at 30% imported and targeted startup archives
+
+At 07:28 UTC the complete core directory (1,804 files), all 11 hlvr shader
+archives and startup.vpk were present. Their archive files were readable as ga.
+Reran preparation and the 45-second Windows probe. The earlier shader and
+error-model failures disappeared. The probe timed out; the inspected Xvnc
+screenshot still showed the desktop, with no game frames.
+
+The new console log names six missing resources. `scripts/vpk-locate.py` reads
+the v1/v2 VPK directory and maps selected paths to archive indices and byte
+ranges, following [ValvePak's reader](https://github.com/ValveResourceFormat/ValvePak/blob/master/ValvePak/ValvePak/Package.Read.cs).
+It does not extract or change game content or scan archive checksums. The six
+resources map to just four missing hlvr archives:
+
+| Archive | Resource |
+|---|---|
+| pak01_030.vpk | surfaceproperties/surfaceproperties.vsurf_c |
+| pak01_105.vpk | Three cable_base_001 texture resources |
+| pak01_174.vpk | materials/debug/particleerror.vtex_c |
+| pak01_178.vpk | materials/effects/aoproxy_splat.vmat_c |
+
+These total 431,844,251 bytes. A control located two existing core resources,
+read only those 6,560 bytes and matched their individual VPK CRCs; a nonexistent
+resource was correctly reported absent. Evidence: runs/alyx/vpk-locator-control.json
+and missing-hlvr-at30.json. The Windows game searches hlvr before core, so an
+available core version does not satisfy the missing hlvr override.
+
+Stopped the identified importer and resumed its existing completed/partial
+files with these four archives prioritized. Full copying continues afterward:
+
+```bash
+python scripts/import-alyx.py runs/alyx/windows-files.json --workers 8 \
+  --priority '^game/(bin/|hlvr/bin/|core/|hlvr/shaders|hlvr/maps/startup\.vpk|hlvr/pak01_(030|105|174|178)\.vpk$)' \
+  > runs/alyx/import-targeted-startup.log 2>&1
+```
+
+The probe also exposed a configuration staging gap: cfg/video.txt was a read-only
+asset link. Preparation now copies every file under cfg to the guest's writable
+tree, in addition to the existing configuration extensions. Verified video.txt
+is a regular file owned by ga and writable by that user; source assets remain
+read-only. Game configuration saving still needs verification on the next launch.
+Ignored evidence includes console-at30.log, windows-at30.log, startup-at30.png,
+prepare-writable-cfg.log and import-targeted-startup.log.

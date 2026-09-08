@@ -26,7 +26,7 @@ for entry in entries:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_file() and not target.is_symlink():
         continue
-    if original.is_file() and target.suffix in ('.cfg', '.vcfg', '.json'):
+    if original.is_file() and (target.suffix in ('.cfg', '.vcfg', '.json') or 'cfg' in target.parts):
         if target.is_symlink():
             if target.readlink() != original:
                 raise ValueError('unexpected existing symlink')

@@ -143,3 +143,18 @@ nsswitch.conf and os-release under tools/steamcmd-etc, plus the host Python
 installation's trusted cert.pem as ssl/certs/ca-certificates.crt. This resolved
 Steam's certificate errors. Client data, dependencies, downloads, logs and local
 configuration remain ignored. No host packages or authentication data changed.
+
+## Compressed-transfer control
+
+Windows' built-in bsdtar 3.8.4 with libzstd 1.5.7 created a level-3 zstd archive
+of the idle installed game on D:. It took **34.070 seconds** and produced
+**13,565,982,703 bytes**, only **5.28%** smaller than the original files. The
+already-running import had copied most of that difference by then, so the
+transfer method was retained. No compression speedup is claimed.
+
+`scripts/windows-racing-archive.ps1 build|status` records the command and scoped
+space/existing-file checks. It runs through ut after copying the script to
+Windows TEMP, using the same process-local execution-policy flag as the Steam
+UI helper. Archive size was checked with its status action. The generated
+D:\general-vm-transfer\ams2-demo.tar.zst was then removed to release its space;
+the game installation was preserved. Ignored evidence: runs/racing/archive-build.log.

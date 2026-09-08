@@ -70,6 +70,9 @@ The [Linux Steam client check](notes/steam-client-experiment.md) found a separat
 startup blocker: its 32-bit bootstrap is rejected by the current 64-bit-only
 gVisor executable loader. Alyx itself has a native Linux build; its earlier
 Linux launch stopped at Steam initialization.
+The [standalone Linux VR shortlist](notes/standalone-linux-vr-games.md) records
+free game candidates, their Linux/XR evidence, and outstanding offline/runtime
+checks; Open Saber remains the only game on that list tested in this lab.
 
 [Continuous VR I/O](notes/vr-continuous-io.md) delivers paired left/right eye
 images to a host Python client through a bounded, size-sealed shared-memory ring,

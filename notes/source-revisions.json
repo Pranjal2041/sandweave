@@ -4,10 +4,13 @@
     "upstream": "https://github.com/google/gvisor.git",
     "branch": "experiment/no-kvm-slurm",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "b3ffebb8a1a1245b3e373f3b25309532804a6bbd",
+    "commit": "3494ee1bf7c3e3392b550a5a1eb9364467a9065e",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
     "runtime_build": "tools/runtime-builds/19dfb215bc34b326d948e9ca54e7d8a5d2549e1e016aa008ae265cd67293e657",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
-    "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow"
+    "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
+    "runtime_commit": "b3ffebb8a1a1245b3e373f3b25309532804a6bbd",
+    "candidate_runtime_build": "tools/runtime-builds/ef5a71b09d4cc7c2c1d34dcaf4811f3892c90ea65e0973a0c7093e498f3436bd",
+    "candidate_status": "build and nvproxy tests pass; GPU driver recovery and graphical acceptance untested"
   }
 }

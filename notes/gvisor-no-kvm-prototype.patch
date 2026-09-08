@@ -589,6 +589,22 @@ index 3dda8ec..964a3ec 100644
  	clientDst, clientSrc, unlock := nvp.getClientsWithLock(fi.ctx, ioctlParams.HClient, ioctlParams.HClientSrc)
  	if clientDst == nil || clientSrc == nil {
  		return 0, frontendFailWithStatus(fi, &ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
+diff --git a/pkg/sentry/devices/nvproxy/frontend_unsafe.go b/pkg/sentry/devices/nvproxy/frontend_unsafe.go
+index 5838c6b..2588732 100644
+--- a/pkg/sentry/devices/nvproxy/frontend_unsafe.go
++++ b/pkg/sentry/devices/nvproxy/frontend_unsafe.go
+@@ -36,7 +36,10 @@ func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *fronten
+ }
+ 
+ func frontendIoctlInvokeNoStatus[Params any](fi *frontendIoctlState, ioctlParams *Params) (uintptr, error) {
+-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
++	// Driver allocation/control calls can sleep waiting for RM locks. Mark
++	// the goroutine as in a syscall so this wait cannot prevent Go GC/STW
++	// and freeze unrelated application tasks and control RPCs.
++	n, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), uintptr(unsafe.Pointer(ioctlParams)))
+ 	if errno != 0 {
+ 		return n, errno
+ 	}
 diff --git a/pkg/sentry/devices/nvproxy/nvproxy.go b/pkg/sentry/devices/nvproxy/nvproxy.go
 index 1c328cf..d5939f3 100644
 --- a/pkg/sentry/devices/nvproxy/nvproxy.go

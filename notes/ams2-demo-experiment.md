@@ -5,6 +5,8 @@ Started September 8, 2026 UTC. **Early startup only; gameplay is unvalidated.**
 The subsequent [Wine signal-context repair](wine-signal-context.md) establishes
 and fixes one engine compatibility issue exposed during startup. Its Windows
 exception-recovery test passes; game acceptance still awaits complete assets.
+The [next run visibly reached the Reiza splash but stalled in an NVIDIA driver
+call](ams2-driver-stall.md). Driving and stereo capture remain unverified.
 
 The racing game from the earlier shortlist is Automobilista 2. Its full edition
 is paid; the [official Demo 2026 announcement](https://forum.reizastudios.com/threads/new-2026-automobilista-2-demo-is-out-now.36085/)

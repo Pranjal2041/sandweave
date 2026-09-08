@@ -34,8 +34,8 @@ the exception must reach the application. Demand paging, CPUID emulation and
 other internally resolved faults do not update the application's last exception.
 Only an application page fault updates the recorded CR2, using the guest fault
 address; unrelated stub addresses are not copied. These fields survive fork
-and are included in generated saved state. Live restore acceptance of this
-new metadata has not been exercised. Other platforms retain their prior fallback.
+and are included in generated saved state. The live restore test below also
+passed for this metadata. Other platforms retain their prior fallback.
 
 The new native/guest comparison matches signal, si_code, trap number and
 read/write/execute classification in all eight cases: unmapped read, atomic
@@ -80,9 +80,43 @@ logic; these results do not establish game rendering or gameplay.
 `snapshots/vr-racing-before-signal-fix` with `--filesystem-runtime-current`.
 Save took 4.239 seconds; asynchronous verification passed in 9.249 seconds.
 The original runtime and all user-facing desktops remain intact. The new
-desktop is on VNC port 45573; its Monado service was explicitly restarted.
+desktop used VNC port 45573; it was subsequently terminated after the
+[driver stall](ams2-driver-stall.md), with a host driver thread still pending.
 
 The AMS2 probe now reports `service_exit_code`, `crash_reported` and
 `novr_argument`. The launcher can exit 0 while AMS2DemoAVX crashes, and `-novr`
 has not prevented XR initialization in the observed child. Neither wrapper
 exit 0 nor that flag is evidence of gameplay or a verified non-VR control.
+
+## Live CPU checkpoint acceptance
+
+`scripts/signal-context-persist.c` deliberately writes to a PROT_NONE page.
+Its signal handler checks trap 14, the write/user error bits and the fault
+address, changes the page permissions, and resumes the write of 42. The process
+then waits for `/tmp/signal-release`. On release, an asynchronous SIGUSR1 must
+contain the last exception metadata; a forked child must see the same metadata
+and RAM value. Compilation uses `gcc -O0 -Wall -Wextra -Werror`.
+
+At 09:19 UTC this passed in both the original `signal-save-03` sandbox and
+`signal-load-03`, restored from `snapshots/signal-context-live-03`. Both exited
+0 and printed `PASS: RAM value and last exception survived; async signal and
+fork agree`. The CPU-only sandbox had two guest CPUs and a 1024 MiB page budget.
+Save returned in **0.495 seconds**, including **0.181 seconds** in checkpoint;
+background integrity verification passed in **5.814 seconds**. Evidence:
+`runs/racing/signal-live-snapshot-03.log` and the snapshot's verification JSON.
+All five CPU test instances were stopped with confirmed complete cleanup.
+
+The launch relationship matters: run the probe as a child of container PID 1
+or an init-managed service. For this test PID 1 waited for a file-installation
+marker, launched the probe, recorded its exit code, then remained alive. An
+external exec only copied the binary and created the marker. After the probe
+created `/tmp/signal-ready`, `EnvironmentManager.save(..., mode='live')` and
+`load(...)` performed the checkpoint and restore; separate exec calls created
+the release marker and collected the results from both instances.
+
+The first two test attempts launched the probe through `runsc exec`, including
+one attempt using a forked supervisor. Those tasks were killed during restore
+by gVisor's explicit `OriginExec` policy, before they could check the metadata.
+The restore logs confirm this; see `runsc/boot/restore.go` and upstream's
+`TestCheckpointRestoreExecKilled` in `runsc/container/container_test.go`.
+They were harness errors, not failures of the exception-state serialization.

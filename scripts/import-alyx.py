@@ -29,6 +29,8 @@ def main():
     parser.add_argument('--match', default='.*', help='regular expression selecting relative paths')
     parser.add_argument('--priority', default=r'^game/(bin|hlvr/bin)/',
                         help='copy engine modules first so startup can be checked during transfer')
+    parser.add_argument('--largest-first', action='store_true',
+                        help='within each priority group, start large files first to reduce the transfer tail')
     args = parser.parse_args()
     if not 1 <= args.workers <= 8 or not 1 <= args.broker_port <= 65535:
         parser.error('invalid worker count or local broker port')
@@ -43,8 +45,9 @@ def main():
         seen.add(str(path))
         if re.search(args.match, str(path)):
             selected.append(entry)
-    # Small files and native modules become available before the large map packs.
-    selected.sort(key=lambda item: (not bool(re.search(args.priority, item['path'])), item['size']))
+    # Native modules retain priority; size order can favor startup or bulk completion.
+    selected.sort(key=lambda item: (not bool(re.search(args.priority, item['path'])),
+                                   -item['size'] if args.largest_first else item['size']))
     args.destination.mkdir(parents=True, exist_ok=True)
     destination = args.destination.resolve()
     destination.chmod(0o755)

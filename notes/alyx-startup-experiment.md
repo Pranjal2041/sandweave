@@ -54,6 +54,18 @@ atomically publishes completed files, and locks against concurrent importers.
 It does not hash the whole installation or detect same-size source-file edits.
 Keep the source unchanged during the copy.
 
+`--largest-first` retains explicit path priority but reverses the file-size
+order within each group. After startup resources were available, the bulk
+transfer was resumed with this option around 09:44 UTC at 67% complete. The
+previous owned importer was stopped, preserving validated partial bytes; the
+replacement immediately began the eight largest remaining maps. Independent
+status samples confirmed retained bytes, new partial-file growth and no size
+mismatches. The intent is to reduce the final period with too few active
+streams; no measured end-to-end speedup is claimed yet. Current evidence:
+`runs/alyx/import-largest-first.log`. Large-file runs can legitimately have no
+file-completion log for many minutes, so use `alyx-import-status.py` to observe
+partial-byte progress.
+
 ```bash
 python scripts/import-alyx.py runs/alyx/windows-files.json --workers 8 \
   --priority '^game/(bin/|hlvr/bin/|core/|hlvr/shaders|hlvr/maps/startup\.vpk)' \

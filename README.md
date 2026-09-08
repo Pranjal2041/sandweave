@@ -56,6 +56,11 @@ Windows installation through Wine, DXVK, xrizer and Monado. XR session and
 renderer initialization are established; asset transfer and gameplay acceptance
 remain pending. A native NVIDIA Vulkan cube was visibly rendered through Xvnc.
 
+[The Automobilista 2 Demo experiment](notes/ams2-demo-experiment.md) has acquired
+the free 2026 demo through the user's Windows Steam and is importing its files
+alongside Alyx. A separate Xvnc/GPU/Monado sandbox is prepared; racing gameplay
+and VR compatibility have not yet been established.
+
 [Continuous VR I/O](notes/vr-continuous-io.md) delivers paired left/right eye
 images to a host Python client through a bounded, size-sealed shared-memory ring,
 while accepting persistent acknowledged controller/headset state. Each pair has

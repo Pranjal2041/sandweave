@@ -66,7 +66,8 @@ def main():
     parser.add_argument('name')
     parser.add_argument('command', choices=('prepare', 'monado', 'native', 'windows', 'cube'))
     parser.add_argument('--manifest', type=Path, default=Path('runs/alyx/windows-files.json'))
-    parser.add_argument('--timeout', type=int, default=45)
+    parser.add_argument('--timeout', type=int, default=45,
+                        help='maximum probe lifetime, 5..1800 seconds')
     parser.add_argument('--experimental-vulkan13', action='store_true',
                         help='temporarily permit Primus-VK for Vulkan 1.3; not conformance validation')
     args = parser.parse_args()
@@ -74,15 +75,15 @@ def main():
     state = manager.status(args.name)
     if not args.name.startswith('vr-') or state['status'] != 'running' or not state.get('gpu'):
         parser.error('select a running disposable GPU sandbox named vr-*')
-    if not 5 <= args.timeout <= 300:
-        parser.error('timeout must be 5..300 seconds')
+    if not 5 <= args.timeout <= 1800:
+        parser.error('timeout must be 5..1800 seconds')
     if args.experimental_vulkan13 and args.command not in ('windows', 'cube'):
         parser.error('the API-version experiment applies to windows or cube')
     prefix = [*manager._command(args.name), 'exec', args.name]
 
-    def guest(*command, payload=None, check=True):
+    def guest(*command, payload=None, check=True, timeout=30):
         result = subprocess.run([*prefix, *command], input=payload, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True)
+                                stderr=subprocess.STDOUT, text=True, timeout=timeout)
         if check and result.returncode:
             raise RuntimeError(result.stdout)
         return result
@@ -99,7 +100,7 @@ def main():
         print(guest('sh', '-c', 'cat > /opt/vr/vr-vulkan-xvnc.sh',
                     payload=(manager.lab/'scripts/vr-vulkan-xvnc.sh').read_text()).stdout, end='')
         if guest('test', '-f', '/home/ga/.local/share/alyx-wine/system.reg', check=False).returncode:
-            print(guest(*user, 'timeout', '-k', '3', '90', wine, 'wineboot', '-u').stdout, end='')
+            print(guest(*user, 'timeout', '-k', '3', '90', wine, 'wineboot', '-u', timeout=100).stdout, end='')
         print(guest(*user, 'python3', '-c', VR_FILES).stdout, end='')
         print('Prepared writable directories/configs, read-only asset links, and the Wine VR bridge.')
         return
@@ -112,9 +113,14 @@ def main():
         return
     if args.command == 'windows':
         guest('systemctl', 'is-active', 'vr-monado-live')
+        server = '/opt/engine-gpu/vr/GE-Proton9-27/files/bin/wineserver'
+        stopped = guest(*user, server, '-k', check=False)
+        if stopped.returncode not in (0, 1) or stopped.stdout.strip():
+            raise RuntimeError('Could not stop the dedicated Wine server: '+stopped.stdout)
         command = ['sh', '/opt/vr/vr-vulkan-xvnc.sh', 'sh', '-c',
-                   'cd /opt/alyx/game && exec '+wine+' bin/win64/hlvr.exe '
-                   '-vr -noasserts -nopassiveasserts -console -condebug']
+                   'cd /opt/alyx/game && '+wine+' bin/win64/hlvr.exe '
+                   '-vr -noasserts -nopassiveasserts -console -condebug; '
+                   'result=$?; '+server+' -w; exit "$result"']
     elif args.command == 'native':
         command = ['/usr/local/bin/engine-gpu', 'env', 'STEAM_RUNTIME=0',
                    'VK_DRIVER_FILES=/opt/vr/vulkan.json', 'VK_ICD_FILENAMES=/opt/vr/vulkan.json',
@@ -130,7 +136,14 @@ def main():
             modified = json.loads(original)
             modified['layer']['api_version'] = '1.3.0'
             guest('sh', '-c', 'cat > "$1"', 'sh', manifest, payload=json.dumps(modified)+'\n')
-        result = guest(*user, 'timeout', '-k', '3', str(args.timeout), *command, check=False)
+        if args.command == 'windows':
+            result = guest('systemd-run', '--unit=alyx-probe', '--collect', '--wait', '--pipe',
+                           '--property=RuntimeMaxSec='+str(args.timeout),
+                           '--property=TimeoutStopSec=3', *user, *command,
+                           check=False, timeout=args.timeout+30)
+        else:
+            result = guest(*user, 'timeout', '-k', '3', str(args.timeout), *command,
+                           check=False, timeout=args.timeout+15)
         print(result.stdout, end='')
         print(json.dumps({'probe': args.command, 'exit_code': result.returncode,
                           'experimental_vulkan13': args.experimental_vulkan13}))

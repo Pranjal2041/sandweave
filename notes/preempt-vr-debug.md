@@ -52,7 +52,8 @@ The game probes now bound host-side guest-exec waits as well as guest commands.
 Alyx joins AMS2 in using a transient systemd unit to contain its dedicated Wine
 server and game children. These limits bound the caller's wait; they cannot
 force a host NVIDIA kernel thread out of uninterruptible sleep. Game-unit live
-acceptance on the new allocation remains pending.
+acceptance is recorded below. The default remains 45 seconds; explicit timeouts
+up to 1,800 seconds allow longer level-loading and interaction probes.
 
 ## L40S replacement
 
@@ -129,3 +130,43 @@ The default runtime selector remains `19dfb215...`; candidate launches specify
 their immutable build explicitly. The older control sandbox remains available
 for comparison. Subsequent game probes stop only this test's Open Saber service,
 keeping its Monado instance for the new game.
+
+## Game startup with complete imports
+
+AMS2 on the RTX passed the earlier splash and rendered a sign-in error in the
+desktop and both eyes: **Steam is not running**. Opened and inspected
+`ams2-at-start.png`, `ams2-at-90.png` and `ams2-eyes-at-90.png` in the RTX run
+directory. No driving is established. The transient unit ended at its requested
+180-second limit (reported runtime 3min 2.234s), returned a timeout result and
+reported no Wine crash. The runtime remained responsive; the unit was inactive
+before the next game started. This establishes a Steam-client requirement for
+the next stage, not a graphics failure.
+
+Alyx now loads the `startup` map and reaches its stereo main menu, including
+tracked hands. The earlier missing/corrupted-file dialog is absent. The first
+240-second probe ended at its limit (4min 2.024s) while still at the menu.
+A second probe uses a 900-second limit for interaction. Controller pose changes
+visibly move the hand; a trigger selected the Addons menu. Menu pointer
+calibration and level entry are still under investigation. The 14.977-second
+main-menu sample recorded 647 application submissions, **43.13/s**; this is not
+a gameplay measurement. Evidence includes `alyx-eyes-startup.png`,
+`alyx-02-continue-positive-offset.png`, `alyx-menu-metrics.json` and the
+`alyx-run-01.log`/`alyx-run-02.log` probe logs. Both games used the explicit
+experimental Primus-VK API-version option; this is not conformance validation.
+
+## L40S live control
+
+Job `10361186` started on `babel-o9-20` at 20:04:29 UTC, ending at 23:04:29 UTC.
+Its allocated L40S is device minor 0, driver 610.43.02, UUID
+`GPU-91d03de6-3e87-becf-51ed-2693e3de06fb`. SSH reported a changed host key; the
+new ED25519 public key was independently read through the authenticated Slurm
+allocation and its fingerprint matched. Subsequent SSH uses the scoped
+`runs/ssh-known-hosts-10361186` file; the user's known_hosts was not changed.
+
+`vr-racing-l40s-01` cold-restored the same snapshot with candidate `d7c9c0e...`,
+32 GiB guest memory and eight guest CPUs. Open Saber gameplay and two successive
+stereo views were opened and inspected (`open-saber-after-input.png` and
+`open-saber-now.png` under `runs/racing/preempt-10361186/`). A 14.988-second
+window recorded 1,019 application submissions, **67.92/s**, at a 90 Hz target.
+These separate allocations differ in CPU hardware and load; this is not a
+controlled comparison of GPU speed. A fresh Alyx probe is now running there.

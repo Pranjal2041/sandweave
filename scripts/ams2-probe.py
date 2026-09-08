@@ -53,7 +53,8 @@ def main():
     parser.add_argument('name')
     parser.add_argument('command', choices=('prepare', 'run'))
     parser.add_argument('--manifest', type=Path, default=Path('runs/racing/windows-files.json'))
-    parser.add_argument('--timeout', type=int, default=45)
+    parser.add_argument('--timeout', type=int, default=45,
+                        help='maximum probe lifetime, 5..1800 seconds')
     parser.add_argument('--novr', action='store_true')
     parser.add_argument('--experimental-vulkan13', action='store_true',
                         help='temporarily permit Primus-VK for Vulkan 1.3; not conformance validation')
@@ -62,15 +63,15 @@ def main():
     state = manager.status(args.name)
     if not args.name.startswith('vr-racing-') or state['status'] != 'running' or not state.get('gpu'):
         parser.error('select a running disposable GPU sandbox named vr-racing-*')
-    if not 5 <= args.timeout <= 300:
-        parser.error('timeout must be 5..300 seconds')
+    if not 5 <= args.timeout <= 1800:
+        parser.error('timeout must be 5..1800 seconds')
     if args.command == 'prepare' and (args.novr or args.experimental_vulkan13):
         parser.error('rendering options apply to run')
     prefix = [*manager._command(args.name), 'exec', args.name]
 
-    def guest(*command, payload=None, check=True):
+    def guest(*command, payload=None, check=True, timeout=30):
         result = subprocess.run([*prefix, *command], input=payload, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True)
+                                stderr=subprocess.STDOUT, text=True, timeout=timeout)
         if check and result.returncode:
             raise RuntimeError(result.stdout)
         return result
@@ -87,7 +88,7 @@ def main():
         guest('sh', '-c', 'cat > /opt/vr/vr-vulkan-xvnc.sh',
               payload=(manager.lab/'scripts/vr-vulkan-xvnc.sh').read_text())
         if guest('test', '-f', '/home/ga/.local/share/ams2-wine/system.reg', check=False).returncode:
-            print(guest(*user, 'timeout', '-k', '3', '90', wine, 'wineboot', '-u').stdout, end='')
+            print(guest(*user, 'timeout', '-k', '3', '90', wine, 'wineboot', '-u', timeout=100).stdout, end='')
         guest(*user, 'python3', '-c', VR_FILES)
         print('Prepared asset links and the Wine/DXVK/OpenVR bridge.')
         return
@@ -115,7 +116,8 @@ def main():
         result = guest('systemd-run', '--unit=ams2-probe', '--collect', '--wait', '--pipe',
                        '--property=RuntimeMaxSec='+str(args.timeout),
                        '--property=TimeoutStopSec=3', *user,
-                       'sh', '/opt/vr/vr-vulkan-xvnc.sh', 'sh', '-c', command, check=False)
+                       'sh', '/opt/vr/vr-vulkan-xvnc.sh', 'sh', '-c', command,
+                       check=False, timeout=args.timeout+30)
         print(result.stdout, end='')
         crash = any(marker in result.stdout for marker in
                     ('wine: Unhandled', 'Unhandled exception:', 'Unhandled page fault'))

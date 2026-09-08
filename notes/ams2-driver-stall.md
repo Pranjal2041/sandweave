@@ -8,7 +8,8 @@ the demo through GE-Proton9-27, DXVK, xrizer, Primus-VK and Monado. The actual
 Xvnc screenshot `runs/racing/vr-signal-fixed-later.png` was opened and inspected:
 it shows the Reiza Studios splash in an Automobilista 2 Demo window. At this
 point four of five prioritized menu/common archives were present; the large
-GUITRACKPHOTOS archive completed later, around 08:54 UTC. Full import continues.
+GUITRACKPHOTOS archive completed later, around 08:54 UTC. Full import subsequently
+completed around 09:29 UTC; the driver waiter still persisted at 09:31 UTC.
 
 ## Observed stall
 
@@ -34,6 +35,14 @@ invalid PAT memtype frees and an NVIDIA system-memory allocation failure.
 These logs are later than the initial stall, so they do not establish its cause;
 host MemAvailable was about 525 GiB. No GPU reset, driver reload, host sudo,
 host configuration change or administrator contact was attempted.
+
+The matching [610.43.02 kernel-interface source](https://github.com/NVIDIA/open-gpu-kernel-modules/blob/610.43.02/kernel-open/nvidia/os-interface.c#L330)
+implements the observed wait with `down_write`, an uninterruptible Linux rwsem
+acquisition. Its [RM API implementation](https://github.com/NVIDIA/open-gpu-kernel-modules/blob/610.43.02/src/nvidia/src/kernel/rmapi/rmapi.c#L551)
+has a global read/write API lock; this is one possible caller, not an identified
+lock owner from our evidence. Upstream [issue 968](https://github.com/NVIDIA/open-gpu-kernel-modules/issues/968)
+reports the same wait symbol in a different driver/version and initialization
+deadlock. Matching the symbol alone does not establish that issue as our cause.
 
 The original Open Saber and Resolve sandboxes continued to answer ordinary
 exec. A fresh Open Saber Xvnc screenshot was captured and visually inspected

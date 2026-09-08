@@ -4,7 +4,8 @@ Started September 8, 2026 UTC. **Early startup only; gameplay is unvalidated.**
 
 The subsequent [Wine signal-context repair](wine-signal-context.md) establishes
 and fixes one engine compatibility issue exposed during startup. Its Windows
-exception-recovery test passes; game acceptance still awaits complete assets.
+exception-recovery test passes. Full asset import is now complete; game
+acceptance remains blocked by the host driver wait described below.
 The [next run visibly reached the Reiza splash but stalled in an NVIDIA driver
 call](ams2-driver-stall.md). Driving and stereo capture remain unverified.
 
@@ -32,6 +33,14 @@ Metadata is recorded in ignored `runs/racing/steamcmd-demo-info.log`.
    requested download/staging bytes complete. No purchase or login was needed.
 5. Inventoried the completed installation and started a resumable, read-only
    transfer to the cluster. No source archive or source-file changes are needed.
+
+Cluster import completed around **09:29 UTC**. The final importer log reports
+all 2,371 files and 14,322,422,030 bytes; the independent status sample confirms
+every expected file size, no partial files, no mismatches, and an exited
+importer. This verifies transfer completeness by size, not content checksums.
+Evidence: `runs/racing/import-menu-first.log` and `import-complete-status.json`.
+The last file was `PakFiles/TRACKS/interlagoskart1.bff`. No new GPU launch was
+attempted after completion while the prior driver's kernel waiter persisted.
 
 No Steam authentication files were read or copied. Acquiring the installation
 does not yet establish whether this demo needs an authenticated Steam client
@@ -104,8 +113,9 @@ python scripts/ams2-probe.py vr-racing-01 prepare
 python scripts/ams2-probe.py vr-racing-01 run --experimental-vulkan13 --timeout 45
 ```
 
-`--novr` selects Steam's ordinary desktop launch argument. It has not yet been
-exercised. Ignored evidence: runs/racing/wine-prefix.log,
+`--novr` selects Steam's ordinary desktop launch argument. In subsequent tests
+the spawned AVX executable still initialized OpenXR, so this flag alone is not
+a verified non-VR control. Ignored evidence: runs/racing/wine-prefix.log,
 startup-readable.log, startup-bounded.log, and inspected startup screenshots.
 
 ## Tracked helper tools

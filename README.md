@@ -57,10 +57,11 @@ renderer initialization are established; asset transfer and gameplay acceptance
 remain pending. A native NVIDIA Vulkan cube was visibly rendered through Xvnc.
 
 [The Automobilista 2 Demo experiment](notes/ams2-demo-experiment.md) has acquired
-the free 2026 demo through the user's Windows Steam and is importing its files
-alongside Alyx. A separate Xvnc/GPU/Monado sandbox is prepared; racing gameplay
-has not yet been established. Its executable creates an OpenXR session and
-initializes the GPU renderer during early startup with incomplete assets.
+and fully imported the free 2026 demo through the user's Windows Steam. A
+separate Xvnc/GPU/Monado sandbox reached the Reiza splash before a persistent
+host NVIDIA driver wait. Racing gameplay and stereo capture remain unverified.
+The startup investigation also exposed a Wine exception-classification gap;
+the engine repair passes Windows fault recovery and a live CPU restore test.
 
 [Continuous VR I/O](notes/vr-continuous-io.md) delivers paired left/right eye
 images to a host Python client through a bounded, size-sealed shared-memory ring,

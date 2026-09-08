@@ -101,8 +101,13 @@ def finish_boot(command, name, checkpoint, manifest, lab, local, guest, done):
     while time.monotonic() < deadline and not done.is_set():
         if guest.poll() is not None:
             raise RuntimeError('filesystem restore runtime exited before mount setup')
-        result = subprocess.run([*command, 'read', name, '/run/engine-fs-waiting'],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        try:
+            result = subprocess.run([*command, 'read', name, '/run/engine-fs-waiting'],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        except subprocess.TimeoutExpired:
+            # Rootfs import can hold the RPC server during a slow cold boot.
+            # Retry this read-only check within the overall startup deadline.
+            continue
         if result.returncode == 0:
             break
         time.sleep(.1)

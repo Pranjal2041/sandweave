@@ -102,6 +102,17 @@ output; the image-demuxer timebase is explicitly 1 ms rather than its default
 25 Hz. The temporary PNGs are removed. Video encoding is lossy; source images
 remain lossless and independently accessible.
 
+Every VR demo must now export both eye videos as well as the stereo preview:
+`recorder.video()`, `recorder.video('left')`, and `recorder.video('right')`.
+These share the same source frames and capture timeline. Inspect decoded frames
+from all three final MP4 files; one-shot screenshots alone are insufficient.
+
+`VRStream(..., start_game=False)` starts only the owned Monado runtime and input
+bridge. The caller can then launch another XR game, wait for `vr.latest()`, and
+record it through the same stereo interface. The caller must stop its game
+before closing the stream. The default still launches and owns Open Saber.
+The GunSpinning example is `scripts/gunspinning-vr-demo.py`.
+
 ## Historical monocular delivery measurements
 
 | Configuration | Images received/s | Game submissions/s | Input updates/s | Saved / delivered |

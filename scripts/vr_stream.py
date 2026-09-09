@@ -150,7 +150,7 @@ class FrameRing:
 class VRStream:
     def __init__(self, name, *, manager=None, width=960, height=1080, fps=90,
                  hz=120, mirror='none', slots=8, x11_display=':1',
-                 xauthority='/home/ga/.Xauthority'):
+                 xauthority='/home/ga/.Xauthority', start_game=True):
         if not name.startswith('vr-'):
             raise ValueError('use a disposable VR sandbox named vr-*')
         if hz not in (60, 72, 90, 120, 144) or mirror not in ('none', 'pbo', 'sync'):
@@ -161,6 +161,9 @@ class VRStream:
         self.options = dict(width=width, height=height, fps=fps, slots=slots)
         self.hz, self.mirror = hz, mirror
         self.x11_display, self.xauthority = x11_display, xauthority
+        # False lets the caller launch/stop a different XR game after the
+        # runtime and input bridge are ready. It must stop that game on exit.
+        self.start_game = start_game
         self.monado = self.bridge = self.ring = self.owner = self.lifecycle = None
         self.started_game = False
         self.broken = False
@@ -235,13 +238,14 @@ class VRStream:
             received = time.monotonic_ns()
             samples.append((received-sent, (sent+received)//2-reply['guest_ns']))
         self.clock_rtt_ns, self.guest_to_host_ns = min(samples)
-        self.guest('systemd-run', '--unit=vr-open-saber-live', '--uid=ga', '--collect',
-                   '--setenv=VGL_READBACK='+self.mirror,
-                   '--setenv=VR_X11_DISPLAY='+self.x11_display,
-                   '--setenv=VR_XAUTHORITY='+self.xauthority, '/usr/local/bin/engine-gpu-gl',
-                   'sh', '/opt/vr/vr-monado-guest.sh', 'game')
-        self.started_game = True
-        self.ring.latest(timeout=30)
+        if self.start_game:
+            self.guest('systemd-run', '--unit=vr-open-saber-live', '--uid=ga', '--collect',
+                       '--setenv=VGL_READBACK='+self.mirror,
+                       '--setenv=VR_X11_DISPLAY='+self.x11_display,
+                       '--setenv=VR_XAUTHORITY='+self.xauthority, '/usr/local/bin/engine-gpu-gl',
+                       'sh', '/opt/vr/vr-monado-guest.sh', 'game')
+            self.started_game = True
+            self.ring.latest(timeout=30)
 
     def _reply(self, timeout=5):
         deadline = time.monotonic() + timeout
@@ -409,36 +413,10 @@ class FrameRecorder:
         if self.errors:
             raise RuntimeError('background recording failed: '+self.errors[0])
 
-    def video(self):
+    def video(self, eye=None):
         if not self.closed:
             raise RuntimeError('close the recorder before exporting video')
-        recording = RecordedFrames(self.directory)
-        if len(recording) < 2:
-            raise ValueError('video requires at least two recorded frames')
-        target = (self.directory/'gameplay.mp4').resolve()
-        # PNG conversion and video encoding happen after live recording has
-        # closed. Temporary previews are local and removed after encoding.
-        with tempfile.TemporaryDirectory(prefix='vr-video-') as temporary:
-            temporary = Path(temporary)
-            def export(index):
-                frame = recording[index]
-                frame.image().save(temporary/f'{index:010d}.png', compress_level=1)
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                for _ in pool.map(export, range(len(recording))):
-                    pass
-            lines = ['ffconcat version 1.0']
-            for i, meta in enumerate(recording.metadata):
-                lines += [f"file '{i:010d}.png'", 'option framerate 1000']
-                if i+1 < len(recording):
-                    duration = (recording.metadata[i+1]['capture_begin_ns']-meta['capture_begin_ns'])/1e9
-                    lines.append(f'duration {duration:.9f}')
-            listing = temporary/'frames.ffconcat'
-            listing.write_text('\n'.join(lines)+'\n')
-            subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-f', 'concat', '-safe', '0',
-                            '-i', str(listing), '-fps_mode', 'vfr', '-c:v', 'libx264',
-                            '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p',
-                            '-threads', '4', '-movflags', '+faststart', str(target)], check=True)
-        return target
+        return RecordedFrames(self.directory).video(eye)
 
 
 class RecordedFrames:
@@ -468,3 +446,34 @@ class RecordedFrames:
             raise ValueError('recorded image byte length mismatch')
         return Frame(**{key: meta[key] for key in Frame.__dataclass_fields__ if key not in ('rgba', 'eye_count')},
                      rgba=raw, eye_count=eye_count)
+
+    def video(self, eye=None):
+        if eye not in (None, 'left', 'right'):
+            raise ValueError('eye must be left, right, or None for stereo')
+        recording = self
+        if len(recording) < 2:
+            raise ValueError('video requires at least two recorded frames')
+        target = (self.directory/('gameplay.mp4' if eye is None else eye+'-eye.mp4')).resolve()
+        # PNG conversion and video encoding happen after live recording has
+        # closed. Temporary previews are local and removed after encoding.
+        with tempfile.TemporaryDirectory(prefix='vr-video-') as temporary:
+            temporary = Path(temporary)
+            def export(index):
+                frame = recording[index]
+                frame.image(eye).save(temporary/f'{index:010d}.png', compress_level=1)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                for _ in pool.map(export, range(len(recording))):
+                    pass
+            lines = ['ffconcat version 1.0']
+            for i, meta in enumerate(recording.metadata):
+                lines += [f"file '{i:010d}.png'", 'option framerate 1000']
+                if i+1 < len(recording):
+                    duration = (recording.metadata[i+1]['capture_begin_ns']-meta['capture_begin_ns'])/1e9
+                    lines.append(f'duration {duration:.9f}')
+            listing = temporary/'frames.ffconcat'
+            listing.write_text('\n'.join(lines)+'\n')
+            subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-f', 'concat', '-safe', '0',
+                            '-i', str(listing), '-fps_mode', 'vfr', '-c:v', 'libx264',
+                            '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p',
+                            '-threads', '4', '-movflags', '+faststart', str(target)], check=True)
+        return target

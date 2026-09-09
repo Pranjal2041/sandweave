@@ -78,6 +78,8 @@ or xrizer/Monado. Offline launch, aiming, firing and reloading were exercised;
 the verified VR gameplay sample reached 61 FPS on L40S with Xvnc presentation.
 Gamepad analog triggers, audio, physical headset delivery and full-game
 completion remain unvalidated.
+The [GunSpinning stereo recording](notes/gunspinning-vr-experiment.md#both-eye-video-demo)
+includes separate left/right eye videos and a synchronized side-by-side preview.
 The [broader Linux VR catalogue](notes/linux-vr-catalog-and-build-options.md)
 separates native games, community VR ports, reported Proton gameplay, and
 original games we could build for training. It records source, store, input,

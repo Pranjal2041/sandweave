@@ -50,6 +50,12 @@ artifacts deliberately covered by `.gitignore`. Apply this habit on every task.
 
 ## Validation
 
+- Every VR demo must include recorded videos of both the left and right eye.
+  Export separate eye videos and a synchronized side-by-side preview from the
+  same stereo capture. Inspect decoded frames from the actual videos before
+  declaring the demo verified; screenshots alone do not satisfy this requirement.
+  Report capture cadence separately from application FPS and retain timing data.
+
 Read `README.md`, `notes/gvisor-lab-reproduction.md` and the relevant implementation
 notes before changing runtime behavior. Run checks appropriate to the change and
 record meaningful live acceptance for runtime/snapshot changes. Git-only or

@@ -152,6 +152,7 @@ def main():
                                    'queue_capacity': recorder.queue.maxsize}
             if args.video:
                 result['video'] = str(recorder.video())
+                result['eye_videos'] = {eye: str(recorder.video(eye)) for eye in ('left', 'right')}
             recorder = None
         (args.output/'summary.json').write_text(json.dumps(result, indent=2)+'\n')
         print(json.dumps(result, indent=2), flush=True)

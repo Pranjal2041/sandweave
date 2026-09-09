@@ -1,0 +1,156 @@
+{
+  "eye_count": 2,
+  "eye_size": [
+    960,
+    1080
+  ],
+  "frames_saved": 748,
+  "frames_received": 748,
+  "recorder_dropped": 0,
+  "ring_frames_skipped": 0,
+  "capture_duration_seconds": 33.667194807,
+  "observation_fps": 22.18777074485236,
+  "capture_limit_fps": 30,
+  "inputs_acknowledged": 182,
+  "layout": "left-right side-by-side",
+  "capture_export_note": "Live capture completed; metrics dependency was missing on the node. Exported retained lossless frames in original workspace.",
+  "monado": {
+    "source": "runs/gunspinning/gunspinning-stereo-demo-01/monado-metrics.pb",
+    "session_id": 2,
+    "window_seconds": 9.989007832,
+    "application_frames": 664,
+    "application_fps": 66.37295827079696,
+    "application_frame_interval_ms": {
+      "median": 14.130021,
+      "p95": 23.700114,
+      "p99": 29.711004,
+      "max": 37.173945
+    },
+    "compositor_frames": 708,
+    "compositor_gpu_ms": {
+      "median": 0.1256,
+      "p95": 0.421024,
+      "p99": 0.481376,
+      "max": 0.482592
+    },
+    "used_records": 708,
+    "unique_application_frames_used": 512,
+    "incomplete_trailing_bytes": 0,
+    "timing_ms": {
+      "runtime_wait": {
+        "median": 4.523747500000001,
+        "p95": 11.442141,
+        "p99": 13.508572,
+        "max": 23.304828
+      },
+      "wait_return_to_begin": {
+        "median": 0.286539,
+        "p95": 2.381176,
+        "p99": 4.379036,
+        "max": 8.286703
+      },
+      "begin_to_end_frame": {
+        "median": 7.8824325,
+        "p95": 15.811626,
+        "p99": 21.082955,
+        "max": 29.689733
+      },
+      "end_frame_to_gpu_completion_observed": {
+        "median": 0.00443,
+        "p95": 0.02079,
+        "p99": 0.02977,
+        "max": 0.111892
+      },
+      "end_frame_to_next_wait": {
+        "median": 0.144102,
+        "p95": 0.854943,
+        "p99": 2.907714,
+        "max": 9.129706
+      }
+    },
+    "scope": "OpenXR frame submissions and GPU timestamps; no physical headset scanout or transport timing",
+    "reused_frame_fraction": 0.2768361581920904,
+    "compositor_target_hz": 90.0000009
+  },
+  "videos": {
+    "stereo": {
+      "path": "runs/gunspinning/gunspinning-stereo-demo-01/frames/gameplay.mp4",
+      "sha256": "75906ffab1e351f11613a3614ad9454dde3edd9fecc9f91cbb4ca732f6700072",
+      "bytes": 9484721,
+      "probe": {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080,
+        "avg_frame_rate": "7480/339",
+        "time_base": "1/16000",
+        "duration": "33.668000",
+        "nb_read_frames": "748"
+      }
+    },
+    "left": {
+      "path": "runs/gunspinning/gunspinning-stereo-demo-01/frames/left-eye.mp4",
+      "sha256": "11218c614adb082f0349fb77d203f8c0186141df75c4cca8f5417aa3f8e827a6",
+      "bytes": 4739008,
+      "probe": {
+        "codec_name": "h264",
+        "width": 960,
+        "height": 1080,
+        "avg_frame_rate": "7480/339",
+        "time_base": "1/16000",
+        "duration": "33.668000",
+        "nb_read_frames": "748"
+      }
+    },
+    "right": {
+      "path": "runs/gunspinning/gunspinning-stereo-demo-01/frames/right-eye.mp4",
+      "sha256": "e69b582f4eefbfaedc950098d22638a5a0a362afb409b64fbc2d01d9c3d82a34",
+      "bytes": 4778944,
+      "probe": {
+        "codec_name": "h264",
+        "width": 960,
+        "height": 1080,
+        "avg_frame_rate": "7480/339",
+        "time_base": "1/16000",
+        "duration": "33.668000",
+        "nb_read_frames": "748"
+      }
+    }
+  },
+  "verification": {
+    "decoded_all_three_videos": true,
+    "decode_errors": 0,
+    "identical_frame_timestamps": true,
+    "strictly_increasing_pts": true,
+    "maximum_capture_to_video_timestamp_error_seconds": 0.0008267999999986841,
+    "inspected_video_seconds": {
+      "stereo": [
+        1,
+        17,
+        27,
+        30
+      ],
+      "left": [
+        21,
+        24,
+        27
+      ],
+      "right": [
+        21,
+        24,
+        27
+      ]
+    },
+    "visual_findings": [
+      "Both eyes show the training range and distinct stereo parallax",
+      "Right gun ammunition is three rounds at 21 seconds and six at 24 seconds",
+      "Both hands and the view move during the head/controller sweep",
+      "No physical headset delivery or audio is demonstrated"
+    ]
+  },
+  "source_hashes": {
+    "runs/gunspinning/gunspinning-stereo-demo-01/frames/frames.jsonl": "1eb2bb24a72c6c0a59255c2cef062dc7492ec8d2f91938cb9f6498d237a9db41",
+    "runs/gunspinning/gunspinning-stereo-demo-01/inputs.jsonl": "26129f94350e2a53ff72daeff0f367afffbeb0fc576ee749f3f3cd9080e54a1d",
+    "runs/gunspinning/gunspinning-stereo-demo-01/observations.jsonl": "ee7bf3020f4938bdf8975e4092bec60693bcc7ec36df37de71e383d53bf10869",
+    "runs/gunspinning/gunspinning-stereo-demo-01/monado-metrics.pb": "8f99d7da8ca97366671fd72b8e4a9630c0a76465f2875de33aa627621245bea9"
+  }
+}

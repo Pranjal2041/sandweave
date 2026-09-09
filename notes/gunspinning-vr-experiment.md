@@ -243,6 +243,64 @@ the accepted artifacts below are preserved in the original workspace.
 
 ## Evidence and validation
 
+### Both-eye video demo
+
+Every VR demo now requires videos of both eyes. The follow-up recording captures
+the same offline GunSpinning guest through the existing continuous stereo ring:
+
+- [Left-eye video](../runs/gunspinning/gunspinning-stereo-demo-01/frames/left-eye.mp4)
+- [Right-eye video](../runs/gunspinning/gunspinning-stereo-demo-01/frames/right-eye.mp4)
+- [Synchronized side-by-side video](../runs/gunspinning/gunspinning-stereo-demo-01/frames/gameplay.mp4)
+
+Each MP4 contains **748 frames over 33.668 seconds**, with exactly matching
+presentation timestamps. Each eye is 960×1080; the pair is 1920×1080. These
+are actual sequential compositor captures, preserving the captured timing.
+The source recording averaged **22.19 stereo pairs/s** with a 30/s capture cap;
+there were no ring skips or recorder drops. The final ten-second gameplay
+window measured 66.37 application submissions/s. Capture cadence and game
+submissions measure different stages; neither is physical headset scanout.
+
+All three MP4s were fully decoded, with no decode errors when retaining the
+source timestamp precision. Decoded stereo frames at 1, 17, 27 and 30 seconds
+and separate eye frames at 21, 24 and 27 seconds were visually inspected.
+Both eye videos show three rounds after the shots and six after reloading;
+the later sweep moves both hands and the view, with distinct stereo parallax.
+The [video manifest](gunspinning-vr-video.json) records hashes, timing checks,
+capture statistics and the precise visual acceptance scope. Lossless paired
+frames and acknowledged input events remain beside the videos.
+
+`scripts/gunspinning-vr-demo.py` runs the recorded menu, training, firing,
+reloading and head/controller sweep. Stop this disposable guest's game and
+Monado first; the demo owns its temporary game/runtime and leaves Xvnc alive:
+
+```bash
+python scripts/gunspinning-probe.py vr-example stop --mode motion
+python scripts/gunspinning-probe.py vr-example exec -- systemctl stop vr-monado-live
+python scripts/gunspinning-vr-demo.py vr-example --output runs/my-stereo-demo
+```
+
+The orchestration host needs Pillow, zstandard, ffmpeg, protobuf and the generated
+`tools/gpu/vr/monado_metrics_pb2.py`. The initial capture completed before a
+missing generated metrics module interrupted export. Its lossless frames were
+preserved and all three videos were exported from them in the original workspace.
+The node dependency is now staged, and the demo checks it before starting.
+Existing recordings can also be exported without rerunning gameplay:
+
+```python
+from vr_stream import RecordedFrames
+recording = RecordedFrames('runs/my-stereo-demo/frames')
+recording.video()
+recording.video('left')
+recording.video('right')
+```
+
+The shared stream's default Open Saber launch remains available; the existing
+`vr-stream.py --record --video` now exports all three views. Its 12 existing
+stream/ownership tests pass. After recording, the ordinary Monado service and
+GunSpinning VR menu were restarted in `vr-gunspin-offline01`.
+
+### Screenshot checks and provenance
+
 The [acceptance manifest](gunspinning-acceptance.json) records the exact input
 sequences, observations, file hashes, network policy and dependency hashes.
 The saved recorded steps match the two checked-in reproduction sequences.

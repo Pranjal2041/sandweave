@@ -59,3 +59,20 @@ def test_async_allocation_cancel_reconciles_owned_job(monkeypatch, tmp_path):
             raise AssertionError('allocation cancellation was lost')
     asyncio.run(exercise())
     assert cancelled == ['12345']
+
+
+def test_named_pool_prepares_template_before_starting_pool(monkeypatch):
+    from sandweave import cli
+    calls = []
+    class Connection:
+        def call(self, operation, **params):
+            calls.append((operation, params['action']))
+            return {'name': params['name']}
+        def close(self):
+            pass
+    def connect(target, *, template):
+        calls.append(('prepare', template['installation']))
+        return Connection()
+    monkeypatch.setattr(cli, 'connect', connect)
+    assert main(['pool', 'create', '--template', 'gnome', '--name', 'desktops']) == 0
+    assert calls == [('prepare', 'gnome'), ('pool', 'create')]

@@ -78,7 +78,7 @@ def test_worker_identity_separates_cpu_and_gpu_eligibility(monkeypatch):
     from sandweave.sandbox.workspace import worker_key
     import os
     affinity = sorted(os.sched_getaffinity(0))
-    monkeypatch.setattr(workspace, 'asset_identity', lambda: 'isolated-test-assets')
+    monkeypatch.setattr(workspace, 'asset_identity', lambda source=None: 'isolated-test-assets')
     monkeypatch.setattr(os, 'sched_getaffinity', lambda _: {affinity[0]})
     first = worker_key()
     monkeypatch.setenv('CUDA_VISIBLE_DEVICES', 'different-eligible-device')

@@ -92,13 +92,15 @@ def _slurm_environment(config):
     # Slurm placement uses shared storage. Pin the effective configured paths,
     # including a location selected by setup rather than an environment variable.
     environment.setdefault('SANDWEAVE_HOME', str(home()))
-    environment.setdefault('SANDWEAVE_ASSETS', str(assets(directory=config.get('home'), selected=config.get('assets'))))
+    environment['SANDWEAVE_ASSETS'] = str(assets(directory=config.get('home'), selected=config.get('assets')))
     return environment
 
 
-def local_connection():
-    key = worker_key()
-    directory = home() / 'connections' / key
+def local_connection(*, template=None):
+    from .preparation import Installation, ensure
+    installation = ensure(template) if template is not None else Installation(home(), assets())
+    key = worker_key(installation.assets)
+    directory = installation.directory / 'connections' / key
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     metadata = directory / 'worker.json'
     with locked(directory / 'startup.lock'):
@@ -124,6 +126,8 @@ def local_connection():
         with (directory / 'worker.log').open('ab') as log:
             environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) +
                            os.pathsep + os.environ.get('PYTHONPATH', '')}
+            environment.update(SANDWEAVE_HOME=str(installation.directory),
+                               SANDWEAVE_ASSETS=str(installation.assets))
             child = subprocess.Popen([sys.executable, '-m', 'sandweave.sandbox.worker',
                                       '--metadata', str(metadata)], stdin=subprocess.DEVNULL,
                                      stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
@@ -141,9 +145,9 @@ def local_connection():
         return connection
 
 
-def connect(target=None):
+def connect(target=None, *, template=None):
     if target in (None, 'local'):
-        return local_connection()
+        return local_connection(template=template)
     if isinstance(target, (Slurm, Endpoint)):
         return target.connection()
     if isinstance(target, str) and target.startswith('ssh://'):
@@ -166,7 +170,10 @@ def connect(target=None):
     else:
         command = ['env', *[f'{k}={v}' for k, v in _worker_environment(target).items()],
                    target.get('python', 'python3'), '-m', 'sandweave.sandbox.targets', '--ensure']
-    info = json.loads(_ssh(host, command))
+        if template is not None:
+            from ..onboarding import workload
+            command += ['--template', workload(template)]
+    info = json.loads(_ssh(host, command, timeout=None if template is not None else 180))
     port = _tunnel(host, info['port'])
     connection = Connection('127.0.0.1', port, info['token'])
     connection.call('ping')
@@ -389,8 +396,10 @@ def _walltime(value):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--ensure', action='store_true', required=True)
-    parser.parse_args()
-    connection = local_connection()
+    parser.add_argument('--template')
+    args = parser.parse_args()
+    from ..templates.resolve import Template
+    connection = local_connection(template=Template(args.template).resolve() if args.template else None)
     information = connection.call('ping')
     print(json.dumps({**information, 'port': connection.port, 'token': connection.token}))
     connection.close()

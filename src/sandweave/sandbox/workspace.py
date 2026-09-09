@@ -48,9 +48,9 @@ def tool(name):
     return shutil.which(name, path=tool_path())
 
 
-def worker_key():
+def worker_key(source=None):
     """Workers may only share authority within the same eligible resource set."""
-    eligibility = {'assets': asset_identity(), 'software': software_identity(),
+    eligibility = {'assets': asset_identity(source), 'software': software_identity(),
                    'cpus': sorted(os.sched_getaffinity(0)),
                    'gpu': {key: os.environ.get(key) for key in
                            ('SLURM_STEP_GPUS', 'SLURM_JOB_GPUS', 'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'SANDWEAVE_GPU_DEVICES')},
@@ -123,7 +123,12 @@ def assets(*, directory=None, selected=None):
     config = json.loads(config_file.read_text()) if config_file.exists() else {}
     if not isinstance(config, dict):
         raise ResourceUnavailable('Sandweave config.json must contain an object: ' + str(config_file))
-    selected = selected or os.environ.get('SANDWEAVE_ASSETS') or config.get('assets')
+    if selected is None:
+        override = os.environ.get('SANDWEAVE_ASSETS')
+        installed = config.get('installed_sources', {})
+        if not isinstance(installed, dict):
+            raise ResourceUnavailable('Installed runtime sources must be an object: ' + str(config_file))
+        selected = (installed.get(asset_identity(override)) or override) if override else config.get('assets')
     if not selected:
         # The existing lab is usable without copying a private path into the SDK.
         for parent in (Path.cwd(), *Path.cwd().parents):
@@ -242,8 +247,8 @@ def stage_tree(source, destination):
         _immutable(source, destination)
 
 
-def prepare():
-    base = assets()
+def prepare(*, source=None):
+    base = Path(source).expanduser().resolve() if source is not None else assets()
     files = engine_files()
     digest = hashlib.sha256()
     for path in files:
@@ -257,7 +262,7 @@ def prepare():
             sdk_digest.update(str(path.relative_to(sdk)).encode()); sdk_digest.update(path.read_bytes())
     digest.update(sdk_digest.digest())
     digest.update(asset_identity(base).encode())
-    root = home() / 'workers' / worker_key() / digest.hexdigest()[:16]
+    root = home() / 'workers' / worker_key(base) / digest.hexdigest()[:16]
     with locked(root / '.prepare.lock'):
         if (root / 'prepared.json').exists():
             prepared = json.loads((root / 'prepared.json').read_text())

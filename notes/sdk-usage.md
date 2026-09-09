@@ -6,6 +6,13 @@ services and controls; a sandbox is one running instance. Start with the
 
 ## Install and configure
 
+`Sandbox()` and `Sandbox(template="gnome")` prepare missing local dependencies
+on first use. The CLI's `create` and `run` commands use the same path. Templates
+that extend a built-in template install that parent's dependencies too. First
+use keeps your selected storage directory; without a saved choice it uses
+`.sandweave` in the current directory. `sandweave setup` is available to choose
+storage and install a template before creating a sandbox.
+
 The SDK host needs Python 3.11 or newer. Workers need Linux x86-64, Bash and
 permission to run containers. Setup installs Apptainer if needed and prepares
 the runtime files. GPU workers also need an allocated NVIDIA device and a
@@ -47,8 +54,9 @@ sandweave doctor --json
 ```
 
 The workload selection controls what setup installs and doctor checks. It does
-not change the default template used by `Sandbox()`. Repeat setup with another
-template to add it. Setup and doctor inspect the machine on which they run.
+not change the default template used by `Sandbox()`. Creating another local
+template installs it as needed; repeating setup prepares it ahead of time.
+Setup and doctor inspect the machine on which they run.
 Doctor reports host policy restrictions and unavailable GPUs; it cannot grant
 permissions or allocate hardware. It does not use host sudo.
 
@@ -76,7 +84,9 @@ sandweave setup --assets /path/to/existing-runtime --directory /path/to/new-stor
 `--assets` reads runtime files from an existing installation. `--directory` is
 where setup writes the new installation. The older
 `configure --assets` command and `SANDWEAVE_ASSETS` remain supported; the
-environment variable takes precedence over saved configuration.
+environment variable selects the source ahead of saved configuration. When
+first use extends that source, Sandweave records and reuses the resulting
+installation without modifying the source directory or the variable.
 Changing that selection uses a new worker workspace for new connections.
 Existing workers and handles keep their prepared runtime files.
 
@@ -93,10 +103,18 @@ Completed runtime inputs are recorded for retry. Failed build work and logs
 stay in the printed destination for diagnosis; setup does not automatically
 evict them.
 
+Automatic installation checks the runtime files and software prerequisites,
+then saves the installation. The requested sandbox supplies the actual launch
+and control-readiness check; it does not create a second disposable sandbox.
+Installation runs in a separate process, under the same storage lock as setup.
+Progress goes to stderr and to a file under `logs/setup`. Repeating a constructor
+after interruption retries installation. Existing runtime workers keep their
+files. Reuse checks required files without rehashing entire images; installation
+and initial worker staging still verify file contents.
+
 Set `SANDWEAVE_HOME` to use a different data directory. This explicit setting
-takes precedence, including during setup. Installations that have not run the
-new setup retain the earlier `~/.local/share/sandweave` default. Setup preserves
-files at that old location; it does not move or delete existing sandboxes or
+takes precedence, including during setup. Setup preserves files in the earlier
+`~/.local/share/sandweave` default; it does not move or delete existing sandboxes or
 snapshots. To access them, set `SANDWEAVE_HOME` to that directory.
 
 Durable snapshots belong on durable storage. Active runtime working directories
@@ -182,7 +200,8 @@ Setup files are copied into the guest. Services start on each cold boot; memory
 restore preserves their existing processes. Setup inputs must be explicit.
 Built-in templates declare an `installation` name, which local extensions
 inherit so setup installs the same underlying software.
-The overall startup deadline includes setup, service and control readiness.
+The sandbox startup deadline includes guest setup, service and control readiness.
+First-use installation of host dependencies happens before that deadline starts.
 `keep_on_error=True` retains a failed guest for diagnosis using the exception's
 `sandbox_id`; it does not return an environment claimed to be ready.
 
@@ -246,6 +265,10 @@ step with the step's CPU/GPU eligibility. The current Slurm adapter requires
 shared access to SDK metadata/assets. Generic SSH can start a worker or connect
 to its private metadata file. Target dictionaries can be saved with
 `sandweave targets add NAME --config '{"job_id":"12345"}'`.
+Starting a worker through a plain SSH target prepares its selected template on
+that host. Existing Slurm workers and explicit worker metadata targets use their
+prepared installation; run setup on those workers before selecting a new
+workload. These targets do not install a runtime on the Python client's host.
 
 Pools pin one baseline, bound concurrent leases and discard used episodes.
 `targets=[...]` distributes independent episodes across workers. Async callbacks

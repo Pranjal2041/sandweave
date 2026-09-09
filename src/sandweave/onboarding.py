@@ -105,8 +105,8 @@ def _inside(root, relative):
     return path
 
 
-def validate_assets(root, recipe):
-    """Verify the inputs selected for installation, including image contents."""
+def validate_assets(root, recipe, *, contents=True):
+    """Check template inputs; installation also verifies all file contents."""
     root = Path(root).expanduser().resolve()
     registry_path = root / 'sandweave-assets.json'
     registry = json.loads(registry_path.read_text()) if registry_path.exists() else {}
@@ -139,13 +139,15 @@ def validate_assets(root, recipe):
         if name not in hashes:
             raise ValueError('runtime manifest is missing ' + name)
     for name, expected in hashes.items():
-        with _inside(build, name).open('rb') as stream:
-            if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
-                raise ValueError('runtime checksum mismatch: ' + name)
+        path = _inside(build, name)
+        if not path.is_file():
+            raise ValueError('Missing runtime file: ' + name)
+        if contents and workspace.file_digest(path) != expected:
+            raise ValueError('runtime checksum mismatch: ' + name)
     for name, info in registry.get('images', {}).items():
         if _inside(root, name).stat().st_size != info['size']:
             raise ValueError('image size differs from its manifest: ' + name)
-        if workspace.file_digest(_inside(root, name)) != info['sha256']:
+        if contents and workspace.file_digest(_inside(root, name)) != info['sha256']:
             raise ValueError('image checksum mismatch: ' + name)
     if recipe.get('base_snapshot'):
         info = registry.get('snapshots', {}).get(recipe['base_snapshot'])
@@ -168,18 +170,20 @@ def validate_assets(root, recipe):
         for name, item in manifest['files'].items():
             if _inside(snapshot, name).stat().st_size != item['size']:
                 raise ValueError('game base payload size mismatch: ' + name)
-            if workspace.file_digest(_inside(snapshot, name)) != item['sha256']:
+            if contents and workspace.file_digest(_inside(snapshot, name)) != item['sha256']:
                 raise ValueError('game base payload checksum mismatch: ' + name)
         base = manifest['base_image']
         if _inside(root, base['path']).stat().st_size != base['size']:
             raise ValueError('game base image size mismatch')
-        if workspace.file_digest(_inside(root, base['path'])) != base['sha256']:
+        if contents and workspace.file_digest(_inside(root, base['path'])) != base['sha256']:
             raise ValueError('game base image checksum mismatch')
         dependency = manifest['runtime']
         for name, expected in dependency['sha256'].items():
-            with _inside(_inside(root, dependency['path']), name).open('rb') as stream:
-                if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
-                    raise ValueError('game base runtime checksum mismatch: ' + name)
+            path = _inside(_inside(root, dependency['path']), name)
+            if not path.is_file():
+                raise ValueError('Missing game base runtime file: ' + name)
+            if contents and workspace.file_digest(path) != expected:
+                raise ValueError('game base runtime checksum mismatch: ' + name)
     additional = []
     if 'desktop' in recipe['capabilities']:
         additional += ['tools/fast-io/bridge', 'tools/fast-io/libxcb-xtest.so.0']
@@ -561,12 +565,19 @@ def setup_worker(args, template, interactive):
         raise ValueError('The selected directory conflicts with SANDWEAVE_HOME; update that variable first')
     selected = destination(selected)
     with workspace.locked(selected / '.setup.lock'):
+        if getattr(args, '_automatic', False):
+            from .sandbox.preparation import available
+            # Another constructor may have completed this installation while
+            # this process waited for the same storage lock.
+            if available(Template(template).resolve(), selected) is not None:
+                return 0
         return _setup_selected(args, template, interactive, selected, previous, sources)
 
 
 def _setup_selected(args, template, interactive, selected, previous, sources):
     from .installation import publish, using_directory
     yes = getattr(args, 'yes', False)
+    automatic = getattr(args, '_automatic', False)
     # An invalid destination config is user work, not an empty config to replace.
     current = configuration(selected)
     pending = selected / 'setup.json'
@@ -578,6 +589,11 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
     sources = list(dict.fromkeys([*preferred, *sources]))
     print('Sandweave files: ' + str(selected), flush=True)
     assets = getattr(args, 'assets', None)
+    if automatic and os.environ.get('SANDWEAVE_ASSETS'):
+        from .sandbox.preparation import source
+        # Re-read after taking setup.lock: another template may have extended
+        # this source while this installer waited.
+        assets, _ = source(selected)
     if assets and interactive and not yes and not confirm('Install runtime files from ' + str(assets) + '?'):
         print('Setup cancelled before installing runtime files.')
         return 1
@@ -599,28 +615,41 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
         os.environ['SANDWEAVE_ASSETS'] = str(installed)
         try:
             checks = inspect(template, assets=installed)
+            if automatic:
+                # Allocation checks belong to the requested Sandbox, whose
+                # resource overrides may differ from the built-in defaults.
+                checks = [check for check in checks if check.name != 'gpu']
             for check in checks:
                 if check.fix and check.name not in ('assets', 'apptainer', 'python'):
                     repair(check.name, template, yes=yes)
             checks = inspect(template, assets=installed)
+            if automatic:
+                checks = [check for check in checks if check.name != 'gpu']
             show(checks, template)
             if not passed(checks):
                 print('Setup could not complete. Runtime files remain in ' + str(installed) + '.')
                 return 1
             # The environment overrides select this candidate for its worker.
             # Leave the saved configuration intact until acceptance succeeds.
-            print('Preparing worker files...', flush=True)
-            workspace.prepare()
-            smoke_test(template)
+            if not automatic:
+                from .sandbox.preparation import checking
+                print('Preparing worker files...', flush=True)
+                workspace.prepare()
+                # This candidate has already been installed and checked. Its
+                # disposable Sandbox must not recursively acquire setup.lock.
+                with checking(selected, installed):
+                    smoke_test(template)
         finally:
             if previous_assets is None:
                 os.environ.pop('SANDWEAVE_ASSETS', None)
             else:
                 os.environ['SANDWEAVE_ASSETS'] = previous_assets
     # Global location changes only after the selected installation completes.
-    publish(selected, installed, previous=previous, template=template)
-    workspace.atomic_json(pending, {'assets': str(installed), 'template': template, 'status': 'ready'})
-    print('Setup complete. Sandweave files: ' + str(selected))
+    publish(selected, installed, previous=previous, template=template,
+            source_identity=getattr(args, '_source_identity', None))
+    workspace.atomic_json(pending, {'assets': str(installed), 'template': template,
+                                    'status': 'installed' if automatic else 'ready'})
+    print(('Installation complete. ' if automatic else 'Setup complete. ') + 'Sandweave files: ' + str(selected))
     return 0
 
 

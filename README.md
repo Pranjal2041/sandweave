@@ -14,18 +14,23 @@ From this checkout, inside a Python 3.11+ environment on a Linux x86-64 worker:
 
 ```bash
 uv pip install .
+```
+
+Creating a local sandbox installs its template on first use. Sandweave reuses
+your configured storage directory, or creates `.sandweave` in the current
+directory if you have not chosen one. The first installation may download and
+build dependencies, so it needs internet access and can take a while.
+
+To choose storage and prepare a template ahead of time:
+
+```bash
 sandweave setup
 ```
 
-Choose what you want to start with, then choose where Sandweave should store
-its files. That directory can be empty. Setup installs the runtime and selected
-template, starts a temporary sandbox, checks that it becomes ready, then releases
-it. It can reuse an existing installation; otherwise it downloads and builds the
-required inputs.
-The first build needs internet access and can take a while.
-
-Setup stores downloads, installed runtimes and caches in the directory you choose.
-To add a desktop later, run `sandweave setup --template gnome`.
+Setup asks what you want to start with and where to store files. The directory
+can be empty. It installs the template and checks a temporary sandbox. Downloads,
+installed runtimes and caches stay in the selected directory. Other templates
+are installed when you first use them.
 See [installation details](notes/sdk-usage.md#install-and-configure).
 
 To check your installation or fix a problem:
@@ -95,7 +100,7 @@ streaming through `env.files.open(...)`.
 
 ## Set up a desktop
 
-Install the desktop template once with `sandweave setup --template gnome`, then:
+Create a desktop; its dependencies are installed automatically if needed:
 
 ```python
 from sandweave import Sandbox

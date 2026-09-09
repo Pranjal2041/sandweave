@@ -290,13 +290,14 @@ def main(argv=None):
                 atomic_json(record, {**saved, 'owned': False})
             return 0
         if op == 'pool':
-            connection = connect(args.target)
+            connection = None
             try:
                 action = args.pool_operation
                 name = getattr(args, 'name', None)
                 if action == 'create' and not name:
                     raise ValueError('named pool creation requires --name')
                 parameters = None
+                recipe = None
                 if action == 'create':
                     from .templates.resolve import Template, setup_step
                     from dataclasses import is_dataclass
@@ -308,10 +309,18 @@ def main(argv=None):
                         if setup:
                             recipe['setup_steps'].append(setup_step(setup))
                         options['template'] = recipe
+                    else:
+                        connection = connect(args.target)
+                        saved = connection.call('snapshot_spec', reference=options.get('cache') or options['snapshot'])
+                        recipe = saved['spec']['template']
+                        options.pop('snapshot', None)
+                        options['cache'] = saved['reference']
+                        connection.close()
                     options = {key: asdict(value) if is_dataclass(value) else value for key, value in options.items()}
                     if options.get('mounts'):
                         options['mounts'] = [asdict(value) for value in options['mounts']]
                     parameters = {'size': args.size, 'warm': args.warm, 'options': options}
+                connection = connect(args.target, template=recipe)
                 if action != 'exec':
                     output(connection.call('pool', action=action, name=name,
                                            arguments=parameters))
@@ -323,7 +332,8 @@ def main(argv=None):
                 finally:
                     connection.call('pool', action='release', name=name, lease_id=lease['lease_id'])
             finally:
-                connection.close()
+                if connection is not None:
+                    connection.close()
         if op == 'configure':
             from .onboarding import save_configuration
             path = Path(args.assets).expanduser().resolve()

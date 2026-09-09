@@ -39,7 +39,7 @@ def destination(path):
     return root
 
 
-def publish(directory, assets, *, previous=None, template=None):
+def publish(directory, assets, *, previous=None, template=None, source_identity=None):
     from .onboarding import configuration
     root = destination(directory)
     explicit = os.environ.get('SANDWEAVE_HOME')
@@ -54,6 +54,9 @@ def publish(directory, assets, *, previous=None, template=None):
             merged['targets'] = {**old.get('targets', {}), **current.get('targets', {})}
         if template is not None:
             merged['onboarding_template'] = template
+        if source_identity is not None:
+            merged['installed_sources'] = {**old.get('installed_sources', {}),
+                **current.get('installed_sources', {}), source_identity: str(Path(assets).resolve())}
         workspace.atomic_json(path, merged)
     if not explicit:
         location = workspace.default_home() / 'location.json'

@@ -281,8 +281,8 @@ class Bridge:
         self.broken = False
         self.closed = False
         assets = manager.lab / 'tools/fast-io'
-        if not (assets / 'bridge').exists():
-            raise RuntimeError('run scripts/build-fast-io.sh first')
+        if not all((assets / name).is_file() for name in ('bridge', 'libxcb-xtest.so.0')):
+            raise RuntimeError('Desktop runtime files are incomplete. Run sandweave doctor --template gnome.')
         digest = hashlib.sha256()
         for file in ('bridge', 'libxcb-xtest.so.0'):
             digest.update((assets / file).read_bytes())

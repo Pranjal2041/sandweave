@@ -153,3 +153,5 @@ def test_prepared_workspace_rechecks_truncated_image(tmp_path, monkeypatch):
     assert workspace.prepare() == prepared
     assert image.read_bytes() == b'complete runtime data'
     assert json.loads((prepared / 'prepared.json').read_text())['local'] == local
+    monkeypatch.setattr(workspace, 'assets', lambda: pytest.fail('pinned worker consulted a changed default'))
+    assert workspace.prepare(source=base) == prepared

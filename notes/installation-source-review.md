@@ -69,3 +69,41 @@ The keyboard definition files are supplied by
 [x11proto-dev](https://packages.debian.org/trixie/all/x11proto-dev/filelist).
 The runtime source revision and cumulative patch remain recorded in
 [`source-revisions.json`](source-revisions.json).
+
+## First-use template installation
+
+The reported `Sandbox(template="gnome")` failure reached the desktop bridge
+after selecting an installation containing only coding inputs. Construction
+had no dependency-preparation step. The bridge then exposed a lab build command.
+
+Local constructors now resolve the recipe and its resource options, prepare
+missing dependencies, and only then choose a worker. Python pools and CLI
+creation share this path; named CLI pool creation also prepares before choosing
+its worker. Inherited templates keep their built-in installation dependency.
+Plain SSH worker startup passes that dependency to preparation on the worker.
+Explicit remote-worker endpoints and Slurm workers retain their existing
+prepared-worker contract.
+
+Automatic preparation uses the shared setup implementation in a subprocess.
+It honors selected storage, uses `.sandweave` in the current directory when no
+storage was selected, serializes installation with setup, and rechecks after
+waiting for the lock. It checks files and software, then lets the requested
+sandbox perform launch and control-readiness checks with the caller's actual
+resource settings. Interactive setup retains its disposable acceptance check;
+a scoped marker prevents that check from recursively starting installation.
+
+The launcher pins the selected directory and immutable runtime path in the
+new worker's environment. Worker staging consumes that exact path, even if
+another constructor installs a different template concurrently. An explicit
+legacy source can have a managed extension recorded for subsequent connections;
+the original source and the caller's environment remain unchanged. Reuse checks
+presence and manifests without hashing entire images. Installation and initial
+staging retain content verification. Progress is written to stderr and a private
+installation log, preserving CLI stdout for results.
+
+Source-reviewed regression cases cover adding GNOME after coding, inherited
+templates, first use without setup, reuse from another directory, Python
+dependencies, failed installation before worker launch, cheap reuse checks,
+source overrides, setup recursion, concurrent-install rechecking, and progress
+output. No package code, installer, build, probe, sandbox or test was executed
+for this change. The earlier runtime results are not results for this revision.

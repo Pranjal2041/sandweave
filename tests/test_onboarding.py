@@ -391,3 +391,168 @@ def test_setup_publishes_only_after_selected_workload_check(tmp_path, monkeypatc
     assert onboarding.workspace.home() == selected
     assert onboarding.configuration()['assets'] == str(tmp_path / 'installed')
     assert json.loads((selected / 'setup.json').read_text())['status'] == 'ready'
+
+
+@pytest.fixture
+def first_use(tmp_path, monkeypatch, runtime_files):
+    from sandweave.sandbox import preparation
+    storage = tmp_path / 'chosen-storage'
+    storage.mkdir()
+    monkeypatch.setenv('SANDWEAVE_HOME', str(storage))
+    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
+    monkeypatch.setattr(onboarding.workspace, 'tool', lambda name: '/host/' + name)
+    monkeypatch.setattr(onboarding.importlib.util, 'find_spec', lambda name: object())
+    onboarding.workspace.atomic_json(storage / 'config.json', {'assets': str(runtime_files)})
+    return preparation, storage, runtime_files
+
+
+def desktop_files(root):
+    for name in ('tools/fast-io/bridge', 'tools/fast-io/libxcb-xtest.so.0',
+                 'tools/helpers/usr/include/X11/keysymdef.h',
+                 'tools/helpers/usr/include/X11/XF86keysym.h'):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'installed desktop input')
+
+
+def test_first_use_adds_inherited_desktop_and_reuses_it(first_use, monkeypatch):
+    preparation, storage, root = first_use
+    recipe = Template({'extends': 'gnome', 'name': 'my-desktop'}).resolve()
+    assert preparation.available(recipe, storage) is None
+    installed = []
+    def install(profile, selected):
+        installed.append((profile, selected))
+        desktop_files(root)
+    monkeypatch.setattr(preparation, '_install', install)
+    assert preparation.ensure(recipe) == preparation.Installation(storage, root)
+    assert preparation.ensure(recipe).assets == root
+    assert installed == [('gnome', storage)]
+    assert onboarding.os.environ['SANDWEAVE_HOME'] == str(storage)
+    assert 'SANDWEAVE_ASSETS' not in onboarding.os.environ
+
+
+def test_first_use_without_setup_selects_current_directory(first_use, monkeypatch, tmp_path):
+    from sandweave.installation import publish
+    preparation, _, root = first_use
+    monkeypatch.delenv('SANDWEAVE_HOME')
+    small_home, project = tmp_path / 'small-home', tmp_path / 'project'
+    project.mkdir()
+    monkeypatch.setattr(onboarding.workspace, 'default_home', lambda: small_home)
+    monkeypatch.chdir(project)
+    installed = []
+    def install(profile, selected):
+        installed.append((profile, selected))
+        publish(selected, root)
+    monkeypatch.setattr(preparation, '_install', install)
+    result = preparation.ensure(Template('coding').resolve())
+    assert result.directory == project / '.sandweave'
+    assert installed == [('coding', project / '.sandweave')]
+    assert not (small_home / 'workers').exists()
+    other = tmp_path / 'different-working-directory'
+    other.mkdir()
+    monkeypatch.chdir(other)
+    assert preparation.ensure(Template('coding').resolve()) == result
+    assert len(installed) == 1
+
+
+def test_first_use_repairs_missing_python_dependency(first_use, monkeypatch):
+    preparation, storage, root = first_use
+    desktop_files(root)
+    packages = set()
+    monkeypatch.setattr(onboarding.importlib.util, 'find_spec',
+                        lambda name: object() if name != 'PIL' or 'PIL' in packages else None)
+    monkeypatch.setattr(preparation, '_install', lambda *a: packages.add('PIL'))
+    assert preparation.ensure(Template('gnome').resolve()).assets == root
+    assert packages == {'PIL'}
+
+
+def test_failed_first_install_never_launches_a_worker(first_use, monkeypatch):
+    from sandweave import Sandbox
+    from sandweave.sandbox.errors import SetupError
+    from sandweave.sandbox import targets
+    preparation, _, _ = first_use
+    def fail(*args):
+        raise SetupError('download interrupted', phase='installation')
+    monkeypatch.setattr(preparation, '_install', fail)
+    monkeypatch.setattr(targets.subprocess, 'Popen', lambda *a, **k: pytest.fail('worker launched before dependencies'))
+    with pytest.raises(SetupError, match='download interrupted'):
+        Sandbox(template='gnome')
+
+
+def test_reuse_checks_presence_without_reading_image_contents(first_use, monkeypatch):
+    preparation, storage, root = first_use
+    monkeypatch.setattr(onboarding.workspace, 'file_digest', lambda *a: pytest.fail('rehashing on reuse'))
+    recipe = Template('coding').resolve()
+    assert preparation.available(recipe, storage).assets == root
+    (root / 'images/gvisor-ubuntu-ready-ae303ca.erofs').unlink()
+    assert preparation.available(recipe, storage) is None
+
+
+def test_automatic_source_extension_is_reused_by_later_connections(first_use, monkeypatch, tmp_path):
+    import shutil
+    from sandweave.installation import publish
+    preparation, storage, original = first_use
+    extended = tmp_path / 'extended'
+    shutil.copytree(original, extended)
+    desktop_files(extended)
+    monkeypatch.setenv('SANDWEAVE_ASSETS', str(original))
+    identity = onboarding.workspace.asset_identity(original)
+    publish(storage, extended, source_identity=identity)
+    monkeypatch.setattr(preparation, '_install', lambda *a: pytest.fail('source extension was ignored'))
+    assert preparation.ensure(Template('gnome').resolve()).assets == extended
+    assert onboarding.workspace.assets() == extended
+    assert onboarding.os.environ['SANDWEAVE_ASSETS'] == str(original)
+    # An explicit different source must not inherit the previous extension.
+    alternate = tmp_path / 'alternate'
+    shutil.copytree(original, alternate)
+    monkeypatch.setenv('SANDWEAVE_ASSETS', str(alternate))
+    assert onboarding.workspace.assets() == alternate
+    assert preparation.available(Template('gnome').resolve(), storage) is None
+
+
+def test_setup_sandbox_check_cannot_recursively_install(first_use, monkeypatch):
+    preparation, storage, root = first_use
+    monkeypatch.setattr(preparation, '_install', lambda *a: pytest.fail('recursive setup'))
+    with preparation.checking(storage, root):
+        assert preparation.ensure(Template('gnome').resolve()).assets == root
+    assert preparation.available(Template('gnome').resolve(), storage) is None
+
+
+def test_automatic_setup_leaves_launch_and_gpu_overrides_to_requested_sandbox(
+        tmp_path, monkeypatch, setup_boundaries):
+    monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
+    monkeypatch.setattr(onboarding, 'inspect', lambda *a, **k: [
+        onboarding.Check('assets', 'Runtime', 'pass', 'installed'),
+        onboarding.Check('gpu', 'GPU', 'fail', 'No default GPU')])
+    monkeypatch.setattr(onboarding, 'smoke_test', lambda *a: pytest.fail('automatic setup created a second sandbox'))
+    monkeypatch.setattr(onboarding.workspace, 'prepare', lambda: pytest.fail('staged before actual constructor'))
+    args = SimpleNamespace(yes=True, directory=tmp_path, assets=None, game_archive=None, _automatic=True)
+    assert onboarding.setup_worker(args, 'coding', False) == 0
+    assert json.loads((tmp_path / 'setup.json').read_text())['status'] == 'installed'
+
+
+def test_waiting_installer_rechecks_completed_installation(first_use, monkeypatch):
+    preparation, storage, _ = first_use
+    monkeypatch.setattr(onboarding, '_setup_selected', lambda *a: pytest.fail('completed installation was repeated'))
+    args = SimpleNamespace(yes=True, directory=storage, assets=None, game_archive=None, _automatic=True)
+    assert onboarding.setup_worker(args, 'coding', False) == 0
+
+
+def test_first_use_progress_keeps_stdout_available_for_command_results(first_use, monkeypatch, capsys):
+    import io
+    preparation, storage, _ = first_use
+    commands = []
+    class Installer:
+        def __init__(self, command, **kwargs):
+            commands.append(command)
+            self.stdout = io.StringIO('Installing desktop files\nInstallation complete.\n')
+        def wait(self):
+            return 0
+    monkeypatch.setattr(preparation.subprocess, 'Popen', Installer)
+    preparation._install('gnome', storage)
+    output = capsys.readouterr()
+    assert output.out == ''
+    assert 'Installing desktop files' in output.err
+    assert commands[0][-4:] == ['--template', 'gnome', '--directory', str(storage)]
+    logs = list((storage / 'logs/setup').glob('first-use-*.log'))
+    assert len(logs) == 1 and logs[0].read_text() == output.err

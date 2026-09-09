@@ -81,8 +81,11 @@ class Sandbox:
         self._owned, self._closed, self._terminated = True, False, False
         self._target = target
         operation_id = uuid.uuid4().hex
-        if self._connection is None:
-            self._connection = connect(target)
+        if self._connection is not None:
+            self._connection.close()
+        # Select the worker after installing the recipe's dependencies. A
+        # saved recipe needs the same check when restored on another worker.
+        self._connection = connect(target, template=recipe)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
                                           reference=reference, cache_key=cache_key, refresh=refresh)
         self.files = Files(self)

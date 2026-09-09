@@ -500,7 +500,9 @@ def serve(metadata_path):
     # Existing workers retain their storage when a later setup changes the
     # client's saved location. Managed tools have already been added to PATH.
     os.environ['SANDWEAVE_HOME'] = str(home())
-    root = prepare()
+    # The launcher has already selected an immutable installation. A concurrent
+    # setup must not redirect this worker to a different workspace mid-startup.
+    root = prepare(source=os.environ.get('SANDWEAVE_ASSETS'))
     # An attached worker keeps the asset source it prepared, even after setup
     # changes the client's default selection for future workers.
     os.environ['SANDWEAVE_ASSETS'] = json.loads((root / 'prepared.json').read_text())['assets']

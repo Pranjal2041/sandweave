@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "snapshots": {
+    "vr-base@1": {
+      "path": "snapshots/vr-l40s-alyx-prepared-10361186",
+      "snapshot_id": "b38d5191f5d74c1b8369914bb0be0b09",
+      "state": "filesystem"
+    }
+  }
+}

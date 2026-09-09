@@ -1,0 +1,16 @@
+schema_version = 1
+extends = "gnome@1"
+base_snapshot = "vr-base@1"
+
+[resources]
+cpu = 6
+memory = "16GiB"
+runtime_memory = "2GiB"
+gpu = true
+
+[capabilities.vr]
+game_command = ["/usr/local/bin/engine-gpu-gl", "sh", "/opt/vr/vr-monado-guest.sh", "game"]
+width = 960
+height = 1080
+fps = 90
+hz = 90

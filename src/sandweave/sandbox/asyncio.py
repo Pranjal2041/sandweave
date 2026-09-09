@@ -6,7 +6,12 @@ import functools
 class dualmethod:
     def __init__(self, function):
         self.function = function
+        self.async_function = None
         functools.update_wrapper(self, function)
+
+    def async_impl(self, function):
+        self.async_function = function
+        return function
 
     def __get__(self, instance, owner):
         function = self.function.__get__(instance, owner)
@@ -16,8 +21,9 @@ class dualmethod:
             return function(*args, **kwargs)
 
         async def aio(*args, **kwargs):
-            # A running remote operation is not magically cancelled by cancelling
-            # its awaiting Python task. Stateful callers provide reconciliation.
+            if self.async_function is not None:
+                return await self.async_function.__get__(instance, owner)(*args, **kwargs)
+            # Read/wait cancellation does not cancel the underlying process.
             return await asyncio.to_thread(function, *args, **kwargs)
 
         call.aio = aio

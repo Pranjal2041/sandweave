@@ -1,5 +1,6 @@
 """A Sandbox is a running template, with one public lifecycle and command API."""
 import copy
+import asyncio
 from dataclasses import asdict
 import time
 import uuid
@@ -8,7 +9,8 @@ from .asyncio import dualmethod, dualclassmethod
 from .errors import CommandError, UnsupportedFeature
 from .files import Files
 from .process import Process
-from .resources import normalize
+from .resources import normalize, CPU, GPU, Memory, Network
+from .snapshots import SnapshotRef
 from .targets import connect
 from ..templates.resolve import Template, setup_step
 
@@ -18,32 +20,71 @@ class Sandbox:
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, startup_timeout=300, keep_on_error=False,
                  refresh=False):
-        if cache is not None or snapshot is not None or cache_key is not None:
-            raise UnsupportedFeature('cache/restore is being implemented')
+        if sum(x is not None for x in (cache, snapshot)) > 1:
+            raise ValueError('cache and snapshot are alternative sources')
+        reference = cache if cache is not None else snapshot
+        if reference is not None and any(x is not None for x in (template, setup, cache_key)):
+            raise ValueError('a saved source cannot be combined with a new recipe')
+        if refresh and cache_key is None:
+            raise ValueError('refresh requires cache_key')
         if ttl is not None:
             raise UnsupportedFeature('lifecycle TTL is being implemented')
-        recipe = Template(template or 'coding').resolve()
+        self._connection = connect(target)
+        saved = self._connection.call('snapshot_spec', reference=str(reference)) if reference is not None else None
+        if saved:
+            reference = saved['reference']
+            recipe = saved['spec']['template']
+            defaults = saved['spec']['resources']
+            defaults = {'cpu': CPU(**defaults['cpu']), 'memory': Memory(**defaults['memory']),
+                        'gpu': GPU(**defaults['gpu']) if defaults['gpu'] else False,
+                        'network': Network(**defaults['network'])}
+            if env is None:
+                env = saved['spec']['env']
+            if mounts is None:
+                mounts = saved['spec']['mounts']
+            runtime = saved['spec']['runtime']
+        else:
+            recipe = Template(template or 'coding').resolve()
+            defaults = recipe['resources']
         if setup:
             recipe['setup_steps'].append(setup_step(setup))
-        defaults = recipe['resources']
+        selected_memory = memory if memory is not None else defaults.get('memory', '1GiB')
+        if not isinstance(selected_memory, Memory):
+            selected_memory = Memory(selected_memory, defaults.get('runtime_memory', '512MiB'))
         resources = normalize(cpu=cpu if cpu is not None else defaults.get('cpu', 1),
-                              memory=memory if memory is not None else defaults.get('memory', '1GiB'),
+                              memory=selected_memory,
                               gpu=gpu if gpu is not None else defaults.get('gpu', False),
                               network=network if network is not None else defaults.get('network', 'internet'))
         spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
-                'env': env or {}, 'mounts': mounts or [], 'name': name,
+                'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mounts or [], 'name': name,
                 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error}
-        self._connection = connect(target)
-        self.id = 'sw-' + uuid.uuid4().hex
+        self.id = ('vr-sw-' if 'vr' in recipe['capabilities'] else 'sw-') + uuid.uuid4().hex
         self._owned, self._closed, self._terminated = True, False, False
         self._target = target
         operation_id = uuid.uuid4().hex
-        self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id)
+        self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
+                                          reference=reference, cache_key=cache_key, refresh=refresh)
         self.files = Files(self)
+        self._controls = {}
 
     @dualclassmethod
     def create(cls, **kwargs):
         return cls(**kwargs)
+
+    @create.async_impl
+    async def _create_async(cls, **kwargs):
+        operation = asyncio.create_task(asyncio.to_thread(cls, **kwargs))
+        try:
+            return await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            # Reconcile the in-flight create before returning cancellation, so
+            # an acknowledged success cannot leave an orphaned owned sandbox.
+            instance = await asyncio.shield(operation)
+            try:
+                await instance.terminate.aio()
+            finally:
+                instance.close()
+            raise
 
     @dualclassmethod
     def connect(cls, identity, *, target=None):
@@ -53,7 +94,9 @@ class Sandbox:
         self._owned, self._closed, self._terminated = False, False, False
         self._target = target
         self._info = self._connection.call('describe', identity=self.id)
+        self.id = self._info['id']
         self.files = Files(self)
+        self._controls = {}
         return self
 
     def _call(self, operation, **kwargs):
@@ -69,6 +112,27 @@ class Sandbox:
     def timings(self):
         return dict(self._info['timings'])
 
+    @property
+    def capabilities(self):
+        return copy.deepcopy(self._info.get('capabilities', {}))
+
+    def capability(self, name):
+        from ..templates.controls import provider
+        config = self._info['spec']['template']['capabilities'].get(name)
+        if config is None:
+            raise UnsupportedFeature('this template does not provide ' + name + ' controls')
+        if name not in self._controls:
+            self._controls[name] = provider(config.get('provider', name)).bind(self, config)
+        return self._controls[name]
+
+    @property
+    def desktop(self):
+        return self.capability('desktop')
+
+    @property
+    def vr(self):
+        return self.capability('vr')
+
     @dualmethod
     def status(self):
         self._info = self._call('describe')
@@ -82,6 +146,16 @@ class Sandbox:
                     cwd=cwd, env=env, user=user, timeout=timeout, shell=shell)
         return Process(self, identity, binary=binary)
 
+    @exec.async_impl
+    async def _exec_async(self, *args, **kwargs):
+        operation = asyncio.create_task(asyncio.to_thread(self.exec, *args, **kwargs))
+        try:
+            return await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            process = await asyncio.shield(operation)
+            await process.terminate.aio()
+            raise
+
     @dualmethod
     def run(self, command=None, *, argv=None, cwd='/workspace', env=None, user=None,
             timeout=None, shell=None, check=True, binary=False):
@@ -94,9 +168,37 @@ class Sandbox:
             raise CommandError(f'command exited with {result.returncode}', result=result, operation_id=process.id)
         return result
 
+    @run.async_impl
+    async def _run_async(self, command=None, *, check=True, **kwargs):
+        process = await self.exec.aio(command, **kwargs)
+        try:
+            await process.stdin.close.aio()
+            await process.wait.aio()
+            result = await asyncio.to_thread(process.result)
+            if check and result.returncode:
+                raise CommandError(f'command exited with {result.returncode}', result=result, operation_id=process.id)
+            return result
+        except asyncio.CancelledError:
+            await process.terminate.aio()
+            raise
+
     @dualmethod
     def setup(self, path, *, inputs=(), user='root'):
         return self._call('setup', step=setup_step(path, inputs=inputs, user=user))
+
+    @dualmethod
+    def cache(self, key, *, state='filesystem'):
+        return SnapshotRef.from_record(self._call('capture', state=state, key=key), self._connection)
+
+    @dualmethod
+    def snapshot(self, *, state='memory'):
+        return SnapshotRef.from_record(self._call('capture', state=state), self._connection)
+
+    @dualmethod
+    def stop(self, *, state='auto'):
+        saved = self._call('stop', state=state)
+        self._terminated = True
+        return SnapshotRef.from_record(saved, self._connection)
 
     @dualmethod
     def pause(self):
@@ -111,7 +213,9 @@ class Sandbox:
     @dualmethod
     def terminate(self):
         if not self._terminated:
-            self._info = self._call('terminate')
+            # Explicit cleanup remains possible after close(), including an
+            # owned context whose client was disconnected inside its body.
+            self._info = self._connection.call('terminate', identity=self.id)
             self._terminated = True
 
     @dualmethod

@@ -11,7 +11,8 @@ import threading
 import time
 import uuid
 
-from .errors import SandboxError, SetupError, UnsupportedFeature
+from .errors import SandboxError, SetupError, UnsupportedFeature, CacheConflict, IncompatibleSnapshot
+from .snapshots import Store
 from .wire import decode, encode, MAX_BODY
 from .workspace import atomic_json, home, prepare
 
@@ -21,6 +22,7 @@ class Worker:
         from .runtimes.gvisor.driver import Runtime
         self.root = Path(root)
         self.runtime = Runtime(self.root)
+        self.store = Store(self.runtime)
         self.records = self.root / 'sandboxes'
         self.records.mkdir(exist_ok=True)
         self.locks, self.guard, self.controls = {}, threading.RLock(), {}
@@ -45,7 +47,35 @@ class Worker:
         temporary.chmod(0o600)
         os.replace(temporary, destination)
 
-    def create(self, spec, identity, *, operation_id=None):
+    def create(self, spec, identity, *, operation_id=None, reference=None, cache_key=None, refresh=False):
+        if cache_key is not None:
+            from ..templates.resolve import fingerprint
+            from .workspace import locked
+            # A distinct build lock lets publication retain its own atomic CAS.
+            path = self.store.name_path(cache_key)
+            with locked(self.store.root / 'locks' / (path.stem + '.build')):
+                previous = self.store.alias(cache_key)
+                if previous and previous['provenance'] != 'prepared':
+                    raise CacheConflict('cache name contains a manual capture: ' + cache_key)
+                stamp = fingerprint({k: v for k, v in spec.items()
+                                     if k not in ('name', 'ttl', 'startup_timeout', 'keep_on_error')} |
+                                    {'engine': (self.root / 'prepared.json').read_text(),
+                                     'runtime': (self.root / 'tools/gvisor-socket/runtime.json').read_text()})
+                if not refresh and previous and previous['fingerprint'] == stamp:
+                    return self._create(spec, identity, operation_id=operation_id, reference=previous['id'])
+                result = self._create(spec, identity, operation_id=operation_id)
+                try:
+                    saved = self.capture(identity, state='filesystem')
+                    self.store.publish(cache_key, saved, (previous or {}).get('id'),
+                                       provenance='prepared', fingerprint=stamp)
+                except BaseException:
+                    if not spec.get('keep_on_error'):
+                        self.terminate(identity)
+                    raise
+                return result
+        return self._create(spec, identity, operation_id=operation_id, reference=reference)
+
+    def _create(self, spec, identity, *, operation_id=None, reference=None):
         started = time.monotonic()
         with self.lock(identity):
             if self.path(identity).exists():
@@ -60,25 +90,47 @@ class Worker:
                 raise UnsupportedFeature('runtime has not been registered: ' + spec['runtime'])
             if spec.get('mounts'):
                 raise UnsupportedFeature('explicit mount support is not yet configured')
+            from ..templates.controls import descriptors
+            declared = descriptors(spec['template'])
             record = {'id': identity, 'name': spec.get('name'), 'spec': spec, 'state': 'creating',
                       'operation_id': operation_id, 'created_at': time.time(), 'agent': None,
-                      'timings': {}, 'workspace': str(self.root)}
+                      'timings': {}, 'workspace': str(self.root), 'capabilities': declared}
             self.write(record)
             try:
-                record['agent'] = self.runtime.create(identity, spec)
+                saved = self.store.resolve(reference) if reference else None
+                if saved and saved['state'] == 'memory':
+                    for key in ('runtime', 'resources', 'env', 'mounts'):
+                        if spec[key] != saved['spec'][key]:
+                            raise IncompatibleSnapshot('memory restore cannot change ' + key)
+                snapshot = self.store.materialize(saved) if saved else None
+                token = saved['agent']['token'] if saved and saved['state'] == 'memory' else None
+                record['agent'] = self.runtime.create(identity, spec, snapshot=snapshot, token=token)
                 record['state'] = 'preparing'
                 self.write(record)
-                for step in spec['template'].get('setup_steps', []):
-                    self.setup(identity, step)
+                if saved is None:
+                    for step in spec['template'].get('setup_steps', []):
+                        self.setup(identity, step)
+                else:
+                    record['restored_from'] = saved['id']
+                self.write(record)
+                cold = saved is None or saved['state'] == 'filesystem'
+                if cold:
+                    self.start_services(identity)
+                self.attach_controls(identity, cold=cold)
                 record['state'] = 'ready'
                 record['timings']['ready_seconds'] = time.monotonic() - started
                 self.write(record)
                 return self.describe(identity)
             except BaseException as error:
+                for key, value in {'sandbox_id': identity, 'operation_id': operation_id,
+                                   'phase': record['state']}.items():
+                    if getattr(error, key, None) is None:
+                        setattr(error, key, value)
                 record.update(state='failed', error=str(error))
                 self.write(record)
                 if not spec.get('keep_on_error'):
                     try:
+                        self.detach_controls(identity, reason='terminate')
                         state = self.runtime.status(identity)['status']
                         if state in ('starting', 'running', 'paused'):
                             self.runtime.terminate(identity)
@@ -89,6 +141,13 @@ class Worker:
                 raise
 
     def describe(self, identity):
+        if not self.path(identity).exists():
+            matches = [self.read(path.stem)['id'] for path in self.records.glob('*.bin')
+                       if self.read(path.stem).get('name') == identity and
+                       self.read(path.stem)['state'] not in ('terminated', 'stopped', 'failed')]
+            if len(matches) != 1:
+                raise FileNotFoundError('sandbox name is missing or ambiguous: ' + identity)
+            identity = matches[0]
         record = self.read(identity)
         status = self.runtime.status(identity)
         # Secret guest control tokens stay in the worker's private record.
@@ -156,8 +215,56 @@ class Worker:
             raise SetupError(f'setup exited with {status["returncode"]}: {stderr}', sandbox_id=identity)
         return status
 
+    def snapshot_info(self, reference):
+        return self.store.public(self.store.resolve(reference))
+
+    def snapshot_spec(self, reference):
+        saved = self.store.resolve(reference)
+        return {'reference': saved['id'], 'spec': saved['spec']}
+
+    def snapshot_verify(self, reference):
+        return self.store.verify(self.store.resolve(reference))
+
+    def capture(self, identity, state='memory', key=None):
+        previous = self.store.alias(key) if key is not None else None
+        if previous and previous['provenance'] != 'captured':
+            raise CacheConflict('cache name contains a preparation build: ' + key)
+        record = self.read(identity)
+        if state == 'memory' and record['spec']['resources']['gpu']:
+            raise UnsupportedFeature('live GPU graphics checkpoints are unsupported; choose filesystem state')
+        revision = 'snap-' + uuid.uuid4().hex
+        self.detach_controls(identity, reason='snapshot')
+        try:
+            saved = self.runtime.capture(identity, revision, state)
+        finally:
+            if record['state'] == 'ready':
+                self.attach_controls(identity, cold=False)
+        metadata = self.store.record(revision, saved, record)
+        if key is not None:
+            self.store.publish(key, metadata, (previous or {}).get('id'))
+        return self.store.public(metadata)
+
+    def stop(self, identity, state='auto'):
+        record = self.read(identity)
+        if record['state'] == 'stopped' and record.get('checkpoint'):
+            return self.snapshot_info(record['checkpoint'])
+        previous = record['state']
+        self.pause(identity)
+        try:
+            saved = self.capture(identity, state=state)
+        except BaseException:
+            if previous == 'ready':
+                self.resume(identity)
+            raise
+        self.terminate(identity)
+        record = self.read(identity)
+        record.update(state='stopped', checkpoint=saved['id'])
+        self.write(record)
+        return saved
+
     def pause(self, identity):
         record = self.read(identity)
+        self.detach_controls(identity, reason='pause')
         self.runtime.pause(identity)
         record['state'] = 'paused'
         self.write(record)
@@ -168,15 +275,70 @@ class Worker:
         self.runtime.resume(identity)
         record['state'] = 'ready'
         self.write(record)
+        self.attach_controls(identity, cold=False)
         return self.describe(identity)
 
     def terminate(self, identity):
         record = self.read(identity)
+        self.detach_controls(identity, reason='terminate')
         if self.runtime.status(identity)['status'] in ('running', 'paused', 'starting'):
             self.runtime.terminate(identity)
         record['state'] = 'terminated'
         self.write(record)
         return self.describe(identity)
+
+    def start_services(self, identity):
+        from ..templates.controls import Context
+        context = Context(self, identity)
+        spec = self.read(identity)['spec']
+        for name, service in spec['template']['services'].items():
+            command = service['command']
+            process = uuid.uuid4().hex
+            self.command_start(identity, process,
+                               command=command if isinstance(command, str) else None,
+                               argv=command if isinstance(command, list) else None,
+                               user=service.get('user'), env=service.get('env'),
+                               cwd=service.get('cwd', '/workspace'))
+            self.process_stdin(identity, process, close=True)
+            ready = service.get('ready', {}).get('exec')
+            if ready:
+                deadline = time.monotonic() + service.get('ready_timeout', 120)
+                while True:
+                    if self.process_status(identity, process)['returncode'] is not None:
+                        raise SetupError('template service exited before readiness: ' + name)
+                    result = context.run(argv=ready if isinstance(ready, list) else None,
+                                         command=ready if isinstance(ready, str) else None,
+                                         user=service.get('user', spec['template']['user']),
+                                         timeout=5, check=False)
+                    if result['returncode'] == 0:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise SetupError('template service readiness timed out: ' + name)
+                    time.sleep(.1)
+
+    def attach_controls(self, identity, *, cold=False):
+        from ..templates.controls import Context, provider
+        attached = self.controls.setdefault(identity, {})
+        for name, config in self.read(identity)['spec']['template']['capabilities'].items():
+            if name not in attached:
+                attached[name] = provider(config.get('provider', name)).attach(Context(self, identity), config, cold=cold)
+            elif hasattr(attached[name], 'reattach'):
+                attached[name].reattach()
+
+    def detach_controls(self, identity, *, reason):
+        attached = self.controls.get(identity, {})
+        for name in list(attached):
+            retained = attached[name].detach(reason)
+            if not retained:
+                del attached[name]
+
+    def control(self, identity, name, method, parameters):
+        if self.read(identity)['state'] != 'ready':
+            raise SandboxError('controls require a ready sandbox', sandbox_id=identity)
+        self.attach_controls(identity)
+        if name not in self.controls[identity]:
+            raise UnsupportedFeature('template does not provide controls: ' + name)
+        return self.controls[identity][name].call(method, parameters)
 
     def dispatch(self, operation, parameters):
         if operation == '_shutdown_if_idle':
@@ -186,7 +348,8 @@ class Worker:
             threading.Thread(target=self.shutdown, daemon=True).start()
             return {'stopping': True}
         allowed = {'create', 'describe', 'list', 'command_start', 'process_status', 'process_output',
-                   'process_stdin', 'process_terminate', 'file', 'setup', 'pause', 'resume', 'terminate'}
+                   'process_stdin', 'process_terminate', 'file', 'setup', 'pause', 'resume', 'terminate',
+                   'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root)}
         if operation not in allowed:

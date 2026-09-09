@@ -39,6 +39,29 @@ The allocation is running on `babel-u5-28` with one L40S. Current acceptance:
   harness probe, not a host unit suite; its attempted import lacked autoharness.
   It belongs in later desktop acceptance with its prepared harness environment.
 
-Cache/restore, desktop/VR adapters, pools, remote/native adapters, complete CLI,
-installed-wheel acceptance and the full feature matrix remain in progress.
-No performance target or full-feature acceptance is claimed by these tests.
+Further public-API acceptance on the same owned allocation:
+
+- Four cache/checkpoint tests passed (153.31 s): independent filesystem clones,
+  immutable references versus moved names, integrity verification, live process
+  RAM and stdin restoration, safe stop, failed-save recovery, preparation reuse,
+  content invalidation and captured/prepared provenance conflicts.
+- Pool isolation/order/concurrency, async command cancellation, and CLI command,
+  name, output and exit-code tests passed. Used guests are discarded; pool
+  preparation/refill and checkout are separate work.
+- Desktop input/pause/restore acceptance passed after fixing startup readiness.
+  Xvnc availability and an announced window manager were insufficient: creation
+  now also waits for the GNOME session and desktop paint. The test exits GNOME's
+  initial overview before directing input to its application. Actual `typed.png`
+  and `resumed.png` were opened and inspected in `runs/sdk-acceptance/desktop`.
+  The exact Unicode text reaches the application; this base lacks Japanese
+  glyph fonts, which appear as missing-glyph boxes. Filesystem restore boots
+  a fresh desktop and retains saved files.
+- Portable VR frame/recording code was extracted without changing its format;
+  all 12 existing VR stream host tests passed. The SDK VR adapter and two game
+  templates are implemented but live acceptance is still underway. The first
+  GPU attempt timed out before GNOME readiness, before launching Monado/game.
+  A disposable retained diagnostic guest is investigating the prepared base.
+
+Remote/native adapters, resource admission/TTL/mounts, GPU/VR qualification,
+remaining CLI parity, installed-wheel acceptance and the full feature matrix
+remain in progress. No performance target or full-feature acceptance is claimed.

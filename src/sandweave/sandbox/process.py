@@ -26,11 +26,13 @@ class OutputStream:
         self.offset = 0
         self.buffer = b'' if binary else ''
         self.decoder = None if binary else codecs.getincrementaldecoder('utf-8')(errors='replace')
+        self.raw_received = 0
 
     def _chunk(self):
         data = self.process.sandbox._call('process_output', process_id=self.process.id,
                                           stream=self.name, offset=self.offset, size=64*1024)
         self.offset += len(data)
+        self.raw_received = len(data)
         return data if self.binary else self.decoder.decode(data)
 
     @dualmethod
@@ -40,7 +42,7 @@ class OutputStream:
         while size < 0 or len(self.buffer) < size:
             chunk = self._chunk()
             self.buffer += chunk
-            if not chunk:
+            if not self.raw_received:
                 if self.process.poll() is not None:
                     if not self.binary:
                         self.buffer += self.decoder.decode(b'', final=True)
@@ -56,7 +58,7 @@ class OutputStream:
         while newline not in self.buffer:
             chunk = self._chunk()
             self.buffer += chunk
-            if not chunk:
+            if not self.raw_received:
                 if self.process.poll() is not None:
                     if not self.binary:
                         self.buffer += self.decoder.decode(b'', final=True)
@@ -91,9 +93,12 @@ class InputStream:
             raise ValueError('stdin is closed')
         data = data.encode() if isinstance(data, str) else bytes(data)
         written = 0
-        for start in range(0, len(data), 1024**2):
-            written += self.process.sandbox._call('process_stdin', process_id=self.process.id,
-                                                   data=data[start:start+1024**2])
+        while written < len(data):
+            count = self.process.sandbox._call('process_stdin', process_id=self.process.id,
+                                               data=data[written:written+1024**2])
+            written += count
+            if count == 0:
+                time.sleep(.01)
         return written
 
     @dualmethod

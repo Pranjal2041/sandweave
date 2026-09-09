@@ -48,6 +48,9 @@ class Connection:
                        'FileExistsError': FileExistsError, 'PermissionError': PermissionError,
                        'BrokenPipeError': BrokenPipeError, 'TimeoutError': TimeoutError,
                        'KeyError': KeyError}.get(detail['kind'], errors.SandboxError)
+            if builtin is errors.SandboxError:
+                raise builtin(detail['message'], operation_id=detail.get('operation_id'),
+                              sandbox_id=detail.get('sandbox_id'), phase=detail.get('phase'))
             raise builtin(detail['message'])
         return result['result']
 

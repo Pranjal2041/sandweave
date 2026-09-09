@@ -1,5 +1,6 @@
 """Adapter around qualified engine operations, run only inside the private worker."""
 import importlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -104,6 +105,21 @@ class Runtime:
     def create(self, identity, spec, *, snapshot=None, token=None):
         token = token or secrets.token_hex(32)
         options = self.options(spec)
+        if snapshot is None and spec['template'].get('base_snapshot'):
+            from ...workspace import assets
+            from ...snapshots import Store
+            base = assets()
+            registry = json.loads((base / 'sandweave-assets.json').read_text())
+            source = registry['snapshots'][spec['template']['base_snapshot']]
+            relative = Path(source['path'])
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('base snapshot must be inside the asset directory')
+            path = base / relative
+            manifest = json.loads((path / 'snapshot-manifest.json').read_text())
+            if manifest['snapshot_id'] != source['snapshot_id'] or manifest['kind'] != 'filesystem':
+                raise ValueError('template base snapshot identity does not match its asset registry')
+            snapshot = Store(self).materialize({'id': 'snap-' + source['snapshot_id'],
+                                               'workspace': str(base), 'location': str(path)})
         init = spec['template'].get('runtime_options', {}).get('init', 'agent')
         command = ['python3', '-u', '-c', agent_source(), str(AGENT_PORT), token]
         if init in ('systemd', 'docker'):
@@ -119,6 +135,16 @@ class Runtime:
                                timeout=spec.get('startup_timeout', 300))
             cold = True
         if init in ('systemd', 'docker') and cold:
+            deadline = time.monotonic() + spec.get('startup_timeout', 300)
+            while True:
+                try:
+                    self.manager._run([*self.manager._command(identity), 'exec', identity,
+                                       'test', '-S', '/run/systemd/private'], timeout=10)
+                    break
+                except RuntimeError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('guest systemd control bus did not become ready: ' + identity)
+                    time.sleep(.1)
             self.manager._run([*self.manager._command(identity), 'exec', identity,
                                'systemd-run', '--unit=sandweave-agent', '--collect',
                                'python3', '-u', '-c', agent_source(), str(AGENT_PORT), token], timeout=30)

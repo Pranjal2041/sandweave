@@ -2,9 +2,16 @@ schema_version = 1
 user = "ga"
 command_shell = "/bin/sh"
 
+[env]
+DISPLAY = ":1"
+XAUTHORITY = "/home/ga/.Xauthority"
+XDG_RUNTIME_DIR = "/run/user/1000"
+DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/1000/bus"
+
 [resources]
 cpu = 4
 memory = "8GiB"
+runtime_memory = "1GiB"
 
 [runtime_options]
 init = "systemd"

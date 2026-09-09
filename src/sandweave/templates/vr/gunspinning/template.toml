@@ -1,0 +1,16 @@
+schema_version = 1
+extends = "vr/opensaber@1"
+
+[setup]
+script = "setup.sh"
+user = "root"
+
+[capabilities.vr]
+game_command = ["sh", "/opt/vr/vr-vulkan-xvnc.sh", "/opt/engine-gpu/vr/gunspinning-linux-2.0.1/GunSpinningVR", "-screen-fullscreen", "0", "-screen-width", "1280", "-screen-height", "720", "-vrmode", "OpenVR", "-force-vulkan", "-noaudio", "-logFile", "/tmp/gunspinning-motion.log"]
+
+[capabilities.vr.game_env]
+XR_RUNTIME_JSON = "/opt/vr/monado/share/openxr/1/openxr_monado.json"
+VR_OVERRIDE = "/opt/engine-gpu/vr/xrizer-v0.5"
+OXR_LAB_ALLOW_MISSING_GLX_CONFIG = "1"
+VK_DRIVER_FILES = "/opt/vr/vulkan.json"
+VK_ICD_FILENAMES = "/opt/vr/vulkan.json"

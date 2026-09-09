@@ -7,6 +7,7 @@ from pathlib import Path
 import pwd
 import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -23,6 +24,32 @@ class Agent:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.processes, self.lock = {}, threading.RLock()
+        # A cold boot retains process logs but cannot retain their old liveness.
+        # Memory restore resumes this object and never executes this initializer.
+        for directory in self.root.iterdir():
+            metadata = directory / 'process.json'
+            if metadata.is_file() and not (directory / 'exit.json').exists():
+                (directory / 'exit.json').write_text(json.dumps({
+                    'returncode': -128, 'cold_boot': True, 'finished_ns': time.monotonic_ns()}))
+        if os.getpid() == 1:
+            threading.Thread(target=self.reap_orphans, daemon=True).start()
+
+    def reap_orphans(self):
+        while True:
+            with self.lock:
+                owned = {process.pid for process in self.processes.values()}
+                for task in Path('/proc/self/task').glob('*/children'):
+                    try:
+                        children = list(map(int, task.read_text().split()))
+                    except FileNotFoundError:
+                        continue
+                    for pid in children:
+                        if pid not in owned:
+                            try:
+                                os.waitpid(pid, os.WNOHANG)
+                            except ChildProcessError:
+                                pass
+            time.sleep(.1)
 
     def directory(self, identity):
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}', identity):
@@ -57,9 +84,13 @@ class Agent:
                                            **kwargs)
             except BaseException:
                 stdout.close(); stderr.close()
-                (directory / 'exit.json').write_text(json.dumps({'returncode': 127, 'spawn_failed': True}))
+                now = time.monotonic_ns()
+                (directory / 'process.json').write_text(json.dumps({'id': identity, 'pid': None, 'started_ns': now}))
+                (directory / 'exit.json').write_text(json.dumps({'returncode': 127, 'spawn_failed': True,
+                                                               'finished_ns': now}))
                 raise
             self.processes[identity] = process
+            os.set_blocking(process.stdin.fileno(), False)
             started = time.monotonic_ns()
             (directory / 'process.json').write_text(json.dumps({'id': identity, 'pid': process.pid,
                                                               'started_ns': started}))
@@ -116,11 +147,15 @@ class Agent:
                 return 0
             raise BrokenPipeError('process stdin is closed')
         if data:
-            process.stdin.write(data)
-            process.stdin.flush()
+            try:
+                written = os.write(process.stdin.fileno(), data)
+            except BlockingIOError:
+                written = 0
+        else:
+            written = 0
         if close:
             process.stdin.close()
-        return len(data)
+        return written
 
     def terminate(self, identity):
         with self.lock:
@@ -174,6 +209,10 @@ def main(port, token):
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
+
+        def setup(self):
+            super().setup()
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
         def log_message(self, *args):
             pass

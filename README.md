@@ -124,6 +124,17 @@ observation with `.image` and timing metadata. It captures after the input serve
 acknowledges the action; your application may still be processing it.
 See the [desktop loop example](notes/sandbox-api-examples.md#4-a-desktop-agent-loop).
 
+To inspect startup time:
+
+```python
+print(env.timings)
+```
+
+`ready_seconds` measures sandbox startup on the worker. The other entries show
+time spent launching the runtime, running setup and waiting for the desktop.
+First-use installation and worker preparation happen before this timer starts.
+See [startup measurements](notes/gnome-startup-profiling.md) for the breakdown.
+
 ## Cache and reuse an environment
 
 Continuing with the desktop above:

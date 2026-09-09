@@ -31,6 +31,7 @@ scripts/gamepad-input.py
 scripts/gvisor-guest-cgroup-v1.sh
 scripts/gvisor-guest-docker.sh
 scripts/gvisor-guest-gates.sh
+scripts/gvisor-guest-gnome-init.sh
 scripts/gvisor-guest-gpu-gl.sh
 scripts/gvisor-guest-gpu-init.sh
 scripts/gvisor-guest-gpu.sh

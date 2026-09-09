@@ -4,6 +4,7 @@ import time
 
 from ...sandbox.asyncio import dualmethod
 from ...sandbox.errors import UnsupportedFeature
+from ...sandbox.timings import measure
 
 
 @dataclass(frozen=True)
@@ -92,20 +93,74 @@ class AttachedDesktop:
             raise UnsupportedFeature('desktop fast I/O currently supports xvnc; Wayland is an explicit lab option')
         self.client = context.runtime.manager.fast_io(context.id, backend=backend)
         deadline = time.monotonic() + context.remaining(config.get('ready_timeout', 120))
+        try:
+            with measure('desktop_display_seconds'):
+                self._wait_for_display(context, deadline)
+            with measure('desktop_session_seconds'):
+                self._wait_for_session(context, deadline)
+            with measure('desktop_configure_seconds'):
+                if cold and config.get('resolution'):
+                    width, height = config['resolution']
+                    if type(width) is not int or type(height) is not int or not (320 <= width <= 3840 and 240 <= height <= 2160):
+                        raise ValueError('desktop resolution must be between 320x240 and 3840x2160')
+                    context.run(argv=['xrandr', '--output', 'VNC-0', '--mode', f'{width}x{height}'], user='ga',
+                                env={'DISPLAY': ':1', 'XAUTHORITY': '/home/ga/.Xauthority'})
+            with measure('desktop_startup_seconds'):
+                if cold:
+                    self._finish_startup(context, config, deadline)
+            with measure('desktop_paint_seconds'):
+                if config.get('wait_for_paint', True):
+                    self._wait_for_paint(deadline)
+        except BaseException:
+            self.client.close()
+            raise
+
+    def _wait_for_display(self, context, deadline):
         while True:
             try:
-                self.client.screenshot()
                 window_manager = context.run(argv=['xprop', '-root', '_NET_SUPPORTING_WM_CHECK', '_NET_CLIENT_LIST'],
-                    user='ga', env={'DISPLAY': ':1', 'XAUTHORITY': '/home/ga/.Xauthority'}, check=False)
+                    user='ga', env={'DISPLAY': ':1', 'XAUTHORITY': '/home/ga/.Xauthority'}, timeout=5, check=False)
                 if b'window id # 0x' in window_manager['stdout'] and b'_NET_CLIENT_LIST(WINDOW)' in window_manager['stdout']:
+                    self.client.screenshot()
                     break
                 if time.monotonic() >= deadline:
                     raise TimeoutError('GNOME window manager did not become ready')
             except Exception:
                 if time.monotonic() >= deadline:
-                    self.client.close()
                     raise
             time.sleep(.2)
+
+    def _finish_startup(self, context, config, deadline):
+        # IsSessionRunning precedes Shell's startup animation and initial
+        # overview. Wait for Shell's own startup-complete notification before
+        # changing presentation, or its later animation can undo the change.
+        while True:
+            started = context.run(argv=['journalctl', '--boot', '--quiet', '--no-pager', '--output=cat', '--lines=1',
+                'MESSAGE_ID=f3ea493c22934e26811cd62abe8e203a', '_UID=1000'], timeout=5, check=False)
+            if started['returncode'] == 0 and started['stdout'].strip():
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError('GNOME Shell did not finish its startup animation')
+            time.sleep(.1)
+        if config.get('initial_overview', False):
+            return
+        bus = ['gdbus', 'call', '--session', '--dest', 'org.gnome.Shell',
+               '--object-path', '/org/gnome/Shell', '--method']
+        environment = {'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus'}
+        context.run(argv=[*bus, 'org.freedesktop.DBus.Properties.Set',
+                         'org.gnome.Shell', 'OverviewActive', '<false>'],
+                    user='ga', env=environment, timeout=5)
+        while True:
+            state = context.run(argv=[*bus, 'org.freedesktop.DBus.Properties.Get',
+                                      'org.gnome.Shell', 'OverviewActive'],
+                                user='ga', env=environment, timeout=5)
+            if state['stdout'].strip() == b'(<false>,)':
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError('GNOME overview did not close before the readiness deadline')
+            time.sleep(.1)
+
+    def _wait_for_session(self, context, deadline):
         while True:
             session = context.run(argv=['gdbus', 'call', '--session', '--dest', 'org.gnome.SessionManager',
                 '--object-path', '/org/gnome/SessionManager', '--method', 'org.gnome.SessionManager.IsSessionRunning'],
@@ -115,21 +170,16 @@ class AttachedDesktop:
             if time.monotonic() >= deadline:
                 raise TimeoutError('GNOME session did not finish starting')
             time.sleep(.2)
-        if cold and config.get('resolution'):
-            width, height = config['resolution']
-            if type(width) is not int or type(height) is not int or not (320 <= width <= 3840 and 240 <= height <= 2160):
-                raise ValueError('desktop resolution must be between 320x240 and 3840x2160')
-            context.run(argv=['xrandr', '--output', 'VNC-0', '--mode', f'{width}x{height}'], user='ga',
-                        env={'DISPLAY': ':1', 'XAUTHORITY': '/home/ga/.Xauthority'})
-        if config.get('wait_for_paint', True):
-            while True:
-                image = self.client.screenshot()
-                bounds = image.convert('L').getbbox()
-                if bounds and bounds[2] > image.width * .75 and bounds[3] > image.height * .75:
-                    break
-                if time.monotonic() >= deadline:
-                    raise TimeoutError('GNOME did not paint its desktop before the readiness deadline')
-                time.sleep(.1)
+
+    def _wait_for_paint(self, deadline):
+        while True:
+            image = self.client.screenshot()
+            bounds = image.convert('L').getbbox()
+            if bounds and bounds[2] > image.width * .75 and bounds[3] > image.height * .75:
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError('GNOME did not paint its desktop before the readiness deadline')
+            time.sleep(.1)
 
     def call(self, method, parameters):
         if method == 'action':

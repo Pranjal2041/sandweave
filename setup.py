@@ -8,8 +8,15 @@ from setuptools.command.build_py import build_py
 
 class BuildPy(build_py):
     def run(self):
-        super().run()
         root = Path(__file__).parent
+        package = Path(self.build_lib) / 'sandweave'
+        if package.resolve().is_relative_to((root / 'src').resolve()):
+            raise ValueError('build output must be separate from package sources')
+        # setuptools copies changed files but retains removed template files
+        # from an earlier build. Publish only the current package sources.
+        if package.exists():
+            shutil.rmtree(package)
+        super().run()
         destination = Path(self.build_lib) / 'sandweave/sandbox/runtimes/gvisor/_engine'
         if destination.exists():
             shutil.rmtree(destination)

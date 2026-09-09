@@ -4,6 +4,22 @@ The user approved implementation around two pillars: templates define setup,
 startup and controls; sandboxes implement running instances and their lifecycle.
 The README's public API remains the contract, including command strings.
 
+## GNOME startup profiling (2026-09-09)
+
+The [startup investigation](gnome-startup-profiling.md) reproduced the user's
+34-second desktop launch and traced 25 seconds to failed AccountsService
+activation. Guest configuration now runs before systemd, and desktop readiness
+includes GNOME's completed startup and a closed initial overview. The VNC
+clipboard configuration window and expected first-use screen-lock notice are
+hidden. Startup phase timings are exposed through `env.timings`.
+
+The installed wheel started a clean desktop in 9.52 seconds of worker readiness,
+9.82 seconds end to end. CPU desktop memory restore measured 1.64–1.95 seconds;
+warm pool checkout including the first screenshot measured 12.98–15.86 ms.
+Application input, pause/resume, cold filesystem restore, memory restore and
+actual screenshots were checked. Original user desktops remained running.
+See the linked investigation for sample scope, preparation costs and artifacts.
+
 ## Current status
 
 Sandweave 0.1.0 implements the agreed Python/CLI contract, with the limits in

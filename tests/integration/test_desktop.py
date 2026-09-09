@@ -22,14 +22,14 @@ def release_idle_test_worker():
 
 
 def test_desktop_actions_pause_and_filesystem_restore():
-    artifacts = Path(os.environ['SANDWEAVE_ASSETS']) / 'runs/sdk-acceptance/desktop'
+    artifacts = Path(os.environ.get('SANDWEAVE_TEST_ARTIFACTS',
+                                   str(Path(os.environ['SANDWEAVE_ASSETS']) / 'runs/sdk-acceptance/desktop')))
     artifacts.mkdir(parents=True, exist_ok=True)
     with Sandbox(template='gnome') as env:
         image = env.desktop.screenshot()
         assert image.mode == 'RGB' and image.size == (1280, 800)
         image.save(artifacts / 'initial.png')
-        env.desktop.keyboard.press('Escape')
-        time.sleep(.3)  # Leave GNOME's initial overview before focusing the test app.
+        assert_clean_start(env)
         source = '''import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
@@ -79,6 +79,39 @@ Gtk.main()
         baseline = env.cache('sdk-desktop-' + uuid.uuid4().hex)
         application.terminate()
     with Sandbox(cache=baseline) as restored:
+        assert_clean_start(restored)
         assert restored.files.read_text('/workspace/typed') == expected
         restored.desktop.screenshot().save(artifacts / 'restored.png')
         assert restored.capabilities['desktop']['version'] == 1
+
+
+def overview(env, value=None):
+    command = ('gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell '
+               '--method org.freedesktop.DBus.Properties.')
+    if value is not None:
+        return env.run(command + 'Set org.gnome.Shell OverviewActive "<' + value + '>"').stdout
+    return env.run(command + 'Get org.gnome.Shell OverviewActive').stdout.strip()
+
+
+def assert_clean_start(env):
+    assert overview(env) == '(<false>,)'
+    visible = env.run("xdotool search --onlyvisible --class '^Vncconfig$'", check=False)
+    assert visible.returncode == 1 and not visible.stdout
+    assert env.run('pgrep -x tigervncconfig', check=False).returncode == 0
+    assert env.run('systemctl is-active accounts-daemon', user='root').stdout.strip() == 'active'
+    assert env.timings['controls_seconds'] >= env.timings['desktop_startup_seconds'] >= 0
+
+
+def test_pause_preserves_user_overview_and_startup_timings():
+    with Sandbox(template='gnome') as env:
+        assert_clean_start(env)
+        initial_timings = env.timings
+        overview(env, 'true')
+        deadline = time.monotonic() + 5
+        while overview(env) != '(<true>,)':
+            assert time.monotonic() < deadline
+            time.sleep(.05)
+        env.pause()
+        env.resume()
+        assert overview(env) == '(<true>,)'
+        assert env.timings == initial_timings

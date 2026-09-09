@@ -14,6 +14,7 @@ from ...connection import Connection
 from ...errors import ResourceUnavailable, UnsupportedFeature
 from ...resources import memory_bytes
 from ...workspace import locked, atomic_json
+from ...timings import measure
 
 AGENT_PORT = 23799
 
@@ -153,7 +154,10 @@ class Runtime:
         init = spec['template'].get('runtime_options', {}).get('init', 'agent')
         command = ['python3', '-u', '-c', agent_source(), str(AGENT_PORT), token]
         if init in ('systemd', 'docker'):
-            command = ['/sbin/init']
+            command = spec['template']['runtime_options'].get('init_command', ['/sbin/init'])
+            if not isinstance(command, list) or not command or any(
+                    not isinstance(arg, str) or '\0' in arg for arg in command):
+                raise ValueError('init_command must be a nonempty list of arguments')
         archive = spec['template']['runtime_options'].get('docker_archive')
         if archive and snapshot is None:
             from ...workspace import assets, _immutable
@@ -163,16 +167,21 @@ class Runtime:
             _immutable(assets() / relative, self.root / relative)
             options += ['--docker-data', '--docker-archive', str(self.root / relative)]
             command = ['/usr/local/bin/engine-docker', 'init']
-        if snapshot:
-            manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
-            self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),
-                              options=options, timeout=remaining(),
-                              experimental_gpu_live=spec.get('experimental_gpu_live', False))
-            cold = manifest['kind'] == 'filesystem'
-        else:
-            self.manager.start(identity, command=command, options=options,
-                               timeout=remaining())
-            cold = True
+        with measure('runtime_launch_seconds'):
+            if snapshot:
+                manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
+                self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),
+                                  options=options, timeout=remaining(),
+                                  experimental_gpu_live=spec.get('experimental_gpu_live', False))
+                cold = manifest['kind'] == 'filesystem'
+            else:
+                self.manager.start(identity, command=command, options=options,
+                                   timeout=remaining())
+                cold = True
+        with measure('runtime_agent_seconds'):
+            return self._start_agent(identity, token, init, cold, deadline, remaining)
+
+    def _start_agent(self, identity, token, init, cold, deadline, remaining):
         if init in ('systemd', 'docker') and cold:
             while True:
                 try:

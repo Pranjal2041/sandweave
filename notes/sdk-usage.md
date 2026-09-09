@@ -205,6 +205,27 @@ First-use installation of host dependencies happens before that deadline starts.
 `keep_on_error=True` retains a failed guest for diagnosis using the exception's
 `sandbox_id`; it does not return an environment claimed to be ready.
 
+`env.timings` reports startup durations in seconds. `ready_seconds` is the total
+inside the worker; it excludes installation, worker preparation, client transport
+and cache publication after readiness. The top-level phases are `admission_seconds`,
+`snapshot_seconds`, `runtime_seconds`, `setup_seconds`, `services_seconds` and
+`controls_seconds`. They exclude small gaps for record writes. `runtime_launch_seconds`
+and `runtime_agent_seconds` detail time already included in `runtime_seconds`;
+`desktop_*` entries detail time already included in `controls_seconds`. Do not add those
+details to their parent totals. Failed creation records retain completed phases
+and elapsed time in the failing phase. Pause/resume does not replace startup timings.
+
+The GNOME template starts on the desktop with its VNC clipboard helper hidden.
+Its Xvnc session does not provide GDM screen locking; the template suppresses
+GNOME's one-time notice about that expected limitation.
+Set `initial_overview = true` under `[capabilities.desktop]` in a custom template
+to keep GNOME's initial overview. Cold filesystem restores repeat desktop startup;
+pause/resume and memory restores retain the user's current presentation.
+The built-in GNOME recipe runs its guest service configuration before systemd,
+using `runtime_options.init_command`. This optional argument list replaces
+`/sbin/init` for a template with `init = "systemd"`; its wrapper must eventually
+exec systemd. It runs only on cold boots, inside the sandbox.
+
 `env.exec("bash", pty=True)` opens a real guest terminal; `process.resize(rows,
 cols)` adjusts its size. Terminal stdout/stderr share one channel, with normal
 terminal echo and line endings. Closing terminal stdin sends canonical EOF;

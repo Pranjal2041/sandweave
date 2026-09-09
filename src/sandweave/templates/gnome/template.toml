@@ -3,9 +3,6 @@ installation = "gnome"
 user = "ga"
 command_shell = "/bin/sh"
 
-[setup]
-script = "setup.sh"
-
 [env]
 DISPLAY = ":1"
 XAUTHORITY = "/home/ga/.Xauthority"
@@ -19,6 +16,7 @@ runtime_memory = "1GiB"
 
 [runtime_options]
 init = "systemd"
+init_command = ["/usr/local/bin/engine-gnome-init"]
 
 [capabilities.desktop]
 resolution = [1280, 800]

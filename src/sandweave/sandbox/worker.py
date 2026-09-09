@@ -15,6 +15,7 @@ import uuid
 from .errors import SandboxError, SetupError, UnsupportedFeature, CacheConflict, IncompatibleSnapshot
 from .snapshots import Store
 from .wire import decode, encode, MAX_BODY
+from .timings import collect, measure
 from .workspace import atomic_json, home, prepare
 
 
@@ -107,7 +108,7 @@ class Worker:
 
     def _create(self, spec, identity, *, operation_id=None, reference=None):
         started = time.monotonic()
-        with self.lock(identity):
+        with self.lock(identity), collect() as timings:
             if self.path(identity).exists():
                 record = self.read(identity)
                 if record.get('operation_id') != operation_id:
@@ -124,37 +125,43 @@ class Worker:
             declared = descriptors(spec['template'])
             record = {'id': identity, 'name': spec.get('name'), 'spec': spec, 'state': 'creating',
                       'operation_id': operation_id, 'created_at': time.time(), 'agent': None,
-                      'timings': {}, 'workspace': str(self.root), 'capabilities': declared}
+                      'timings': timings, 'workspace': str(self.root), 'capabilities': declared}
             from .admission import admit
             with self.guard:
                 if self.stopping:
                     raise SandboxError('worker is shutting down')
                 record['admission'] = admit(self, spec)
                 self.write(record)
+            timings['admission_seconds'] = time.monotonic() - started
             try:
                 self.deadlines[identity] = started + spec['startup_timeout']
-                saved = self.store.resolve(reference) if reference else None
-                if saved and saved['state'] == 'memory':
-                    for key in ('runtime', 'resources', 'env', 'mounts'):
-                        if spec[key] != saved['spec'][key]:
-                            raise IncompatibleSnapshot('memory restore cannot change ' + key)
-                snapshot = self.store.materialize(saved) if saved else None
+                with measure('snapshot_seconds'):
+                    saved = self.store.resolve(reference) if reference else None
+                    if saved and saved['state'] == 'memory':
+                        for key in ('runtime', 'resources', 'env', 'mounts'):
+                            if spec[key] != saved['spec'][key]:
+                                raise IncompatibleSnapshot('memory restore cannot change ' + key)
+                    snapshot = self.store.materialize(saved) if saved else None
                 token = saved['agent']['token'] if saved and saved['state'] == 'memory' else None
-                record['agent'] = self.runtime.create(identity, {**spec, '_startup_deadline': self.deadlines[identity]},
-                                                       snapshot=snapshot, token=token)
+                with measure('runtime_seconds'):
+                    record['agent'] = self.runtime.create(identity, {**spec, '_startup_deadline': self.deadlines[identity]},
+                                                         snapshot=snapshot, token=token)
                 self.remaining(identity)
                 record['state'] = 'preparing'
                 self.write(record)
-                if saved is None:
-                    for step in spec['template'].get('setup_steps', []):
-                        self.setup(identity, step)
-                else:
-                    record['restored_from'] = saved['id']
+                with measure('setup_seconds'):
+                    if saved is None:
+                        for step in spec['template'].get('setup_steps', []):
+                            self.setup(identity, step)
+                    else:
+                        record['restored_from'] = saved['id']
                 self.write(record)
                 cold = saved is None or saved['state'] == 'filesystem'
-                if cold:
-                    self.start_services(identity)
-                self.attach_controls(identity, cold=cold)
+                with measure('services_seconds'):
+                    if cold:
+                        self.start_services(identity)
+                with measure('controls_seconds'):
+                    self.attach_controls(identity, cold=cold)
                 self.remaining(identity)
                 record['state'] = 'ready'
                 if spec.get('ttl') is not None:

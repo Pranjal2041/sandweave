@@ -245,6 +245,10 @@ the accepted artifacts below are preserved in the original workspace.
 
 ### Both-eye video demo
 
+For the distinction between virtual-headset eye views and physical headset
+appearance, and the offline partial panorama conversion, see
+[projection and capture provenance](vr-offline-equirectangular.md).
+
 Every VR demo now requires videos of both eyes. The follow-up recording captures
 the same offline GunSpinning guest through the existing continuous stereo ring:
 

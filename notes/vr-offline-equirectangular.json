@@ -1,0 +1,131 @@
+{
+  "projection": "equirectangular",
+  "coverage": "partial, forward view only",
+  "canvas_degrees": [
+    360,
+    180
+  ],
+  "input_fov_degrees": [
+    85.0,
+    89.23973803804061
+  ],
+  "fov_provenance": "Derived from the saved Monado remote-HMD source: symmetric 85-degree horizontal FOV, per-eye physical model 0.065m wide by 0.07m high. Assumes the recorded build used those defaults; the recording has no per-frame FOV telemetry.",
+  "camera_model": "symmetric rectilinear; head-relative orientation each frame",
+  "unobserved_directions": "black; no reconstruction or generated pixels",
+  "limitations": [
+    "Not a complete 180/360-degree recording",
+    "No world stabilization, depth reconstruction, or new eye positions",
+    "Original rendered corner masks remain in the captured region",
+    "No physical-headset optical calibration or playback validation",
+    "No spherical/stereo player metadata injected; select projection/layout manually",
+    "Lossy resampling; canvas resolution is not captured scene resolution",
+    "Audio is omitted"
+  ],
+  "sources": [
+    {
+      "path": "/data/user_data/pranjala/general-vm/runs/gunspinning/gunspinning-stereo-demo-01/frames/left-eye.mp4",
+      "sha256": "11218c614adb082f0349fb77d203f8c0186141df75c4cca8f5417aa3f8e827a6"
+    },
+    {
+      "path": "/data/user_data/pranjala/general-vm/runs/gunspinning/gunspinning-stereo-demo-01/frames/right-eye.mp4",
+      "sha256": "e69b582f4eefbfaedc950098d22638a5a0a362afb409b64fbc2d01d9c3d82a34"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "runs/gunspinning/gunspinning-stereo-demo-01/partial-equirectangular/left-eye.mp4",
+      "sha256": "bb3286aa25ddae6effa470075bd86914a93e01fec7f9fd21792335b428bda9ca",
+      "bytes": 1769662,
+      "stream": {
+        "width": 2048,
+        "height": 1024,
+        "r_frame_rate": "16000/1",
+        "time_base": "1/16000",
+        "duration": "33.668000"
+      },
+      "frames": 748,
+      "timestamps_match_input": true
+    },
+    {
+      "path": "runs/gunspinning/gunspinning-stereo-demo-01/partial-equirectangular/right-eye.mp4",
+      "sha256": "c58451d483d4863495b2be56192f0fd179697ca1857714d18982ead880b1d758",
+      "bytes": 1779925,
+      "stream": {
+        "width": 2048,
+        "height": 1024,
+        "r_frame_rate": "16000/1",
+        "time_base": "1/16000",
+        "duration": "33.668000"
+      },
+      "frames": 748,
+      "timestamps_match_input": true
+    },
+    {
+      "path": "runs/gunspinning/gunspinning-stereo-demo-01/partial-equirectangular/stereo-preview.mp4",
+      "sha256": "095f79b7dc0fc25b97bfe600c38f9d71c89a57d732243bd656d030369b56c3fc",
+      "bytes": 3381600,
+      "stream": {
+        "width": 4096,
+        "height": 1024,
+        "r_frame_rate": "16000/1",
+        "time_base": "1/16000",
+        "duration": "33.668000"
+      },
+      "frames": 748,
+      "timestamps_match_input": true
+    }
+  ],
+  "verification": {
+    "decode": {
+      "left-eye.mp4": {
+        "full_decode_errors": 0,
+        "frames": 748,
+        "timestamps_match_input": true
+      },
+      "right-eye.mp4": {
+        "full_decode_errors": 0,
+        "frames": 748,
+        "timestamps_match_input": true
+      },
+      "stereo-preview.mp4": {
+        "full_decode_errors": 0,
+        "frames": 748,
+        "timestamps_match_input": true
+      }
+    },
+    "visually_inspected_decoded_frames": [
+      "left-eye-21s.png",
+      "right-eye-21s.png",
+      "stereo-preview-27s.png"
+    ],
+    "findings": [
+      "Both eyes contain the training range, hands, guns and distinct perspectives",
+      "Recorded scene stays in the forward region; unseen directions remain black",
+      "Hands and view change between 21 and 27 seconds",
+      "Original corner cutouts remain visible inside the captured region"
+    ],
+    "black_mask_checks": {
+      "left": {
+        "unseen_outer_columns_max_rgb": 0
+      },
+      "right": {
+        "unseen_outer_columns_max_rgb": 0
+      }
+    },
+    "original_video_hashes_unchanged": true,
+    "physical_headset_playback_tested": false,
+    "recorded_capture_pairs_per_second": 22.18777074485236,
+    "runtime_started_or_contacted": false
+  },
+  "audited_source_sha256": {
+    "tools/gpu/vr/monado-source/src/xrt/drivers/remote/r_hmd.c": "df92547d585340a140a9a3755482cd78d33cbfe615d47ab9e68a134cadf19fa8",
+    "tools/gpu/vr/monado-source/src/xrt/auxiliary/util/u_device.c": "04a592da3c63cec92f85ae26f6d5e2880ddb5f6ebce9f17b54672577a5b91c1a",
+    "tools/gpu/vr/monado-source/src/xrt/auxiliary/math/m_optics.c": "1e41cdb4658ae3ccb2b6070c0b075478ff11eb715544458515cf1dbdbf6dd6db",
+    "tools/gpu/vr/monado-source/src/xrt/auxiliary/util/u_visibility_mask.c": "2c227ea8adede231b505314a76567df92d66503fcfa9493fbf3f5c844c93fce6",
+    "tools/gpu/vr/monado-source/src/xrt/compositor/main/comp_renderer.c": "fc44dcab5d92e0d9ddbf2434a728b1daa502cb180c445e950179d93804594824",
+    "tools/gpu/vr/monado-source/src/xrt/compositor/main/comp_mirror_to_debug_gui.c": "e5844498c1cf64d061a16b9e1e0c717626ceea8b3d2322fb2b03536834e50995",
+    "tools/gpu/vr/monado-source/src/xrt/compositor/util/comp_render.h": "ac58a8dabb2a9eebf5a3ee430577daa2e04d02a7209543977680c45fe17e16bd",
+    "tools/gpu/vr/monado-source/src/xrt/compositor/util/comp_high_level_render.h": "9cd95dbaf12f60b441c13eb3bb82d8e67dd2535ea6d162f954555e143c3b153c",
+    "downloads/gunspinning-vr/xrizer-v0.5-source/src/system.rs": "17dd10762509f23b66ffa7e350e227f6509516970fc22472c3c953fcaa3cdb17"
+  }
+}

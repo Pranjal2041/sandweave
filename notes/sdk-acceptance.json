@@ -230,8 +230,8 @@
     },
     "cleanup.json": {
       "path": "runs/sdk-acceptance/cleanup.json",
-      "sha256": "aff25bbd6a73fc381348628f68add6c9a9e32d735b871aa26a5e3e45ff6939db",
-      "bytes": 4632
+      "sha256": "45062f6c3ada7f2c8bdc2594244e0596409c47525dab0d34dccf995e30dd0303",
+      "bytes": 4818
     }
   },
   "sdk_sources_sha256": "0ad06b61c9b4fb10c0195a53a9bb51c9b5524b0b51d3239ebbd5fd78fd7da0a3",
@@ -372,6 +372,7 @@
   "cleanup": {
     "owned_job": "10367253",
     "state": "CANCELLED",
-    "other_jobs_cancelled_by_final_cleanup": []
+    "other_jobs_cancelled_by_final_cleanup": [],
+    "post_cancel_process_audit": "SSH unavailable after cancellation; no direct post-cancel process-list claim"
   }
 }

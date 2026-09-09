@@ -148,7 +148,11 @@ class Sandbox:
         the worker's loopback address.
         """
         from .information import summarize
-        return summarize(self.status())
+        value = summarize(self.status())
+        if value['vnc'] is not None:
+            from ..templates.gnome.controls import vnc_password
+            value['vnc']['password'] = vnc_password(self)
+        return value
 
     @property
     def timings(self):

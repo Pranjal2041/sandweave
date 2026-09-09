@@ -21,7 +21,7 @@ def summarize(record):
         if port is not None:
             port = int(port)
             vnc = {'url': f'vnc://127.0.0.1:{port}', 'port': port,
-                   'worker_host': hostname}
+                   'worker_host': hostname, 'password': None}
     return copy.deepcopy({
         'id': record['id'], 'name': record.get('name'), 'state': record['state'],
         'template': spec['template']['name'], 'runtime': spec['runtime'],

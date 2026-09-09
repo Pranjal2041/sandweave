@@ -174,7 +174,7 @@ prints the same fields as JSON; a unique sandbox name also works.
 | `cpu` | Configured `vcpus`, sharing `weight` and optional `quota`. |
 | `memory` | Configured `guest` and `runtime` budgets, in the units supplied at creation. |
 | `gpus` | Selected devices, each with `model`, `uuid` and worker `device` path. |
-| `vnc` | A ready Xvnc desktop's `url`, worker-side `port` and `worker_host`; otherwise `None`. |
+| `vnc` | A ready Xvnc desktop's `url`, worker-side `port`, `worker_host` and `password`; otherwise `None`. |
 
 CPU and memory are configuration, not live utilization or dedicated host
 reservations. gVisor rounds memory budgets up to whole MiB; CPU weights and
@@ -194,7 +194,12 @@ returns `gpus=None` for a running GPU sandbox. Unknown worker fields are also
 VNC URLs use `127.0.0.1` **on the worker**. Remote access depends on your setup.
 The summary provides connection details without scheduler metadata or generated
 connection commands. TigerVNC also accepts `127.0.0.1::PORT` for an explicit TCP port.
-VNC authentication still uses the desktop's configured password.
+`env.info["vnc"]["password"]` returns the installed VNC password, checked against
+the desktop's password file. It handles generated installation passwords and
+the older prepared images' lab password. TigerVNC uses the first eight password
+bytes. If a custom setup changes the password, keep `/etc/sandweave-vnc-password`
+in sync with `/home/ga/.vnc/passwd`; an absent or mismatched credential returns
+`password=None`.
 
 Accessing `env.info` contacts the worker and raises on a lost connection or a
 closed handle. It excludes setup payloads, environment variables, and control
@@ -234,7 +239,7 @@ command = "python /workspace/app.py"
 ready = { exec = "curl -fsS http://localhost:8000/health" }
 
 [capabilities.desktop]
-resolution = [1920, 1080]
+resolution = [1280, 800]
 ```
 
 Setup files are copied into the guest. Services start on each cold boot; memory
@@ -256,7 +261,7 @@ and `runtime_agent_seconds` detail time already included in `runtime_seconds`;
 details to their parent totals. Failed creation records retain completed phases
 and elapsed time in the failing phase. Pause/resume does not replace startup timings.
 
-The GNOME template starts on the desktop with its VNC clipboard helper hidden.
+The GNOME template starts at 1920×1080 with its VNC clipboard helper hidden.
 Its Xvnc session does not provide GDM screen locking; the template suppresses
 GNOME's one-time notice about that expected limitation.
 Set `initial_overview = true` under `[capabilities.desktop]` in a custom template

@@ -37,7 +37,7 @@ def test_summary_reports_vnc_endpoint_without_scheduler_metadata_or_connection_c
     value = summarize(record())
     assert value['worker'] == {'hostname': 'worker.example'}
     assert value['vnc'] == {'worker_host': 'worker.example', 'port': 43210,
-                            'url': 'vnc://127.0.0.1:43210'}
+                            'url': 'vnc://127.0.0.1:43210', 'password': None}
     serialized = json.dumps(value)
     assert 'job_id' not in serialized and 'ssh_command' not in serialized
 
@@ -74,12 +74,14 @@ def test_legacy_worker_uses_launcher_host_and_does_not_invent_gpu_selection():
     assert summarize(source)['gpus'] == []
 
 
-def test_info_fetches_current_state_and_mutation_cannot_change_the_handle():
+def test_info_fetches_current_state_and_mutation_cannot_change_the_handle(monkeypatch):
     source = record()
     env = Sandbox.__new__(Sandbox)
     env.id, env._closed = source['id'], False
     env._connection = SimpleNamespace(call=lambda *a, **kw: copy.deepcopy(source))
+    monkeypatch.setattr('sandweave.templates.gnome.controls.vnc_password', lambda _: 'testpass')
     assert env.info['state'] == 'ready'
+    assert env.info['vnc']['password'] == 'testpass'
     env.info['cpu']['vcpus'] = 100
     assert env.spec['resources']['cpu']['vcpus'] == 4
     source['state'] = 'terminated'

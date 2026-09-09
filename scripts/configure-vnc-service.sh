@@ -4,7 +4,7 @@ printf ':1=ga\n' > /etc/tigervnc/vncserver.users
 if [ -f /home/ga/.vnc/xstartup ]; then mv /home/ga/.vnc/xstartup /home/ga/.vnc/xstartup.initial; fi
 cat > /home/ga/.vnc/tigervnc.conf <<'CONFIG'
 $session = "gnome";
-$geometry = "1280x800";
+$geometry = "1920x1080";
 $depth = "24";
 $localhost = "no";
 $SecurityTypes = "VncAuth";

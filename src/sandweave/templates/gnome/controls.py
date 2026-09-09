@@ -13,6 +13,30 @@ class DesktopObservation:
     metadata: dict
 
 
+def vnc_password(sandbox):
+    """Read the installed credential, checking it against TigerVNC's file.
+
+    Older prepared images lack the plaintext file and used the lab password.
+    Never advertise that fallback unless its encrypted bytes still match.
+    Runs through the command API so existing workers can be inspected too.
+    """
+    result = sandbox.run(argv=['python3', '-c', '''
+from pathlib import Path
+import subprocess
+try:
+    encrypted = Path('/home/ga/.vnc/passwd').read_bytes()[:8]
+    source = Path('/etc/sandweave-vnc-password')
+    password = source.read_bytes().splitlines()[0][:8] if source.exists() else b'labvnc01'
+    generated = subprocess.run(['tigervncpasswd', '-f'], input=password + b'\\n',
+                               capture_output=True, check=True, timeout=2).stdout
+    if len(encrypted) == 8 and generated[:8] == encrypted:
+        print(password.decode('utf-8'), end='')
+except (OSError, IndexError, UnicodeError, subprocess.SubprocessError):
+    pass
+'''], user='root', timeout=5, check=False)
+    return result.stdout if result.returncode == 0 and result.stdout else None
+
+
 def decode_image(value):
     from PIL import Image
     return Image.frombytes('RGB', tuple(value['size']), value['rgb'])
@@ -98,6 +122,10 @@ class AttachedDesktop:
                 self._wait_for_display(context, deadline)
             with measure('desktop_session_seconds'):
                 self._wait_for_session(context, deadline)
+            with measure('desktop_startup_seconds'):
+                if cold:
+                    self._finish_startup(context, config, deadline)
+            # Keep monitor changes out of Shell's startup animation.
             with measure('desktop_configure_seconds'):
                 if cold and config.get('resolution'):
                     width, height = config['resolution']
@@ -105,9 +133,6 @@ class AttachedDesktop:
                         raise ValueError('desktop resolution must be between 320x240 and 3840x2160')
                     context.run(argv=['xrandr', '--output', 'VNC-0', '--mode', f'{width}x{height}'], user='ga',
                                 env={'DISPLAY': ':1', 'XAUTHORITY': '/home/ga/.Xauthority'})
-            with measure('desktop_startup_seconds'):
-                if cold:
-                    self._finish_startup(context, config, deadline)
             with measure('desktop_paint_seconds'):
                 if config.get('wait_for_paint', True):
                     self._wait_for_paint(deadline)

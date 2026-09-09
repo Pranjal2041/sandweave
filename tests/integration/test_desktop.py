@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from sandweave import Sandbox
+from sandweave import Sandbox, Template
 from sandweave.sandbox.targets import local_connection
 
 pytestmark = [pytest.mark.integration,
@@ -27,7 +27,7 @@ def test_desktop_actions_pause_and_filesystem_restore():
     artifacts.mkdir(parents=True, exist_ok=True)
     with Sandbox(template='gnome') as env:
         image = env.desktop.screenshot()
-        assert image.mode == 'RGB' and image.size == (1280, 800)
+        assert image.mode == 'RGB' and image.size == (1920, 1080)
         image.save(artifacts / 'initial.png')
         assert_clean_start(env)
         source = '''import gi
@@ -81,7 +81,9 @@ Gtk.main()
     with Sandbox(cache=baseline) as restored:
         assert_clean_start(restored)
         assert restored.files.read_text('/workspace/typed') == expected
-        restored.desktop.screenshot().save(artifacts / 'restored.png')
+        image = restored.desktop.screenshot()
+        assert image.size == (1920, 1080)
+        image.save(artifacts / 'restored.png')
         assert restored.capabilities['desktop']['version'] == 1
 
 
@@ -103,8 +105,10 @@ def assert_clean_start(env):
 
 
 def test_pause_preserves_user_overview_and_startup_timings():
-    with Sandbox(template='gnome') as env:
+    template = Template({'extends': 'gnome', 'capabilities': {'desktop': {'resolution': [1280, 800]}}})
+    with Sandbox(template=template) as env:
         assert_clean_start(env)
+        assert env.desktop.screenshot().size == (1280, 800)
         initial_timings = env.timings
         overview(env, 'true')
         deadline = time.monotonic() + 5

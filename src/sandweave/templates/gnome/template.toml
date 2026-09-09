@@ -19,5 +19,5 @@ init = "systemd"
 init_command = ["/usr/local/bin/engine-gnome-init"]
 
 [capabilities.desktop]
-resolution = [1280, 800]
+resolution = [1920, 1080]
 backend = "xvnc"

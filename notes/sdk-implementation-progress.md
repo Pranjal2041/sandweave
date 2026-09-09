@@ -4,6 +4,38 @@ The user approved implementation around two pillars: templates define setup,
 startup and controls; sandboxes implement running instances and their lifecycle.
 The README's public API remains the contract, including command strings.
 
+## Desktop defaults and VNC credentials (2026-09-09)
+
+New GNOME sandboxes default to 1920×1080. The template, source installation and
+lab VNC configuration agree; custom template resolutions remain supported.
+Resolution changes now follow Shell's completed startup. The first acceptance
+attempt resized during startup and then timed out waiting for Shell's completion
+message. The final run passed after reordering those steps.
+
+`env.info["vnc"]["password"]` reads the installed credential through the guest
+command API, including on existing workers. It checks the encrypted password
+file before returning either a generated password or the older lab default.
+Missing or mismatched credentials return `None`; reading does not reset them.
+The README shows the field and no longer includes the redundant GitHub badge.
+
+The final installed wheel passed all three desktop/information integration
+cases from `/tmp` in 79.11 seconds. Checks completed VNC authentication using
+the advertised generated and legacy passwords, read a 1920×1080 framebuffer,
+compared CLI/Python summaries, rejected stale credential metadata, and exercised
+keyboard input, pause/resume, filesystem restore and a 1280×800 override.
+The 117 host cases passed; one optional dependency case was skipped.
+All 54 package sources and 54 engine inputs matched the wheel and installation.
+
+The actual first desktop, restored desktop and typed-input screenshots were
+opened and inspected, as were the GitHub-rendered README at desktop and phone
+widths. The existing missing Japanese font glyphs remain visible in the input
+test; the application receives the exact Unicode text. Evidence is under ignored
+`runs/desktop-defaults-Gy7uoN`. It also retains the initial startup timeout and
+an invalid rerun that overlapped wheel reinstallation; the latter failed on
+temporarily missing installed files. The final run began after installation
+completed. All nine task sandboxes were stopped, no task worker remains, and
+both original user desktops remained ready and running.
+
 ## Sandbox information (2026-09-09)
 
 `env.info` and `sandweave info ID` collect lifecycle state, template/runtime,

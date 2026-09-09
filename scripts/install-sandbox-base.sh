@@ -61,7 +61,7 @@ case "$profile" in
         chmod 600 /home/ga/.vnc/passwd
         mkdir -p /etc/tigervnc
         printf ':1=ga\n' > /etc/tigervnc/vncserver.users
-        printf 'session=gnome\ngeometry=1280x800\ndepth=24\nlocalhost=no\nalwaysshared\nsecuritytypes=vncauth\n' > /home/ga/.vnc/config
+        printf 'session=gnome\ngeometry=1920x1080\ndepth=24\nlocalhost=no\nalwaysshared\nsecuritytypes=vncauth\n' > /home/ga/.vnc/config
         chown ga:ga /home/ga/.vnc/config
         systemctl enable tigervncserver@:1.service
         mkdir -p /sandweave-output/fast-io

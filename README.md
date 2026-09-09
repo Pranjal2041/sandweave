@@ -4,7 +4,6 @@
   <a href="#install"><img src="https://img.shields.io/badge/PyPI-Coming_soon-3776AB?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI: coming soon"></a>
   <a href="notes/sdk-usage.md"><img src="https://img.shields.io/badge/Docs-Read-2563EB?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read the docs"></a>
   <a href="#install"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11 and newer"></a>
-  <a href="https://github.com/Pranjal2041/sandweave"><img src="https://img.shields.io/badge/GitHub-Code-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub source"></a>
 </div>
 
 Sandweave runs Linux sandboxes for agent training and evaluation. Use Python or
@@ -136,7 +135,7 @@ env.setup("./install-chrome-and-myapp.sh")
 ```
 
 Write `install-chrome-and-myapp.sh` to install your applications. The setup
-script runs inside the sandbox. The `gnome` template starts GNOME with Xvnc and
+script runs inside the sandbox. The `gnome` template starts GNOME at 1920×1080 with Xvnc and
 provides screenshots, mouse input and keyboard input:
 
 ```python
@@ -182,6 +181,7 @@ print(info["cpu"])     # {"vcpus": 4, "weight": 100, "quota": None}
 print(info["memory"])  # {"guest": "8GiB", "runtime": "1GiB"}
 print(info["gpus"])    # [] unless you requested a GPU
 print(info["vnc"]["url"])
+print(info["vnc"]["password"])
 ```
 
 CPU and memory values are configured budgets, not current utilization. GPU

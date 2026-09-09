@@ -81,6 +81,27 @@ def _immutable(source, destination):
         shutil.copy2(source, destination)
 
 
+def stage_tree(source, destination):
+    """Idempotently stage immutable trees, including existing relative symlinks."""
+    source, destination = Path(source), Path(destination)
+    if source.is_symlink():
+        target = os.readlink(source)
+        if destination.is_symlink():
+            if os.readlink(destination) != target:
+                raise ValueError('staged immutable symlink changed: ' + str(destination))
+        elif destination.exists():
+            raise ValueError('staged immutable entry changed type: ' + str(destination))
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.symlink_to(target)
+    elif source.is_dir():
+        destination.mkdir(parents=True, exist_ok=True)
+        for child in source.iterdir():
+            stage_tree(child, destination / child.name)
+    else:
+        _immutable(source, destination)
+
+
 def prepare():
     source = engine_sources()
     files = sorted(p for p in source.iterdir()
@@ -103,8 +124,7 @@ def prepare():
         for directory in ('runtime-builds', 'fast-io', 'network', 'erofs', 'gvisor-nightly-20260906'):
             src = base / 'tools' / directory
             if src.is_dir():
-                shutil.copytree(src, root / 'tools' / directory, copy_function=_immutable, dirs_exist_ok=True,
-                                symlinks=True)
+                stage_tree(src, root / 'tools' / directory)
         (root / 'tools/gvisor-socket').mkdir(exist_ok=True)
         shutil.copy2(base / 'tools/gvisor-socket/runtime.json', root / 'tools/gvisor-socket/runtime.json')
         revisions = base / 'notes/source-revisions.json'

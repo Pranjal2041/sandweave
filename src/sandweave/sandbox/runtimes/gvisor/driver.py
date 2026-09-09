@@ -24,7 +24,7 @@ def agent_source():
     source = Path(guest_agent.__file__).read_text()
     return ("import sys, types\nm=types.ModuleType('sandweave_wire')\n"
             f"exec({wire_source!r}, m.__dict__)\nsys.modules['sandweave_wire']=m\n" + source +
-            "\nmain(int(sys.argv[1]), sys.argv[2])\n")
+            "\nmain(sys.argv[1], sys.argv[2])\n")
 
 
 class Runtime:
@@ -62,17 +62,14 @@ class Runtime:
             if not destination.exists():
                 gpu_module.stage_driver(destination)
             # Rendering launchers and CUDA checkpoint tools are immutable assets.
-            from ...workspace import assets, _immutable
+            from ...workspace import assets, stage_tree
             source = assets() / 'tools/gpu'
             if source.is_dir():
                 for path in source.iterdir():
                     if path.name == 'driver':
                         continue
                     dest = destination.parent / path.name
-                    if path.is_dir():
-                        shutil.copytree(path, dest, copy_function=_immutable, symlinks=True, dirs_exist_ok=True)
-                    elif not dest.exists():
-                        _immutable(path, dest)
+                    stage_tree(path, dest)
         return selected
 
     def options(self, spec):

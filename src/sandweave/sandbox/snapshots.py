@@ -119,6 +119,9 @@ class Store:
                 'verification': json.loads(status.read_text()) if status.exists() else {'status': 'missing'}}
 
     def verify(self, record):
+        if record['spec']['runtime'] == 'apptainer':
+            from .runtimes.apptainer.driver import verify
+            return verify(Path(record['workspace']), Path(record['location']))
         import snapshot_store
         return snapshot_store.verify(Path(record['workspace']), Path(record['location']))
 
@@ -126,7 +129,11 @@ class Store:
         """Make all engine-relative inputs available on this worker, without aliases outside it."""
         import snapshot_store
         source, workspace = Path(record['location']), Path(record['workspace'])
-        manifest = snapshot_store.inspect(workspace, source)
+        native = record['spec']['runtime'] == 'apptainer'
+        manifest = (json.loads((source / 'snapshot-manifest.json').read_text()) if native
+                    else snapshot_store.inspect(workspace, source))
+        if native and self.verify(record)['status'] != 'passed':
+            raise IncompatibleSnapshot('native snapshot integrity verification failed')
         if workspace == self.runtime.root:
             return source
         # Initial integrity completion needs its source node. Never import a
@@ -138,7 +145,7 @@ class Store:
             manifest = snapshot_store.inspect(workspace, source)
         destination = self.runtime.root / 'snapshots' / record['id']
         with locked(destination.parent / ('.' + record['id'] + '.import.lock')):
-            for info in (manifest['base_image'], manifest['runtime']):
+            for info in ([manifest['base_image']] if native else [manifest['base_image'], manifest['runtime']]):
                 relative = Path(info['path'])
                 if relative.is_absolute() or '..' in relative.parts:
                     raise IncompatibleSnapshot('snapshot dependency escapes its workspace')
@@ -151,7 +158,12 @@ class Store:
                 temporary = destination.with_name('.' + destination.name + '.importing')
                 if temporary.exists():
                     shutil.rmtree(temporary)
-                shutil.copytree(source, temporary)
+                shutil.copytree(source, temporary, symlinks=True)
                 temporary.rename(destination)
-        snapshot_store.inspect(self.runtime.root, destination)
+        if native:
+            from .runtimes.apptainer.driver import verify
+            if verify(self.runtime.root, destination)['status'] != 'passed':
+                raise IncompatibleSnapshot('imported native snapshot integrity verification failed')
+        else:
+            snapshot_store.inspect(self.runtime.root, destination)
         return destination

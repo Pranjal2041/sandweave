@@ -26,7 +26,9 @@ this task. `previous_transcript.txt` remains untouched and untracked.
 
 ## Acceptance results
 
-The allocation is running on `babel-u5-28` with one L40S. Current acceptance:
+The allocation initially ran on `babel-u5-28` with one L40S. It was preempted
+and requeued on `babel-q9-16`; durable SDK artifacts survived, live RAM did not.
+Current acceptance:
 
 - 9 package foundation tests passed: binary framing, resource validation,
   template inheritance/fingerprints and sync/async method binding.
@@ -62,6 +64,23 @@ Further public-API acceptance on the same owned allocation:
   GPU attempt timed out before GNOME readiness, before launching Monado/game.
   A disposable retained diagnostic guest is investigating the prepared base.
 
-Remote/native adapters, resource admission/TTL/mounts, GPU/VR qualification,
+- The Slurm target passed remote commands/files, borrowed handles, pause/resume
+  and filesystem cache restore on the new node (26.30 s). A borrowed allocation
+  remains running after its sandbox exits. Its worker runs in a persistent Slurm
+  step, so ending a caller does not kill the worker. A separate CPU-only request
+  was rejected by this site's GPU-required QoS and that owned request was cancelled.
+- Native Apptainer and command regressions passed five live tests (21.20 s),
+  including affinity, writable root setup, pause with open stdin, independent
+  filesystem clones, deletion across restore, safe stop, integrity verification,
+  and rejection of memory snapshots/filtered networking/CPU weights/GUI templates.
+  The native adapter reports host networking, single-UID root mapping, CPU
+  affinity and a sampled aggregate RSS guard; these differ from gVisor guarantees.
+- The GPU desktop delay was traced to the prepared image's oneshot GNOME Keyring
+  unit: its daemon caused a 90-second systemd stop timeout. The GNOME recipe now
+  uses foreground D-Bus service readiness. Fresh prepared GPU desktop readiness
+  passed in 40.97 s and the screenshot was inspected. Its initial overview still
+  requires leaving overview before application keyboard input.
+
+Resource admission/TTL/mounts, GPU/VR qualification,
 remaining CLI parity, installed-wheel acceptance and the full feature matrix
 remain in progress. No performance target or full-feature acceptance is claimed.

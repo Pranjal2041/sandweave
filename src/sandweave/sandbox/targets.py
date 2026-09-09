@@ -1,15 +1,89 @@
 """Explicit worker placement. A client connection never owns unrelated jobs."""
 import json
+import argparse
+import atexit
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import socket
+import shlex
 import subprocess
 import sys
 import time
+import threading
+import uuid
 
 from .connection import Connection
 from .errors import ResourceUnavailable
-from .workspace import home, locked
+from .workspace import home, locked, atomic_json
+from .asyncio import dualmethod, dualclassmethod
+from .resources import memory_bytes, positive
+
+_tunnels, _tunnel_lock = {}, threading.Lock()
+
+
+def _validate_host(host):
+    if not isinstance(host, str) or not host or host.startswith('-') or any(c.isspace() for c in host):
+        raise ValueError('SSH host must be a host alias or user@hostname')
+    return host
+
+
+def _ssh(host, command, *, timeout=180):
+    _validate_host(host)
+    return subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', host,
+                           shlex.join(command)], capture_output=True, text=True, timeout=timeout, check=True).stdout
+
+
+def _tunnel(host, port):
+    _validate_host(host)
+    key = host, port
+    with _tunnel_lock:
+        previous = _tunnels.get(key)
+        if previous and previous[0].poll() is None:
+            return previous[1]
+        with socket.socket() as reservation:
+            reservation.bind(('127.0.0.1', 0))
+            local_port = reservation.getsockname()[1]
+        process = subprocess.Popen(['ssh', '-N', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+            '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
+            '-L', f'127.0.0.1:{local_port}:127.0.0.1:{port}', host], stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+        deadline = time.monotonic() + 15
+        while True:
+            if process.poll() is not None:
+                raise ResourceUnavailable('SSH tunnel failed: ' + process.stderr.read().decode(errors='replace')[-2000:])
+            try:
+                with socket.create_connection(('127.0.0.1', local_port), timeout=.2):
+                    break
+            except OSError:
+                if time.monotonic() > deadline:
+                    process.terminate(); process.wait(timeout=5)
+                    raise ResourceUnavailable('SSH tunnel did not become ready')
+                time.sleep(.05)
+        _tunnels[key] = process, local_port
+        return local_port
+
+
+@atexit.register
+def _close_owned_tunnels():
+    for process, port in _tunnels.values():
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill(); process.wait()
+        if process.stderr:
+            process.stderr.close()
+
+
+def _worker_environment(config):
+    environment = {}
+    for name, key in (('SANDWEAVE_HOME', 'home'), ('SANDWEAVE_ASSETS', 'assets'), ('PYTHONPATH', 'pythonpath')):
+        value = config.get(key) or os.environ.get(name)
+        if value:
+            environment[name] = str(value)
+    return environment
 
 
 def local_connection():
@@ -26,6 +100,14 @@ def local_connection():
                 return connection
             except Exception:
                 connection.close()
+                # A failed health check is not permission to replace a live
+                # authority. Distinguish a dead PID from an unavailable worker.
+                try:
+                    command = Path(f'/proc/{info["pid"]}/cmdline').read_bytes().split(b'\0')
+                except FileNotFoundError:
+                    command = []
+                if b'sandweave.sandbox.worker' in command and str(metadata).encode() in command:
+                    raise ResourceUnavailable('existing worker is alive but unreachable; inspect ' + str(directory / 'worker.log'))
                 metadata.unlink()
         with (directory / 'worker.log').open('ab') as log:
             environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) +
@@ -50,4 +132,202 @@ def local_connection():
 def connect(target=None):
     if target in (None, 'local'):
         return local_connection()
-    raise ResourceUnavailable('target adapter is not registered: ' + str(target))
+    if isinstance(target, Slurm):
+        return target.connection()
+    if isinstance(target, str) and target.startswith('ssh://'):
+        target = {'host': target.removeprefix('ssh://')}
+    if isinstance(target, str):
+        config_path = home() / 'config.json'
+        config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        try:
+            target = config['targets'][target]
+        except KeyError:
+            raise ResourceUnavailable('target is not configured: ' + str(target)) from None
+    if not isinstance(target, dict):
+        raise ValueError('target must be local, an SSH URI, configured name, mapping or Slurm allocation')
+    if 'job_id' in target:
+        return Slurm.connect(target['job_id'], **{k: v for k, v in target.items() if k != 'job_id'}).connection()
+    host = target['host']
+    command = ['env', *[f'{k}={v}' for k, v in _worker_environment(target).items()],
+               target.get('python', 'python3'), '-m', 'sandweave.sandbox.targets', '--ensure']
+    info = json.loads(_ssh(host, command))
+    port = _tunnel(host, info['port'])
+    connection = Connection('127.0.0.1', port, info['token'])
+    connection.call('ping')
+    return connection
+
+
+@dataclass
+class Slurm:
+    job_id: str
+    config: dict
+    owned: bool = False
+    queue_seconds: float = 0
+
+    @dualclassmethod
+    def connect(cls, job_id, **config):
+        if not str(job_id).isdigit():
+            raise ValueError('Slurm job ID must be numeric')
+        return cls(str(job_id), config, owned=False)
+
+    @dualclassmethod
+    def acquire(cls, *, gpu=None, cpus=1, memory='4GiB', partition=None, qos=None,
+                walltime='1h', account=None, queue_timeout=None, **config):
+        positive(cpus, 'cpus', integer=True)
+        identifier = 'allocation-' + uuid.uuid4().hex
+        directory = home() / 'allocations' / identifier
+        directory.mkdir(parents=True, mode=0o700)
+        worker_environment = _worker_environment(config)
+        worker_environment.setdefault('PYTHONPATH', str(Path(__file__).resolve().parents[2]))
+        command = [config.get('python', sys.executable), '-m', 'sandweave.sandbox.worker',
+                   '--metadata', str(directory / 'worker.json')]
+        script = directory / 'worker.sh'
+        script.write_text('#!/bin/sh\nset -eu\n' +
+                          '\n'.join('export ' + shlex.quote(k + '=' + v) for k, v in worker_environment.items()) +
+                          '\nexec ' + shlex.join(command) + '\n')
+        arguments = ['sbatch', '--parsable', '--no-requeue', '--job-name=sandweave-worker',
+                     '--nodes=1', '--ntasks=1', '--cpus-per-task='+str(cpus),
+                     '--mem='+str((memory_bytes(memory)+1024**2-1)//1024**2)+'M',
+                     '--time='+_walltime(walltime), '--output='+str(directory / 'worker.log')]
+        for key, value in (('partition', partition), ('qos', qos), ('account', account)):
+            if value is not None:
+                arguments.append('--'+key+'='+str(value))
+        if gpu:
+            arguments.append('--gres=gpu:' + (str(gpu)+':' if gpu is not True else '') + '1')
+        result = subprocess.run([*arguments, str(script)], capture_output=True, text=True, check=True)
+        job_id = result.stdout.strip().split(';')[0]
+        allocation = cls(job_id, {**config, 'metadata': str(directory / 'worker.json'), 'cpus': cpus}, owned=True)
+        started = time.monotonic()
+        try:
+            allocation._wait(queue_timeout)
+        except BaseException:
+            allocation.close()
+            raise
+        allocation.queue_seconds = time.monotonic() - started
+        return allocation
+
+    def _job(self):
+        result = subprocess.run(['scontrol', 'show', 'job', '-o', self.job_id],
+                                capture_output=True, text=True, check=True)
+        fields = dict(piece.split('=', 1) for piece in result.stdout.split() if '=' in piece)
+        if fields.get('UserId', '').split('(', 1)[-1].rstrip(')') != str(os.getuid()):
+            raise ResourceUnavailable('Slurm job is not owned by this user')
+        return fields
+
+    def _wait(self, timeout=300):
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            job = self._job()
+            if job['JobState'] == 'RUNNING':
+                return job
+            if job['JobState'] not in ('PENDING', 'CONFIGURING'):
+                raise ResourceUnavailable('allocation is not runnable: ' + job['JobState'])
+            if job.get('Reason') in ('QOSMinGRES', 'BadConstraints', 'InvalidAccount', 'InvalidQOS'):
+                raise ResourceUnavailable('scheduler rejected these resource settings: ' + job['Reason'])
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError('allocation has not started before its queue deadline')
+            time.sleep(.5)
+
+    def connection(self):
+        job = self._wait(self.config.get('queue_timeout', 300))
+        if job.get('NumNodes') != '1':
+            raise ResourceUnavailable('select one worker per single-node Slurm allocation')
+        hostname = subprocess.check_output(['scontrol', 'show', 'hostnames', job['NodeList']], text=True).strip()
+        directory = home() / 'allocations' / ('job-' + self.job_id)
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        metadata = Path(self.config.get('metadata', directory / 'worker.json'))
+        # Existing-job placement starts one persistent step in that allocation.
+        # The worker never inherits CPUs/GPUs from the SSH daemon's environment.
+        if 'metadata' not in self.config:
+            with locked(directory / 'startup.lock'):
+                info = json.loads(metadata.read_text()) if metadata.exists() else None
+                if info is not None and info.get('hostname') == hostname:
+                    # Health failure alone does not permit replacing a live
+                    # worker. Check its exact process ownership before restart.
+                    port = info['port'] if hostname == socket.gethostname() else _tunnel(self.config.get('host', hostname), info['port'])
+                    probe = Connection('127.0.0.1', port, info['token'], timeout=2)
+                    try:
+                        probe.call('ping')
+                    except Exception:
+                        script = ('from pathlib import Path; p=Path(' + repr('/proc/' + str(info['pid']) + '/cmdline') +
+                                  '); a=p.read_bytes().split(bytes([0])) if p.exists() else []; print(int(' +
+                                  repr(b'sandweave.sandbox.worker') + ' in a and ' + repr(str(metadata).encode()) + ' in a))')
+                        command = [self.config.get('python', sys.executable), '-c', script]
+                        live = (subprocess.check_output(command, text=True) if hostname == socket.gethostname()
+                                else _ssh(self.config.get('host', hostname), command)).strip() == '1'
+                        if live:
+                            raise ResourceUnavailable('Slurm worker is alive but unreachable; inspect its private worker log')
+                        info = None
+                    finally:
+                        probe.close()
+                if info is None or info.get('hostname') != hostname:
+                    metadata.unlink(missing_ok=True)
+                    environment = {**os.environ, **_worker_environment(self.config)}
+                    environment.setdefault('PYTHONPATH', str(Path(__file__).resolve().parents[2]))
+                    cpus = self.config.get('cpus', int(job['NumCPUs']))
+                    command = ['srun', '--jobid='+self.job_id, '--overlap', '--ntasks=1', '--cpus-per-task='+str(cpus),
+                               self.config.get('python', sys.executable), '-m', 'sandweave.sandbox.worker',
+                               '--metadata', str(metadata)]
+                    with (directory / 'worker.log').open('ab') as log:
+                        process = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL,
+                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                    atomic_json(directory / 'launcher.json', {'pid': process.pid, 'job_id': self.job_id})
+                deadline = time.monotonic() + 180
+                while not metadata.exists():
+                    if process.poll() is not None:
+                        raise ResourceUnavailable('Slurm worker exited during startup; inspect ' + str(directory / 'worker.log'))
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('Slurm worker is still preparing; inspect ' + str(directory / 'worker.log'))
+                    time.sleep(.1)
+        else:
+            deadline = time.monotonic() + 180
+            while not metadata.exists():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('allocated worker did not publish readiness metadata')
+                time.sleep(.1)
+        info = json.loads(metadata.read_text())
+        if hostname == socket.gethostname():
+            port = info['port']
+        else:
+            port = _tunnel(self.config.get('host', hostname), info['port'])
+        connection = Connection('127.0.0.1', port, info['token'])
+        connection.call('ping')
+        return connection
+
+    @dualmethod
+    def close(self):
+        if self.owned:
+            # The explicit allocation scope owns its job; borrowed targets do not.
+            subprocess.run(['scancel', self.job_id], check=True)
+            self.owned = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close.aio()
+
+
+def _walltime(value):
+    import re
+    if re.fullmatch(r'\d+[hm]', str(value)):
+        return str(int(value[:-1]) * (60 if value[-1] == 'h' else 1))
+    if re.fullmatch(r'(?:\d+-)?\d+:\d{2}(?::\d{2})?', str(value)):
+        return str(value)
+    raise ValueError('walltime must be a duration such as 3h, 30m, or HH:MM:SS')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ensure', action='store_true', required=True)
+    parser.parse_args()
+    connection = local_connection()
+    information = connection.call('ping')
+    print(json.dumps({**information, 'port': connection.port, 'token': connection.token}))
+    connection.close()

@@ -8,6 +8,7 @@ import pwd
 import re
 import signal
 import socket
+import socketserver
 import subprocess
 import sys
 import threading
@@ -74,7 +75,7 @@ class Agent:
             child_env = {**os.environ, 'HOME': account.pw_dir, 'USER': account.pw_name,
                          'LOGNAME': account.pw_name, **(env or {})}
             kwargs = {}
-            if os.geteuid() == 0:
+            if os.geteuid() == 0 and (account.pw_uid != os.geteuid() or account.pw_gid != os.getegid()):
                 kwargs = {'user': account.pw_uid, 'group': account.pw_gid,
                           'extra_groups': os.getgrouplist(account.pw_name, account.pw_gid)}
             stdout, stderr = (directory / 'stdout').open('wb'), (directory / 'stderr').open('wb')
@@ -212,7 +213,8 @@ def main(port, token):
 
         def setup(self):
             super().setup()
-            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if self.connection.family == socket.AF_INET:
+                self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
         def log_message(self, *args):
             pass
@@ -240,6 +242,13 @@ def main(port, token):
             self.end_headers()
             self.wfile.write(payload)
 
-    server = ThreadingHTTPServer(('0.0.0.0', int(port)), Handler)
+    if str(port).startswith('/'):
+        class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+            daemon_threads = True
+        Path(port).unlink(missing_ok=True)
+        server = UnixServer(str(port), Handler)
+        Path(port).chmod(0o600)
+    else:
+        server = ThreadingHTTPServer(('0.0.0.0', int(port)), Handler)
     server.daemon_threads = True
     server.serve_forever(poll_interval=.1)

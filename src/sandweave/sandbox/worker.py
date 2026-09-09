@@ -19,7 +19,7 @@ from .workspace import atomic_json, home, prepare
 
 class Worker:
     def __init__(self, root):
-        from .runtimes.gvisor.driver import Runtime
+        from .runtimes.router import Runtime
         self.root = Path(root)
         self.runtime = Runtime(self.root)
         self.store = Store(self.runtime)
@@ -86,8 +86,7 @@ class Worker:
                     return self.describe(identity)
                 raise SandboxError('previous creation did not finish', sandbox_id=identity,
                                    operation_id=operation_id, phase=record['state'])
-            if spec['runtime'] != 'gvisor':
-                raise UnsupportedFeature('runtime has not been registered: ' + spec['runtime'])
+            self.runtime.adapter(spec['runtime'])
             if spec.get('mounts'):
                 raise UnsupportedFeature('explicit mount support is not yet configured')
             from ..templates.controls import descriptors
@@ -159,7 +158,8 @@ class Worker:
 
     def agent(self, identity):
         record = self.read(identity)
-        if record['state'] not in ('ready', 'preparing'):
+        diagnostic = record['state'] == 'failed' and record['spec'].get('keep_on_error') and record.get('agent')
+        if record['state'] not in ('ready', 'preparing') and not diagnostic:
             raise SandboxError('sandbox is not running: ' + record['state'], sandbox_id=identity)
         return self.runtime.agent(identity, record['agent'])
 

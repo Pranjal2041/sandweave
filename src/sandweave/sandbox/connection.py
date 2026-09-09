@@ -7,16 +7,29 @@ from . import errors
 from .wire import decode, encode, MAX_BODY
 
 
+class UnixHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, path, timeout):
+        super().__init__('localhost', timeout=timeout)
+        self.path = path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.path)
+
+
 class Connection:
-    def __init__(self, host, port, token, *, timeout=300):
+    def __init__(self, host, port, token, *, timeout=300, unix_path=None):
         self.host, self.port, self.token, self.timeout = host, int(port), token, timeout
+        self.unix_path = unix_path
         self.local = threading.local()
         self.connections, self.lock = [], threading.Lock()
 
     def call(self, operation, **parameters):
         connection = getattr(self.local, 'connection', None)
         if connection is None:
-            connection = http.client.HTTPConnection(self.host, self.port, timeout=self.timeout)
+            connection = UnixHTTPConnection(self.unix_path, self.timeout) if self.unix_path else http.client.HTTPConnection(
+                self.host, self.port, timeout=self.timeout)
             self.local.connection = connection
             with self.lock:
                 self.connections.append(connection)
@@ -51,7 +64,10 @@ class Connection:
             if builtin is errors.SandboxError:
                 raise builtin(detail['message'], operation_id=detail.get('operation_id'),
                               sandbox_id=detail.get('sandbox_id'), phase=detail.get('phase'))
-            raise builtin(detail['message'])
+            error = builtin(detail['message'])
+            for key in ('operation_id', 'sandbox_id', 'phase'):
+                setattr(error, key, detail.get(key))
+            raise error
         return result['result']
 
     def close(self):

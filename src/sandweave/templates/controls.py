@@ -34,7 +34,7 @@ def provider(name):
 class Context:
     def __init__(self, worker, identity):
         self.worker, self.id = worker, identity
-        self.runtime = worker.runtime
+        self.runtime = worker.runtime.for_identity(identity)
 
     def run(self, command=None, *, argv=None, user='root', env=None, cwd='/workspace', timeout=60, check=True):
         process = uuid.uuid4().hex

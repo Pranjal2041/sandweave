@@ -5,9 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sandweave"
 version = "0.1.0"
-description = "Reusable sandboxes without host sudo or KVM"
+description = "Fast, modular sandboxes for AI agents"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["questionary>=2,<3"]
+
+[project.urls]
+Repository = "https://github.com/Pranjal2041/sandweave"
+Documentation = "https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md"
+Issues = "https://github.com/Pranjal2041/sandweave/issues"
 
 [project.optional-dependencies]
 desktop = ["Pillow", "numpy"]

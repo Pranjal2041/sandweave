@@ -1,4 +1,11 @@
-# Sandweave
+<div align="center">
+  <h1>Sandweave</h1>
+  <p>Fast, modular sandboxes for AI agents.</p>
+  <a href="#install"><img src="https://img.shields.io/badge/PyPI-Coming_soon-3776AB?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI: coming soon"></a>
+  <a href="notes/sdk-usage.md"><img src="https://img.shields.io/badge/Docs-Read-2563EB?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read the docs"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11 and newer"></a>
+  <a href="https://github.com/Pranjal2041/sandweave"><img src="https://img.shields.io/badge/GitHub-Code-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub source"></a>
+</div>
 
 Sandweave runs Linux sandboxes for agent training and evaluation. Use Python or
 the CLI to run code, control a desktop, or interact with a VR game. Sandboxes run
@@ -9,6 +16,13 @@ A sandbox is a running instance of that template. You can use a built-in
 template, provide a setup script, or write your own template.
 
 ## Install
+
+PyPI publication is coming soon. For now, clone this repository:
+
+```bash
+git clone https://github.com/Pranjal2041/sandweave.git
+cd sandweave
+```
 
 From this checkout, inside a Python 3.11+ environment on a Linux x86-64 worker:
 

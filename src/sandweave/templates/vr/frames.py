@@ -2,7 +2,7 @@
 import importlib.util
 import sys
 
-from ...sandbox.workspace import engine_sources
+from ...sandbox.workspace import engine_sources, tool
 
 _name = 'sandweave.templates.vr._frame_codec'
 if _name not in sys.modules:
@@ -14,5 +14,13 @@ else:
     _module = sys.modules[_name]
 
 Frame = _module.Frame
-FrameRecorder = _module.FrameRecorder
-RecordedFrames = _module.RecordedFrames
+
+
+class RecordedFrames(_module.RecordedFrames):
+    def video(self, eye=None):
+        return super().video(eye, ffmpeg=tool('ffmpeg') or 'ffmpeg')
+
+
+class FrameRecorder(_module.FrameRecorder):
+    def video(self, eye=None):
+        return super().video(eye, ffmpeg=tool('ffmpeg') or 'ffmpeg')

@@ -304,3 +304,63 @@ Final cleanup checked 27 task-owned worker endpoints and cancelled only the
 owned `sandweave-e2e` allocation `10367253`; Slurm confirms `CANCELLED`.
 Saved artifacts remain on durable storage. Existing user jobs/desktops and
 `previous_transcript.txt` were preserved.
+
+## Guided setup and doctor (2026-09-09)
+
+`setup` now prepares a local worker through workload selection, runtime-file
+selection, optional dependency installation, worker staging and a disposable
+coding check. `doctor` offers repairs in an arrow-key terminal menu and reruns
+checks after a repair. `doctor --check` and `--json` are noninteractive and do
+not install or change configuration. The older `setup ID SCRIPT` and
+`configure --assets` commands remain available. The README now uses setup/doctor
+and commented configuration examples; its original 12 agreed code blocks are
+unchanged.
+
+The terminal flow follows the short installation and task examples in
+[Flutter](https://docs.flutter.dev/platform-integration/linux/setup),
+[Prime RL](https://github.com/PrimeIntellect-ai/prime-rl#setup),
+[Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent/blob/main/packages/coding-agent/docs/quickstart.md)
+and [Prime environments](https://docs.primeintellect.ai/tutorials-environments/getting-started).
+The interactive repair behavior is Sandweave's addition.
+
+Validation on the existing CPU allocation:
+
+- `python -m pytest tests -q`: 34 passed; the 46 opt-in integration cases were
+  skipped. New tests cover corruption, path escape, asset selection, decline
+  and cancellation, preserved configuration, noninteractive checks, and actual
+  encoding/decoding of distinct paired-eye fixtures through managed FFmpeg.
+- `python scripts/test-vr-stream.py`: 12 passed.
+- Live `setup --yes --template coding` staged files and ran `print(2 + 2)` in a
+  disposable sandbox. Doctor's actual terminal menu was exercised for cancelling
+  runtime selection, accepting it, declining a package installation, and
+  accepting FFmpeg installation. Existing target configuration survived.
+- `scripts/sdk-onboarding-acceptance.py` passed with two concurrent workers using
+  different prepared asset roots. The original guest remained usable and its
+  file survived; the new guest was independent. A borrowed Slurm worker also
+  ran through the managed Apptainer executable. Test guests were terminated and
+  their workers shut down through `_shutdown_if_idle`; the allocation was retained.
+- A VR-profile doctor check on the CPU allocation reported its missing GPU,
+  while the host runtime, game-file checks and FFmpeg encoder probe passed.
+  This was a prerequisites check, not a new VR gameplay acceptance run.
+- Python/TOML/bash snippets, 24 documented CLI invocations and README local links
+  passed syntax/parser/link checks. Language and implementation audits were
+  completed by separate agents.
+- The rebuilt wheel matches all 181 package/engine source files, declares the
+  terminal-menu dependency, and its installed doctor command passed from outside
+  the checkout using saved runtime configuration.
+
+Reproduce the worker checks with an existing allocation and a fresh output path:
+
+```bash
+PYTHONPATH=src python scripts/sdk-onboarding-acceptance.py \
+  --assets "$PWD" --output "$PWD/runs/my-onboarding-check" --slurm-job JOB_ID
+```
+
+The live outputs are under ignored `runs/sdk-onboarding-20260909`,
+`runs/sdk-onboarding-tui-20260909` and
+`runs/sdk-onboarding-switch-final-20260909`. The source-checkout installation
+still depends on prepared images: no public runtime download bundle is
+available. The pinned upstream Apptainer installer is supported but was not run
+in this acceptance because Apptainer was already installed. It requires curl,
+rpm2cpio and cpio; a missing prerequisite remains a reported failure. Existing
+Apptainer detection and managed-tool execution were exercised instead.

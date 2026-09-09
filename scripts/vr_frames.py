@@ -128,10 +128,10 @@ class FrameRecorder:
         if self.errors:
             raise RuntimeError('background recording failed: '+self.errors[0])
 
-    def video(self, eye=None):
+    def video(self, eye=None, *, ffmpeg='ffmpeg'):
         if not self.closed:
             raise RuntimeError('close the recorder before exporting video')
-        return RecordedFrames(self.directory).video(eye)
+        return RecordedFrames(self.directory).video(eye, ffmpeg=ffmpeg)
 
 
 class RecordedFrames:
@@ -162,7 +162,7 @@ class RecordedFrames:
         return Frame(**{key: meta[key] for key in Frame.__dataclass_fields__ if key not in ('rgba', 'eye_count')},
                      rgba=raw, eye_count=eye_count)
 
-    def video(self, eye=None):
+    def video(self, eye=None, *, ffmpeg='ffmpeg'):
         if eye not in (None, 'left', 'right'):
             raise ValueError('eye must be left, right, or None for stereo')
         recording = self
@@ -187,7 +187,7 @@ class RecordedFrames:
                     lines.append(f'duration {duration:.9f}')
             listing = temporary/'frames.ffconcat'
             listing.write_text('\n'.join(lines)+'\n')
-            subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-f', 'concat', '-safe', '0',
+            subprocess.run([ffmpeg, '-nostdin', '-v', 'error', '-f', 'concat', '-safe', '0',
                             '-i', str(listing), '-fps_mode', 'vfr', '-c:v', 'libx264',
                             '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p',
                             '-threads', '4', '-movflags', '+faststart', str(target)], check=True)

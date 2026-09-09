@@ -10,22 +10,27 @@ template, provide a setup script, or write your own template.
 
 ## Install
 
-From this checkout, with Python 3.11 or newer:
+From this checkout, with Python 3.11 or newer on a Linux x86-64 worker:
 
 ```bash
 python -m pip install .
-sandweave configure --assets /path/to/prepared-assets
+sandweave setup
 ```
 
-Workers currently require Linux x86-64, Apptainer, unprivileged user namespaces
-and prepared runtime assets. The package includes the SDK and engine scripts;
-runtime binaries, base images and game files must be prepared separately. See
-[runtime preparation](notes/gvisor-lab-reproduction.md) and
-[configuration](notes/sdk-usage.md#install-and-configure).
+Choose what you want to run. Setup finds an existing prepared runtime, offers
+dependency installation, and tests a disposable coding sandbox. Runtime images
+are not yet available for automatic download.
+See [installation details](notes/sdk-usage.md#install-and-configure).
 
-For desktop use, install `'.[desktop]'`; for VR, install `'.[vr]'`. VR video
-export also needs FFmpeg with `libx264` on the Python client's `PATH`.
-GPU templates require a compatible NVIDIA device and driver on the worker.
+To check your installation or fix a problem:
+
+```bash
+sandweave doctor
+```
+
+Doctor shows the checks for your workload. Select a repair in the terminal menu
+to apply it, then see the updated results. For scripts and CI, use
+`sandweave doctor --check` or `sandweave doctor --json` without interactive fixes.
 
 <a id="agreed-public-api-contract-v1"></a>
 
@@ -40,8 +45,8 @@ with Sandbox() as env:
 ```
 
 This prints `4`. The default `coding` template provides Python, a shell and
-basic tools, with one virtual CPU, 1 GiB of guest memory and a separate 512 MiB
-runtime budget. `Sandbox(...)` waits for the template's services and controls to be ready.
+basic tools, with one virtual CPU and 1 GiB of guest memory.
+`Sandbox(...)` waits for the template's services and controls to be ready.
 Leaving the `with` block terminates the sandbox and discards unsaved state.
 
 `run` takes one command string, runs it through `/bin/sh -c` inside the sandbox
@@ -49,12 +54,20 @@ by default, and waits for completion. Pipes, redirects, variable expansion and
 `&&` use the guest shell. The result contains `stdout`, `stderr` and `returncode`. A nonzero
 exit raises unless you pass `check=False`; a timeout raises an error.
 
-Each call starts a new process. Use `cwd` and `env` for per-call working
-directories and environment variables, or `shell="/bin/bash"` to select another
-guest shell. By default, shells are noninteractive and non-login, with no
-implicit `errexit` or `pipefail`. For literal arguments without a shell, use
-`env.run(argv=["python", "main.py"])`. Supply either a command string or `argv`;
-`shell` applies only to the command-string form.
+Each call starts a new process. Set command options when you need them:
+
+```python
+with Sandbox() as env:
+    # Set the working directory and environment for one command.
+    result = env.run("echo $MODE", cwd="/workspace", env={"MODE": "eval"})
+    print(result.stdout)
+
+    # Inspect a failed command instead of raising an exception.
+    result = env.run("exit 1", check=False)
+    print(result.returncode)
+```
+
+See [command options](notes/sdk-usage.md#commands) for shells, timeouts and terminals.
 
 To stream output, use `exec`:
 
@@ -115,8 +128,14 @@ The saved template also supplies startup services and controls, so you can
 restore by cache name alone. Processes start fresh, and each restore gets
 independent writable state. Shared external volumes keep their own state.
 
-The returned `baseline` reference pins an immutable revision. Pass
-`cache=baseline` to reuse that revision even if the name is later updated.
+A cache name can be updated. Use the returned reference to keep the same version:
+
+```python
+# Reuse this saved version even if the cache name changes.
+with Sandbox(cache=baseline) as env:
+    image = env.desktop.screenshot()
+```
+
 A missing cache raises an error.
 
 To reuse setup automatically, pass a `cache_key`:
@@ -154,11 +173,19 @@ with Sandbox(template="./my-desktop.toml") as env:
     image = env.desktop.screenshot()
 ```
 
-You provide both files. A custom desktop template can extend `gnome` and declare
-services to start on every fresh boot. See
-[writing templates](notes/sdk-usage.md#templates) for a TOML example. Templates
-can also add controls through installed Python packages; the
-[point-mass example](examples/pointmass/README.md) shows how to write an extension.
+For example, `my-desktop.toml` can extend the GNOME template:
+
+```toml
+extends = "gnome"
+
+[setup]
+script = "install-tools.sh"
+```
+
+Write `install-tools.sh` to install your applications. See
+[writing templates](notes/sdk-usage.md#templates) for startup services and custom
+controls. The [point-mass example](examples/pointmass/README.md) shows how to
+add controls through an installed Python package.
 
 ## Run a pool of sandboxes
 
@@ -217,8 +244,7 @@ def play_episode(policy):
 
 Pass your policy to `play_episode`. It receives left and right images from the
 same compositor frame and returns head/controller input, or `None` to end the
-loop. The template starts the game, Monado/xrizer and virtual controllers from
-the prepared VR assets.
+loop. The template starts the game and virtual controllers.
 
 Recording saves lossless eye pairs, separate left/right MP4 previews, a
 synchronized side-by-side MP4 preview, and timing and dropped-frame metadata.
@@ -232,7 +258,29 @@ one simulation tick. See [VR actions and caching](notes/sandbox-api-examples.md#
 for the action format and offline reuse. Filesystem restores start fresh game
 processes; live graphics checkpoints are unsupported.
 
-## Set resources and choose a worker
+## Configure a sandbox
+
+```python
+from sandweave import Sandbox
+
+# Increase CPU and memory.
+with Sandbox(cpu=4, memory="8GiB") as env:
+    print(env.run("python --version").stdout)
+
+# Block outgoing network access.
+with Sandbox(network="offline") as env:
+    print(env.run("python -c 'print(2 + 2)'").stdout)
+
+# Set a five-minute lifetime limit, including time spent paused.
+with Sandbox(ttl=300) as env:
+    print(env.id)
+
+# Run code with the native Apptainer runtime.
+with Sandbox(runtime="apptainer") as env:
+    print(env.run("python --version").stdout)
+```
+
+For GPU selection, CPU sharing and separate guest/runtime memory budgets:
 
 ```python
 from sandweave import CPU, Memory, Sandbox
@@ -243,10 +291,12 @@ with Sandbox(template="cuda", gpu="L40S",
     print(env.run("nvidia-smi").stdout)
 ```
 
-You can also use `cpu=2`, `memory="4GiB"` and `gpu=True`. CPU weights and quotas
-use sampled userspace scheduling within a worker's eligible CPUs. Guest memory
-and runtime/helper memory have separate budgets; the runtime guard is sampled.
-GPU selection uses devices already available to the worker.
+GPU selection uses hardware already allocated to the worker. Native Apptainer
+supports commands and filesystem caches, with fewer isolation and resource
+controls than gVisor, the default runtime. See
+[resource and runtime limits](notes/sdk-usage.md#limits-that-matter).
+
+## Choose a worker
 
 Sandboxes run locally by default. To use an existing Slurm job:
 
@@ -263,11 +313,6 @@ cleanup leaves the job running. `Slurm.acquire(...)` creates a new allocation
 and its context closes only the job it owns. SSH targets and pools across
 workers are also supported. See [placement and pools](notes/sdk-usage.md#placement-and-pools)
 for configuration and shared-storage requirements.
-
-gVisor is the default runtime. For native Apptainer command environments, pass
-`runtime="apptainer"`. That runtime uses the host kernel and network, with a
-single mapped UID and fewer resource controls. It supports filesystem capture;
-CPU weights and quotas, filtered networking and memory snapshots are unavailable.
 
 ## Pause, checkpoint and restore
 
@@ -319,8 +364,16 @@ sandweave vr record gunspin --duration 30 --output ./episode
 ```
 
 `run` creates a sandbox for one command and terminates it afterward. `create`
-leaves a managed sandbox running. Use `sandweave stop ID` to save and release it,
-or `sandweave terminate ID` to discard unsaved state.
+leaves the sandbox running until you stop or terminate it:
+
+```bash
+# Save the sandbox before stopping it.
+sandweave stop workbench
+
+# Discard unsaved changes.
+sandweave terminate restored
+sandweave terminate gunspin
+```
 
 Both `run` and `exec` take one quoted command string after `--`.
 `--argv -- PROGRAM ARG ...` selects literal arguments without a shell. Command

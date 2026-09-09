@@ -16,7 +16,7 @@ import uuid
 
 from .connection import Connection
 from .errors import ResourceUnavailable
-from .workspace import home, locked, atomic_json, worker_key
+from .workspace import home, locked, atomic_json, worker_key, assets, asset_identity
 from .asyncio import dualmethod, dualclassmethod
 from .resources import memory_bytes, positive
 
@@ -283,6 +283,9 @@ class Slurm:
             raise ResourceUnavailable('select one worker per single-node Slurm allocation')
         hostname = subprocess.check_output(['scontrol', 'show', 'hostnames', job['NodeList']], text=True).strip()
         directory = home() / 'allocations' / ('job-' + self.job_id)
+        if 'metadata' not in self.config:
+            source = assets(directory=self.config.get('home'), selected=self.config.get('assets'))
+            directory = directory / asset_identity(source)
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         metadata = Path(self.config.get('metadata', directory / 'worker.json'))
         # Existing-job placement starts one persistent step in that allocation.

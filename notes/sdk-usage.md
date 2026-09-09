@@ -7,32 +7,101 @@ services and controls; a sandbox is one running instance. Start with the
 ## Install and configure
 
 The SDK host needs Python 3.11 or newer. Workers currently need Linux x86-64,
-unprivileged user namespaces, Apptainer and the prepared lab runtime assets.
-Neither host sudo nor `/dev/kvm` is required. GPU workers additionally need a
-compatible NVIDIA device and driver. These requirements are not established for
-every Linux distribution or hosting provider.
+Apptainer and prepared runtime files. GPU workers also need a compatible NVIDIA
+device and driver. Run setup on each worker:
 
 ```bash
-python -m pip install '.[vr]'  # Python dependencies for desktop and VR use.
-sandweave configure --assets /path/to/prepared-assets
+python -m pip install .
+sandweave setup
+sandweave doctor
 sandweave run --template coding -- "python -c 'print(2 + 2)'"
 ```
 
-VR video export also requires FFmpeg with `libx264` on the Python client's
-`PATH`; the Python extras do not install it.
+Setup asks which workload to prepare, finds an existing runtime installation,
+offers dependency repairs, stages worker files and tests a disposable coding
+sandbox. Selecting desktop or VR offers the Python packages that workload
+needs. Setup does not launch a game or acquire a GPU job.
 
-From this checkout, assets are discovered automatically. For a wheel installed
-elsewhere, use `configure` or `SANDWEAVE_ASSETS`. `SANDWEAVE_HOME` selects the
-private worker/metadata/artifact directory; its default is
-`~/.local/share/sandweave`. Durable snapshots belong on durable storage. Runtime
-working directories are separate and node-local. The SDK does not change the
-original lab's `runs/local-path.txt`.
+Doctor opens a terminal menu with the checks and available repairs. It can
+save a runtime location, install missing Python packages, register an existing
+Apptainer executable or run its upstream installer, and install FFmpeg for VR.
+Each repair is followed by another check. Declining a proposed repair leaves it
+unapplied. Interrupting an installation can leave downloaded files or installed
+packages; run doctor again to inspect the result. A failed required check
+produces a nonzero exit status.
+
+```bash
+# Prepare coding without prompts, accepting the available repairs.
+sandweave setup --yes --template coding
+
+# Prepare the dependencies for desktop or VR use.
+sandweave setup --template gnome
+sandweave setup --template vr/gunspinning
+
+# Check without changing configuration or installing anything.
+sandweave doctor --check
+sandweave doctor --json
+```
+
+The workload selection controls setup and diagnostics. It does not change the
+default template used by `Sandbox()`. Setup and doctor inspect the machine on
+which they run. Host restrictions, unavailable GPUs and missing prepared images
+can remain unresolved. Doctor does not change host security policy, use sudo,
+or cancel Slurm jobs.
+
+The current rootless launcher uses Apptainer's `--userns` mode. User namespaces
+let an ordinary account create containers without host root privileges. Doctor
+tests the actual Apptainer launch, including hosts where a security profile
+permits Apptainer but blocks a generic namespace probe. See
+[Apptainer's requirements](https://apptainer.org/docs/admin/main/user_namespace.html).
+
+VR video export requires FFmpeg with `libx264` on the Python client. Doctor can
+install `imageio-ffmpeg` and register its binary for Sandweave; the `[vr]` Python
+extra alone does not install FFmpeg. Managed executables live under
+`SANDWEAVE_HOME/bin`; new Sandweave workers and VR exporters find them without
+editing shell startup files. The Apptainer installer needs `bash`, `curl`,
+`rpm2cpio` and `cpio`; if these are unavailable, the menu can register an existing
+installation instead.
+
+From this checkout, runtime files are discovered automatically. Setup saves the
+location for later use from other directories. For automation, use
+`sandweave setup --assets /path/to/prepared-assets --yes`. The older
+`configure --assets` command and `SANDWEAVE_ASSETS` remain supported; the
+environment variable takes precedence over saved configuration.
+Changing that selection uses a new worker workspace for new connections.
+Existing workers and handles keep their prepared runtime files.
+
+`SANDWEAVE_HOME` selects the private worker, metadata and artifact directory;
+its default is `~/.local/share/sandweave`. Durable snapshots belong on durable
+storage. Runtime working directories are separate and node-local. Setup does
+not change the original lab's `runs/local-path.txt`.
 
 The wheel contains the engine scripts. Large images, runtime binaries, GPU
-drivers, game downloads and saved application bases remain external assets;
-they are not downloaded implicitly. See [lab reproduction](gvisor-lab-reproduction.md)
-for their preparation. Publishing a redistributable asset bundle is separate
-from this implementation in the existing lab.
+drivers, game downloads and saved application bases remain external assets.
+There is no published runtime download bundle yet; setup cannot install the
+base images on a fresh machine without an existing prepared installation.
+See [lab reproduction](gvisor-lab-reproduction.md) for their preparation.
+
+`sandweave setup ID SCRIPT` keeps its earlier meaning: run a script inside an
+existing sandbox. With no ID or script, `sandweave setup` prepares the worker.
+
+## Commands
+
+`run` and `exec` each take one command string. By default it runs through
+`/bin/sh -c` inside the guest. Templates can set `command_shell`, and
+`shell="/bin/bash"` selects another shell for one call. Shell quoting, expansion,
+pipes and redirects follow that shell; there is no implicit `errexit` or
+`pipefail`. Calls use a noninteractive, non-login shell by default.
+
+Each call starts a fresh process. `cwd` and `env` apply to that call; `cd` or
+`export` in an earlier command do not persist. `run` waits and checks the exit
+status unless `check=False`. `exec` returns a process; use `wait(check=True)` to
+raise on its nonzero exit. Command timeouts raise typed errors.
+
+For direct execution without a shell, pass a nonempty `argv` list instead of a
+command string: `env.run(argv=["python", "main.py"])`. The forms are mutually
+exclusive, and `shell` cannot accompany `argv`. The CLI accepts one quoted
+command string after `--`, or `--argv -- PROGRAM ARG ...` for literal arguments.
 
 ## Templates
 

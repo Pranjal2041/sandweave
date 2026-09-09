@@ -176,7 +176,17 @@ def parser():
             p.add_argument('--state', default='auto' if name == 'stop' else 'memory',
                            choices=('auto', 'memory', 'filesystem'))
             p.add_argument('--experimental-gpu-live', action='store_true')
-    setup = sub.add_parser('setup'); setup.add_argument('id'); setup.add_argument('script'); setup.add_argument('--target')
+    setup = sub.add_parser('setup', help='Prepare this worker with guided checks and repairs')
+    setup.add_argument('id', nargs='?', help='Existing sandbox ID for guest script setup')
+    setup.add_argument('script', nargs='?', help='Guest setup script (requires ID)')
+    setup.add_argument('--target', help='Target for guest script setup')
+    setup.add_argument('--template', help='Workload to prepare; defaults to coding')
+    setup.add_argument('--assets', help='Use an existing prepared runtime directory')
+    setup.add_argument('--yes', action='store_true', help='Apply available setup repairs without prompting')
+    doctor = sub.add_parser('doctor', help='Check this worker and interactively repair problems')
+    doctor.add_argument('--template', help='Workload to check; defaults to the last setup selection')
+    doctor.add_argument('--check', action='store_true', help='Report checks without prompts or repairs')
+    doctor.add_argument('--json', action='store_true', help='Report checks as JSON without prompts or repairs')
     cache = sub.add_parser('cache').add_subparsers(dest='cache_operation', required=True)
     save = cache.add_parser('save'); save.add_argument('id'); save.add_argument('key'); save.add_argument('--target')
     save.add_argument('--state', default='filesystem', choices=('filesystem', 'memory'))
@@ -224,6 +234,16 @@ def main(argv=None):
     args = arguments.parse_args(argv)
     try:
         op = args.operation
+        if op == 'setup':
+            if bool(args.id) != bool(args.script):
+                raise ValueError('guest setup requires both ID and SCRIPT; use plain sandweave setup for this worker')
+            if args.id and (args.template or args.assets or args.yes):
+                raise ValueError('worker setup options cannot be used with guest ID and SCRIPT')
+            if not args.id and args.target:
+                raise ValueError('run sandweave setup on the worker; --target applies to guest script setup')
+        if op == 'doctor' or (op == 'setup' and not args.id):
+            from . import onboarding
+            return onboarding.main(args)
         if op == 'targets':
             configuration = home() / 'config.json'
             config = json.loads(configuration.read_text()) if configuration.exists() else {}
@@ -358,6 +378,9 @@ def main(argv=None):
                 with env.vr.record(args.output, fps=args.fps):
                     time.sleep(args.duration)
         return 0
+    except KeyboardInterrupt:
+        print('sandweave: cancelled', file=sys.stderr)
+        return 130
     except (SandboxError, ValueError, OSError, TimeoutError) as error:
         print(f'sandweave: {error}', file=sys.stderr)
         return 1

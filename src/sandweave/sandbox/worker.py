@@ -495,7 +495,12 @@ class Worker:
 
 
 def serve(metadata_path):
+    from .workspace import tool_path
+    os.environ['PATH'] = tool_path()
     root = prepare()
+    # An attached worker keeps the asset source it prepared, even after setup
+    # changes the client's default selection for future workers.
+    os.environ['SANDWEAVE_ASSETS'] = json.loads((root / 'prepared.json').read_text())['assets']
     authority = (root / '.worker.lock').open('a')
     try:
         fcntl.flock(authority, fcntl.LOCK_EX | fcntl.LOCK_NB)

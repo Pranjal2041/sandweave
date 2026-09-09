@@ -22,9 +22,18 @@ def home():
     return Path(os.environ.get('SANDWEAVE_HOME', Path.home() / '.local/share/sandweave')).expanduser().resolve()
 
 
+def tool_path():
+    """Tools installed by setup are private to Sandweave, without shell edits."""
+    return str(home() / 'bin') + os.pathsep + os.environ.get('PATH', '')
+
+
+def tool(name):
+    return shutil.which(name, path=tool_path())
+
+
 def worker_key():
     """Workers may only share authority within the same eligible resource set."""
-    eligibility = {'cpus': sorted(os.sched_getaffinity(0)),
+    eligibility = {'assets': asset_identity(), 'cpus': sorted(os.sched_getaffinity(0)),
                    'gpu': {key: os.environ.get(key) for key in
                            ('SLURM_STEP_GPUS', 'SLURM_JOB_GPUS', 'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'SANDWEAVE_GPU_DEVICES')},
                    'memory': {key: os.environ.get(key) for key in
@@ -76,10 +85,10 @@ def engine_sources():
     raise ResourceUnavailable('engine sources are missing from this installation')
 
 
-def assets():
-    config_file = home() / 'config.json'
+def assets(*, directory=None, selected=None):
+    config_file = (Path(directory) if directory else home()) / 'config.json'
     config = json.loads(config_file.read_text()) if config_file.exists() else {}
-    selected = os.environ.get('SANDWEAVE_ASSETS') or config.get('assets')
+    selected = selected or os.environ.get('SANDWEAVE_ASSETS') or config.get('assets')
     if not selected:
         # The existing lab is usable without copying a private path into the SDK.
         for parent in (Path.cwd(), *Path.cwd().parents):
@@ -87,11 +96,23 @@ def assets():
                 selected = str(parent)
                 break
     if not selected:
-        raise ResourceUnavailable('runtime assets are not configured; set SANDWEAVE_ASSETS to the prepared asset directory')
+        raise ResourceUnavailable('runtime files are not configured; run sandweave setup')
     result = Path(selected).expanduser().resolve()
     if not (result / 'tools/debian-trixie.sif').is_file():
         raise ResourceUnavailable('asset directory is missing the unprivileged host image: ' + str(result))
     return result
+
+
+def asset_identity(source=None):
+    """Different prepared inputs get new workers; existing workers remain intact."""
+    source = Path(source).resolve() if source else assets()
+    digest = hashlib.sha256(str(source).encode())
+    for relative in ('sandweave-assets.json', 'tools/gvisor-socket/runtime.json', 'notes/source-revisions.json'):
+        path = source / relative
+        digest.update(relative.encode())
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
 
 
 def _immutable(source, destination):
@@ -131,6 +152,7 @@ def stage_tree(source, destination):
 
 
 def prepare():
+    base = assets()
     source = engine_sources()
     files = sorted(p for p in source.iterdir()
                    if p.suffix in ('.py', '.sh', '.c') and not p.name.startswith(('test-', 'sdk-')))
@@ -144,6 +166,7 @@ def prepare():
         if path.is_file() and path.suffix in ('.py', '.toml', '.sh') and '_engine' not in path.parts:
             sdk_digest.update(str(path.relative_to(sdk)).encode()); sdk_digest.update(path.read_bytes())
     digest.update(sdk_digest.digest())
+    digest.update(asset_identity(base).encode())
     root = home() / 'workers' / worker_key() / digest.hexdigest()[:16]
     with locked(root / '.prepare.lock'):
         if (root / 'prepared.json').exists():
@@ -152,7 +175,6 @@ def prepare():
                 return root
             # Durable checkpoints outlive node-local active runtime storage.
             # Recreate only this worker's local directories after a node loss.
-        base = assets()
         for directory in ('scripts', 'runs', 'downloads', 'snapshots', 'images/fixtures', 'tools/gpu'):
             (root / directory).mkdir(parents=True, exist_ok=True)
         for path in files:

@@ -521,6 +521,12 @@ simulation stepping for an arbitrary interactive application.
 
 ## 11. CLI parity
 
+`sandweave setup` prepares the current worker through guided checks and repairs;
+`sandweave doctor` checks the selected workload and offers interactive repairs.
+`doctor --check` and `doctor --json` report without applying changes.
+The existing `setup ID SCRIPT` command still runs a guest setup script.
+See [onboarding behavior and requirements](sdk-usage.md#install-and-configure).
+
 The complete short CLI examples are in [the examples document](sandbox-api-examples.md).
 Commands cover `create`, `exec`, `run`, `setup`, `shell`, `list`, `inspect`,
 `pause`, `resume`, `stop`, `terminate`, `cache`, `snapshot`, `files`, `desktop`,

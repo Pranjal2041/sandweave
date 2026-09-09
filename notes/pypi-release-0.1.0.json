@@ -1,0 +1,37 @@
+{
+  "version": "0.1.0",
+  "project_url": "https://pypi.org/project/sandweave/",
+  "source_commit": "a4466f0",
+  "github_visibility": "private",
+  "files": [
+    {
+      "filename": "sandweave-0.1.0-py3-none-any.whl",
+      "sha256": "ddf50557f2c5edda69c4ff454d6b37e1e2ad25c6f019475656f511bd2618a889",
+      "bytes": 298865,
+      "url": "https://files.pythonhosted.org/packages/7b/d2/962d02ac52f97a49859f394fda80187e52bfe2165a64dd4bf7c379e12a9b/sandweave-0.1.0-py3-none-any.whl",
+      "uploaded_at": "2026-09-09T22:16:19.493782Z"
+    },
+    {
+      "filename": "sandweave-0.1.0.tar.gz",
+      "sha256": "bf8c43e6bfee0db911d3536c60bfefd105cb2edde63c8eac697f42427fae53d1",
+      "bytes": 280455,
+      "url": "https://files.pythonhosted.org/packages/71/53/a2caa219dfb0f0e027aeb0d5699e158b4d47a740bb3bec0dd96ae2baaa45/sandweave-0.1.0.tar.gz",
+      "uploaded_at": "2026-09-09T22:16:20.896612Z"
+    }
+  ],
+  "verification": {
+    "metadata_and_readme": "twine check --strict passed for wheel and source archive",
+    "host_tests": {
+      "passed": 117,
+      "skipped": 1,
+      "integration_deselected": 65
+    },
+    "source_archive_rebuild": "wheel contents identical",
+    "public_install": "fresh virtual environment from https://pypi.org/simple; installed package bytes match uploaded wheel",
+    "cli_and_templates": "CLI entry point and all seven built-in templates checked",
+    "description": "published UTF-8 description matches README; readme-renderer output and live version badge inspected at desktop and mobile widths",
+    "pypi_web_layout": "CAPTCHA prevented inspecting the full live page",
+    "runtime_tests": "runtime code unchanged from 71baec9, which passed desktop and VNC acceptance"
+  },
+  "artifacts_directory": "runs/pypi-release-spsK8F"
+}

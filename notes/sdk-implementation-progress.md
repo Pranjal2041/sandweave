@@ -4,6 +4,29 @@ The user approved implementation around two pillars: templates define setup,
 startup and controls; sandboxes implement running instances and their lifecycle.
 The README's public API remains the contract, including command strings.
 
+## Public PyPI release (2026-09-09)
+
+[Sandweave 0.1.0](https://pypi.org/project/sandweave/) is published as a wheel and
+source archive. Installation is now `uv pip install sandweave` or
+`pip install sandweave`. The README uses a live PyPI version badge and absolute
+documentation links. GitHub remains private; its documentation still requires
+repository access.
+
+The source archive now uses the wheel's declared engine inputs, excluding
+unrelated lab scripts. Both archives include upstream notices for the bundled
+patches. PyPI metadata and README validation passed, all 117 host tests passed
+(one optional dependency case skipped), and rebuilding the source archive
+produced identical wheel contents. A fresh environment installed from public
+PyPI, imported the SDK, resolved all seven templates and ran the CLI. Its
+installed package bytes and PyPI's reported hashes match the reviewed wheel.
+
+The published description and live version badge were rendered and visually
+inspected at desktop and phone widths. A CAPTCHA prevented inspecting PyPI's
+full live page from this machine. Package downloads and API verification
+succeeded. Runtime code is unchanged from the desktop-tested release source.
+See [release files and verification](pypi-release-0.1.0.json); detailed artifacts
+are under ignored `runs/pypi-release-spsK8F`.
+
 ## Desktop defaults and VNC credentials (2026-09-09)
 
 New GNOME sandboxes default to 1920×1080. The template, source installation and

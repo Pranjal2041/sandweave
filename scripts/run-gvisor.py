@@ -13,6 +13,7 @@ import threading
 import shutil
 import cpu_broker
 import runtime_store
+import runtime_tools
 import snapshot_store
 import filesystem_snapshot
 import gvisor_gpu
@@ -49,6 +50,7 @@ parser.add_argument('--cpu-quota', type=float, help='experimental average CPU eq
 parser.add_argument('--nftables', action='store_true')
 parser.add_argument('--docker-data', action='store_true')
 parser.add_argument('--docker-archive', type=Path, help='previously exported Docker state archive')
+parser.add_argument('--base-image', type=Path, help='guest EROFS image below this runtime workspace')
 parser.add_argument('--mounts', type=Path, help='validated external mount JSON; sources are worker paths')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
@@ -72,6 +74,14 @@ parser.add_argument('--forward', type=int, action='append', default=[],
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
+os.environ['SANDWEAVE_PYTHON'] = sys.executable
+registry_file = lab / 'sandweave-assets.json'
+asset_registry = json.loads(registry_file.read_text()) if registry_file.is_file() else {}
+base_image = (lab / (args.base_image or asset_registry.get('default_image', 'images/gvisor-ubuntu-ready-ae303ca.erofs'))).resolve()
+if not args.restore and (not base_image.is_relative_to(lab) or not base_image.is_file()):
+    parser.error('base image must be an existing file inside the runtime workspace')
+if args.base_image and args.restore:
+    parser.error('--base-image cannot replace the base image of a snapshot')
 if any(not 1 <= port <= 65535 for port in args.forward):
     parser.error('forwarded guest ports must be between 1 and 65535')
 try:
@@ -176,9 +186,9 @@ mount_file.write_text(json.dumps(mounts))
 launch_settings['external_mounts'] = mounts
 if snapshot_manifest is not None:
     launch_settings['base_image'] = snapshot_manifest['base_image']
-elif (lab / 'sandweave-assets.json').is_file():
-    base_path = 'images/gvisor-ubuntu-ready-ae303ca.erofs'
-    image = json.loads((lab / 'sandweave-assets.json').read_text()).get('images', {}).get(base_path)
+elif asset_registry:
+    base_path = str(base_image.relative_to(lab))
+    image = asset_registry.get('images', {}).get(base_path)
     if image:
         launch_settings['base_image'] = {'path': base_path, **image}
 (bundle / 'launch-settings.json').write_text(json.dumps(launch_settings, indent=2) + '\n')
@@ -220,7 +230,7 @@ elif not args.restore:
     if not fixture_object.exists():
         shutil.copy2(bundle / 'fixtures.tar', fixture_object)
     spec['annotations']['dev.gvisor.tar.rootfs.upper'] = '/lab/' + str(fixture_object.relative_to(lab))
-    spec['annotations']['dev.gvisor.spec.rootfs.source'] = '/lab/images/gvisor-ubuntu-ready-ae303ca.erofs'
+    spec['annotations']['dev.gvisor.spec.rootfs.source'] = '/lab/' + str(base_image.relative_to(lab))
 if filesystem_restore:
     checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
     spec['annotations']['dev.gvisor.spec.rootfs.source'] = '/lab/' + snapshot_manifest['base_image']['path']
@@ -269,7 +279,7 @@ for guest_port in dict.fromkeys((80, 8080, 8000, 5901, 22, *args.forward)):
     reservations.append(reservation)
     ports[str(guest_port)] = reservation.getsockname()[1]
 (logs / 'ports.json').write_text(json.dumps(ports, indent=2) + '\n')
-host_interfaces = json.loads(subprocess.check_output(['ip', '-j', 'address'], text=True))
+host_interfaces = json.loads(subprocess.check_output(runtime_tools.command(lab, local, 'ip', '-j', 'address'), text=True))
 policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.2',
           'dns': '10.0.2.3', 'forwarded_tcp_ports': list(map(int, ports)),
           'host_addresses': [address['local'] for interface in host_interfaces
@@ -282,7 +292,7 @@ mark('network_setup_seconds')
 def spawn(command, logfile):
     output = logfile.open('wb')
     files.append(output)
-    child = subprocess.Popen(['prlimit', '--as=536870912', '--', *command], cwd=lab, stdout=output, stderr=subprocess.STDOUT,
+    child = subprocess.Popen(command, cwd=lab, stdout=output, stderr=subprocess.STDOUT,
                              start_new_session=True)
     children.append(child)
     record_children()
@@ -362,16 +372,16 @@ try:
         forwards.extend(['-t', f'127.0.0.1/{host_port}:{guest_port}'])
     for reservation in reservations:
         reservation.close()
-    passt = spawn(['passt', '-f', '-1', '-4', '-s', str(passt_socket),
+    passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', str(passt_socket),
                    '-a', '10.0.2.15', '-n', '24', '-g', '10.0.2.2', '-m', '1500',
-                   '--dns-forward', '10.0.2.3', *forwards], logs / 'passt.log')
+                   '--dns-forward', '10.0.2.3', *forwards, memory_limit=True), logs / 'passt.log')
     wait_socket(passt_socket, passt)
-    relay = spawn([sys.executable, str(lab / 'scripts/ethernet-relay.py'),
+    relay = spawn(runtime_tools.limited([sys.executable, str(lab / 'scripts/ethernet-relay.py'),
                    '--listen', str(ethernet_socket), '--passt', str(passt_socket),
-                   '--policy', str(bundle / 'network-policy.json')], logs / 'relay.log')
+                   '--policy', str(bundle / 'network-policy.json')]), logs / 'relay.log')
     wait_socket(ethernet_socket, relay)
     mark('helpers_seconds')
-    command = ['taskset', '-c', args.cpus, str(lab / 'scripts/gvisor-host.sh'),
+    command = [str(lab / 'scripts/gvisor-host.sh'),
                runtime_arg, '--platform=systrap', '--directfs=false',
                '--network=sandbox', f'--network-socket-config=/local/gvisor/bundles/{args.name}/network.json',
                '--ignore-cgroups', '--allow-suid', '--allow-rootfs-tar-annotation',
@@ -386,13 +396,13 @@ try:
     if args.guest_gs:
         command.append('--systrap-disable-syscall-patching')
     if args.gpu is not None:
-        command[4:4] = ['--gpu', str(args.gpu)]
+        command[1:1] = ['--gpu', str(args.gpu)]
         command += ['--nvproxy', '--nvproxy-allow-unsupported-driver',
                     '--nvproxy-allowed-driver-capabilities=compute,utility,graphics,video' + (',profiling' if mps else '')]
         if mps:
             command += mps.flags()
     if mounts:
-        command[4:4] = ['--mounts', str(mount_file)]
+        command[1:1] = ['--mounts', str(mount_file)]
     if args.restore and not filesystem_restore:
         checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
         timings['snapshot_storage'] = str(checkpoint)
@@ -408,7 +418,7 @@ try:
     if args.docker_data:
         if not args.restore:
             command += ['--pass-fd=3:3']
-            wrapper_end = 4 + (2 if args.gpu is not None else 0) + (2 if mounts else 0)
+            wrapper_end = 1 + (2 if args.gpu is not None else 0) + (2 if mounts else 0)
             command[wrapper_end:wrapper_end] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
     command += [f'--bundle=/local/gvisor/bundles/{args.name}', args.name]
     (logs / 'launch.json').write_text(json.dumps(command, indent=2) + '\n')

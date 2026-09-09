@@ -1,4 +1,5 @@
 schema_version = 1
+installation = "coding"
 user = "root"
 command_shell = "/bin/sh"
 

@@ -44,8 +44,11 @@ class Sandbox:
         if ttl is not None:
             positive(ttl, 'ttl')
         positive(startup_timeout, 'startup_timeout')
-        self._connection = connect(target)
-        saved = self._connection.call('snapshot_spec', reference=str(reference)) if reference is not None else None
+        if reference is not None:
+            self._connection = connect(target)
+            saved = self._connection.call('snapshot_spec', reference=str(reference))
+        else:
+            saved = None
         if saved:
             reference = saved['reference']
             recipe = saved['spec']['template']
@@ -78,6 +81,8 @@ class Sandbox:
         self._owned, self._closed, self._terminated = True, False, False
         self._target = target
         operation_id = uuid.uuid4().hex
+        if self._connection is None:
+            self._connection = connect(target)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
                                           reference=reference, cache_key=cache_key, refresh=refresh)
         self.files = Files(self)
@@ -109,7 +114,11 @@ class Sandbox:
         self.id = str(identity)
         self._owned, self._closed, self._terminated = False, False, False
         self._target = target
-        self._info = self._connection.call('describe', identity=self.id)
+        try:
+            self._info = self._connection.call('describe', identity=self.id)
+        except BaseException:
+            self._connection.close()
+            raise
         self.id = self._info['id']
         self.files = Files(self)
         self._controls = {}

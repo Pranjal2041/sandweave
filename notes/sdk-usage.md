@@ -6,24 +6,27 @@ services and controls; a sandbox is one running instance. Start with the
 
 ## Install and configure
 
-The SDK host needs Python 3.11 or newer. Workers currently need Linux x86-64,
-Apptainer and prepared runtime files. GPU workers also need a compatible NVIDIA
-device and driver. Run setup on each worker:
+The SDK host needs Python 3.11 or newer. Workers need Linux x86-64, Bash and
+permission to run containers. Setup installs Apptainer if needed and prepares
+the runtime files. GPU workers also need an allocated NVIDIA device and a
+compatible driver. From a checkout, inside your Python environment:
 
 ```bash
-python -m pip install .
+uv pip install .
 sandweave setup
 sandweave doctor
 sandweave run --template coding -- "python -c 'print(2 + 2)'"
 ```
 
-Setup asks which workload to prepare, finds an existing runtime installation,
-offers dependency repairs, stages worker files and tests a disposable coding
-sandbox. Selecting desktop or VR offers the Python packages that workload
-needs. Setup does not launch a game or acquire a GPU job.
+Setup asks what you want to start with and where to store Sandweave's files.
+The storage directory can be empty. It imports a usable existing runtime or
+builds one from upstream inputs, installs the selected workload's Python
+packages, and checks a disposable sandbox of that template. Selecting VR
+therefore starts the game for the check. Setup releases its test sandbox;
+it does not acquire or cancel GPU jobs. `python -m pip install .` also works.
 
 Doctor opens a terminal menu with the checks and available repairs. It can
-save a runtime location, install missing Python packages, register an existing
+install or repair runtime files, install missing Python packages, register an existing
 Apptainer executable or run its upstream installer, and install FFmpeg for VR.
 Each repair is followed by another check. Declining a proposed repair leaves it
 unapplied. Interrupting an installation can leave downloaded files or installed
@@ -32,7 +35,7 @@ produces a nonzero exit status.
 
 ```bash
 # Prepare coding without prompts, accepting the available repairs.
-sandweave setup --yes --template coding
+sandweave setup --yes --template coding --directory /path/to/sandweave-data
 
 # Prepare the dependencies for desktop or VR use.
 sandweave setup --template gnome
@@ -43,11 +46,11 @@ sandweave doctor --check
 sandweave doctor --json
 ```
 
-The workload selection controls setup and diagnostics. It does not change the
-default template used by `Sandbox()`. Setup and doctor inspect the machine on
-which they run. Host restrictions, unavailable GPUs and missing prepared images
-can remain unresolved. Doctor does not change host security policy, use sudo,
-or cancel Slurm jobs.
+The workload selection controls what setup installs and doctor checks. It does
+not change the default template used by `Sandbox()`. Repeat setup with another
+template to add it. Setup and doctor inspect the machine on which they run.
+Doctor reports host policy restrictions and unavailable GPUs; it cannot grant
+permissions or allocate hardware. It does not use host sudo.
 
 The current rootless launcher uses Apptainer's `--userns` mode. User namespaces
 let an ordinary account create containers without host root privileges. Doctor
@@ -59,24 +62,36 @@ VR video export requires FFmpeg with `libx264` on the Python client. Doctor can
 install `imageio-ffmpeg` and register its binary for Sandweave; the `[vr]` Python
 extra alone does not install FFmpeg. Managed executables live under
 `SANDWEAVE_HOME/bin`; new Sandweave workers and VR exporters find them without
-editing shell startup files. The Apptainer installer needs `bash`, `curl`,
-`rpm2cpio` and `cpio`; if these are unavailable, the menu can register an existing
-installation instead.
+editing shell startup files. The private Apptainer installer uses Bash and basic
+Unix utilities. Sandweave supplies private download and package-extraction
+adapters when `curl`, `rpm2cpio` or `cpio` is missing. Python package installation
+uses the active interpreter, including uv environments without pip.
 
-From this checkout, runtime files are discovered automatically. Setup saves the
-location for later use from other directories. For automation, use
-`sandweave setup --assets /path/to/prepared-assets --yes`. The older
+Setup can discover a runtime in this checkout or import one you provide:
+
+```bash
+sandweave setup --assets /path/to/existing-runtime --directory /path/to/new-storage --yes
+```
+
+`--assets` reads runtime files from an existing installation. `--directory` is
+where setup writes the new installation. The older
 `configure --assets` command and `SANDWEAVE_ASSETS` remain supported; the
 environment variable takes precedence over saved configuration.
 Changing that selection uses a new worker workspace for new connections.
 Existing workers and handles keep their prepared runtime files.
 
-On first setup, Sandweave stores worker files, caches and artifacts in
-`.sandweave` under the selected runtime directory. It prints this path before
-staging files. Home contains a small `~/.local/share/sandweave/location.json`
-setting so later commands find the data from any directory. The selected
-directory must be writable and belong to you. Later runtime selections keep
-your saved data location.
+Sandweave stores downloads, tools, runtime files, worker state and caches directly
+under the selected storage directory. The initial suggestion is `.sandweave`
+under the current directory; later setup runs suggest the saved location.
+You can choose another empty directory. Setup prints the destination before
+installing anything. It must be writable and belong to you.
+
+After the sandbox check succeeds, setup saves the configuration and a small
+`~/.local/share/sandweave/location.json` pointer so commands work from other
+directories. A failed check leaves the previous saved configuration intact.
+Completed runtime inputs are recorded for retry. Failed build work and logs
+stay in the printed destination for diagnosis; setup does not automatically
+evict them.
 
 Set `SANDWEAVE_HOME` to use a different data directory. This explicit setting
 takes precedence, including during setup. Installations that have not run the
@@ -90,11 +105,22 @@ copies across filesystems are published only after completion. Incomplete
 staged files are checked and repaired when preparing a worker. Setup does not
 change the original lab's `runs/local-path.txt`.
 
-The wheel contains the engine scripts. Large images, runtime binaries, GPU
-drivers, game downloads and saved application bases remain external assets.
-There is no published runtime download bundle yet; setup cannot install the
-base images on a fresh machine without an existing prepared installation.
-See [lab reproduction](gvisor-lab-reproduction.md) for their preparation.
+The wheel includes an explicit set of engine scripts, build inputs and patches.
+It does not include large runtime images. Without a prepared source, setup
+downloads container images and pinned source inputs, builds the patched gVisor
+engine in an unprivileged build container, and installs guest software inside
+gVisor. Guest root privileges never become host root privileges. Network helpers
+and their dependencies are extracted into the installation when needed.
+The first source build needs internet access, disk space for compiler output
+and image exports, and enough memory for the selected guest workload. Build
+logs are written under `logs/setup` in the selected storage directory.
+
+Open Saber is downloaded automatically. GunSpinning's official site supplies
+its Linux ZIP through a download page, so setup asks you to select that file.
+For automation, pass `--game-archive /path/to/gunspinning-vr-linux.zip`. Setup
+checks the pinned game version and preserves the original archive. The native
+Apptainer runtime downloads its base container on first use if the selected
+runtime did not already include it.
 
 `sandweave setup ID SCRIPT` keeps its earlier meaning: run a script inside an
 existing sandbox. With no ID or script, `sandweave setup` prepares the worker.
@@ -129,7 +155,7 @@ command string after `--`, or `--argv -- PROGRAM ARG ...` for literal arguments.
 | `vr/gunspinning` | GunSpinning's VR motion-controller mode and paired recording. |
 | `games/gunspinning-gamepad` | GunSpinning's flat gamepad mode, SDL input and desktop output. |
 
-VR recipes require the configured `vr-base@1` prepared asset. Gamepad flat mode
+Setup installs the base image and game inputs selected by a VR recipe. Gamepad flat mode
 does not produce a stereo observation. VR recordings save lossless eye pairs
 and export lossy left, right and synchronized side-by-side MP4 previews.
 Video export requires at least two recorded frames; ending an episode
@@ -154,6 +180,8 @@ resolution = [1920, 1080]
 
 Setup files are copied into the guest. Services start on each cold boot; memory
 restore preserves their existing processes. Setup inputs must be explicit.
+Built-in templates declare an `installation` name, which local extensions
+inherit so setup installs the same underlying software.
 The overall startup deadline includes setup, service and control readiness.
 `keep_on_error=True` retains a failed guest for diagnosis using the exception's
 `sandbox_id`; it does not return an environment claimed to be ready.
@@ -248,7 +276,9 @@ refuses to cancel jobs that were not created through that CLI.
 - GPU filesystem capture starts fresh GPU processes. Ordinary graphics RAM
   restore is unsupported. CUDA-only RAM capture/restore requires explicit
   `experimental_gpu_live=True` at both ends. MPS remains cooperative and
-  experimental; it does not isolate graphics or memory bandwidth.
+  experimental; it does not isolate graphics or memory bandwidth. The MPS
+  transport requires driver 610.43.02 and `nvidia-cuda-mps-control`; its observer
+  also needs host GCC unless the imported runtime includes the matching library.
 - Desktop actions acknowledge the input server, not application repaint. VR
   actions acknowledge the runtime, not game consumption or a simulation tick.
   Application FPS and stereo capture cadence are different measurements.

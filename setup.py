@@ -14,9 +14,9 @@ class BuildPy(build_py):
         if destination.exists():
             shutil.rmtree(destination)
         destination.mkdir(parents=True, exist_ok=True)
-        for source in (root / 'scripts').iterdir():
-            if source.suffix in ('.py', '.sh', '.c') and not source.name.startswith(('test-', 'sdk-')):
-                shutil.copy2(source, destination / source.name)
+        for relative in (root / 'src/sandweave/engine-files.txt').read_text().splitlines():
+            source = root / relative
+            shutil.copy2(source, destination / source.name)
 
 
 setup(cmdclass={'build_py': BuildPy})

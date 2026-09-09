@@ -32,6 +32,7 @@ def test_async_allocation_cancel_reconciles_owned_job(monkeypatch, tmp_path):
     from sandweave import Slurm
     import sandweave.sandbox.targets as targets
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
+    monkeypatch.setattr(targets, 'assets', lambda **kwargs: tmp_path / 'assets')
     started = threading.Event()
     cancelled = []
     def run(argv, **kwargs):

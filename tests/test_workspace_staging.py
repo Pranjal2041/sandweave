@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from sandweave import onboarding
+from sandweave import installation
 from sandweave.sandbox import workspace
 
 
@@ -22,8 +23,9 @@ def test_setup_keeps_data_with_selected_runtime(isolated_default, tmp_path):
     isolated_default.mkdir()
     original = {'targets': {'existing': {'job_id': '123'}}, 'onboarding_template': 'coding'}
     (isolated_default / 'config.json').write_text(json.dumps(original))
-    onboarding.save_runtime_location(assets)
-    assert workspace.home() == assets / '.sandweave'
+    storage = assets / '.sandweave'
+    installation.publish(storage, assets, previous=original)
+    assert workspace.home() == storage
     assert onboarding.configuration() == {**original, 'assets': str(assets)}
     assert json.loads((isolated_default / 'config.json').read_text()) == original
     assert json.loads((isolated_default / 'location.json').read_text()) == {'path': str(assets / '.sandweave')}
@@ -51,7 +53,7 @@ def test_invalid_destination_config_does_not_publish_location(isolated_default, 
     path = storage / 'config.json'
     path.write_text('unfinished user configuration')
     with pytest.raises(ValueError):
-        onboarding.save_runtime_location(assets)
+        installation.publish(storage, assets)
     assert not (isolated_default / 'location.json').exists()
     assert path.read_text() == 'unfinished user configuration'
 
@@ -63,7 +65,8 @@ def test_failed_storage_selection_cannot_fall_back_to_home(isolated_default, mon
     def unavailable(*args, **kwargs):
         raise PermissionError('selected data directory is read-only')
 
-    monkeypatch.setattr(onboarding, 'repair', unavailable)
+    monkeypatch.setattr(onboarding, 'known_sources', lambda: [])
+    monkeypatch.setattr(installation, 'destination', unavailable)
     monkeypatch.setattr(workspace, 'prepare', lambda: pytest.fail('staging continued in home'))
     assert main(['setup', '--yes', '--template', 'coding']) == 1
     assert not isolated_default.exists()
@@ -116,6 +119,14 @@ def test_same_filesystem_staging_uses_hardlinks(tmp_path, monkeypatch):
     assert source.samefile(target)
 
 
+def test_same_size_damaged_copy_is_replaced(tmp_path):
+    source, target = tmp_path / 'source', tmp_path / 'target'
+    source.write_bytes(b'complete image')
+    target.write_bytes(b'x' * source.stat().st_size)
+    workspace._immutable(source, target)
+    assert target.read_bytes() == source.read_bytes()
+
+
 def test_prepared_workspace_rechecks_truncated_image(tmp_path, monkeypatch):
     base = tmp_path / 'assets'
     for name in ('tools/bench', 'tools/seccomp-trap', 'tools/gs-base-probe', 'tools/debian-trixie.sif',
@@ -131,6 +142,7 @@ def test_prepared_workspace_rechecks_truncated_image(tmp_path, monkeypatch):
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path / 'storage'))
     monkeypatch.setattr(workspace, 'assets', lambda: base)
     monkeypatch.setattr(workspace, 'engine_sources', lambda: scripts)
+    monkeypatch.setattr(workspace, 'engine_files', lambda: [])
     mkdtemp = workspace.tempfile.mkdtemp
     monkeypatch.setattr(workspace.tempfile, 'mkdtemp', lambda **kw: mkdtemp(dir=tmp_path))
     prepared = workspace.prepare()

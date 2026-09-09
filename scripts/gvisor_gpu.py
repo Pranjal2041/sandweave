@@ -6,6 +6,7 @@ import re
 import shutil
 import stat
 import subprocess
+import tempfile
 
 
 def eligible_devices():
@@ -95,12 +96,30 @@ def device_identity(index):
 
 def stage_driver(destination):
     """Copy host user-space driver libraries without touching host installation."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise FileExistsError(destination)
+    temporary = Path(tempfile.mkdtemp(prefix='.driver-', dir=destination.parent))
+    try:
+        metadata = _copy_driver(temporary)
+        temporary.rename(destination)
+        return metadata
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
+
+def _copy_driver(destination):
     version = driver_version()
-    destination.mkdir(parents=True, exist_ok=False)
     lib = destination / 'lib'
     lib.mkdir()
     copied = {}
-    cache = subprocess.check_output(['ldconfig', '-p'], text=True)
+    ldconfig = shutil.which('ldconfig') or next(
+        (str(path) for path in (Path('/sbin/ldconfig'), Path('/usr/sbin/ldconfig')) if path.is_file()), None)
+    if ldconfig is None:
+        raise ValueError('Cannot locate ldconfig to read the installed NVIDIA libraries')
+    cache = subprocess.check_output([ldconfig, '-p'], text=True)
     for line in cache.splitlines():
         match = re.search(r'^\s*(\S+) \(libc6,x86-64[^)]*\) => (\S+)', line)
         if not match:
@@ -114,15 +133,22 @@ def stage_driver(destination):
             copied[source.name] = str(source)
         if name != source.name and not (lib / name).exists():
             (lib / name).symlink_to(source.name)
-    for name in ('libcuda.so.1', 'libnvidia-ml.so.1', 'libEGL_nvidia.so.0', 'libGLX_nvidia.so.0'):
+    for name in ('libcuda.so.1', 'libnvidia-ml.so.1'):
         if not (lib / name).is_file():
             raise ValueError(f'missing driver library {name}')
     (destination / 'bin').mkdir()
-    shutil.copy2(shutil.which('nvidia-smi'), destination / 'bin/nvidia-smi')
-    for source, name in [('/usr/share/glvnd/egl_vendor.d/10_nvidia.json', 'egl.json'),
-                         ('/usr/share/vulkan/icd.d/nvidia_icd.x86_64.json', 'vulkan.json')]:
-        shutil.copy2(source, destination / name)
-    metadata = {'driver_version': version, 'sources': copied}
+    smi = shutil.which('nvidia-smi')
+    if smi is None:
+        raise ValueError('nvidia-smi is missing from this worker')
+    shutil.copy2(smi, destination / 'bin/nvidia-smi')
+    # Host distributions use different JSON filenames and library paths. The
+    # guest descriptors refer only to libraries staged at the guest mount.
+    (destination / 'egl.json').write_text(json.dumps({'file_format_version': '1.0.0',
+        'ICD': {'library_path': '/opt/engine-gpu/driver/lib/libEGL_nvidia.so.0'}}) + '\n')
+    (destination / 'vulkan.json').write_text(json.dumps({'file_format_version': '1.0.0',
+        'ICD': {'library_path': '/opt/engine-gpu/driver/lib/libGLX_nvidia.so.0', 'api_version': '1.3.0'}}) + '\n')
+    metadata = {'driver_version': version, 'sources': copied,
+                'graphics': all((lib / name).is_file() for name in ('libEGL_nvidia.so.0', 'libGLX_nvidia.so.0'))}
     (destination / 'driver.json').write_text(json.dumps(metadata, indent=2) + '\n')
     return metadata
 

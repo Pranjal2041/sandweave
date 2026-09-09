@@ -1,3 +1,9 @@
 include README.md
+include src/sandweave/engine-files.txt
 recursive-include scripts *.py *.sh *.c
 recursive-include src/sandweave/templates *.toml *.sh
+include notes/gvisor-no-kvm-prototype.patch
+include notes/monado-vr-lab.patch
+include notes/primus-vk-visible-rows.patch
+include sources/gs-base-probe.c
+include sources/xvnc-fast-io.c

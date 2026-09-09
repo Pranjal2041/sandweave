@@ -27,7 +27,10 @@ def home():
     if not selected:
         location = default_home() / 'location.json'
         if location.exists():
-            selected = json.loads(location.read_text())['path']
+            value = json.loads(location.read_text())
+            if not isinstance(value, dict) or not isinstance(value.get('path'), str) or not value['path']:
+                raise ResourceUnavailable('Invalid Sandweave location file: ' + str(location))
+            selected = value['path']
     return Path(selected or default_home()).expanduser().resolve()
 
 
@@ -47,7 +50,8 @@ def tool(name):
 
 def worker_key():
     """Workers may only share authority within the same eligible resource set."""
-    eligibility = {'assets': asset_identity(), 'cpus': sorted(os.sched_getaffinity(0)),
+    eligibility = {'assets': asset_identity(), 'software': software_identity(),
+                   'cpus': sorted(os.sched_getaffinity(0)),
                    'gpu': {key: os.environ.get(key) for key in
                            ('SLURM_STEP_GPUS', 'SLURM_JOB_GPUS', 'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'SANDWEAVE_GPU_DEVICES')},
                    'memory': {key: os.environ.get(key) for key in
@@ -99,9 +103,26 @@ def engine_sources():
     raise ResourceUnavailable('engine sources are missing from this installation')
 
 
+def engine_files():
+    root = engine_sources()
+    result = []
+    manifest = resources.files('sandweave').joinpath('engine-files.txt').read_text()
+    for relative in manifest.splitlines():
+        name = Path(relative)
+        # Build inputs are bundled too, but are not runtime launcher scripts.
+        if name.parts[0] == 'scripts':
+            path = root / name.name
+            if not path.is_file():
+                raise ResourceUnavailable('Installed engine script is missing: ' + name.name)
+            result.append(path)
+    return sorted(result)
+
+
 def assets(*, directory=None, selected=None):
     config_file = (Path(directory) if directory else home()) / 'config.json'
     config = json.loads(config_file.read_text()) if config_file.exists() else {}
+    if not isinstance(config, dict):
+        raise ResourceUnavailable('Sandweave config.json must contain an object: ' + str(config_file))
     selected = selected or os.environ.get('SANDWEAVE_ASSETS') or config.get('assets')
     if not selected:
         # The existing lab is usable without copying a private path into the SDK.
@@ -111,6 +132,8 @@ def assets(*, directory=None, selected=None):
                 break
     if not selected:
         raise ResourceUnavailable('runtime files are not configured; run sandweave setup')
+    if not isinstance(selected, (str, os.PathLike)) or not str(selected):
+        raise ResourceUnavailable('The runtime directory in config.json must be a nonempty path')
     result = Path(selected).expanduser().resolve()
     if not (result / 'tools/debian-trixie.sif').is_file():
         raise ResourceUnavailable('asset directory is missing the unprivileged host image: ' + str(result))
@@ -129,11 +152,43 @@ def asset_identity(source=None):
     return digest.hexdigest()[:16]
 
 
-def _immutable(source, destination):
+def software_identity():
+    """An upgraded SDK cannot reconnect to a worker running different code."""
+    digest = hashlib.sha256()
+    sdk = Path(__file__).resolve().parents[1]
+    for path in sorted(sdk.rglob('*')):
+        if path.is_file() and path.suffix in ('.py', '.sh', '.toml') and '_engine' not in path.parts:
+            digest.update(str(path.relative_to(sdk)).encode())
+            digest.update(path.read_bytes())
+    digest.update(resources.files('sandweave').joinpath('engine-files.txt').read_bytes())
+    for path in engine_files():
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def file_digest(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def file_signature(path):
+    info = Path(path).stat()
+    return [getattr(info, name) for name in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')]
+
+
+def _immutable(source, destination, *, sha256=None):
     source, destination = Path(source), Path(destination)
     size = source.stat().st_size
+    expected = sha256
+    if expected is not None and file_digest(source) != expected:
+        raise ResourceUnavailable('Runtime source checksum mismatch: ' + str(source))
     if destination.is_file() and destination.stat().st_size == size:
-        return
+        if source.samefile(destination):
+            return
+        expected = expected or file_digest(source)
+        if file_digest(destination) == expected:
+            return
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix='.' + destination.name + '.', dir=destination.parent)
     os.close(fd)
@@ -150,6 +205,10 @@ def _immutable(source, destination):
                 os.fsync(stream.fileno())
         if temporary.stat().st_size != size:
             raise ResourceUnavailable('Runtime file copy is incomplete: ' + str(source))
+        if not source.samefile(temporary):
+            expected = expected or file_digest(source)
+            if file_digest(temporary) != expected:
+                raise ResourceUnavailable('Runtime file copy checksum mismatch: ' + str(source))
         os.replace(temporary, destination)
     except OSError as error:
         raise ResourceUnavailable('Could not stage runtime file ' + str(source) +
@@ -185,15 +244,14 @@ def stage_tree(source, destination):
 
 def prepare():
     base = assets()
-    source = engine_sources()
-    files = sorted(p for p in source.iterdir()
-                   if p.suffix in ('.py', '.sh', '.c') and not p.name.startswith(('test-', 'sdk-')))
+    files = engine_files()
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.name.encode()); digest.update(path.read_bytes())
     engine_digest = digest.hexdigest()
     sdk = Path(__file__).resolve().parents[1]
     sdk_digest = hashlib.sha256()
+    sdk_digest.update(resources.files('sandweave').joinpath('engine-files.txt').read_bytes())
     for path in sorted(sdk.rglob('*')):
         if path.is_file() and path.suffix in ('.py', '.toml', '.sh') and '_engine' not in path.parts:
             sdk_digest.update(str(path.relative_to(sdk)).encode()); sdk_digest.update(path.read_bytes())
@@ -204,21 +262,28 @@ def prepare():
         if (root / 'prepared.json').exists():
             prepared = json.loads((root / 'prepared.json').read_text())
             staged = prepared.get('staged_files', {})
-            if (Path(prepared['local']).is_dir() and staged and
+            signatures = prepared.get('staged_signatures', {})
+            if (Path(prepared['local']).is_dir() and staged and signatures and
                     all((root / name).is_file() and (root / name).stat().st_size == size
+                        and file_signature(root / name) == signatures.get(name)
                         for name, size in staged.items())):
                 return root
             # Revalidate legacy workspaces and repair incomplete staged files.
             # Durable checkpoints also outlive node-local runtime storage.
+        if (base / 'installation.json').is_file():
+            from ..installation import validate_installation
+            validate_installation(base)
         for directory in ('scripts', 'runs', 'downloads', 'snapshots', 'images/fixtures', 'tools/gpu'):
             (root / directory).mkdir(parents=True, exist_ok=True)
         for path in files:
             shutil.copy2(path, root / 'scripts' / path.name)
+            if path.suffix == '.sh':
+                (root / 'scripts' / path.name).chmod(0o755)
         if (base / 'sandweave-assets.json').is_file():
             shutil.copy2(base / 'sandweave-assets.json', root / 'sandweave-assets.json')
         for name in ('bench', 'seccomp-trap', 'gs-base-probe', 'debian-trixie.sif'):
             _immutable(base / 'tools' / name, root / 'tools' / name)
-        for directory in ('runtime-builds', 'fast-io', 'network', 'erofs', 'gvisor-nightly-20260906'):
+        for directory in ('runtime-builds', 'fast-io', 'network', 'erofs', 'helpers', 'gvisor-nightly-20260906'):
             src = base / 'tools' / directory
             if src.is_dir():
                 stage_tree(src, root / 'tools' / directory)
@@ -231,8 +296,16 @@ def prepare():
             if candidate and (root / candidate / 'manifest.json').is_file():
                 atomic_json(root / 'tools/gvisor-socket/runtime.json', {
                     'path': candidate, 'sha256': json.loads((root / candidate / 'manifest.json').read_text())})
-        _immutable(base / 'images/gvisor-ubuntu-ready-ae303ca.erofs',
-                   root / 'images/gvisor-ubuntu-ready-ae303ca.erofs')
+        registry_path = base / 'sandweave-assets.json'
+        registry_value = json.loads(registry_path.read_text()) if registry_path.exists() else {}
+        image_names = set(registry_value.get('images', {}))
+        image_names.add(registry_value.get('default_image', 'images/gvisor-ubuntu-ready-ae303ca.erofs'))
+        for name in image_names:
+            relative = Path(name)
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ResourceUnavailable('Image path escapes the runtime directory: ' + name)
+            _immutable(base / relative, root / relative,
+                       sha256=registry_value.get('images', {}).get(name, {}).get('sha256'))
         # Snapshots retain a durable path; only active runtime working data is local.
         prepared_path = root / 'prepared.json'
         previous = json.loads(prepared_path.read_text()) if prepared_path.exists() else {}
@@ -246,9 +319,11 @@ def prepare():
         staged = {str(path.relative_to(root)): path.stat().st_size
                   for directory in ('tools', 'images') for path in (root / directory).rglob('*')
                   if path.is_file()}
+        signatures = {name: file_signature(root / name) for name in staged}
         atomic_json(root / 'prepared.json', {'assets': str(base), 'engine_sources_sha256': engine_digest,
                                             'sdk_sources_sha256': sdk_digest.hexdigest(),
                                             'assets_sha256': hashlib.sha256(registry.read_bytes()).hexdigest() if registry.exists() else None,
                                             'staged_files': staged,
+                                            'staged_signatures': signatures,
                                             'hostname': socket.gethostname(), 'local': str(local)})
     return root

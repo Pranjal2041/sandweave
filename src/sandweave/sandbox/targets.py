@@ -16,7 +16,7 @@ import uuid
 
 from .connection import Connection
 from .errors import ResourceUnavailable
-from .workspace import home, locked, atomic_json, worker_key, assets, asset_identity
+from .workspace import home, locked, atomic_json, worker_key, assets, asset_identity, software_identity
 from .asyncio import dualmethod, dualclassmethod
 from .resources import memory_bytes, positive
 
@@ -84,6 +84,15 @@ def _worker_environment(config):
         value = config.get(key) or os.environ.get(name)
         if value:
             environment[name] = str(value)
+    return environment
+
+
+def _slurm_environment(config):
+    environment = _worker_environment(config)
+    # Slurm placement uses shared storage. Pin the effective configured paths,
+    # including a location selected by setup rather than an environment variable.
+    environment.setdefault('SANDWEAVE_HOME', str(home()))
+    environment.setdefault('SANDWEAVE_ASSETS', str(assets(directory=config.get('home'), selected=config.get('assets'))))
     return environment
 
 
@@ -208,7 +217,7 @@ class Slurm:
         identifier = 'allocation-' + uuid.uuid4().hex
         directory = home() / 'allocations' / identifier
         directory.mkdir(parents=True, mode=0o700)
-        worker_environment = _worker_environment(config)
+        worker_environment = _slurm_environment(config)
         worker_environment.setdefault('PYTHONPATH', str(Path(__file__).resolve().parents[2]))
         command = [config.get('python', sys.executable), '-m', 'sandweave.sandbox.worker',
                    '--metadata', str(directory / 'worker.json')]
@@ -285,13 +294,14 @@ class Slurm:
         directory = home() / 'allocations' / ('job-' + self.job_id)
         if 'metadata' not in self.config:
             source = assets(directory=self.config.get('home'), selected=self.config.get('assets'))
-            directory = directory / asset_identity(source)
+            directory = directory / (asset_identity(source) + '-' + software_identity()[:16])
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         metadata = Path(self.config.get('metadata', directory / 'worker.json'))
         # Existing-job placement starts one persistent step in that allocation.
         # The worker never inherits CPUs/GPUs from the SSH daemon's environment.
         if 'metadata' not in self.config:
             with locked(directory / 'startup.lock'):
+                process = None
                 _wait_stopping(metadata)
                 info = json.loads(metadata.read_text()) if metadata.exists() else None
                 if info is not None and info.get('hostname') == hostname:
@@ -315,7 +325,7 @@ class Slurm:
                         probe.close()
                 if info is None or info.get('hostname') != hostname:
                     metadata.unlink(missing_ok=True)
-                    environment = {**os.environ, **_worker_environment(self.config)}
+                    environment = {**os.environ, **_slurm_environment(self.config)}
                     environment.setdefault('PYTHONPATH', str(Path(__file__).resolve().parents[2]))
                     cpus = self.config.get('cpus', int(job['NumCPUs']))
                     command = ['srun', '--jobid='+self.job_id, '--overlap', '--ntasks=1', '--cpus-per-task='+str(cpus),
@@ -327,7 +337,7 @@ class Slurm:
                     atomic_json(directory / 'launcher.json', {'pid': process.pid, 'job_id': self.job_id})
                 deadline = time.monotonic() + 180
                 while not metadata.exists():
-                    if process.poll() is not None:
+                    if process is not None and process.poll() is not None:
                         raise ResourceUnavailable('Slurm worker exited during startup; inspect ' + str(directory / 'worker.log'))
                     if time.monotonic() >= deadline:
                         raise TimeoutError('Slurm worker is still preparing; inspect ' + str(directory / 'worker.log'))

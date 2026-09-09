@@ -7,6 +7,7 @@ but only guest execution is throttled; this is not a hard host CPU ceiling. The 
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -269,7 +270,10 @@ def run(directory, cpus):
 
 
 def register(local, name, cpus, weight, quota):
-    directory = local / 'gvisor/cpu-brokers' / ('pool-' + '-'.join(map(str, sorted(cpus))))
+    # A CPU list can exceed the filesystem's 255-byte component limit on
+    # large machines. Registrations retain the full allocation for validation.
+    pool = hashlib.sha256(','.join(map(str, sorted(cpus))).encode()).hexdigest()[:24]
+    directory = local / 'gvisor/cpu-brokers' / ('pool-' + pool)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     root = os.getpid()
     info = process_table([root])[root]

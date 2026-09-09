@@ -44,11 +44,15 @@ with tarfile.open(bundle / 'fixtures.tar', 'w') as archive:
         entry = tarfile.TarInfo(name)
         entry.mode, entry.uid, entry.gid, entry.size = 0o644, 0, 0, len(data)
         archive.addfile(entry, io.BytesIO(data))
-caps = []
-for line in Path('/usr/include/linux/capability.h').read_text().splitlines():
-    match = re.match(r'#define\s+(CAP_[A-Z0-9_]+)\s+(\d+)\b', line)
-    if match:
-        caps.append(match.group(1))
+# OCI names for Linux's capability ABI, through CAP_CHECKPOINT_RESTORE (40).
+# These describe the guest. Launching does not require host development headers.
+caps = ['CAP_' + name for name in (
+    'CHOWN DAC_OVERRIDE DAC_READ_SEARCH FOWNER FSETID KILL SETGID SETUID SETPCAP '
+    'LINUX_IMMUTABLE NET_BIND_SERVICE NET_BROADCAST NET_ADMIN NET_RAW IPC_LOCK '
+    'IPC_OWNER SYS_MODULE SYS_RAWIO SYS_CHROOT SYS_PTRACE SYS_PACCT SYS_ADMIN '
+    'SYS_BOOT SYS_NICE SYS_RESOURCE SYS_TIME SYS_TTY_CONFIG MKNOD LEASE '
+    'AUDIT_WRITE AUDIT_CONTROL SETFCAP MAC_OVERRIDE MAC_ADMIN SYSLOG WAKE_ALARM '
+    'BLOCK_SUSPEND AUDIT_READ PERFMON BPF CHECKPOINT_RESTORE').split()]
 command = args.command or ['/usr/local/bin/engine-gates']
 if command[0] == '--':
     command = command[1:]

@@ -8,6 +8,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -15,7 +16,7 @@ import uuid
 from ...connection import Connection
 from ...errors import UnsupportedFeature, ResourceUnavailable
 from ...resources import memory_bytes
-from ...workspace import assets, atomic_json, locked, _immutable
+from ...workspace import assets, atomic_json, locked, _immutable, home
 from ..gvisor.driver import agent_source
 
 
@@ -60,14 +61,27 @@ class Runtime:
         directory.mkdir(mode=0o700)
         for name in ('overlay/upper', 'overlay/work', 'control'):
             (directory / name).mkdir(parents=True)
-        image = self.root / 'tools/native-base.sif'
-        with locked(self.root / 'tools/.native-base.lock'):
-            _immutable(assets() / 'tools/gvisor-builder.sif', image)
         if snapshot:
             manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
             if manifest.get('backend') != 'apptainer' or manifest['kind'] != 'filesystem':
                 raise UnsupportedFeature('native restore requires a native filesystem snapshot')
+            relative = Path(manifest['base_image']['path'])
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('native snapshot base image escapes the workspace')
+            image = self.root / relative
+            if not image.is_file() or digest(image) != manifest['base_image']['sha256']:
+                raise ValueError('native snapshot base image is missing or corrupt')
             shutil.copytree(Path(snapshot) / 'upper', directory / 'overlay/upper', dirs_exist_ok=True, symlinks=True)
+        else:
+            source = assets() / 'tools/gvisor-builder.sif'
+            with locked(home() / 'downloads/.native-image.lock'):
+                if not source.is_file():
+                    from ....bootstrap import Builder, BUILDER
+                    source = home() / 'downloads/gvisor-builder.sif'
+                    Builder(home()).pull(BUILDER, source)
+                checksum = digest(source)
+                image = self.root / 'tools/native' / (checksum + '.sif')
+                _immutable(source, image, sha256=checksum)
         token = token or secrets.token_hex(32)
         source = directory / 'control/agent.py'
         source.write_text(agent_source())
@@ -88,8 +102,8 @@ class Runtime:
         if resources['gpu']:
             command += ['sh', '/sdk/gvisor-guest-gpu-init.sh', 'sh', '/sdk/gvisor-guest-gpu.sh']
         command += ['python3', '-u', '/sdk/agent.py', '/sdk/agent.sock', token]
-        # taskset applies eligibility before any native descendants are spawned.
-        command = ['taskset', '-c', ','.join(map(str, cpus)), *command]
+        command = [sys.executable, str(self.root / 'scripts/runtime_tools.py'),
+                   'affinity', ','.join(map(str, cpus)), *command]
         with (directory / 'launcher.log').open('ab') as log:
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
@@ -97,7 +111,7 @@ class Runtime:
         record = {'id': identity, 'pid': process.pid, 'start': self.ownership.process_table([process.pid])[process.pid]['start'],
                   'state': 'running', 'gpu': bool(resources['gpu']), 'cpus': cpus,
                   'memory_limit': memory_bytes(resources['memory']['guest']) + memory_bytes(resources['memory']['runtime']),
-                  'mounts': spec.get('mounts', [])}
+                  'mounts': spec.get('mounts', []), 'base_image': str(image.relative_to(self.root))}
         atomic_json(directory / 'native.json', record)
         client = Connection('localhost', 0, token, unix_path=str(directory / 'control/agent.sock'), timeout=30)
         deadline = spec.get('_startup_deadline', time.monotonic() + spec.get('startup_timeout', 300))
@@ -224,10 +238,10 @@ class Runtime:
                     raise UnsupportedFeature('native snapshot cannot copy special overlay entry: ' + str(path.relative_to(upper)))
             destination.mkdir(mode=0o700)
             shutil.copytree(upper, destination / 'upper', symlinks=True)
-            image = self.root / 'tools/native-base.sif'
+            image = self.root / self.metadata(identity).get('base_image', 'tools/native-base.sif')
             manifest = {'format': 1, 'backend': 'apptainer', 'kind': 'filesystem', 'snapshot_id': uuid.uuid4().hex,
                         'runtime': {'name': 'apptainer', 'version': subprocess.check_output(['apptainer', '--version'], text=True).strip()},
-                        'base_image': {'path': 'tools/native-base.sif', 'size': image.stat().st_size, 'sha256': digest(image)},
+                        'base_image': {'path': str(image.relative_to(self.root)), 'size': image.stat().st_size, 'sha256': digest(image)},
                         'files': inventory(destination / 'upper')}
             atomic_json(destination / 'snapshot-manifest.json', manifest)
             atomic_json(destination / 'verification.json', {'status': 'passed', 'snapshot_id': manifest['snapshot_id']})

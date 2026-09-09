@@ -1,4 +1,5 @@
 schema_version = 1
+installation = "games/gunspinning-gamepad"
 extends = "vr/gunspinning@1"
 
 # This game's historical gamepad mode uses its flat desktop presentation.

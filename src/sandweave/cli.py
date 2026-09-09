@@ -8,13 +8,14 @@ import select
 import termios
 import tty
 import sys
+import subprocess
 import threading
 import time
 
 from . import Sandbox, SandboxError, CommandTimeout, CPU, Memory, Mount, Slurm
 from .sandbox.snapshots import SnapshotRef
 from .sandbox.targets import connect
-from .sandbox.workspace import home, atomic_json
+from .sandbox.workspace import home, atomic_json, locked
 
 
 def output(value):
@@ -182,6 +183,8 @@ def parser():
     setup.add_argument('--target', help='Target for guest script setup')
     setup.add_argument('--template', help='Workload to prepare; defaults to coding')
     setup.add_argument('--assets', help='Use an existing prepared runtime directory')
+    setup.add_argument('--directory', help='Store downloads, runtime files, workers and caches in this directory')
+    setup.add_argument('--game-archive', help='Official GunSpinning Linux ZIP, when installing it for the first time')
     setup.add_argument('--yes', action='store_true', help='Apply available setup repairs without prompting')
     doctor = sub.add_parser('doctor', help='Check this worker and interactively repair problems')
     doctor.add_argument('--template', help='Workload to check; defaults to the last setup selection')
@@ -237,7 +240,7 @@ def main(argv=None):
         if op == 'setup':
             if bool(args.id) != bool(args.script):
                 raise ValueError('guest setup requires both ID and SCRIPT; use plain sandweave setup for this worker')
-            if args.id and (args.template or args.assets or args.yes):
+            if args.id and (args.template or args.assets or args.directory or args.game_archive or args.yes):
                 raise ValueError('worker setup options cannot be used with guest ID and SCRIPT')
             if not args.id and args.target:
                 raise ValueError('run sandweave setup on the worker; --target applies to guest script setup')
@@ -245,20 +248,24 @@ def main(argv=None):
             from . import onboarding
             return onboarding.main(args)
         if op == 'targets':
+            from .onboarding import configuration as read_configuration
             configuration = home() / 'config.json'
-            config = json.loads(configuration.read_text()) if configuration.exists() else {}
             if args.target_operation == 'list':
-                output(config.get('targets', {}))
+                output(read_configuration().get('targets', {}))
             else:
-                targets = config.setdefault('targets', {})
-                if args.target_operation == 'add':
-                    value = json.loads(args.config)
-                    if not isinstance(value, dict) or not ('host' in value or 'job_id' in value):
-                        raise ValueError('target config must declare host or job_id')
-                    targets[args.name] = value
-                else:
-                    targets.pop(args.name, None)
-                atomic_json(configuration, config)
+                with locked(configuration.with_suffix('.lock')):
+                    config = read_configuration()
+                    targets = config.setdefault('targets', {})
+                    if not isinstance(targets, dict):
+                        raise ValueError('Saved targets must be a JSON object')
+                    if args.target_operation == 'add':
+                        value = json.loads(args.config)
+                        if not isinstance(value, dict) or not ('host' in value or 'job_id' in value):
+                            raise ValueError('target config must declare host or job_id')
+                        targets[args.name] = value
+                    else:
+                        targets.pop(args.name, None)
+                    atomic_json(configuration, config)
             return 0
         if op == 'slurm':
             if args.slurm_operation == 'acquire':
@@ -318,12 +325,11 @@ def main(argv=None):
             finally:
                 connection.close()
         if op == 'configure':
+            from .onboarding import save_configuration
             path = Path(args.assets).expanduser().resolve()
             if not path.is_dir():
                 raise FileNotFoundError(path)
-            configuration = home() / 'config.json'
-            config = json.loads(configuration.read_text()) if configuration.exists() else {}
-            atomic_json(configuration, {**config, 'assets': str(path)})
+            save_configuration(assets=str(path))
             return 0
         if op == 'create':
             env = Sandbox(**creation(args))
@@ -381,7 +387,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         print('sandweave: cancelled', file=sys.stderr)
         return 130
-    except (SandboxError, ValueError, OSError, TimeoutError) as error:
+    except (SandboxError, ValueError, OSError, TimeoutError, subprocess.SubprocessError) as error:
         print(f'sandweave: {error}', file=sys.stderr)
         return 1
 

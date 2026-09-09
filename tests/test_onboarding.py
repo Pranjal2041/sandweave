@@ -62,17 +62,24 @@ def test_save_preserves_targets_and_does_not_replace_invalid_config(tmp_path, mo
     assert path.read_text() == 'not json'
 
 
-def test_assets_repair_persists_discovery_and_respects_decline(runtime_files, tmp_path, monkeypatch):
-    home = tmp_path / 'home'
-    monkeypatch.setenv('SANDWEAVE_HOME', str(home))
-    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
-    monkeypatch.setattr(onboarding.workspace, 'assets', lambda: runtime_files)
-    monkeypatch.setattr(onboarding, 'asset_candidates', lambda: [])
-    monkeypatch.setattr(onboarding, 'choose', lambda *a: 'cancel')
-    assert onboarding.repair('assets', 'coding') is False
-    assert not (home / 'config.json').exists()
-    assert onboarding.repair('assets', 'coding', yes=True)
-    assert onboarding.configuration()['assets'] == str(runtime_files)
+def test_assets_repair_uses_the_complete_setup_flow(monkeypatch):
+    calls = []
+    def setup(args, template, interactive):
+        calls.append((args.assets, args.directory, args.yes, template, interactive))
+        return 0 if args.yes else 1
+    monkeypatch.setattr(onboarding, 'setup_worker', setup)
+    assert not onboarding.repair('assets', 'coding')
+    assert onboarding.repair('assets', 'gnome', yes=True, assets='/source')
+    assert calls == [(None, None, False, 'coding', True), ('/source', None, True, 'gnome', False)]
+
+
+@pytest.fixture
+def setup_boundaries(monkeypatch, tmp_path):
+    """Stub external setup work; each test controls the acceptance boundary."""
+    monkeypatch.setattr(onboarding, 'known_sources', lambda: [])
+    monkeypatch.setattr(onboarding.workspace, 'tool', lambda name: '/test/' + name)
+    monkeypatch.setattr(onboarding, 'run_probe', lambda *a, **k: (True, 'available'))
+    monkeypatch.setattr(onboarding, 'install_runtime', lambda *a, **k: tmp_path / 'installed')
 
 
 def test_declined_package_install_does_not_run_pip(monkeypatch):
@@ -140,11 +147,11 @@ def test_doctor_rechecks_after_selected_fix(monkeypatch, tmp_path):
     assert repaired == ['assets'] and len(inspections) == 2
 
 
-def test_setup_does_not_report_success_on_unresolved_host_block(monkeypatch, tmp_path, capsys):
+def test_setup_does_not_report_success_on_unresolved_host_block(monkeypatch, tmp_path, capsys, setup_boundaries):
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
     monkeypatch.setattr(onboarding, 'inspect', lambda *a, **k: [onboarding.Check('userns', 'Permissions', 'fail', 'Denied')])
     monkeypatch.setattr(onboarding, 'repair', lambda *a, **k: True)
-    monkeypatch.setattr(onboarding, 'smoke_test', lambda: pytest.fail('cannot start blocked worker'))
+    monkeypatch.setattr(onboarding, 'smoke_test', lambda *a: pytest.fail('cannot start blocked worker'))
     assert main(['setup', '--yes', '--template', 'coding']) == 1
     assert 'Setup complete.' not in capsys.readouterr().out
 
@@ -178,7 +185,7 @@ def test_desktop_requires_both_bridge_files(runtime_files):
         onboarding.validate_assets(runtime_files, Template('gnome').resolve())
 
 
-def test_yes_never_opens_workload_menu_on_a_terminal(tmp_path, monkeypatch):
+def test_yes_never_opens_workload_menu_on_a_terminal(tmp_path, monkeypatch, setup_boundaries):
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
     monkeypatch.setattr(onboarding.sys.stdin, 'isatty', lambda: True)
     monkeypatch.setattr(onboarding.sys.stdout, 'isatty', lambda: True)
@@ -225,13 +232,162 @@ def test_managed_ffmpeg_exports_distinct_paired_videos(tmp_path, monkeypatch):
     assert decoded[2].getpixel((16, 16))[2] > 200
 
 
-def test_setup_declined_override_cannot_test_other_assets(tmp_path, monkeypatch):
+def test_setup_declined_override_cannot_test_other_assets(tmp_path, monkeypatch, setup_boundaries):
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
     monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
     monkeypatch.setattr(onboarding.sys.stdin, 'isatty', lambda: True)
     monkeypatch.setattr(onboarding.sys.stdout, 'isatty', lambda: True)
     monkeypatch.setattr(onboarding, 'inspect', lambda *a, **k: [onboarding.Check('assets', 'Runtime', 'pass', 'A')])
     monkeypatch.setattr(onboarding, 'confirm', lambda *a: False)
+    monkeypatch.setattr(onboarding, 'ask_path', lambda *a, **k: tmp_path)
     monkeypatch.setattr(onboarding.workspace, 'prepare', lambda: pytest.fail('declined assets were used'))
     assert main(['setup', '--template', 'coding', '--assets', '/declined']) == 1
     assert not (tmp_path / 'config.json').exists()
+
+
+def test_empty_destination_imports_source_without_publishing_config(runtime_files, tmp_path, monkeypatch):
+    from sandweave.installation import import_runtime, validate_installation
+    monkeypatch.setattr(onboarding.workspace, 'tool', lambda name: '/host/' + name)
+    storage = tmp_path / 'new empty directory'
+    installed = import_runtime(runtime_files, storage, Template('coding').resolve())
+    assert installed.is_relative_to(storage / 'assets')
+    assert installed != runtime_files
+    assert not (storage / 'config.json').exists()
+    validate_installation(installed)
+    assert import_runtime(runtime_files, storage, Template('coding').resolve()) == installed
+
+
+def test_corrupt_published_import_gets_separate_replacement(runtime_files, tmp_path, monkeypatch):
+    from sandweave.installation import import_runtime, validate_installation
+    monkeypatch.setattr(onboarding.workspace, 'tool', lambda name: '/host/' + name)
+    storage = tmp_path / 'storage'
+    recipe = Template('coding').resolve()
+    first = import_runtime(runtime_files, storage, recipe)
+    damaged = first / 'tools/bench'
+    original = damaged.read_bytes()
+    damaged.unlink()  # Leave its source hardlink unchanged.
+    damaged.write_bytes(b'x' * len(original))
+    second = import_runtime(runtime_files, storage, recipe)
+    assert first != second and damaged.read_bytes() != original
+    assert (second / 'tools/bench').read_bytes() == original
+    validate_installation(second)
+
+
+def test_same_size_image_corruption_is_rejected(runtime_files):
+    image = 'images/gvisor-ubuntu-ready-ae303ca.erofs'
+    path = runtime_files / image
+    before = path.read_bytes()
+    (runtime_files / 'sandweave-assets.json').write_text(json.dumps({'images': {
+        image: {'size': len(before), 'sha256': hashlib.sha256(before).hexdigest()}}}))
+    path.write_bytes(b'x' * len(before))
+    with pytest.raises(ValueError, match='image checksum'):
+        onboarding.validate_assets(runtime_files, Template('coding').resolve())
+
+
+def test_new_image_can_supply_template_base_without_legacy_snapshot(runtime_files):
+    image = 'images/gvisor-ubuntu-ready-ae303ca.erofs'
+    path = runtime_files / image
+    recipe = Template('coding').resolve()
+    recipe['base_snapshot'] = 'example@1'
+    registry = {'default_image': image, 'images': {image: {
+        'size': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}},
+        'snapshots': {'example@1': {'kind': 'image', 'path': image}}}
+    (runtime_files / 'sandweave-assets.json').write_text(json.dumps(registry))
+    assert onboarding.validate_assets(runtime_files, recipe) == runtime_files
+
+
+def test_vr_validation_requires_graphics_helpers(runtime_files):
+    # Isolate host-side graphics dependencies from the guest base image.
+    recipe = Template('coding').resolve()
+    recipe['installation'] = 'vr/opensaber'
+    with pytest.raises(ValueError, match='vglrun'):
+        onboarding.validate_assets(runtime_files, recipe)
+    executable = runtime_files / 'tools/gpu/virtualgl/opt/VirtualGL/bin/vglrun'
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b'virtualgl wrapper')
+    with pytest.raises(ValueError, match='libvisualorder'):
+        onboarding.validate_assets(runtime_files, recipe)
+
+
+def test_no_source_selects_bootstrap_with_destination_only(tmp_path, monkeypatch):
+    from sandweave import bootstrap
+    calls = []
+    class Builder:
+        def __init__(self, directory):
+            calls.append(directory)
+        def build(self, template, recipe, *, base):
+            calls.append((template, recipe['name'], base))
+            return tmp_path / 'assets/built'
+    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
+    monkeypatch.setattr(bootstrap, 'Builder', Builder)
+    assert onboarding.install_runtime('coding', tmp_path, sources=(), yes=True) == tmp_path / 'assets/built'
+    assert calls == [tmp_path, ('coding', Template('coding').resolve()['name'], None)]
+
+
+@pytest.mark.parametrize('parent', ['coding', 'gnome', 'docker', 'vr/gunspinning', 'games/gunspinning-gamepad'])
+def test_custom_template_keeps_its_installation_dependency(tmp_path, parent):
+    template = tmp_path / 'custom.toml'
+    template.write_text('extends = ' + json.dumps(parent) + '\n')
+    assert onboarding.workload(Template(template).resolve()) == parent
+
+
+def test_copy_failure_never_falls_back_to_build(runtime_files, tmp_path, monkeypatch):
+    from sandweave import installation, bootstrap
+    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
+    def fail(*args):
+        raise OSError('quota exceeded')
+    monkeypatch.setattr(installation, 'import_runtime', fail)
+    monkeypatch.setattr(bootstrap, 'Builder', lambda *a: pytest.fail('unexpected rebuild'))
+    with pytest.raises(OSError, match='quota exceeded'):
+        onboarding.install_runtime('coding', tmp_path / 'storage', sources=[runtime_files], yes=True)
+
+
+@pytest.mark.parametrize('failure', [RuntimeError('guest did not start'), KeyboardInterrupt()])
+def test_setup_failure_preserves_saved_configuration_and_selection(tmp_path, monkeypatch, setup_boundaries, failure):
+    monkeypatch.delenv('SANDWEAVE_HOME', raising=False)
+    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
+    default, selected = tmp_path / 'home', tmp_path / 'storage'
+    default.mkdir(); selected.mkdir()
+    monkeypatch.setattr(onboarding.workspace, 'default_home', lambda: default)
+    before = {'assets': '/existing', 'targets': {'training': {'job_id': '123'}}}
+    (default / 'config.json').write_text(json.dumps(before))
+    destination_config = {'assets': '/previous-destination-assets'}
+    (selected / 'config.json').write_text(json.dumps(destination_config))
+    monkeypatch.setattr(onboarding, 'inspect', lambda *a, **k: [onboarding.Check('ok', 'Ready', 'pass', 'ready')])
+    monkeypatch.setattr(onboarding.workspace, 'prepare', lambda: None)
+    def smoke(template):
+        assert onboarding.workspace.home() == selected
+        assert onboarding.os.environ['SANDWEAVE_ASSETS'] == str(tmp_path / 'installed')
+        raise failure
+    monkeypatch.setattr(onboarding, 'smoke_test', smoke)
+    args = SimpleNamespace(yes=True, directory=selected, assets=None, game_archive=None)
+    with pytest.raises(type(failure)):
+        onboarding.setup_worker(args, 'coding', False)
+    assert json.loads((default / 'config.json').read_text()) == before
+    assert json.loads((selected / 'config.json').read_text()) == destination_config
+    assert not (default / 'location.json').exists()
+    assert 'SANDWEAVE_HOME' not in onboarding.os.environ
+    assert 'SANDWEAVE_ASSETS' not in onboarding.os.environ
+    assert json.loads((selected / 'setup.json').read_text())['status'] == 'checking'
+
+
+def test_setup_publishes_only_after_selected_workload_check(tmp_path, monkeypatch, setup_boundaries):
+    monkeypatch.delenv('SANDWEAVE_HOME', raising=False)
+    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
+    default = tmp_path / 'home'
+    monkeypatch.setattr(onboarding.workspace, 'default_home', lambda: default)
+    selected = tmp_path / 'storage'
+    monkeypatch.setattr(onboarding, 'inspect', lambda *a, **k: [onboarding.Check('ok', 'Ready', 'pass', 'ready')])
+    monkeypatch.setattr(onboarding.workspace, 'prepare', lambda: None)
+    checked = []
+    def smoke(template):
+        assert not (default / 'location.json').exists()
+        assert not (selected / 'config.json').exists()
+        checked.append(template)
+    monkeypatch.setattr(onboarding, 'smoke_test', smoke)
+    args = SimpleNamespace(yes=True, directory=selected, assets=None, game_archive=None)
+    assert onboarding.setup_worker(args, 'coding', False) == 0
+    assert checked == ['coding']
+    assert onboarding.workspace.home() == selected
+    assert onboarding.configuration()['assets'] == str(tmp_path / 'installed')
+    assert json.loads((selected / 'setup.json').read_text())['status'] == 'ready'

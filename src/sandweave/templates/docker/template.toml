@@ -1,4 +1,5 @@
 schema_version = 1
+installation = "docker"
 extends = "coding@1"
 
 [resources]

@@ -1,4 +1,5 @@
 schema_version = 1
+installation = "vr/opensaber"
 extends = "gnome@1"
 base_snapshot = "vr-base@1"
 

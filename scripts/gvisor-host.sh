@@ -8,7 +8,7 @@ while [[ "${1:-}" == --gpu || "${1:-}" == --mounts ]]; do
     # A failed parser must abort, not launch with a partial mount list.
     mount_args=$(mktemp "$lab_root/runs/.mount-args.XXXXXX")
     trap 'rm -f "$mount_args"' EXIT
-    python "$lab_root/scripts/external_mounts.py" "$2" > "$mount_args"
+    "${SANDWEAVE_PYTHON:-python3}" "$lab_root/scripts/external_mounts.py" "$2" > "$mount_args"
     while IFS= read -r -d '' mount_arg; do
       gpu_binds+=(--bind "$mount_arg")
     done < "$mount_args"
@@ -17,7 +17,7 @@ while [[ "${1:-}" == --gpu || "${1:-}" == --mounts ]]; do
     shift 2
     continue
   fi
-  gpu_paths=$(python "$lab_root/scripts/gvisor_gpu.py" --check-device "$2")
+  gpu_paths=$("${SANDWEAVE_PYTHON:-python3}" "$lab_root/scripts/gvisor_gpu.py" --check-device "$2")
   while IFS= read -r gpu_path; do
     gpu_binds+=(--bind "$gpu_path:$gpu_path")
   done <<< "$gpu_paths"

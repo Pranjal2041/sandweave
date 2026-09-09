@@ -1,4 +1,5 @@
 schema_version = 1
+installation = "vr/gunspinning"
 extends = "vr/opensaber@1"
 
 [setup]

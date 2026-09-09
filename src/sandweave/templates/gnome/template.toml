@@ -1,4 +1,5 @@
 schema_version = 1
+installation = "gnome"
 user = "ga"
 command_shell = "/bin/sh"
 

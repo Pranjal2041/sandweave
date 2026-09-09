@@ -10,18 +10,22 @@ template, provide a setup script, or write your own template.
 
 ## Install
 
-From this checkout, with Python 3.11 or newer on a Linux x86-64 worker:
+From this checkout, inside a Python 3.11+ environment on a Linux x86-64 worker:
 
 ```bash
-python -m pip install .
+uv pip install .
 sandweave setup
 ```
 
-Choose what you want to start with; you can add more later. Setup finds an
-existing prepared runtime, offers dependency installation, and tests a disposable
-coding sandbox. It stores Sandweave data in `.sandweave` under the selected
-directory unless you have already chosen a data location. Runtime images
-are not yet available for automatic download.
+Choose what you want to start with, then choose where Sandweave should store
+its files. That directory can be empty. Setup installs the runtime and selected
+template, starts a temporary sandbox, checks that it becomes ready, then releases
+it. It can reuse an existing installation; otherwise it downloads and builds the
+required inputs.
+The first build needs internet access and can take a while.
+
+Setup stores downloads, installed runtimes and caches in the directory you choose.
+To add a desktop later, run `sandweave setup --template gnome`.
 See [installation details](notes/sdk-usage.md#install-and-configure).
 
 To check your installation or fix a problem:
@@ -90,6 +94,8 @@ exit status. File access also includes `write_text`, `read_text`, `download` and
 streaming through `env.files.open(...)`.
 
 ## Set up a desktop
+
+Install the desktop template once with `sandweave setup --template gnome`, then:
 
 ```python
 from sandweave import Sandbox
@@ -229,6 +235,10 @@ Creation, commands, file operations and lifecycle methods have `.aio`
 counterparts. Async contexts follow the same cleanup rules as synchronous ones.
 
 ## Run a VR agent loop
+
+Run `sandweave setup --template vr/gunspinning` on a worker with an allocated
+NVIDIA GPU. For a first installation, setup asks for the game's free
+[Linux download](https://demonixis.itch.io/gunspinning-vr).
 
 ```python
 from sandweave import Sandbox

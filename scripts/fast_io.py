@@ -9,6 +9,7 @@ import json
 import mmap
 import os
 from pathlib import Path
+import re
 import select
 import signal
 import socket
@@ -34,22 +35,53 @@ KEYS = {'ctrl': 'Control_L', 'control': 'Control_L', 'shift': 'Shift_L',
         'capslock': 'Caps_Lock', 'print': 'Print', 'pause': 'Pause'}
 SHIFTED = dict(zip('~!@#$%^&*()_+{}|:"<>?', '`1234567890-=[]\\;\',./'))
 _x11 = None
+_key_names = None
+
+
+def read_key_names(directory):
+    """Read X11's numeric definitions as data, without a host X11 library."""
+    names = {}
+    pattern = re.compile(r'^\s*#\s*define\s+((?:XF86|Sun|hp|osf|ap)?XK_|DXK_)(\w+)\s+'
+                         r'(?:(0x[0-9a-fA-F]+)|_EVDEVK\(\s*(0x[0-9a-fA-F]+)\s*\))')
+    # Core definitions take precedence over deprecated vendor aliases.
+    for filename in ('keysymdef.h', 'XF86keysym.h', 'Sunkeysym.h',
+                     'DECkeysym.h', 'HPkeysym.h', 'ap_keysym.h'):
+        path = Path(directory) / filename
+        if not path.is_file():
+            continue
+        for line in path.read_text().splitlines():
+            match = pattern.match(line)
+            if match:
+                prefix, name, literal, evdev = match.groups()
+                value = int(literal or evdev, 16) + (0x10081000 if evdev else 0)
+                names.setdefault(prefix[:-3] + name, value)
+    return names
 
 
 def keysym(key):
-    global _x11
+    global _x11, _key_names
     if not isinstance(key, str) or not key:
         raise ValueError('key names must be nonempty strings')
     if len(key) == 1:
         value = ord(key)
         return value if value < 256 else 0x01000000 | value
-    if _x11 is None:
-        _x11 = ctypes.CDLL(ctypes.util.find_library('X11'))
-        _x11.XStringToKeysym.argtypes = [ctypes.c_char_p]
-        _x11.XStringToKeysym.restype = ctypes.c_ulong
     name = KEYS.get(key.lower(), key)
     if key.lower().startswith('f') and key[1:].isdigit():
         name = key.upper()
+    if _key_names is None:
+        root = Path(__file__).resolve().parent.parent
+        _key_names = read_key_names(root / 'tools/helpers/usr/include/X11')
+    if name in _key_names:
+        return _key_names[name]
+    # Retain arbitrary host extensions for older standalone lab installations.
+    if _x11 is None:
+        library = ctypes.util.find_library('X11')
+        if library is None:
+            raise ValueError('unknown key: ' + key if _key_names else
+                             'Keyboard definitions are missing; run sandweave setup --template gnome')
+        _x11 = ctypes.CDLL(library)
+        _x11.XStringToKeysym.argtypes = [ctypes.c_char_p]
+        _x11.XStringToKeysym.restype = ctypes.c_ulong
     value = _x11.XStringToKeysym(name.encode())
     if not value:
         raise ValueError('unknown key: ' + key)

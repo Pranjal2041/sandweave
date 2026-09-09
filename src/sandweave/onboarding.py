@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import platform
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,9 +20,27 @@ APPTAINER_VERSION = '1.5.3'
 APPTAINER_INSTALLER = ('https://raw.githubusercontent.com/apptainer/apptainer/'
                       'v1.5.3/tools/install-unprivileged.sh')
 APPTAINER_INSTALLER_SHA256 = 'a097956eafa6ab3dd843ee429d0b774ed029753bfadf013b8046556228fac6f2'
-PROFILES = {'coding': 'Code', 'gnome': 'Desktop', 'cuda': 'CUDA',
+PROFILES = {'coding': 'Code', 'gnome': 'Desktop', 'cuda': 'CUDA', 'docker': 'Docker',
             'vr/gunspinning': 'VR: GunSpinning', 'vr/opensaber': 'VR: Open Saber',
             'games/gunspinning-gamepad': 'GunSpinning: gamepad'}
+
+
+def workload(recipe):
+    installed = recipe.get('installation')
+    if installed is not None:
+        if installed not in PROFILES:
+            raise ValueError('Unknown installation template: ' + str(installed))
+        return installed
+    name = recipe['name'].removeprefix('builtin:').removesuffix('@1')
+    if name in PROFILES:
+        return name
+    if 'vr' in recipe['capabilities']:
+        return 'vr/opensaber'
+    if 'desktop' in recipe['capabilities']:
+        return 'gnome'
+    if recipe['runtime_options'].get('init') == 'docker':
+        return 'docker'
+    return 'coding'
 
 
 @dataclass
@@ -50,30 +67,8 @@ def save_configuration(**changes):
 
 
 def save_runtime_location(root):
-    """Keep data with the selected installation, preserving explicit locations."""
-    location = workspace.default_home() / 'location.json'
-    if os.environ.get('SANDWEAVE_HOME') or location.exists():
-        save_configuration(assets=str(root))
-    else:
-        destination = Path(root) / '.sandweave'
-        with workspace.locked(location.with_suffix('.lock')):
-            if location.exists():
-                save_configuration(assets=str(root))
-            else:
-                old = configuration()
-                destination.mkdir(mode=0o700, exist_ok=True)
-                if destination.stat().st_uid != os.getuid():
-                    raise ValueError('Sandweave data directory belongs to another user: ' + str(destination) +
-                                     '. Select your own directory with SANDWEAVE_HOME.')
-                path = destination / 'config.json'
-                with workspace.locked(path.with_suffix('.lock')):
-                    current = configuration(destination)
-                    merged = {**old, **current, 'assets': str(root)}
-                    if 'targets' in old or 'targets' in current:
-                        merged['targets'] = {**old.get('targets', {}), **current.get('targets', {})}
-                    workspace.atomic_json(path, merged)
-                # Publish the location only after its configuration is ready.
-                workspace.atomic_json(location, {'path': str(destination.resolve())})
+    """Compatibility helper for explicitly selecting a prepared source."""
+    save_configuration(assets=str(Path(root).expanduser().resolve()))
     print('Sandweave data: ' + str(workspace.home()))
 
 
@@ -111,12 +106,19 @@ def _inside(root, relative):
 
 
 def validate_assets(root, recipe):
-    """Check launch inputs and runtime hashes without hashing multi-GB images."""
+    """Verify the inputs selected for installation, including image contents."""
     root = Path(root).expanduser().resolve()
+    registry_path = root / 'sandweave-assets.json'
+    registry = json.loads(registry_path.read_text()) if registry_path.exists() else {}
+    if not isinstance(registry, dict):
+        raise ValueError('Runtime registry must contain an object')
+    if 'workloads' in registry and workload(recipe) not in registry['workloads']:
+        raise ValueError('This runtime does not yet include ' + workload(recipe) + '; run sandweave setup to add it')
+    default_image = registry.get('default_image', 'images/gvisor-ubuntu-ready-ae303ca.erofs')
     required = ['tools/debian-trixie.sif', 'tools/bench', 'tools/seccomp-trap',
                 'tools/gs-base-probe', 'tools/gvisor-socket/runtime.json',
-                'images/gvisor-ubuntu-ready-ae303ca.erofs']
-    missing = [name for name in required if not (root / name).is_file()]
+                default_image]
+    missing = [name for name in required if not _inside(root, name).is_file()]
     if missing:
         raise ValueError('Missing runtime files: ' + ', '.join(missing))
     descriptor = json.loads((root / 'tools/gvisor-socket/runtime.json').read_text())
@@ -140,16 +142,24 @@ def validate_assets(root, recipe):
         with _inside(build, name).open('rb') as stream:
             if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
                 raise ValueError('runtime checksum mismatch: ' + name)
-    registry_path = root / 'sandweave-assets.json'
-    registry = json.loads(registry_path.read_text()) if registry_path.exists() else {}
     for name, info in registry.get('images', {}).items():
         if _inside(root, name).stat().st_size != info['size']:
             raise ValueError('image size differs from its manifest: ' + name)
+        if workspace.file_digest(_inside(root, name)) != info['sha256']:
+            raise ValueError('image checksum mismatch: ' + name)
     if recipe.get('base_snapshot'):
         info = registry.get('snapshots', {}).get(recipe['base_snapshot'])
         if not info:
             raise ValueError('Missing prepared game base: ' + recipe['base_snapshot'])
-        snapshot = _inside(root, info['path'])
+        if info.get('kind') == 'image':
+            if info['path'] not in registry.get('images', {}):
+                raise ValueError('template image is absent from the image manifest')
+            snapshot = None
+        else:
+            snapshot = _inside(root, info['path'])
+    else:
+        snapshot = None
+    if snapshot is not None:
         manifest = json.loads((snapshot / 'snapshot-manifest.json').read_text())
         if manifest['snapshot_id'] != info['snapshot_id']:
             raise ValueError('game base differs from its registered snapshot')
@@ -158,9 +168,13 @@ def validate_assets(root, recipe):
         for name, item in manifest['files'].items():
             if _inside(snapshot, name).stat().st_size != item['size']:
                 raise ValueError('game base payload size mismatch: ' + name)
+            if workspace.file_digest(_inside(snapshot, name)) != item['sha256']:
+                raise ValueError('game base payload checksum mismatch: ' + name)
         base = manifest['base_image']
         if _inside(root, base['path']).stat().st_size != base['size']:
             raise ValueError('game base image size mismatch')
+        if workspace.file_digest(_inside(root, base['path'])) != base['sha256']:
+            raise ValueError('game base image checksum mismatch')
         dependency = manifest['runtime']
         for name, expected in dependency['sha256'].items():
             with _inside(_inside(root, dependency['path']), name).open('rb') as stream:
@@ -169,14 +183,17 @@ def validate_assets(root, recipe):
     additional = []
     if 'desktop' in recipe['capabilities']:
         additional += ['tools/fast-io/bridge', 'tools/fast-io/libxcb-xtest.so.0']
-    if 'gunspinning' in recipe['name']:
+    if workload(recipe).startswith(('vr/', 'games/')):
+        additional += ['tools/gpu/virtualgl/opt/VirtualGL/bin/vglrun',
+                       'tools/gpu/compat/libvisualorder.so']
+    if 'gunspinning' in workload(recipe):
         additional += ['tools/gpu/vr/gunspinning-linux-2.0.1/GunSpinningVR',
                        'tools/gpu/vr/gunspinning-linux-2.0.1/GunSpinningVR_Data/globalgamemanagers',
                        'tools/gpu/vr/xrizer-v0.5/bin/linux64/vrclient.so',
                        'tools/gpu/vr/libsdl-gamepad-proxy.so',
                        'tools/gpu/vr/gunspinning-primus-source/Makefile',
                        'tools/gpu/vr/gunspinning-primus-source/primus_vk.cpp']
-    missing = [name for name in additional if not (root / name).is_file()]
+    missing = [name for name in additional if not _inside(root, name).is_file()]
     if missing:
         raise ValueError('Missing workload files: ' + ', '.join(missing))
     return root
@@ -215,7 +232,7 @@ def inspect(template='coding', *, assets=None):
         checks.append(Check('assets', 'Runtime files', 'pass', str(root)))
     except (OSError, ValueError, KeyError, TypeError, workspace.ResourceUnavailable) as error:
         root = None
-        checks.append(Check('assets', 'Runtime files', 'fail', str(error), 'Find prepared runtime files'))
+        checks.append(Check('assets', 'Runtime files', 'fail', str(error), 'Install or repair runtime files'))
     if root and apptainer and checks[2].status == 'pass':
         with tempfile.TemporaryDirectory(prefix='sandweave-doctor-') as temporary:
             # Keep Apptainer's probe caches off the user's configured cache paths.
@@ -228,13 +245,13 @@ def inspect(template='coding', *, assets=None):
                 ok, detail = process.returncode == 0, (process.stdout + process.stderr).strip()[-2000:]
             except (OSError, subprocess.TimeoutExpired) as error:
                 ok, detail = False, str(error)
-        checks.append(Check('container', 'Container launch', 'pass' if ok else 'fail',
-                            'Host container started without KVM' if ok else detail))
+        checks.append(Check('container', 'Container support', 'pass' if ok else 'fail',
+                            'Apptainer started a temporary container' if ok else detail))
         if ok:
             # AppArmor may allow the installed Apptainer while restricting Python's probe.
             checks[1] = Check('userns', 'Container permissions', 'pass', 'Available through Apptainer')
     else:
-        checks.append(Check('container', 'Container launch', 'skip', 'Waiting for Apptainer and runtime files'))
+        checks.append(Check('container', 'Container support', 'skip', 'Waiting for Apptainer and runtime files'))
     if checks[1].status == 'fail':
         checks[1].detail += ' Sandweave cannot change host policy without administrator access.'
     packages = python_packages(recipe)
@@ -302,18 +319,35 @@ def confirm(message):
     return answer
 
 
-def ask_path(message):
-    answer = _questionary().path(message).ask()
+def ask_path(message, *, default=''):
+    answer = _questionary().path(message, default=str(default)).ask()
     if answer is None:
         raise KeyboardInterrupt
+    if not answer.strip():
+        raise ValueError('Enter a directory path')
     return Path(answer).expanduser().resolve()
 
 
 def install_packages(packages):
-    command = [sys.executable, '-m', 'pip', 'install', *packages]
+    cache = workspace.home() / 'downloads/python-cache'
+    cache.mkdir(parents=True, exist_ok=True)
+    environment = {**os.environ, 'UV_CACHE_DIR': str(cache / 'uv'),
+                   'PIP_CACHE_DIR': str(cache / 'pip'), 'TMPDIR': str(cache)}
+    uv = workspace.tool('uv')
+    if uv:
+        command = [uv, 'pip', 'install', '--python', sys.executable, *packages]
+    elif importlib.util.find_spec('pip') is not None:
+        command = [sys.executable, '-m', 'pip', 'install', *packages]
+    else:
+        # uv-created environments commonly omit pip. Bootstrap in this exact
+        # interpreter; never invoke a different environment's `pip` executable.
+        if importlib.util.find_spec('ensurepip') is None:
+            raise ValueError('This Python has neither uv, pip nor ensurepip. Install uv, then run setup again.')
+        subprocess.run([sys.executable, '-m', 'ensurepip'], check=True, env=environment)
+        command = [sys.executable, '-m', 'pip', 'install', *packages]
     print('Running ' + shlex.join(command), flush=True)
     try:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, env=environment)
     except KeyboardInterrupt:
         print('Installation interrupted; some packages may already be installed. Run sandweave doctor to check.', file=sys.stderr)
         raise
@@ -338,14 +372,24 @@ def link_tool(name, source):
 
 
 def install_apptainer():
-    missing = [name for name in ('bash', 'curl', 'rpm2cpio', 'cpio') if not shutil.which(name)]
-    if missing:
-        raise ValueError('The upstream installer needs ' + ', '.join(missing) +
-                         '. Use an existing Apptainer installation, or prepare it on another compatible machine.')
+    if not workspace.tool('bash'):
+        raise ValueError('The Apptainer installer requires Bash')
     directory = workspace.home() / 'tools'
     directory.mkdir(parents=True, exist_ok=True)
     # Each attempt has its own directory; failed installations cannot overwrite a working one.
     destination = Path(tempfile.mkdtemp(prefix='apptainer-', dir=directory))
+    # Provide package readers even on Debian/uv installs without RPM utilities.
+    # These wrappers are private to this one pinned installer invocation.
+    helpers = destination / 'installer-bin'
+    helpers.mkdir()
+    missing = [name for name in ('curl', 'rpm2cpio', 'cpio') if not workspace.tool(name)]
+    if 'rpm2cpio' in missing and importlib.util.find_spec('zstandard') is None:
+        install_packages(['zstandard'])
+    for name in missing:
+        wrapper = helpers / name
+        wrapper.write_text('#!/bin/sh\nexec ' + shlex.join([
+            sys.executable, '-m', 'sandweave.installer_tools', name]) + ' "$@"\n')
+        wrapper.chmod(0o755)
     with urllib.request.urlopen(APPTAINER_INSTALLER, timeout=30) as response:
         script = response.read(1024 * 1024)
     if hashlib.sha256(script).hexdigest() != APPTAINER_INSTALLER_SHA256:
@@ -353,10 +397,22 @@ def install_apptainer():
     path = destination / 'install.sh'
     path.write_bytes(script)
     try:
-        subprocess.run(['bash', str(path), '-v', APPTAINER_VERSION, str(destination / 'runtime')], check=True)
+        subprocess.run(['bash', '-o', 'pipefail', str(path), '-v', APPTAINER_VERSION, str(destination / 'runtime')],
+                       check=True, env={**os.environ, 'PATH': str(helpers) + os.pathsep + workspace.tool_path(),
+                                        'TMPDIR': str(destination)})
     except KeyboardInterrupt:
         print('Installation interrupted; partial files remain in ' + str(destination), file=sys.stderr)
         raise
+    # The pinned upstream wrappers leave executable paths unquoted. Storage
+    # paths containing spaces must remain single arguments in those wrappers.
+    runtime = destination / 'runtime'
+    for wrapper in (runtime / 'bin/apptainer', runtime / 'x86_64/utils/bin/.wrapper',
+                    runtime / 'x86_64/libexec/apptainer/bin/.wrapper'):
+        text = wrapper.read_text()
+        text = text.replace('realpath $0', 'realpath "$0"')
+        text = text.replace('exec $APPTDIR/bin/apptainer', 'exec "$APPTDIR/bin/apptainer"')
+        text = text.replace('$REALME "$@"', '"$REALME" "$@"')
+        wrapper.write_text(text)
     executable = destination / 'runtime/bin/apptainer'
     ok, detail = run_probe([str(executable), '--version'])
     if not ok:
@@ -367,38 +423,9 @@ def install_apptainer():
 def repair(name, template, *, yes=False, assets=None):
     recipe = Template(template).resolve()
     if name == 'assets':
-        if os.environ.get('SANDWEAVE_ASSETS'):
-            # Writing config cannot override this environment variable in other shells.
-            root = validate_assets(os.environ['SANDWEAVE_ASSETS'], recipe)
-        elif assets:
-            root = validate_assets(assets, recipe)
-        else:
-            candidates = []
-            try:
-                known = [workspace.assets()]
-            except workspace.ResourceUnavailable:
-                known = []
-            for path in dict.fromkeys([*known, *asset_candidates()]):
-                try:
-                    candidates.append(validate_assets(path, recipe))
-                except (OSError, ValueError, KeyError, TypeError):
-                    continue
-            if yes:
-                if len(candidates) != 1:
-                    raise ValueError('No unique prepared runtime found. Run setup interactively to select one. '
-                                     'A public runtime download bundle is not available yet.')
-                root = candidates[0]
-            else:
-                options = [(str(path), path) for path in candidates]
-                options += [('Choose a different directory', 'path'), ('Cancel', 'cancel')]
-                root = choose('Use these runtime files?', options)
-                if root == 'cancel':
-                    return False
-                if root == 'path':
-                    print('Choose a prepared installation. A public runtime download bundle is not available yet.')
-                    root = ask_path('Prepared runtime directory:')
-                root = validate_assets(root, recipe)
-        save_runtime_location(root)
+        from types import SimpleNamespace
+        args = SimpleNamespace(yes=yes, directory=None, assets=assets, game_archive=None)
+        return setup_worker(args, template, interactive=not yes) == 0
     elif name == 'python':
         missing = [package for module, package in python_packages(recipe) if importlib.util.find_spec(module) is None]
         if not missing:
@@ -433,14 +460,168 @@ def repair(name, template, *, yes=False, assets=None):
     return True
 
 
-def smoke_test():
-    """Only the disposable coding sandbox belongs to this check."""
+def smoke_test(template='coding'):
+    """Check the selected workload using a sandbox owned by this invocation."""
     from . import Sandbox
-    with Sandbox(template='coding', startup_timeout=120) as env:
+    with Sandbox(template=template, startup_timeout=300) as env:
         result = env.run("python -c 'print(2 + 2)'", timeout=10)
         if result.stdout.strip() != '4':
-            raise ValueError('Coding sandbox returned an unexpected result')
-    print('Coding sandbox check passed; the test sandbox has been released.')
+            raise ValueError('Sandbox returned an unexpected command result')
+        if 'desktop' in env.capabilities:
+            env.desktop.step({'keyboard': {'keys': ['shift']}})
+        if 'vr' in env.capabilities:
+            observation = env.vr.observe()
+            if observation.left.size == 0 or observation.right.size == 0:
+                raise ValueError('VR observation must contain both eye images')
+        if env.spec['resources']['gpu']:
+            env.run('nvidia-smi', timeout=20)
+    print(template + ' sandbox check passed; the test sandbox has been released.')
+
+
+def known_sources():
+    try:
+        current = [workspace.assets()]
+    except workspace.ResourceUnavailable:
+        current = []
+    return list(dict.fromkeys([*current, *asset_candidates()]))
+
+
+def install_runtime(template, directory, *, assets=None, sources=(), game_archive=None, yes=False):
+    from .installation import import_runtime, validate_installation, needs_helpers
+    from .bootstrap import Builder
+    recipe = Template(template).resolve()
+    selected = assets or os.environ.get('SANDWEAVE_ASSETS')
+    candidates = [Path(selected).expanduser().resolve()] if selected else list(sources)
+    core = None
+    for source in candidates:
+        try:
+            validate_assets(source, recipe)
+            if (source / 'installation.json').is_file():
+                validate_installation(source)
+        except (OSError, ValueError, KeyError, TypeError, workspace.ResourceUnavailable) as error:
+            # A coding installation can supply the engine while a new workload
+            # is built. Explicit invalid sources must not silently fall back.
+            try:
+                validate_assets(source, Template('coding').resolve())
+                if (source / 'installation.json').is_file():
+                    validate_installation(source)
+                core = source
+            except (OSError, ValueError, KeyError, TypeError, workspace.ResourceUnavailable):
+                if selected:
+                    raise ValueError('The runtime source is incomplete: ' + str(source) + '\n' + str(error)) from error
+            continue
+        print('Installing runtime files from ' + str(source), flush=True)
+        if ((source / 'installation.json').is_file() and source.is_relative_to(Path(directory) / 'assets')
+                and not needs_helpers(source, recipe)):
+            return source
+        # Copy/space failures belong to the destination. They must not trigger
+        # an unrelated source rebuild or a fallback into the home directory.
+        return import_runtime(source, directory, recipe)
+    profile = workload(recipe)
+    if 'gunspinning' in profile:
+        from .vr_installation import GUNSPINNING_SHA256
+        cached = Path(directory) / 'downloads/gunspinning-vr-linux.zip'
+        if game_archive:
+            archive = Path(game_archive).expanduser().resolve()
+        elif cached.is_file():
+            archive = cached
+        elif yes:
+            raise ValueError('GunSpinning needs its official Linux ZIP. Download it from '
+                             'https://demonixis.itch.io/gunspinning-vr and pass --game-archive PATH.')
+        else:
+            print('Download gunspinning-vr-linux.zip from https://demonixis.itch.io/gunspinning-vr. '
+                  'Choose the free download, then select that file here.')
+            archive = ask_path('GunSpinning Linux ZIP:')
+        workspace._immutable(archive, cached, sha256=GUNSPINNING_SHA256)
+    if core is not None:
+        core = import_runtime(core, directory, Template('coding').resolve())
+    print('Preparing ' + profile + ' from upstream sources. The first build can take a while.', flush=True)
+    return Builder(directory).build(profile, recipe, base=core)
+
+
+def setup_worker(args, template, interactive):
+    from .installation import destination
+    yes = getattr(args, 'yes', False)
+    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'amd64'):
+        raise ValueError('Run setup on a Linux x86-64 worker')
+    selected = getattr(args, 'directory', None)
+    explicit = os.environ.get('SANDWEAVE_HOME')
+    if selected and explicit and Path(selected).expanduser().resolve() != Path(explicit).expanduser().resolve():
+        raise ValueError('--directory conflicts with SANDWEAVE_HOME; update that variable first')
+    # Resolve old sources before temporarily selecting new, possibly empty storage.
+    sources = known_sources()
+    previous = configuration()
+    if not selected:
+        default = workspace.home() if explicit or previous.get('assets') else Path.cwd() / '.sandweave'
+        if interactive and not yes:
+            selected = ask_path('Where should Sandweave store its files?', default=default)
+        else:
+            selected = default
+    if explicit and Path(selected).expanduser().resolve() != Path(explicit).expanduser().resolve():
+        raise ValueError('The selected directory conflicts with SANDWEAVE_HOME; update that variable first')
+    selected = destination(selected)
+    with workspace.locked(selected / '.setup.lock'):
+        return _setup_selected(args, template, interactive, selected, previous, sources)
+
+
+def _setup_selected(args, template, interactive, selected, previous, sources):
+    from .installation import publish, using_directory
+    yes = getattr(args, 'yes', False)
+    # An invalid destination config is user work, not an empty config to replace.
+    current = configuration(selected)
+    pending = selected / 'setup.json'
+    pending_info = json.loads(pending.read_text()) if pending.is_file() else {}
+    if not isinstance(pending_info, dict):
+        raise ValueError('Invalid setup progress file: ' + str(pending))
+    preferred = [Path(value).expanduser().resolve() for value in
+                 (pending_info.get('assets'), current.get('assets')) if isinstance(value, str) and value]
+    sources = list(dict.fromkeys([*preferred, *sources]))
+    print('Sandweave files: ' + str(selected), flush=True)
+    assets = getattr(args, 'assets', None)
+    if assets and interactive and not yes and not confirm('Install runtime files from ' + str(assets) + '?'):
+        print('Setup cancelled before installing runtime files.')
+        return 1
+    with using_directory(selected):
+        apptainer = workspace.tool('apptainer')
+        if not apptainer or not run_probe([apptainer, '--version'])[0]:
+            if not repair('apptainer', template, yes=yes):
+                return 1
+        installed = install_runtime(template, selected, assets=assets, sources=sources,
+                                    game_archive=getattr(args, 'game_archive', None), yes=yes)
+        workspace.atomic_json(pending, {'assets': str(installed), 'template': template, 'status': 'checking'})
+        missing = [package for module, package in python_packages(Template(template).resolve())
+                   if importlib.util.find_spec(module) is None]
+        if missing and not repair('python', template, yes=yes):
+            return 1
+        # Check the actual selected install. An inherited source override must
+        # not make the disposable acceptance check use a different directory.
+        previous_assets = os.environ.get('SANDWEAVE_ASSETS')
+        os.environ['SANDWEAVE_ASSETS'] = str(installed)
+        try:
+            checks = inspect(template, assets=installed)
+            for check in checks:
+                if check.fix and check.name not in ('assets', 'apptainer', 'python'):
+                    repair(check.name, template, yes=yes)
+            checks = inspect(template, assets=installed)
+            show(checks, template)
+            if not passed(checks):
+                print('Setup could not complete. Runtime files remain in ' + str(installed) + '.')
+                return 1
+            # The environment overrides select this candidate for its worker.
+            # Leave the saved configuration intact until acceptance succeeds.
+            print('Preparing worker files...', flush=True)
+            workspace.prepare()
+            smoke_test(template)
+        finally:
+            if previous_assets is None:
+                os.environ.pop('SANDWEAVE_ASSETS', None)
+            else:
+                os.environ['SANDWEAVE_ASSETS'] = previous_assets
+    # Global location changes only after the selected installation completes.
+    publish(selected, installed, previous=previous, template=template)
+    workspace.atomic_json(pending, {'assets': str(installed), 'template': template, 'status': 'ready'})
+    print('Setup complete. Sandweave files: ' + str(selected))
+    return 0
 
 
 def main(args):
@@ -457,49 +638,20 @@ def main(args):
     assets = getattr(args, 'assets', None)
     if assets and os.environ.get('SANDWEAVE_ASSETS') and Path(assets).expanduser().resolve() != Path(os.environ['SANDWEAVE_ASSETS']).expanduser().resolve():
         raise ValueError('--assets conflicts with SANDWEAVE_ASSETS; remove or update that environment variable first')
+    if setup:
+        return setup_worker(args, template, interactive)
     checks = inspect(template, assets=assets)
     if getattr(args, 'json', False):
         print(json.dumps({'template': template, 'passed': passed(checks), 'checks': [asdict(c) for c in checks]}, indent=2))
         return 0 if passed(checks) else 1
     show(checks, template)
-    if setup:
-        # Setup also persists auto-discovery so later invocations work from another directory.
-        repairs = ['assets', *[c.name for c in checks if c.fix and c.name != 'assets']]
-        for name in repairs:
-            if not yes and name == 'assets' and assets and not confirm('Use runtime files from ' + str(assets) + '?'):
-                print('Setup cancelled before changing the runtime selection.')
-                return 1
-            try:
-                applied = repair(name, template, yes=yes, assets=assets)
-                if name == 'assets' and not applied:
-                    print('Setup cancelled before changing the runtime selection.')
-                    return 1
-                if applied:
-                    print('Updated ' + name + '. Rechecking...', flush=True)
-                    checks = inspect(template, assets=assets)
-            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-                print('Repair failed: ' + str(error), file=sys.stderr)
-                if name == 'assets':
-                    print('Setup stopped before staging files. Select a writable data directory with SANDWEAVE_HOME.')
-                    return 1
-        save_configuration(onboarding_template=template)
-        checks = inspect(template, assets=assets)
-        show(checks, template)
-        if passed(checks):
-            print('Preparing worker files...', flush=True)
-            workspace.prepare()
-            smoke_test()
-            print('Setup complete.')
-            return 0
-        print('Setup is incomplete. Resolve the remaining checks, then run sandweave doctor.')
-        return 1
     if not interactive:
         return 0 if passed(checks) else 1
     while True:
         choices = [(c.fix, c.name) for c in checks if c.fix]
         choices += [('Check again', 'recheck')]
         if passed(checks):
-            choices.append(('Test a disposable coding sandbox', 'smoke'))
+            choices.append(('Test a disposable ' + template + ' sandbox', 'smoke'))
         choices += [('Choose another workload', 'template'), ('Exit', 'exit')]
         action = choose('Next action', choices)
         if action == 'exit':
@@ -509,7 +661,7 @@ def main(args):
                 template = choose('What do you want to start with? (You can add more later)',
                                   [(label, name) for name, label in PROFILES.items()])
             elif action == 'smoke':
-                smoke_test()
+                smoke_test(template)
             elif action != 'recheck':
                 repair(action, template)
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:

@@ -76,6 +76,14 @@ class Runtime:
         return selected
 
     def options(self, spec):
+        registry = self.root / 'sandweave-assets.json'
+        if registry.is_file():
+            from ....onboarding import workload
+            installed = json.loads(registry.read_text()).get('workloads')
+            required = workload(spec['template'])
+            if installed is not None and required not in installed:
+                raise ResourceUnavailable(required + ' is not installed on this worker. Run '
+                                          'sandweave setup --template ' + required)
         resources = spec['resources']
         cpu, memory = resources['cpu'], resources['memory']
         options = ['--guest-cpus', str(cpu['vcpus']), '--cpu-weight', str(cpu['weight']),
@@ -94,6 +102,13 @@ class Runtime:
             options += ['--cgroup', runtime['cgroup']]
         gpu = self.gpu(resources['gpu'])
         if gpu is not None:
+            if {'desktop', 'vr', 'gamepad'} & spec['template']['capabilities'].keys():
+                library = self.root / 'tools/gpu/driver/lib'
+                missing = [name for name in ('libEGL_nvidia.so.0', 'libGLX_nvidia.so.0')
+                           if not (library / name).is_file()]
+                if missing:
+                    raise ResourceUnavailable('The worker NVIDIA installation lacks graphics libraries: ' +
+                                              ', '.join(missing))
             options += ['--gpu', str(gpu)]
             if resources['gpu'].get('sm_chunks') is not None:
                 options += ['--experimental-gpu-sm-chunks', str(resources['gpu']['sm_chunks'])]
@@ -124,11 +139,17 @@ class Runtime:
             if relative.is_absolute() or '..' in relative.parts:
                 raise ValueError('base snapshot must be inside the asset directory')
             path = base / relative
-            manifest = json.loads((path / 'snapshot-manifest.json').read_text())
-            if manifest['snapshot_id'] != source['snapshot_id'] or manifest['kind'] != 'filesystem':
-                raise ValueError('template base snapshot identity does not match its asset registry')
-            snapshot = Store(self).materialize({'id': 'snap-' + source['snapshot_id'],
-                                               'workspace': str(base), 'location': str(path)})
+            if source.get('kind') == 'image':
+                from ...workspace import _immutable
+                image_info = registry['images'][str(relative)]
+                _immutable(path, self.root / relative, sha256=image_info['sha256'])
+                options += ['--base-image', str(relative)]
+            else:
+                manifest = json.loads((path / 'snapshot-manifest.json').read_text())
+                if manifest['snapshot_id'] != source['snapshot_id'] or manifest['kind'] != 'filesystem':
+                    raise ValueError('template base snapshot identity does not match its asset registry')
+                snapshot = Store(self).materialize({'id': 'snap-' + source['snapshot_id'],
+                                                   'workspace': str(base), 'location': str(path)})
         init = spec['template'].get('runtime_options', {}).get('init', 'agent')
         command = ['python3', '-u', '-c', agent_source(), str(AGENT_PORT), token]
         if init in ('systemd', 'docker'):

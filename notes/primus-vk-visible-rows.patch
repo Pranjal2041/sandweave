@@ -1,0 +1,47 @@
+--- a/primus_vk.cpp
++++ b/primus_vk.cpp
+@@ -1042,9 +1042,17 @@
+     auto display_layout = display_src_image->getLayout();
+     auto rendered_start = rendered->data + rendered_layout.offset;
+     auto display_start = display->data + display_layout.offset;
+-    if(rendered_layout.size/rendered_layout.rowPitch != display_layout.size/display_layout.rowPitch){
+-      TRACE("Layouts don't match at all");
+-      throw std::runtime_error("Layouts don't match at all");
++    // Linear images on different drivers may have different trailing padding.
++    // Copy the actual image height, never a height inferred from allocation size.
++    const VkDeviceSize rows = swapchain.imgSize.height;
++    const VkDeviceSize rowBytes = std::min(rendered_layout.rowPitch, display_layout.rowPitch);
++    if (!rows || !rowBytes ||
++        rendered_layout.size < (rows - 1) * rendered_layout.rowPitch + rowBytes ||
++        display_layout.size < (rows - 1) * display_layout.rowPitch + rowBytes) {
++      TRACE("Invalid linear layouts: height=" << rows
++            << " render size/pitch=" << rendered_layout.size << "/" << rendered_layout.rowPitch
++            << " display size/pitch=" << display_layout.size << "/" << display_layout.rowPitch);
++      throw std::runtime_error("Linear image layout cannot hold the visible rows");
+     }
+     TRACE_PROFILING_EVENT(index, "memcpy start");
+     VkMappedMemoryRange rendered_range {
+@@ -1056,17 +1064,12 @@
+     };
+     VK_CHECK_RESULT(device_dispatch[GetKey(swapchain.device)].InvalidateMappedMemoryRanges(swapchain.device, 1, &rendered_range));
+     
+-    if(rendered_layout.rowPitch == display_layout.rowPitch){
+-      std::memcpy(display_start, rendered_start, rendered_layout.size);
+-    }else{
+-      VkDeviceSize display_offset = 0;
+-      VkDeviceSize minRowPitch = rendered_layout.rowPitch;
+-      if(display_layout.rowPitch < minRowPitch){
+-	minRowPitch = display_layout.rowPitch;
+-      }
+-      for(VkDeviceSize offset = 0; offset < rendered_layout.size; offset += rendered_layout.rowPitch){
+-	std::memcpy(display_start + display_offset, rendered_start + offset, minRowPitch);
+-	display_offset += display_layout.rowPitch;
++    if (rendered_layout.rowPitch == display_layout.rowPitch) {
++      std::memcpy(display_start, rendered_start, rowBytes * rows);
++    } else {
++      for (VkDeviceSize row = 0; row < rows; ++row) {
++        std::memcpy(display_start + row * display_layout.rowPitch,
++                    rendered_start + row * rendered_layout.rowPitch, rowBytes);
+       }
+     }
+     TRACE_PROFILING_EVENT(index, "memcpy done");

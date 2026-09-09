@@ -1,0 +1,109 @@
+[
+  {
+    "wait": 15
+  },
+  {
+    "capture": "menu"
+  },
+  {
+    "gamepad": [
+      "--button",
+      "a"
+    ]
+  },
+  {
+    "wait": 0.3
+  },
+  {
+    "gamepad": [
+      "--axis",
+      "lx=1",
+      "--hold",
+      ".1"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "gamepad": [
+      "--axis",
+      "lx=1",
+      "--hold",
+      ".1"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "gamepad": [
+      "--button",
+      "a"
+    ]
+  },
+  {
+    "wait": 12
+  },
+  {
+    "capture": "ready"
+  },
+  {
+    "gamepad": [
+      "--button",
+      "a"
+    ]
+  },
+  {
+    "wait": 0.4
+  },
+  {
+    "capture": "fired"
+  },
+  {
+    "gamepad": [
+      "--axis",
+      "axis3=1",
+      "--hold",
+      ".15"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "capture": "aimed"
+  },
+  {
+    "gamepad": [
+      "--button",
+      "b"
+    ]
+  },
+  {
+    "wait": 1.5
+  },
+  {
+    "capture": "reloaded"
+  },
+  {
+    "wait": 2
+  },
+  {
+    "capture": "neutral-stable"
+  },
+  {
+    "gamepad": [
+      "--axis",
+      "axis4=1",
+      "--hold",
+      ".15"
+    ]
+  },
+  {
+    "wait": 0.5
+  },
+  {
+    "capture": "axis4"
+  }
+]

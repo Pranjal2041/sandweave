@@ -72,7 +72,12 @@ gVisor executable loader. Alyx itself has a native Linux build; its earlier
 Linux launch stopped at Steam initialization.
 The [standalone Linux VR shortlist](notes/standalone-linux-vr-games.md) records
 free game candidates, their Linux/XR evidence, and outstanding offline/runtime
-checks; Open Saber remains the only game on that list tested in this lab.
+checks. [GunSpinning VR now runs in both native gamepad and tracked-controller
+modes](notes/gunspinning-vr-experiment.md), through a userspace joystick proxy
+or xrizer/Monado. Offline launch, aiming, firing and reloading were exercised;
+the verified VR gameplay sample reached 61 FPS on L40S with Xvnc presentation.
+Gamepad analog triggers, audio, physical headset delivery and full-game
+completion remain unvalidated.
 The [broader Linux VR catalogue](notes/linux-vr-catalog-and-build-options.md)
 separates native games, community VR ports, reported Proton gameplay, and
 original games we could build for training. It records source, store, input,

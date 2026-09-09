@@ -1,0 +1,190 @@
+{
+  "game": "GunSpinning VR Linux 2.0.1",
+  "date_local": "2026-09-08",
+  "gpu": "NVIDIA L40S",
+  "job_id": 10364024,
+  "monado_target_hz": 90,
+  "measurement_scope": "10-second windows during visually verified training interaction; intermittent eye captures and desktop presentation enabled; no physical headset timing",
+  "runs": {
+    "concurrent_flat_game": {
+      "source": "runs/gunspinning/gunspinning-motion-offline-final/gameplay-metrics.pb",
+      "session_id": 11,
+      "window_seconds": 9.993401189,
+      "application_frames": 370,
+      "application_fps": 36.92436569104901,
+      "application_frame_interval_ms": {
+        "median": 27.037347,
+        "p95": 40.370137,
+        "p99": 46.044922,
+        "max": 71.718169
+      },
+      "compositor_frames": 865,
+      "compositor_gpu_ms": {
+        "median": 0.089728,
+        "p95": 0.12512,
+        "p99": 0.131936,
+        "max": 0.321984
+      },
+      "used_records": 865,
+      "unique_application_frames_used": 359,
+      "incomplete_trailing_bytes": 0,
+      "timing_ms": {
+        "runtime_wait": {
+          "median": 9.978660000000001,
+          "p95": 26.134943,
+          "p99": 28.877685,
+          "max": 30.112224
+        },
+        "wait_return_to_begin": {
+          "median": 0.508587,
+          "p95": 4.132482,
+          "p99": 7.481803,
+          "max": 17.769357
+        },
+        "begin_to_end_frame": {
+          "median": 12.0779315,
+          "p95": 21.823788,
+          "p99": 27.717668,
+          "max": 52.292087
+        },
+        "end_frame_to_gpu_completion_observed": {
+          "median": 0.0041849999999999995,
+          "p95": 0.01108,
+          "p99": 0.020561,
+          "max": 0.159522
+        },
+        "end_frame_to_next_wait": {
+          "median": 0.250844,
+          "p95": 2.953244,
+          "p99": 5.207019,
+          "max": 12.808142
+        }
+      },
+      "scope": "OpenXR frame submissions and GPU timestamps; no physical headset scanout or transport timing",
+      "reused_frame_fraction": 0.584971098265896,
+      "compositor_target_hz": 90.0000009,
+      "metrics_sha256": "86146f9814ee70a00a50a141f2b278ca47f93a0b02cef3120be1e421c7a5e703",
+      "network_mode": "relay suspended during short gameplay sample; superseded for offline acceptance by policy guest"
+    },
+    "vr_game_alone": {
+      "source": "runs/gunspinning/gunspinning-motion-offline-warm/gameplay-metrics.pb",
+      "session_id": 17,
+      "window_seconds": 9.991252949,
+      "application_frames": 611,
+      "application_fps": 61.0534037236094,
+      "application_frame_interval_ms": {
+        "median": 15.0948265,
+        "p95": 30.80506,
+        "p99": 36.145773,
+        "max": 52.019418
+      },
+      "compositor_frames": 859,
+      "compositor_gpu_ms": {
+        "median": 0.119808,
+        "p95": 0.183744,
+        "p99": 0.357376,
+        "max": 0.508704
+      },
+      "used_records": 859,
+      "unique_application_frames_used": 586,
+      "incomplete_trailing_bytes": 0,
+      "timing_ms": {
+        "runtime_wait": {
+          "median": 4.611399,
+          "p95": 16.76354,
+          "p99": 24.765241,
+          "max": 29.92792
+        },
+        "wait_return_to_begin": {
+          "median": 0.344365,
+          "p95": 2.111112,
+          "p99": 4.210863,
+          "max": 8.409547
+        },
+        "begin_to_end_frame": {
+          "median": 8.339714,
+          "p95": 17.120948,
+          "p99": 23.593664,
+          "max": 41.578155
+        },
+        "end_frame_to_gpu_completion_observed": {
+          "median": 0.00459,
+          "p95": 0.01911,
+          "p99": 0.028141,
+          "max": 0.058201
+        },
+        "end_frame_to_next_wait": {
+          "median": 0.158027,
+          "p95": 0.751101,
+          "p99": 2.604089,
+          "max": 12.273183
+        }
+      },
+      "scope": "OpenXR frame submissions and GPU timestamps; no physical headset scanout or transport timing",
+      "reused_frame_fraction": 0.31781140861466817,
+      "compositor_target_hz": 90.0000009,
+      "metrics_sha256": "f15a63ccbedc605357af618a0b7c3d67f6101337cd2a65b0678e65bae63c0dbe",
+      "network_mode": "relay suspended during short gameplay sample; superseded for offline acceptance by policy guest"
+    },
+    "offline_policy_vr_game_alone": {
+      "source": "runs/gunspinning/gunspinning-policy-offline-motion/gameplay-metrics.pb",
+      "session_id": 2,
+      "window_seconds": 9.99648381,
+      "application_frames": 611,
+      "application_fps": 61.02145630344396,
+      "application_frame_interval_ms": {
+        "median": 14.557723,
+        "p95": 31.323639,
+        "p99": 35.621673,
+        "max": 142.783996
+      },
+      "compositor_frames": 860,
+      "compositor_gpu_ms": {
+        "median": 0.16820800000000002,
+        "p95": 0.169536,
+        "p99": 0.170016,
+        "max": 0.480768
+      },
+      "used_records": 860,
+      "unique_application_frames_used": 584,
+      "incomplete_trailing_bytes": 0,
+      "timing_ms": {
+        "runtime_wait": {
+          "median": 4.603329,
+          "p95": 19.280729,
+          "p99": 25.41995,
+          "max": 30.624448
+        },
+        "wait_return_to_begin": {
+          "median": 0.332415,
+          "p95": 1.666945,
+          "p99": 3.536553,
+          "max": 9.445221
+        },
+        "begin_to_end_frame": {
+          "median": 8.214193,
+          "p95": 16.235193,
+          "p99": 22.361304,
+          "max": 136.33187
+        },
+        "end_frame_to_gpu_completion_observed": {
+          "median": 0.00456,
+          "p95": 0.02092,
+          "p99": 0.02862,
+          "max": 0.105192
+        },
+        "end_frame_to_next_wait": {
+          "median": 0.1571725,
+          "p95": 0.676361,
+          "p99": 2.331005,
+          "max": 4.431066
+        }
+      },
+      "scope": "OpenXR frame submissions and GPU timestamps; no physical headset scanout or transport timing",
+      "reused_frame_fraction": 0.32093023255813957,
+      "compositor_target_hz": 90.0000009,
+      "metrics_sha256": "6da0f1cfd36caaacbdc0a17dec5970963d4f50dd5a30c3df06cbfff62c424506",
+      "network_mode": "offline policy from guest creation"
+    }
+  }
+}

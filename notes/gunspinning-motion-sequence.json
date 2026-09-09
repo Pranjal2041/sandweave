@@ -1,0 +1,167 @@
+[
+  {
+    "wait": 15
+  },
+  {
+    "motion": [
+      "--device",
+      "head",
+      "--position",
+      "0",
+      "1.6",
+      "0",
+      "--orientation",
+      "0",
+      "0",
+      "0",
+      "1"
+    ]
+  },
+  {
+    "motion": [
+      "--device",
+      "right",
+      "--position",
+      ".2",
+      "1.4",
+      "-.2",
+      "--aim-at",
+      "0",
+      "1.2",
+      "-3",
+      "--aim-pitch-offset",
+      "50",
+      "--click",
+      "trigger"
+    ]
+  },
+  {
+    "wait": 0.3
+  },
+  {
+    "motion": [
+      "--device",
+      "right",
+      "--position",
+      ".2",
+      "1.4",
+      "-.2",
+      "--aim-at",
+      "0.2",
+      "1.2",
+      "-3",
+      "--aim-pitch-offset",
+      "50",
+      "--click",
+      "trigger"
+    ]
+  },
+  {
+    "wait": 12
+  },
+  {
+    "capture": "ready"
+  },
+  {
+    "motion": [
+      "--device",
+      "right",
+      "--position",
+      ".2",
+      "1.4",
+      "-.2",
+      "--aim-at",
+      "-0.4",
+      "1.2",
+      "-3",
+      "--aim-pitch-offset",
+      "50"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "capture": "aimed"
+  },
+  {
+    "motion": [
+      "--click",
+      "trigger"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "motion": [
+      "--click",
+      "trigger"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "motion": [
+      "--click",
+      "trigger"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "capture": "fired-three"
+  },
+  {
+    "vr_state": {
+      "right": {
+        "thumbstick": [
+          0,
+          -1
+        ],
+        "thumbstick_click": true
+      }
+    }
+  },
+  {
+    "wait": 0.25
+  },
+  {
+    "vr_state": {
+      "right": {
+        "thumbstick": [
+          0,
+          0
+        ],
+        "thumbstick_click": false
+      }
+    }
+  },
+  {
+    "wait": 1.5
+  },
+  {
+    "capture": "reloaded"
+  },
+  {
+    "motion": [
+      "--device",
+      "head",
+      "--position",
+      ".08",
+      "1.65",
+      "0"
+    ]
+  },
+  {
+    "wait": 0.2
+  },
+  {
+    "capture": "head-moved"
+  },
+  {
+    "metrics": "gameplay-metrics"
+  }
+]

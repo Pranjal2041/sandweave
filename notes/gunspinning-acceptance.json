@@ -1,0 +1,96 @@
+{
+  "gamepad": {
+    "directory": "gunspinning-final-full-axis",
+    "verified": [
+      "Play/Training selected with A and left-stick pulses",
+      "A fired: HUD 6 to 5",
+      "Raw SDL axis3 changed horizontal aim",
+      "B reloaded: HUD 5 to 6",
+      "Neutral camera remained stable across two-second wait",
+      "Raw SDL axis4 changed vertical aim"
+    ],
+    "artifacts": {
+      "runs/gunspinning/gunspinning-final-full-axis/menu.png": "1ad5a317daa5e359f14a3094d27ff74b7c5b499ea22d57983eda2313a0a2aa4e",
+      "runs/gunspinning/gunspinning-final-full-axis/ready.png": "4595d2737297d7ba180660df4a84b7d1e94940c3fb8f3da1b76a84b9e3c3861c",
+      "runs/gunspinning/gunspinning-final-full-axis/fired.png": "71438a799930ed6e151de81b014d4ad1cd4525337714dbdfd25ed81cd418dcd8",
+      "runs/gunspinning/gunspinning-final-full-axis/aimed.png": "7fbbbcc62af74d86262d7e43d72eb857f08be89149527845256c200d5421f199",
+      "runs/gunspinning/gunspinning-final-full-axis/reloaded.png": "1afc94e2f6b306958542553f4e883b498a84b032bf1d48f32ef65cd2f10158cd",
+      "runs/gunspinning/gunspinning-final-full-axis/neutral-stable.png": "94e233dda32cc5349f7cf2875a872afda55fa2f4298fa7b066f2e99d0d9f7d70",
+      "runs/gunspinning/gunspinning-final-full-axis/axis4.png": "86f9f67c62941177ba6a5b424d013e0a3988073ba103bf5b84c94537471a05fe",
+      "runs/gunspinning/gunspinning-final-full-axis/sequence.json": "3de01062678c36d21c356a08ea98801d6fd05d37f53d589eeb314f45518ca062"
+    },
+    "first_step_unix_ns": 1788918438932832958,
+    "last_step_unix_ns": 1788918477022879888
+  },
+  "motion": {
+    "directory": "gunspinning-policy-offline-motion",
+    "verified": [
+      "Tracked ray and trigger selected Play/Training",
+      "Right-controller orientation changed gun aim",
+      "Three right triggers reduced visible ammunition six to three",
+      "Right thumbstick down plus click reloaded three to six",
+      "Head translation changed stereo composition"
+    ],
+    "artifacts": {
+      "runs/gunspinning/gunspinning-policy-offline-motion/ready.png": "e98d502af6a30192d5ba1003adba2cfe74fc3c0da88f7e4a05838cbd28790318",
+      "runs/gunspinning/gunspinning-policy-offline-motion/aimed.png": "8b385cda8530a94ee9099fa62c8b43a47a1a7b5c9cc364e4b9d1d716458fdbae",
+      "runs/gunspinning/gunspinning-policy-offline-motion/fired-three.png": "a548fc750f3bf80115526aa56c80fb711f6fa78a135c7d990dfdbe713bcfad88",
+      "runs/gunspinning/gunspinning-policy-offline-motion/reloaded.png": "c76cbae4e98e06b8ddd5f07a4fc60ca21949cfb795a51defc4dfa6744a039ca8",
+      "runs/gunspinning/gunspinning-policy-offline-motion/head-moved.png": "c26c5a5dc131ff39662b8081b7f668702192800d820d4411da20f1b9348337c5",
+      "runs/gunspinning/gunspinning-policy-offline-motion/gameplay-metrics.pb": "6da0f1cfd36caaacbdc0a17dec5970963d4f50dd5a30c3df06cbfff62c424506",
+      "runs/gunspinning/gunspinning-policy-offline-motion/sequence.json": "b91d7c8228ed538d65b7d7b2dbc8b61d823f34abdd688fcdcb2120f37afa4861"
+    },
+    "first_step_unix_ns": 1788917340551947873,
+    "last_step_unix_ns": 1788917379506718956
+  },
+  "offline": {
+    "guest": "vr-gunspin-offline01",
+    "policy": {
+      "mode": "offline",
+      "guest": "10.0.2.15",
+      "gateway": "10.0.2.2",
+      "dns": "10.0.2.3",
+      "forwarded_tcp_ports": [
+        80,
+        8080,
+        8000,
+        5901,
+        22
+      ],
+      "host_addresses": [
+        "127.0.0.1",
+        "169.254.3.1",
+        "10.1.1.88",
+        "172.16.1.88"
+      ],
+      "allow_cidrs": []
+    },
+    "public_tcp_check": {
+      "destination": "1.1.1.1:443",
+      "connect_ex": 11,
+      "elapsed_seconds": 2.0006408369999917
+    }
+  },
+  "provenance": {
+    "game_archive_sha256": "85c440f22f16fcbeec018b0f4be4df8bb3b3ac091a3eda83f43cf2c8d06ad392",
+    "runtime": "d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
+    "engine_commit": "c2f78eb0077f8394917b9bcdece2e521e3150d76",
+    "game_files_verified_against_archive": {
+      "GunSpinningVR": "1b1283741c33ac53b684c7da5c885db27dd68d4908c89ef396c7075825e0cfbb",
+      "GunSpinningVR_Data/Managed/Assembly-CSharp.dll": "6aff143ef784189767a4ff93e5422ab891c2e165998b575d6fe20250a2d1b20a",
+      "GunSpinningVR_Data/Plugins/libopenvr_api.so": "6d59ab6f7898340a8a4a4a13b2883fe9f0579c4b4c1f1c0149d17b8dd010fdd6"
+    },
+    "guest_library_hashes": [
+      "c4fbf79277252d3aecbfbcaf7bd39ad64fc4f382244d56fa019be9c6f5cd23dd  /opt/gunspinning-lab/libsdl-gamepad-proxy.so",
+      "8f59f7b787fd2508a234e71c40cf95e0706e131cf85f01e8a5e9732d4b74f5e9  /opt/gunspinning-lab/libprimus_vk.so",
+      "b1e251a5353c7e6d6f39c7791a52dd924602fed1243a4e11abce03dab6aead65  /opt/engine-gpu/vr/xrizer-v0.5/bin/linux64/vrclient.so"
+    ]
+  },
+  "limitations": [
+    "Gamepad analog trigger mapping unresolved; A/B qualified instead",
+    "No audio, physical headset scanout, haptics or left-hand gameplay acceptance",
+    "No full-game completion or target-hit/score attribution",
+    "Short measured VR gameplay windows with uneven frame pacing; no prolonged stability claim"
+  ],
+  "evidence_scope": "Actual screenshots manually inspected; timestamps and hashes support those observations, not an automated semantic game test. Raw artifacts are ignored and retained in this workspace."
+}

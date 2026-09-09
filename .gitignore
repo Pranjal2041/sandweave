@@ -21,6 +21,7 @@ __pycache__/
 *.log
 .pytest_cache/
 .venv/
+.sandweave/
 /build/
 /dist/
 /src/*.egg-info/

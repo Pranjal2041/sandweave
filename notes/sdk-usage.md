@@ -71,10 +71,24 @@ environment variable takes precedence over saved configuration.
 Changing that selection uses a new worker workspace for new connections.
 Existing workers and handles keep their prepared runtime files.
 
-`SANDWEAVE_HOME` selects the private worker, metadata and artifact directory;
-its default is `~/.local/share/sandweave`. Durable snapshots belong on durable
-storage. Runtime working directories are separate and node-local. Setup does
-not change the original lab's `runs/local-path.txt`.
+On first setup, Sandweave stores worker files, caches and artifacts in
+`.sandweave` under the selected runtime directory. It prints this path before
+staging files. Home contains a small `~/.local/share/sandweave/location.json`
+setting so later commands find the data from any directory. The selected
+directory must be writable and belong to you. Later runtime selections keep
+your saved data location.
+
+Set `SANDWEAVE_HOME` to use a different data directory. This explicit setting
+takes precedence, including during setup. Installations that have not run the
+new setup retain the earlier `~/.local/share/sandweave` default. Setup preserves
+files at that old location; it does not move or delete existing sandboxes or
+snapshots. To access them, set `SANDWEAVE_HOME` to that directory.
+
+Durable snapshots belong on durable storage. Active runtime working directories
+are separate and node-local. Staging uses hardlinks on the same filesystem;
+copies across filesystems are published only after completion. Incomplete
+staged files are checked and repaired when preparing a worker. Setup does not
+change the original lab's `runs/local-path.txt`.
 
 The wheel contains the engine scripts. Large images, runtime binaries, GPU
 drivers, game downloads and saved application bases remain external assets.

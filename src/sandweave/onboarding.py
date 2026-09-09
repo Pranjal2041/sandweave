@@ -35,8 +35,8 @@ class Check:
     fix: str | None = None
 
 
-def configuration():
-    path = workspace.home() / 'config.json'
+def configuration(directory=None):
+    path = (Path(directory) if directory is not None else workspace.home()) / 'config.json'
     value = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(value, dict):
         raise ValueError('Sandweave config.json must contain an object')
@@ -47,6 +47,34 @@ def save_configuration(**changes):
     path = workspace.home() / 'config.json'
     with workspace.locked(path.with_suffix('.lock')):
         workspace.atomic_json(path, {**configuration(), **changes})
+
+
+def save_runtime_location(root):
+    """Keep data with the selected installation, preserving explicit locations."""
+    location = workspace.default_home() / 'location.json'
+    if os.environ.get('SANDWEAVE_HOME') or location.exists():
+        save_configuration(assets=str(root))
+    else:
+        destination = Path(root) / '.sandweave'
+        with workspace.locked(location.with_suffix('.lock')):
+            if location.exists():
+                save_configuration(assets=str(root))
+            else:
+                old = configuration()
+                destination.mkdir(mode=0o700, exist_ok=True)
+                if destination.stat().st_uid != os.getuid():
+                    raise ValueError('Sandweave data directory belongs to another user: ' + str(destination) +
+                                     '. Select your own directory with SANDWEAVE_HOME.')
+                path = destination / 'config.json'
+                with workspace.locked(path.with_suffix('.lock')):
+                    current = configuration(destination)
+                    merged = {**old, **current, 'assets': str(root)}
+                    if 'targets' in old or 'targets' in current:
+                        merged['targets'] = {**old.get('targets', {}), **current.get('targets', {})}
+                    workspace.atomic_json(path, merged)
+                # Publish the location only after its configuration is ready.
+                workspace.atomic_json(location, {'path': str(destination.resolve())})
+    print('Sandweave data: ' + str(workspace.home()))
 
 
 def run_probe(command, *, timeout=20):
@@ -370,7 +398,7 @@ def repair(name, template, *, yes=False, assets=None):
                     print('Choose a prepared installation. A public runtime download bundle is not available yet.')
                     root = ask_path('Prepared runtime directory:')
                 root = validate_assets(root, recipe)
-        save_configuration(assets=str(root))
+        save_runtime_location(root)
     elif name == 'python':
         missing = [package for module, package in python_packages(recipe) if importlib.util.find_spec(module) is None]
         if not missing:
@@ -421,7 +449,8 @@ def main(args):
     yes = getattr(args, 'yes', False)
     template = args.template or configuration().get('onboarding_template', 'coding')
     if setup and not args.template and interactive and not yes:
-        template = choose('What will you run?', [(label, name) for name, label in PROFILES.items()])
+        template = choose('What do you want to start with? (You can add more later)',
+                          [(label, name) for name, label in PROFILES.items()])
     if setup and not interactive and not yes:
         print('Setup needs a terminal. For scripts, use sandweave setup --yes --template coding.', file=sys.stderr)
         return 1
@@ -450,6 +479,9 @@ def main(args):
                     checks = inspect(template, assets=assets)
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
                 print('Repair failed: ' + str(error), file=sys.stderr)
+                if name == 'assets':
+                    print('Setup stopped before staging files. Select a writable data directory with SANDWEAVE_HOME.')
+                    return 1
         save_configuration(onboarding_template=template)
         checks = inspect(template, assets=assets)
         show(checks, template)
@@ -474,7 +506,8 @@ def main(args):
             return 0 if passed(checks) else 1
         try:
             if action == 'template':
-                template = choose('What will you run?', [(label, name) for name, label in PROFILES.items()])
+                template = choose('What do you want to start with? (You can add more later)',
+                                  [(label, name) for name, label in PROFILES.items()])
             elif action == 'smoke':
                 smoke_test()
             elif action != 'recheck':

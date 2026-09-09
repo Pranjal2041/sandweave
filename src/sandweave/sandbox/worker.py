@@ -495,8 +495,11 @@ class Worker:
 
 
 def serve(metadata_path):
-    from .workspace import tool_path
+    from .workspace import tool_path, home
     os.environ['PATH'] = tool_path()
+    # Existing workers retain their storage when a later setup changes the
+    # client's saved location. Managed tools have already been added to PATH.
+    os.environ['SANDWEAVE_HOME'] = str(home())
     root = prepare()
     # An attached worker keeps the asset source it prepared, even after setup
     # changes the client's default selection for future workers.

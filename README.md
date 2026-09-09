@@ -17,8 +17,10 @@ python -m pip install .
 sandweave setup
 ```
 
-Choose what you want to run. Setup finds an existing prepared runtime, offers
-dependency installation, and tests a disposable coding sandbox. Runtime images
+Choose what you want to start with; you can add more later. Setup finds an
+existing prepared runtime, offers dependency installation, and tests a disposable
+coding sandbox. It stores Sandweave data in `.sandweave` under the selected
+directory unless you have already chosen a data location. Runtime images
 are not yet available for automatic download.
 See [installation details](notes/sdk-usage.md#install-and-configure).
 

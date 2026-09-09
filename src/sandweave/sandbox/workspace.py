@@ -18,13 +18,27 @@ _path_locks = weakref.WeakValueDictionary()
 _path_locks_guard = threading.Lock()
 
 
+def default_home():
+    return Path.home() / '.local/share/sandweave'
+
+
 def home():
-    return Path(os.environ.get('SANDWEAVE_HOME', Path.home() / '.local/share/sandweave')).expanduser().resolve()
+    selected = os.environ.get('SANDWEAVE_HOME')
+    if not selected:
+        location = default_home() / 'location.json'
+        if location.exists():
+            selected = json.loads(location.read_text())['path']
+    return Path(selected or default_home()).expanduser().resolve()
 
 
 def tool_path():
     """Tools installed by setup are private to Sandweave, without shell edits."""
-    return str(home() / 'bin') + os.pathsep + os.environ.get('PATH', '')
+    directories = [str(home() / 'bin')]
+    # Keep tools from the earlier default installation usable after setup
+    # selects storage elsewhere. Explicit isolated homes do not inherit them.
+    if not os.environ.get('SANDWEAVE_HOME') and home() != default_home().resolve():
+        directories.append(str(default_home() / 'bin'))
+    return os.pathsep.join([*directories, os.environ.get('PATH', '')])
 
 
 def tool(name):
@@ -117,13 +131,31 @@ def asset_identity(source=None):
 
 def _immutable(source, destination):
     source, destination = Path(source), Path(destination)
-    if destination.exists():
+    size = source.stat().st_size
+    if destination.is_file() and destination.stat().st_size == size:
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix='.' + destination.name + '.', dir=destination.parent)
+    os.close(fd)
+    temporary = Path(name)
     try:
-        os.link(source, destination)
-    except OSError:
-        shutil.copy2(source, destination)
+        temporary.unlink()
+        try:
+            os.link(source, temporary)
+        except OSError:
+            # A cross-filesystem copy can fail or be interrupted. Never expose
+            # its partial output at the published immutable path.
+            shutil.copy2(source, temporary)
+            with temporary.open('rb') as stream:
+                os.fsync(stream.fileno())
+        if temporary.stat().st_size != size:
+            raise ResourceUnavailable('Runtime file copy is incomplete: ' + str(source))
+        os.replace(temporary, destination)
+    except OSError as error:
+        raise ResourceUnavailable('Could not stage runtime file ' + str(source) +
+                                  ' in ' + str(destination.parent) + ': ' + str(error)) from error
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def stage_tree(source, destination):
@@ -171,10 +203,13 @@ def prepare():
     with locked(root / '.prepare.lock'):
         if (root / 'prepared.json').exists():
             prepared = json.loads((root / 'prepared.json').read_text())
-            if Path(prepared['local']).is_dir():
+            staged = prepared.get('staged_files', {})
+            if (Path(prepared['local']).is_dir() and staged and
+                    all((root / name).is_file() and (root / name).stat().st_size == size
+                        for name, size in staged.items())):
                 return root
-            # Durable checkpoints outlive node-local active runtime storage.
-            # Recreate only this worker's local directories after a node loss.
+            # Revalidate legacy workspaces and repair incomplete staged files.
+            # Durable checkpoints also outlive node-local runtime storage.
         for directory in ('scripts', 'runs', 'downloads', 'snapshots', 'images/fixtures', 'tools/gpu'):
             (root / directory).mkdir(parents=True, exist_ok=True)
         for path in files:
@@ -199,13 +234,21 @@ def prepare():
         _immutable(base / 'images/gvisor-ubuntu-ready-ae303ca.erofs',
                    root / 'images/gvisor-ubuntu-ready-ae303ca.erofs')
         # Snapshots retain a durable path; only active runtime working data is local.
-        local = Path(tempfile.mkdtemp(prefix='sandweave-' + str(os.getuid()) + '-', dir='/tmp'))
+        prepared_path = root / 'prepared.json'
+        previous = json.loads(prepared_path.read_text()) if prepared_path.exists() else {}
+        local = Path(previous['local']) if previous.get('local') else None
+        if local is None or not local.is_dir():
+            local = Path(tempfile.mkdtemp(prefix='sandweave-' + str(os.getuid()) + '-', dir='/tmp'))
         for directory in ('gvisor/bundles', 'gvisor/state', 'gvisor/checkpoints'):
             (local / directory).mkdir(parents=True, exist_ok=True)
         (root / 'runs/local-path.txt').write_text(str(local) + '\n')
         registry = base / 'sandweave-assets.json'
+        staged = {str(path.relative_to(root)): path.stat().st_size
+                  for directory in ('tools', 'images') for path in (root / directory).rglob('*')
+                  if path.is_file()}
         atomic_json(root / 'prepared.json', {'assets': str(base), 'engine_sources_sha256': engine_digest,
                                             'sdk_sources_sha256': sdk_digest.hexdigest(),
                                             'assets_sha256': hashlib.sha256(registry.read_bytes()).hexdigest() if registry.exists() else None,
+                                            'staged_files': staged,
                                             'hostname': socket.gethostname(), 'local': str(local)})
     return root

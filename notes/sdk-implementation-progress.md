@@ -364,3 +364,38 @@ available. The pinned upstream Apptainer installer is supported but was not run
 in this acceptance because Apptainer was already installed. It requires curl,
 rpm2cpio and cpio; a missing prerequisite remains a reported failure. Existing
 Apptainer detection and managed-tool execution were exercised instead.
+
+## Setup storage and interrupted staging repair (2026-09-09)
+
+The user's first setup selected runtime files on the data filesystem but staged
+copies under `~/.local/share/sandweave`, on a separate home filesystem. Its
+staged EROFS image contained 2,565,341,184 bytes instead of 7,819,030,528 bytes.
+The old staging helper accepted any existing file, and a subsequent setup
+published the incomplete image as prepared. gVisor then returned `bad address`
+while resolving the guest's Python executable. The surviving logs do not show
+what interrupted the original copy; home had about 5.5 GiB available when checked.
+
+First setup now saves data under the selected runtime directory's `.sandweave`
+subdirectory, prints the location, and writes a small location setting in home.
+An explicit `SANDWEAVE_HOME` or an already saved location takes precedence.
+Workers pin their own data directory. Existing files are preserved when the
+default changes. Failed data-location selection stops setup before staging.
+Copies now use temporary files, verify their length, and publish atomically;
+prepared workspaces recheck staged lengths. The initial question now reads
+"What do you want to start with? (You can add more later)".
+
+Validation: 45 host tests passed; 46 opt-in integration cases were skipped.
+The new tests exercise disk-full errors, interruption, silent short copies,
+retry, truncated prepared images, location persistence, and failed location
+selection. The actual `.venv/bin/sandweave setup` terminal flow completed with
+data at `/data/user_data/pranjala/general-vm/.sandweave`. Its staged base image
+has the full length and shares the source inode. A CLI command run from `/tmp`
+returned `4`; filesystem cache/restore, concurrent workers using different
+runtime sources, and a borrowed Slurm worker also passed. A real 8 MiB copy
+between `/tmp` and the data filesystem repaired a partial destination and
+matched the source's SHA256. The wheel was rebuilt.
+
+Evidence is retained under ignored `runs/sdk-staging-repair-20260909` and
+`runs/sdk-storage-acceptance-20260909`. Only the idle worker owning the two
+failed setup attempts was shut down; its original home files and logs remain.
+The existing allocation and other user environments were preserved.

@@ -1,5 +1,11 @@
 {
   "schema_version": 1,
+  "images": {
+    "images/gvisor-ubuntu-ready-ae303ca.erofs": {
+      "size": 7819030528,
+      "sha256": "e3d32dfc98c01c46e99dba43a0e3bbb28dbe4cc60d1c823ae27f44e4e5222b77"
+    }
+  },
   "snapshots": {
     "vr-base@1": {
       "path": "snapshots/vr-l40s-alyx-prepared-10361186",

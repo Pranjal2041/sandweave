@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build a real EROFS fixture and compare native Linux with the lab engine."""
 import io
+import argparse
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,12 @@ import sys
 import tarfile
 import time
 
-lab = Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--lab', type=Path, default=Path(__file__).resolve().parent.parent)
+parser.add_argument('--assets', type=Path)
+args = parser.parse_args()
+lab = args.lab.resolve()
+assets = (args.assets or lab).resolve()
 local = Path((lab / 'runs/local-path.txt').read_text().strip())
 name = 'xattrs-' + str(time.time_ns())
 root = local / 'gvisor' / name
@@ -35,10 +41,10 @@ for filename, mask in [('acl-allow', 4), ('acl-deny', 0)]:
     os.setxattr(path, 'system.posix_acl_access', acl)
 (root / 'link').symlink_to('public')
 image = root.with_suffix('.erofs')
-subprocess.run([str(lab / 'tools/erofs-native/usr/bin/mkfs.erofs'), '--quiet', '-x1',
+subprocess.run([str(assets / 'tools/erofs-native/usr/bin/mkfs.erofs'), '--quiet', '-x1',
                 str(image), str(root)], check=True)
 logs = lab / 'runs/gvisor' / name
-logs.mkdir()
+logs.mkdir(parents=True)
 native = subprocess.check_output([sys.executable, str(lab / 'scripts/probe-erofs-xattrs.py'), str(root)])
 (logs / 'native.json').write_bytes(native)
 
@@ -49,6 +55,7 @@ def run(label, uid, gid, program, argv):
                     sandbox, '--', 'python3', '/probe.py', *argv], check=True)
     bundle = local / 'gvisor/bundles' / sandbox
     config = json.loads((bundle / 'config.json').read_text())
+    config['annotations']['dev.gvisor.spec.rootfs.source'] = '/lab/images/gvisor-ubuntu-ready-ae303ca.erofs'
     config['process']['user'] = {'uid': uid, 'gid': gid}
     config['process']['capabilities'] = {key: [] for key in config['process']['capabilities']}
     config['mounts'].append({'destination': '/fixture', 'type': 'erofs', 'options': ['ro'],
@@ -59,8 +66,9 @@ def run(label, uid, gid, program, argv):
         info.mode, info.size = 0o644, len(program)
         archive.addfile(info, io.BytesIO(program))
     cpu = str(min(os.sched_getaffinity(0)))
+    runtime = json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())['path']
     cmd = ['taskset', '-c', cpu, str(lab / 'scripts/gvisor-host.sh'),
-           '/lab/tools/gvisor-socket/runsc', '--platform=systrap',
+           '/lab/' + runtime + '/runsc', '--platform=systrap',
            '--systrap-disable-syscall-patching', '--network=none', '--ignore-cgroups',
            '--directfs=false', '--allow-suid', '--allow-rootfs-tar-annotation',
            '--sidecar-usage-policy=STRICT', '--root=/local/gvisor/state',

@@ -1,18 +1,24 @@
 """Guest-only command/file service. Processes own guest files, not host exec pipes."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
+import errno
+import fcntl
 import json
 import os
 from pathlib import Path
 import pwd
+import pty as terminal
 import re
+import select
 import signal
 import socket
 import socketserver
 import subprocess
+import struct
 import sys
 import threading
 import time
+import termios
 
 try:
     from sandweave.sandbox.wire import decode, encode, MAX_BODY
@@ -57,12 +63,23 @@ class Agent:
             raise ValueError('invalid process ID')
         return self.root / identity
 
-    def spawn(self, identity, argv, cwd='/workspace', env=None, user='root', timeout=None):
+    def spawn(self, identity, argv, cwd='/workspace', env=None, user='root', timeout=None, max_output_bytes=64*1024**2, pty=False):
         if not argv or any(not isinstance(a, str) or '\0' in a for a in argv):
             raise ValueError('argv must contain literal strings')
         if timeout is not None and (not isinstance(timeout, (float, int)) or timeout <= 0):
             raise ValueError('timeout must be positive')
-        request = {'argv': argv, 'cwd': cwd, 'env': env or {}, 'user': user, 'timeout': timeout}
+        if type(max_output_bytes) is not int or max_output_bytes <= 0:
+            raise ValueError('max_output_bytes must be a positive integer')
+        if pty is True:
+            pty = {'rows': 24, 'cols': 80}
+        if pty:
+            if not isinstance(pty, dict) or set(pty) - {'rows', 'cols'}:
+                raise ValueError('pty must be True or a rows/cols mapping')
+            pty = {'rows': pty.get('rows', 24), 'cols': pty.get('cols', 80)}
+            if any(type(v) is not int or not 1 <= v <= 1000 for v in pty.values()):
+                raise ValueError('terminal rows/cols must be integers in 1..1000')
+        request = {'argv': argv, 'cwd': cwd, 'env': env or {}, 'user': user, 'timeout': timeout,
+                   'max_output_bytes': max_output_bytes, 'pty': pty}
         account = pwd.getpwuid(int(user)) if str(user).isdigit() else pwd.getpwnam(user)
         directory = self.directory(identity)
         with self.lock:
@@ -79,22 +96,83 @@ class Agent:
                 kwargs = {'user': account.pw_uid, 'group': account.pw_gid,
                           'extra_groups': os.getgrouplist(account.pw_name, account.pw_gid)}
             stdout, stderr = (directory / 'stdout').open('wb'), (directory / 'stderr').open('wb')
+            master = slave = None
             try:
-                process = subprocess.Popen(argv, cwd=cwd, env=child_env, stdin=subprocess.PIPE,
-                                           stdout=stdout, stderr=stderr, start_new_session=True,
+                launch = argv
+                if pty:
+                    master, slave = terminal.openpty()
+                    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', pty['rows'], pty['cols'], 0, 0))
+                    child_env.setdefault('TERM', 'xterm-256color')
+                    # Acquire the controlling terminal after exec into a fresh
+                    # interpreter, avoiding preexec_fn in this threaded agent.
+                    launch = [sys.executable, '-c', 'import fcntl,termios,os,sys; '
+                              'fcntl.ioctl(0,termios.TIOCSCTTY,0); '
+                              'os.execvpe(sys.argv[1],sys.argv[1:],os.environ)', *argv]
+                process = subprocess.Popen(launch, cwd=cwd, env=child_env, stdin=slave if pty else subprocess.PIPE,
+                                           stdout=slave if pty else subprocess.PIPE,
+                                           stderr=slave if pty else subprocess.PIPE, start_new_session=True,
                                            **kwargs)
+                if pty:
+                    process.stdin = os.fdopen(os.dup(master), 'wb', buffering=0)
+                    process.stdout = os.fdopen(master, 'rb', buffering=0)
+                process.sandweave_pty = bool(pty)
             except BaseException:
+                if master is not None:
+                    os.close(master)
                 stdout.close(); stderr.close()
                 now = time.monotonic_ns()
                 (directory / 'process.json').write_text(json.dumps({'id': identity, 'pid': None, 'started_ns': now}))
                 (directory / 'exit.json').write_text(json.dumps({'returncode': 127, 'spawn_failed': True,
                                                                'finished_ns': now}))
                 raise
+            finally:
+                if slave is not None:
+                    os.close(slave)
             self.processes[identity] = process
             os.set_blocking(process.stdin.fileno(), False)
             started = time.monotonic_ns()
             (directory / 'process.json').write_text(json.dumps({'id': identity, 'pid': process.pid,
-                                                              'started_ns': started}))
+                                                              'started_ns': started, 'pty': pty}))
+
+        output_state = {'bytes': 0, 'limited': False}
+        output_lock = threading.Lock()
+
+        def drain(source, destination):
+            try:
+                while True:
+                    if not select.select([source], [], [], .05)[0]:
+                        if process.poll() is not None:
+                            break
+                        continue
+                    try:
+                        data = os.read(source.fileno(), 64*1024)
+                    except BlockingIOError:
+                        continue
+                    except OSError as error:
+                        if pty and error.errno == errno.EIO:
+                            break  # Linux PTY EOF after the final slave closes.
+                        raise
+                    if not data:
+                        break
+                    with output_lock:
+                        remaining = max_output_bytes - output_state['bytes']
+                        written = min(len(data), remaining)
+                        destination.write(data[:written]); destination.flush()
+                        output_state['bytes'] += written
+                        if written < len(data):
+                            output_state['limited'] = True
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+            finally:
+                source.close()
+
+        drains = [threading.Thread(target=drain, args=pair, daemon=True)
+                  for pair in ([(process.stdout, stdout)] if pty else
+                               [(process.stdout, stdout), (process.stderr, stderr)])]
+        for thread in drains:
+            thread.start()
 
         def finish():
             timed_out = False
@@ -108,7 +186,10 @@ class Agent:
                     except ProcessLookupError:
                         pass
                     process.wait()
+                for thread in drains:
+                    thread.join()
                 result = {'returncode': process.returncode, 'timed_out': timed_out,
+                          'output_limited': output_state['limited'], 'max_output_bytes': max_output_bytes,
                           'finished_ns': time.monotonic_ns(), 'started_ns': started}
                 temporary = directory / 'exit.tmp'
                 temporary.write_text(json.dumps(result))
@@ -155,8 +236,21 @@ class Agent:
         else:
             written = 0
         if close:
+            if process.sandweave_pty:
+                # PTYs have one duplex channel. Canonical terminal EOF is EOT;
+                # raw-mode applications may instead require terminate().
+                os.write(process.stdin.fileno(), b'\x04')
             process.stdin.close()
         return written
+
+    def resize(self, identity, rows, cols):
+        if any(type(v) is not int or not 1 <= v <= 1000 for v in (rows, cols)):
+            raise ValueError('terminal rows/cols must be integers in 1..1000')
+        process = self.processes[identity]
+        if not process.sandweave_pty:
+            raise ValueError('process does not have a terminal')
+        fcntl.ioctl(process.stdin.fileno(), termios.TIOCSWINSZ, struct.pack('HHHH', rows, cols, 0, 0))
+        return {'rows': rows, 'cols': cols}
 
     def terminate(self, identity):
         with self.lock:
@@ -216,9 +310,9 @@ class Agent:
                 path.chmod(mode)
             return len(data)
         if op == 'stat':
-            info = path.stat()
+            info = path.lstat()
             return {'size': info.st_size, 'mode': info.st_mode, 'mtime_ns': info.st_mtime_ns,
-                    'directory': path.is_dir()}
+                    'directory': path.is_dir(), 'symlink': path.is_symlink()}
         if op == 'list':
             return [str(p) for p in sorted(path.iterdir())]
         if op == 'mkdir':
@@ -229,7 +323,7 @@ class Agent:
     def call(self, operation, parameters):
         if operation == 'ping':
             return {'pid': os.getpid(), 'monotonic_ns': time.monotonic_ns()}
-        if operation not in ('spawn', 'status', 'output', 'stdin', 'terminate', 'file'):
+        if operation not in ('spawn', 'status', 'output', 'stdin', 'terminate', 'resize', 'file'):
             raise ValueError('unknown agent operation')
         return getattr(self, operation)(**parameters)
 
@@ -243,6 +337,7 @@ def main(port, token):
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
+        wbufsize = 64 * 1024
 
         def setup(self):
             super().setup()
@@ -274,6 +369,8 @@ def main(port, token):
             self.send_header('Content-Length', str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
+            # Bound a request body, not the idle lifetime of a persistent client.
+            self.connection.settimeout(None)
 
     if str(port).startswith('/'):
         class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):

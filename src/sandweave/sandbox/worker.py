@@ -1,5 +1,6 @@
 """Persistent worker for owned sandbox instances and shared engine helpers."""
 import argparse
+import fcntl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
 import json
@@ -25,7 +26,9 @@ class Worker:
         self.store = Store(self.runtime)
         self.records = self.root / 'sandboxes'
         self.records.mkdir(exist_ok=True)
-        self.locks, self.guard, self.controls = {}, threading.RLock(), {}
+        self.locks, self.guard, self.controls, self.deadlines = {}, threading.RLock(), {}, {}
+        self.stopping = False
+        self.pools = {}
         from .admission import budget
         self.memory_budget = budget()
         threading.Thread(target=self.expire, name='sandweave-ttl', daemon=True).start()
@@ -80,9 +83,13 @@ class Worker:
                 if previous and previous['provenance'] != 'prepared':
                     raise CacheConflict('cache name contains a manual capture: ' + cache_key)
                 prepared = json.loads((self.root / 'prepared.json').read_text())
+                from ..templates.controls import descriptors
                 stamp = fingerprint({k: v for k, v in spec.items()
                                      if k not in ('name', 'ttl', 'startup_timeout', 'keep_on_error')} |
                                     {'engine': prepared['engine_sources_sha256'],
+                                     'sdk': prepared.get('sdk_sources_sha256'),
+                                     'assets': prepared.get('assets_sha256'),
+                                     'controls': descriptors(spec['template']),
                                      'runtime': (self.root / 'tools/gvisor-socket/runtime.json').read_text()})
                 if not refresh and previous and previous['fingerprint'] == stamp:
                     return self._create(spec, identity, operation_id=operation_id, reference=previous['id'])
@@ -120,9 +127,12 @@ class Worker:
                       'timings': {}, 'workspace': str(self.root), 'capabilities': declared}
             from .admission import admit
             with self.guard:
+                if self.stopping:
+                    raise SandboxError('worker is shutting down')
                 record['admission'] = admit(self, spec)
                 self.write(record)
             try:
+                self.deadlines[identity] = started + spec['startup_timeout']
                 saved = self.store.resolve(reference) if reference else None
                 if saved and saved['state'] == 'memory':
                     for key in ('runtime', 'resources', 'env', 'mounts'):
@@ -130,7 +140,9 @@ class Worker:
                             raise IncompatibleSnapshot('memory restore cannot change ' + key)
                 snapshot = self.store.materialize(saved) if saved else None
                 token = saved['agent']['token'] if saved and saved['state'] == 'memory' else None
-                record['agent'] = self.runtime.create(identity, spec, snapshot=snapshot, token=token)
+                record['agent'] = self.runtime.create(identity, {**spec, '_startup_deadline': self.deadlines[identity]},
+                                                       snapshot=snapshot, token=token)
+                self.remaining(identity)
                 record['state'] = 'preparing'
                 self.write(record)
                 if saved is None:
@@ -143,13 +155,16 @@ class Worker:
                 if cold:
                     self.start_services(identity)
                 self.attach_controls(identity, cold=cold)
+                self.remaining(identity)
                 record['state'] = 'ready'
                 if spec.get('ttl') is not None:
                     record['expires_at'] = time.time() + spec['ttl']
                 record['timings']['ready_seconds'] = time.monotonic() - started
                 self.write(record)
+                self.deadlines.pop(identity, None)
                 return self.describe(identity)
             except BaseException as error:
+                self.deadlines.pop(identity, None)
                 for key, value in {'sandbox_id': identity, 'operation_id': operation_id,
                                    'phase': record['state']}.items():
                     if getattr(error, key, None) is None:
@@ -168,6 +183,15 @@ class Worker:
                     self.write(record)
                 raise
 
+    def remaining(self, identity, limit=None):
+        deadline = self.deadlines.get(identity)
+        if deadline is None:
+            return limit
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('sandbox startup deadline exceeded: ' + identity)
+        return remaining if limit is None else min(limit, remaining)
+
     def describe(self, identity):
         if not self.path(identity).exists():
             matches = [self.read(path.stem)['id'] for path in self.records.glob('*.bin')
@@ -178,6 +202,13 @@ class Worker:
             identity = matches[0]
         record = self.read(identity)
         status = self.runtime.status(identity)
+        if record['state'] in ('ready', 'paused') and status['status'] not in ('running', 'paused'):
+            with self.lock(identity):
+                record = self.read(identity)
+                status = self.runtime.status(identity)
+                if record['state'] in ('ready', 'paused') and status['status'] not in ('running', 'paused'):
+                    record.update(state='failed', error='runtime was lost or exited outside a lifecycle operation')
+                    self.write(record)
         # Secret guest control tokens stay in the worker's private record.
         return {key: value for key, value in {**record, 'runtime_status': status}.items()
                 if key not in ('agent',)}
@@ -193,7 +224,7 @@ class Worker:
         return self.runtime.agent(identity, record['agent'])
 
     def command_start(self, identity, process_id, command=None, argv=None, cwd='/workspace',
-                      env=None, user=None, timeout=None, shell=None):
+                      env=None, user=None, timeout=None, shell=None, max_output_bytes=None, pty=False):
         spec = self.read(identity)['spec']
         if (command is None) == (argv is None):
             raise ValueError('provide exactly one command string or argv')
@@ -205,7 +236,9 @@ class Worker:
             raise ValueError('shell cannot be combined with argv')
         return self.agent(identity).call('spawn', identity=process_id, argv=argv, cwd=cwd,
                                          env={**spec.get('env', {}), **(env or {})},
-                                         user=user or spec['template'].get('user', 'root'), timeout=timeout)
+                                         user=user or spec['template'].get('user', 'root'), timeout=timeout,
+                                         max_output_bytes=max_output_bytes if max_output_bytes is not None else
+                                         spec['template'].get('runtime_options', {}).get('max_output_bytes', 64*1024**2), pty=pty)
 
     def process_status(self, identity, process_id):
         return self.agent(identity).call('status', identity=process_id)
@@ -218,6 +251,9 @@ class Worker:
 
     def process_terminate(self, identity, process_id):
         return self.agent(identity).call('terminate', identity=process_id)
+
+    def process_resize(self, identity, process_id, rows, cols):
+        return self.agent(identity).call('resize', identity=process_id, rows=rows, cols=cols)
 
     def file(self, identity, **params):
         return self.agent(identity).call('file', **params)
@@ -236,7 +272,7 @@ class Worker:
         content = step['files'][step['script']]
         argv = [script] if content.startswith(b'#!') else ['/bin/sh', script]
         self.command_start(identity, process, argv=argv, cwd=directory,
-                           user=step.get('user', 'root'), timeout=step.get('timeout'))
+                           user=step.get('user', 'root'), timeout=self.remaining(identity, step.get('timeout')))
         while (status := self.process_status(identity, process))['returncode'] is None:
             time.sleep(.02)
         if status['returncode']:
@@ -324,6 +360,7 @@ class Worker:
         context = Context(self, identity)
         spec = self.read(identity)['spec']
         for name, service in spec['template']['services'].items():
+            self.remaining(identity)
             command = service['command']
             process = uuid.uuid4().hex
             self.command_start(identity, process,
@@ -334,7 +371,7 @@ class Worker:
             self.process_stdin(identity, process, close=True)
             ready = service.get('ready', {}).get('exec')
             if ready:
-                deadline = time.monotonic() + service.get('ready_timeout', 120)
+                deadline = time.monotonic() + self.remaining(identity, service.get('ready_timeout', 120))
                 while True:
                     if self.process_status(identity, process)['returncode'] is not None:
                         raise SetupError('template service exited before readiness: ' + name)
@@ -372,6 +409,56 @@ class Worker:
             raise UnsupportedFeature('template does not provide controls: ' + name)
         return self.controls[identity][name].call(method, parameters)
 
+    def pool(self, action, name=None, arguments=None, lease_id=None):
+        from .pool import Pool
+        from .resources import CPU, GPU, Memory
+        if action == 'list':
+            return [self.pool('status', key) for key in list(self.pools)]
+        if action == 'create':
+            options = dict(arguments['options'])
+            for key, kind in (('cpu', CPU), ('memory', Memory), ('gpu', GPU)):
+                if isinstance(options.get(key), dict):
+                    options[key] = kind(**options[key])
+            pool = Pool(size=arguments['size'], warm=arguments['warm'], target=self.endpoint, **options)
+            with self.guard:
+                if name in self.pools or self.stopping:
+                    raise FileExistsError('named pool already exists or worker is stopping')
+                self.pools[name] = {'pool': pool, 'leases': {}}
+            try:
+                pool.start()
+            except BaseException:
+                pool.close()
+                self.pools.pop(name)
+                raise
+        if name not in self.pools:
+            raise FileNotFoundError('named pool is not running on this worker: ' + str(name))
+        record = self.pools[name]
+        pool = record['pool']
+        if action in ('status', 'create'):
+            with pool.condition:
+                return {'name': name, 'size': pool.size, 'warm': pool.warm, 'ready': len(pool.idle),
+                        'active': len(pool.active), 'pending': pool.pending,
+                        'sandboxes': sorted(env.id for env in pool.all), 'closed': pool.closed}
+        if action == 'checkout':
+            lease = pool.acquire()
+            env = lease.__enter__()
+            identity = uuid.uuid4().hex
+            with self.guard:
+                record['leases'][identity] = lease
+            return {'lease_id': identity, 'id': env.id}
+        if action == 'release':
+            with self.guard:
+                lease = record['leases'].pop(lease_id, None)
+            if lease is not None:
+                lease.__exit__(None, None, None)
+            return None
+        if action == 'close':
+            pool.close()
+            with self.guard:
+                self.pools.pop(name, None)
+            return {'closed': True, 'name': name}
+        raise ValueError('unknown pool operation')
+
     def dispatch(self, operation, parameters):
         if operation == '_debug_threads':
             import sys
@@ -379,16 +466,25 @@ class Worker:
             return {str(identity): ''.join(traceback.format_stack(frame))
                     for identity, frame in sys._current_frames().items()}
         if operation == '_shutdown_if_idle':
-            if any(self.runtime.status(p.stem)['status'] in ('running', 'paused', 'starting')
-                   for p in self.records.glob('*.bin')):
-                raise RuntimeError('worker still owns live sandboxes')
+            with self.guard:
+                if self.pools:
+                    raise RuntimeError('worker still owns named pools')
+                if any(self.read(p.stem)['state'] in ('creating', 'preparing') or
+                       self.runtime.status(p.stem)['status'] in ('running', 'paused', 'starting')
+                       for p in self.records.glob('*.bin')):
+                    raise RuntimeError('worker still owns live sandboxes')
+                self.stopping = True
+                self.mark_stopping()
             threading.Thread(target=self.shutdown, daemon=True).start()
             return {'stopping': True}
         allowed = {'create', 'describe', 'list', 'command_start', 'process_status', 'process_output',
                    'process_stdin', 'process_terminate', 'file', 'setup', 'pause', 'resume', 'terminate',
                    'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
+        allowed.add('pool')
+        allowed.add('process_resize')
         if operation == 'ping':
-            return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root)}
+            return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
+                    'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
@@ -400,11 +496,20 @@ class Worker:
 
 def serve(metadata_path):
     root = prepare()
+    authority = (root / '.worker.lock').open('a')
+    try:
+        fcntl.flock(authority, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        authority.close()
+        raise RuntimeError('another worker already owns this resource workspace') from None
     worker = Worker(root)
     token = secrets.token_hex(32)
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
+        # Flush the small RPC header and body together. Splitting them across
+        # forwarded TCP streams can incur a delayed ACK for each small reply.
+        wbufsize = 64 * 1024
 
         def setup(self):
             super().setup()
@@ -439,10 +544,20 @@ def serve(metadata_path):
 
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     server.daemon_threads = True
+    from .targets import Endpoint
+    worker.endpoint = Endpoint(server.server_port, token)
     worker.shutdown = server.shutdown
-    atomic_json(metadata_path, {'hostname': socket.gethostname(), 'pid': os.getpid(),
-                               'port': server.server_port, 'token': token, 'workspace': str(root)})
-    server.serve_forever(poll_interval=.1)
+    information = {'hostname': socket.gethostname(), 'pid': os.getpid(), 'status': 'ready',
+                   'port': server.server_port, 'token': token, 'workspace': str(root)}
+    worker.mark_stopping = lambda: atomic_json(metadata_path, {**information, 'status': 'stopping'})
+    atomic_json(metadata_path, information)
+    try:
+        server.serve_forever(poll_interval=.1)
+    finally:
+        server.server_close()
+        authority.close()
+        if metadata_path.exists() and json.loads(metadata_path.read_text()).get('pid') == os.getpid():
+            metadata_path.unlink()
 
 
 def main():

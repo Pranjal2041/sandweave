@@ -48,3 +48,7 @@ class CommandError(SandboxError):
 
 class CommandTimeout(CommandError, TimeoutError):
     pass
+
+
+class OutputLimitExceeded(CommandError):
+    pass

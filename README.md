@@ -1,6 +1,10 @@
-# General VM: no-KVM Slurm lab
+# Sandweave: sandboxes without host sudo or KVM
 
-Current runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's runtime code remains untouched.
+The Python SDK and `sandweave` CLI implement the agreed template/sandbox contract.
+See [installation and usage](notes/sdk-usage.md) and
+[current acceptance](notes/sdk-implementation-progress.md).
+
+Default runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's runtime code remains untouched.
 
 The [feature inventory](notes/feature-inventory.md) lists execution modes,
 lifecycle and snapshots, resource/network controls, desktops, automation,
@@ -13,14 +17,16 @@ tracks which parts of the agreed API have passed current end-to-end tests.
 
 ## Agreed public API contract (v1)
 
-**Agreed on 2026-09-08; SDK/CLI implementation in progress.** `sandweave`
-(Sandweave) is the working package/CLI name. This section is the source of truth
+**Agreed on 2026-09-08; implemented as Sandweave 0.1.0.** `sandweave`
+is the package/CLI name. This section is the source of truth
 for implementation and the future public repository. Preserve these examples,
 names, defaults, return semantics and lifecycle behavior. Any public contract
 change requires an explicit agreed revision; do not silently substitute a
 different interface during implementation. The [detailed contract](notes/sandbox-api-proposal.md)
 and [extended examples](notes/sandbox-api-examples.md) must stay consistent with
-this section. Existing lab scripts below remain the implemented interface.
+this section. The lab scripts below also remain available. The SDK currently
+uses configured, prepared runtime assets; the wheel does not include large
+images, runtime binaries or game downloads.
 
 ### A coding sandbox
 

@@ -1,5 +1,6 @@
 """Explicit worker placement. A client connection never owns unrelated jobs."""
 import json
+import asyncio
 import argparse
 import atexit
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ import uuid
 
 from .connection import Connection
 from .errors import ResourceUnavailable
-from .workspace import home, locked, atomic_json
+from .workspace import home, locked, atomic_json, worker_key
 from .asyncio import dualmethod, dualclassmethod
 from .resources import memory_bytes, positive
 
@@ -87,17 +88,19 @@ def _worker_environment(config):
 
 
 def local_connection():
-    key = socket.gethostname() + '-' + os.environ.get('SLURM_JOB_ID', 'local')
+    key = worker_key()
     directory = home() / 'connections' / key
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     metadata = directory / 'worker.json'
     with locked(directory / 'startup.lock'):
+        _wait_stopping(metadata)
         if metadata.exists():
             info = json.loads(metadata.read_text())
-            connection = Connection('127.0.0.1', info['port'], info['token'])
+            connection = Connection('127.0.0.1', info['port'], info['token'], timeout=2)
             try:
                 connection.call('ping')
-                return connection
+                connection.close()
+                return Connection('127.0.0.1', info['port'], info['token'])
             except Exception:
                 connection.close()
                 # A failed health check is not permission to replace a live
@@ -132,7 +135,7 @@ def local_connection():
 def connect(target=None):
     if target in (None, 'local'):
         return local_connection()
-    if isinstance(target, Slurm):
+    if isinstance(target, (Slurm, Endpoint)):
         return target.connection()
     if isinstance(target, str) and target.startswith('ssh://'):
         target = {'host': target.removeprefix('ssh://')}
@@ -148,13 +151,41 @@ def connect(target=None):
     if 'job_id' in target:
         return Slurm.connect(target['job_id'], **{k: v for k, v in target.items() if k != 'job_id'}).connection()
     host = target['host']
-    command = ['env', *[f'{k}={v}' for k, v in _worker_environment(target).items()],
-               target.get('python', 'python3'), '-m', 'sandweave.sandbox.targets', '--ensure']
+    if target.get('metadata'):
+        command = [target.get('python', 'python3'), '-c',
+                   'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))', str(target['metadata'])]
+    else:
+        command = ['env', *[f'{k}={v}' for k, v in _worker_environment(target).items()],
+                   target.get('python', 'python3'), '-m', 'sandweave.sandbox.targets', '--ensure']
     info = json.loads(_ssh(host, command))
     port = _tunnel(host, info['port'])
     connection = Connection('127.0.0.1', port, info['token'])
     connection.call('ping')
     return connection
+
+
+def _wait_stopping(metadata):
+    deadline = time.monotonic() + 15
+    while metadata.exists():
+        try:
+            info = json.loads(metadata.read_text())
+        except FileNotFoundError:
+            return
+        if info.get('status') != 'stopping':
+            return
+        if time.monotonic() >= deadline:
+            raise ResourceUnavailable('worker has not completed its acknowledged shutdown')
+        time.sleep(.05)
+
+
+@dataclass
+class Endpoint:
+    """Worker-local placement for pools; credentials never enter public state."""
+    port: int
+    token: str
+
+    def connection(self):
+        return Connection('127.0.0.1', self.port, self.token)
 
 
 @dataclass
@@ -172,7 +203,7 @@ class Slurm:
 
     @dualclassmethod
     def acquire(cls, *, gpu=None, cpus=1, memory='4GiB', partition=None, qos=None,
-                walltime='1h', account=None, queue_timeout=None, **config):
+                walltime='1h', account=None, queue_timeout=None, _cancel_event=None, **config):
         positive(cpus, 'cpus', integer=True)
         identifier = 'allocation-' + uuid.uuid4().hex
         directory = home() / 'allocations' / identifier
@@ -199,12 +230,28 @@ class Slurm:
         allocation = cls(job_id, {**config, 'metadata': str(directory / 'worker.json'), 'cpus': cpus}, owned=True)
         started = time.monotonic()
         try:
-            allocation._wait(queue_timeout)
+            allocation._wait(queue_timeout, cancel_event=_cancel_event)
         except BaseException:
             allocation.close()
             raise
         allocation.queue_seconds = time.monotonic() - started
         return allocation
+
+    @acquire.async_impl
+    async def _acquire_async(cls, **kwargs):
+        cancelled = threading.Event()
+        task = asyncio.create_task(asyncio.to_thread(cls.acquire, _cancel_event=cancelled, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled.set()
+            try:
+                allocation = await asyncio.shield(task)
+            except InterruptedError:
+                pass
+            else:
+                await allocation.close.aio()
+            raise
 
     def _job(self):
         result = subprocess.run(['scontrol', 'show', 'job', '-o', self.job_id],
@@ -214,9 +261,11 @@ class Slurm:
             raise ResourceUnavailable('Slurm job is not owned by this user')
         return fields
 
-    def _wait(self, timeout=300):
+    def _wait(self, timeout=300, cancel_event=None):
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError('allocation request cancelled')
             job = self._job()
             if job['JobState'] == 'RUNNING':
                 return job
@@ -240,6 +289,7 @@ class Slurm:
         # The worker never inherits CPUs/GPUs from the SSH daemon's environment.
         if 'metadata' not in self.config:
             with locked(directory / 'startup.lock'):
+                _wait_stopping(metadata)
                 info = json.loads(metadata.read_text()) if metadata.exists() else None
                 if info is not None and info.get('hostname') == hostname:
                     # Health failure alone does not permit replacing a live

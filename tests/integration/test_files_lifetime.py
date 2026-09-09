@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 
-from sandweave import Sandbox, ResourceUnavailable
+from sandweave import Sandbox, ResourceUnavailable, OutputLimitExceeded
 from sandweave.sandbox.targets import local_connection
 
 pytestmark = [pytest.mark.integration,
@@ -69,3 +69,36 @@ def test_admission_and_unique_live_names():
             assert same.id == env.id
     with Sandbox(name=name):
         pass
+
+
+def test_idle_connection_and_bounded_output():
+    with Sandbox() as env:
+        env.files.write_text('/workspace/idle', 'before')
+        time.sleep(65)  # Previously exceeded the guest HTTP keepalive timeout.
+        assert env.files.read_text('/workspace/idle') == 'before'
+        with pytest.raises(OutputLimitExceeded) as failed:
+            env.run("python -c 'import os; exec(\"while True: os.write(1,b*x)\".replace(\"b*x\",\"bytes(65536)\"))'",
+                    max_output_bytes=2*1024**2, timeout=10)
+        assert failed.value.result.output_limited
+        assert len(failed.value.stdout) <= 1024**2
+        assert env.run('echo alive').stdout == 'alive\n'
+
+
+def test_directory_transfer_and_open_handle_ram_restore(tmp_path):
+    from sandweave.sandbox.files import RemoteFile
+    source = tmp_path / 'source'
+    (source / 'empty').mkdir(parents=True)
+    (source / 'value').write_text('abcdefgh')
+    with Sandbox() as env:
+        env.files.upload(source, '/workspace/tree')
+        destination = env.files.download('/workspace/tree', tmp_path / 'copy')
+        assert (destination / 'empty').is_dir()
+        assert (destination / 'value').read_text() == 'abcdefgh'
+        stream = RemoteFile(env, '/workspace/tree/value', 'rb')
+        stream.seek(3)
+        env.run('rm /workspace/tree/value')
+        saved = env.snapshot(state='memory')
+        with Sandbox(snapshot=saved) as clone:
+            assert clone._call('file', op='read', handle=stream.handle, size=5) == b'defgh'
+            clone._call('file', op='close', handle=stream.handle)
+        stream.close()

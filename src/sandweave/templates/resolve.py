@@ -96,7 +96,7 @@ def resolve(source='coding', _seen=()):
                 'capabilities': {}, 'setup_steps': [], 'runtime_options': {},
                 'user': 'root', 'command_shell': '/bin/sh'}
     result = merge(base, config)
-    result['name'] = identity
+    result['name'] = config.get('name', identity)
     if setup:
         if not isinstance(setup, dict) or 'script' not in setup:
             raise ValueError('setup must declare a script')

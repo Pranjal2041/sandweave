@@ -24,6 +24,8 @@ __pycache__/
 /build/
 /dist/
 /src/*.egg-info/
+/examples/pointmass/build/
+/examples/pointmass/*.egg-info/
 .env
 .env.*
 !.env.example

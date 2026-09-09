@@ -91,7 +91,7 @@ class AttachedDesktop:
         if backend != 'xvnc':
             raise UnsupportedFeature('desktop fast I/O currently supports xvnc; Wayland is an explicit lab option')
         self.client = context.runtime.manager.fast_io(context.id, backend=backend)
-        deadline = time.monotonic() + config.get('ready_timeout', 120)
+        deadline = time.monotonic() + context.remaining(config.get('ready_timeout', 120))
         while True:
             try:
                 self.client.screenshot()

@@ -3,6 +3,7 @@
 import copy
 import fcntl
 import json
+import os
 from pathlib import Path
 import shutil
 import socket
@@ -107,6 +108,25 @@ class SnapshotStoreTest(unittest.TestCase):
     def test_corruption_after_initial_verification_is_detected(self):
         self.assertEqual(snapshot_store.verify(self.lab, self.snapshot)['status'], 'passed')
         (self.snapshot / 'pages.img').write_bytes(b'Memory and files')
+        self.assertEqual(snapshot_store.verify(self.lab, self.snapshot)['status'], 'failed')
+
+    def test_pinned_image_allows_link_metadata_churn_but_checks_bytes(self):
+        image = self.lab / 'images/base'
+        self.manifest['base_image']['sha256'] = runtime_store.digest(image)
+        snapshot_store.write_json(self.snapshot / 'snapshot-manifest.json', self.manifest)
+        original = runtime_store.digest
+        def link_while_reading(path):
+            result = original(path)
+            if path == image:
+                alias = self.lab / 'new-worker-base'
+                alias.unlink(missing_ok=True)
+                os.link(image, alias)
+            return result
+        with mock.patch.object(runtime_store, 'digest', side_effect=link_while_reading):
+            self.assertEqual(snapshot_store.verify(self.lab, self.snapshot)['status'], 'passed')
+        previous = image.stat()
+        image.write_bytes(b'corrupted base')
+        os.utime(image, ns=(previous.st_atime_ns, previous.st_mtime_ns))
         self.assertEqual(snapshot_store.verify(self.lab, self.snapshot)['status'], 'failed')
 
     def test_failed_snapshot_stays_blocked_during_retry(self):

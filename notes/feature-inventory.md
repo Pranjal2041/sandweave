@@ -1,5 +1,10 @@
 # Sandbox feature inventory
 
+The installable SDK/CLI now provides the agreed contract over this engine.
+See [SDK usage](sdk-usage.md) and [current acceptance](sdk-implementation-progress.md)
+for what was exercised in the September 9 implementation. Application-specific
+results below retain their original historical scope.
+
 Inventory of the standalone lab, based on committed implementation and saved
 acceptance through September 8, 2026. This inventory involved no environment
 launches or new runtime tests. Historical notes sometimes describe an earlier

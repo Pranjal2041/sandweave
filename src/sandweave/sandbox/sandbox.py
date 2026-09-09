@@ -21,6 +21,19 @@ class Sandbox:
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False):
+        options = dict(locals()); options.pop('self')
+        self._connection = None
+        try:
+            self._initialize(**options)
+        except BaseException:
+            if self._connection is not None:
+                self._connection.close()
+            raise
+
+    def _initialize(self, *, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
+                    cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
+                    env=None, mounts=None, name=None, ttl=None, startup_timeout=300, keep_on_error=False,
+                    refresh=False, experimental_gpu_live=False):
         if sum(x is not None for x in (cache, snapshot)) > 1:
             raise ValueError('cache and snapshot are alternative sources')
         reference = cache if cache is not None else snapshot
@@ -120,11 +133,14 @@ class Sandbox:
         return copy.deepcopy(self._info.get('capabilities', {}))
 
     def capability(self, name):
-        from ..templates.controls import provider
+        from ..templates.controls import provider, implementation
         config = self._info['spec']['template']['capabilities'].get(name)
         if config is None:
             raise UnsupportedFeature('this template does not provide ' + name + ' controls')
         if name not in self._controls:
+            expected = self._info.get('capabilities', {}).get(name, {}).get('implementation')
+            if expected is not None and implementation(config.get('provider', name)) != expected:
+                raise UnsupportedFeature('client and worker control provider versions differ: ' + name)
             self._controls[name] = provider(config.get('provider', name)).bind(self, config)
         return self._controls[name]
 
@@ -136,6 +152,13 @@ class Sandbox:
     def vr(self):
         return self.capability('vr')
 
+    def __getattr__(self, name):
+        # Installed template controls get the same convenient attribute access.
+        information = self.__dict__.get('_info', {})
+        if name in information.get('capabilities', {}):
+            return self.capability(name)
+        raise AttributeError(name)
+
     @dualmethod
     def status(self):
         self._info = self._call('describe')
@@ -143,10 +166,11 @@ class Sandbox:
 
     @dualmethod
     def exec(self, command=None, *, argv=None, cwd='/workspace', env=None, user=None,
-             timeout=None, shell=None, binary=False):
+             timeout=None, shell=None, binary=False, max_output_bytes=None, pty=False):
         identity = uuid.uuid4().hex
         self._call('command_start', process_id=identity, command=command, argv=argv,
-                    cwd=cwd, env=env, user=user, timeout=timeout, shell=shell)
+                    cwd=cwd, env=env, user=user, timeout=timeout, shell=shell, max_output_bytes=max_output_bytes,
+                    **({'pty': pty} if pty else {}))
         return Process(self, identity, binary=binary)
 
     @exec.async_impl
@@ -161,9 +185,9 @@ class Sandbox:
 
     @dualmethod
     def run(self, command=None, *, argv=None, cwd='/workspace', env=None, user=None,
-            timeout=None, shell=None, check=True, binary=False):
+            timeout=None, shell=None, check=True, binary=False, max_output_bytes=None, pty=False):
         process = self.exec(command, argv=argv, cwd=cwd, env=env, user=user,
-                            timeout=timeout, shell=shell, binary=binary)
+                            timeout=timeout, shell=shell, binary=binary, max_output_bytes=max_output_bytes, pty=pty)
         process.stdin.close()
         process.wait()
         result = process.result()

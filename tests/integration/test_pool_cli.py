@@ -90,3 +90,65 @@ def test_cli_commands_names_streams_and_exit_codes():
     finally:
         stopped = cli('terminate', created.stdout.strip())
         assert stopped.returncode == 0, stopped.stderr
+
+
+def test_async_pool_order_failure_and_cancelled_waiter():
+    async def exercise():
+        async with Pool(size=2, warm=1) as pool:
+            async def evaluate(env, value):
+                if value == 2:
+                    raise ValueError('expected task failure')
+                return (await env.run.aio('echo ' + str(value))).stdout.strip()
+            results = [item async for item in pool.map.aio(evaluate, range(4), return_exceptions=True)]
+            assert results[:2] == ['0', '1'] and isinstance(results[2], ValueError) and results[3] == '3'
+            async with pool.acquire(), pool.acquire():
+                lease = pool.acquire()
+                task = asyncio.create_task(lease.__aenter__())
+                await asyncio.sleep(.2)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 5)
+        assert not pool.all
+    asyncio.run(exercise())
+
+
+def test_cli_stdin_passes_through():
+    value = subprocess.run([sys.executable, '-m', 'sandweave.cli', 'run', '--', 'cat'],
+                           input='pipe € input\n', capture_output=True, text=True, timeout=90)
+    assert value.returncode == 0 and value.stdout == 'pipe € input\n', value.stderr
+
+
+def test_cli_named_pool_persists_across_clients():
+    import json
+    name = 'pool-' + uuid.uuid4().hex
+    def cli(*args):
+        result = subprocess.run([sys.executable, '-m', 'sandweave.cli', *args],
+                                capture_output=True, text=True, timeout=90)
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+    created = json.loads(cli('pool', 'create', '--name', name, '--size', '2', '--warm', '1'))
+    assert created['ready'] == 1
+    try:
+        assert cli('pool', 'exec', name, '--', 'test ! -e /workspace/dirty; touch /workspace/dirty; echo clean') == 'clean\n'
+        assert cli('pool', 'exec', name, '--', 'test ! -e /workspace/dirty && echo independent') == 'independent\n'
+        assert json.loads(cli('pool', 'status', name))['active'] == 0
+    finally:
+        cli('pool', 'close', name)
+
+
+def test_startup_deadline_includes_setup_and_preserves_diagnostics(tmp_path):
+    from sandweave import SandboxError
+    script = tmp_path / 'too-slow.sh'
+    script.write_text('#!/bin/sh\nsleep 30\n')
+    started = time.monotonic()
+    with pytest.raises((SandboxError, TimeoutError)) as failed:
+        Sandbox(setup=script, startup_timeout=2, keep_on_error=True)
+    assert time.monotonic()-started < 12
+    identity = failed.value.sandbox_id
+    assert identity
+    with Sandbox.connect(identity) as retained:
+        try:
+            assert retained.status()['state'] == 'failed'
+            assert retained.run('echo diagnosis').stdout == 'diagnosis\n'
+        finally:
+            retained.terminate()

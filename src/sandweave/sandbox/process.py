@@ -5,7 +5,7 @@ import io
 import time
 
 from .asyncio import dualmethod
-from .errors import CommandError, CommandTimeout
+from .errors import CommandError, CommandTimeout, OutputLimitExceeded
 
 INLINE_LIMIT = 1024**2
 
@@ -18,6 +18,7 @@ class CommandResult:
     timings: dict = field(default_factory=dict)
     truncated: dict = field(default_factory=dict)
     output_refs: dict = field(default_factory=dict)
+    output_limited: bool = False
 
 
 class OutputStream:
@@ -44,6 +45,9 @@ class OutputStream:
             self.buffer += chunk
             if not self.raw_received:
                 if self.process.poll() is not None:
+                    self.buffer += self._chunk()
+                    if self.raw_received:
+                        continue
                     if not self.binary:
                         self.buffer += self.decoder.decode(b'', final=True)
                     break
@@ -60,6 +64,9 @@ class OutputStream:
             self.buffer += chunk
             if not self.raw_received:
                 if self.process.poll() is not None:
+                    self.buffer += self._chunk()
+                    if self.raw_received:
+                        continue
                     if not self.binary:
                         self.buffer += self.decoder.decode(b'', final=True)
                     result, self.buffer = self.buffer, self.buffer[:0]
@@ -130,6 +137,7 @@ class Process:
             data = self.sandbox._call('process_output', process_id=self.id, stream=stream, offset=0, size=limit)
             outputs[stream] = data if self.binary else data.decode(errors='replace')
         return CommandResult(**outputs, returncode=state['returncode'],
+                             output_limited=state.get('output_limited', False),
                              timings={'guest_seconds': (state['finished_ns'] - state['started_ns'])/1e9},
                              truncated={s: state[s+'_size'] > limit for s in outputs},
                              output_refs={s: {'sandbox': self.sandbox.id, 'process': self.id, 'stream': s}
@@ -141,6 +149,9 @@ class Process:
         while True:
             state = self.sandbox._call('process_status', process_id=self.id)
             if state['returncode'] is not None:
+                if state.get('output_limited'):
+                    raise OutputLimitExceeded('combined command output exceeded its spool budget',
+                                              result=self.result(), operation_id=self.id)
                 if state.get('timed_out'):
                     raise CommandTimeout('guest execution deadline exceeded', result=self.result(), operation_id=self.id)
                 if check and state['returncode']:
@@ -154,3 +165,7 @@ class Process:
     def terminate(self):
         self.sandbox._call('process_terminate', process_id=self.id)
         return self.wait(timeout=10)
+
+    @dualmethod
+    def resize(self, rows, cols):
+        return self.sandbox._call('process_resize', process_id=self.id, rows=rows, cols=cols)

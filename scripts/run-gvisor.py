@@ -176,6 +176,11 @@ mount_file.write_text(json.dumps(mounts))
 launch_settings['external_mounts'] = mounts
 if snapshot_manifest is not None:
     launch_settings['base_image'] = snapshot_manifest['base_image']
+elif (lab / 'sandweave-assets.json').is_file():
+    base_path = 'images/gvisor-ubuntu-ready-ae303ca.erofs'
+    image = json.loads((lab / 'sandweave-assets.json').read_text()).get('images', {}).get(base_path)
+    if image:
+        launch_settings['base_image'] = {'path': base_path, **image}
 (bundle / 'launch-settings.json').write_text(json.dumps(launch_settings, indent=2) + '\n')
 mark('bundle_runtime_seconds')
 if args.restore:

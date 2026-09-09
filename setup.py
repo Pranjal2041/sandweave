@@ -11,9 +11,11 @@ class BuildPy(build_py):
         super().run()
         root = Path(__file__).parent
         destination = Path(self.build_lib) / 'sandweave/sandbox/runtimes/gvisor/_engine'
+        if destination.exists():
+            shutil.rmtree(destination)
         destination.mkdir(parents=True, exist_ok=True)
         for source in (root / 'scripts').iterdir():
-            if source.suffix in ('.py', '.sh', '.c') and not source.name.startswith('test-'):
+            if source.suffix in ('.py', '.sh', '.c') and not source.name.startswith(('test-', 'sdk-')):
                 shutil.copy2(source, destination / source.name)
 
 

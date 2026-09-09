@@ -71,3 +71,51 @@ def test_sync_and_async_descriptor_bind_same_instance_and_class():
         assert await instance.get.aio() == 42
         assert instance.get() == 42
     asyncio.run(run())
+
+
+def test_worker_identity_separates_cpu_and_gpu_eligibility(monkeypatch):
+    from sandweave.sandbox.workspace import worker_key
+    import os
+    affinity = sorted(os.sched_getaffinity(0))
+    monkeypatch.setattr(os, 'sched_getaffinity', lambda _: {affinity[0]})
+    first = worker_key()
+    monkeypatch.setenv('CUDA_VISIBLE_DEVICES', 'different-eligible-device')
+    assert worker_key() != first
+    second = worker_key()
+    monkeypatch.setattr(os, 'sched_getaffinity', lambda _: {affinity[0], affinity[0]+1})
+    assert worker_key() != second
+
+
+def test_workspace_lock_serializes_threads_and_releases_after_errors(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+    from sandweave.sandbox.workspace import locked
+    path = tmp_path / 'shared.lock'
+    active = 0
+    def enter(index):
+        nonlocal active
+        try:
+            with locked(path):
+                assert active == 0
+                active += 1
+                time.sleep(.001)
+                active -= 1
+                if index % 3 == 0:
+                    raise RuntimeError('exercise exceptional release')
+        except RuntimeError:
+            pass
+        return index
+    with ThreadPoolExecutor(32) as executor:
+        assert list(executor.map(enter, range(128))) == list(range(128))
+    with locked(path):
+        assert active == 0
+
+
+@pytest.mark.parametrize('method', ['read', 'readline'])
+def test_stream_drains_bytes_arriving_between_empty_read_and_exit(method):
+    from types import SimpleNamespace
+    from sandweave.sandbox.process import OutputStream
+    chunks = iter([b'', b'last output\n', b'', b''])
+    process = SimpleNamespace(id='test', poll=lambda: 0,
+                              sandbox=SimpleNamespace(_call=lambda *a, **k: next(chunks)))
+    assert getattr(OutputStream(process, 'stdout'), method)() == 'last output\n'

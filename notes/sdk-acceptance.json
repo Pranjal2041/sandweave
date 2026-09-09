@@ -1,0 +1,377 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-09",
+  "package": "sandweave",
+  "version": "0.1.0",
+  "scope": "SDK and CLI implementation around the existing no-sudo/no-KVM engine; prepared external assets required",
+  "host_regressions": {
+    "tests": 107,
+    "subtests": 16,
+    "includes_sdk_host_tests": 16,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": 1.17,
+    "command": "PYTHONPATH=src:scripts python -m pytest tests/test_foundations.py tests/test_cli_config.py scripts/test-alyx-probe.py scripts/test-cpu-broker.py scripts/test-environment.py scripts/test-ethernet-relay.py scripts/test-fast-io.py scripts/test-filesystem-snapshot.py scripts/test-gvisor-gpu.py scripts/test-gvisor-mps.py scripts/test-network-policy.py scripts/test-runtime-store.py scripts/test-snapshot-store.py scripts/test-vnc-zrle.py scripts/test-vr-stream.py -q"
+  },
+  "application_acceptance": {
+    "cua": {
+      "catalog_entries": 100,
+      "repetitions": 500,
+      "passed": 500,
+      "visual_verdicts": 480,
+      "raw_tap_without_visual_oracle": 20
+    },
+    "gunspinning": [
+      "flat SDL gamepad range firing",
+      "VR controller range, firing/reload/head and hand poses",
+      "actual left/right/SBS recordings; no headset scanout claim"
+    ],
+    "opensaber": "paired menu/control/pause/filesystem-restore integration"
+  },
+  "pool_scale": {
+    "size": 32,
+    "warm": 8,
+    "tasks": 64,
+    "complete": true,
+    "initial_ready_seconds": 10.113274118863046,
+    "map_seconds": 9.87197702913545,
+    "unique_guests": 64,
+    "peak_callbacks": 32,
+    "total_seconds": 20.84591114288196
+  },
+  "installed_wheel": {
+    "wheel": "dist/sandweave-0.1.0-py3-none-any.whl",
+    "sha256": "0c8c14444d20aa767ea6b3215aae863fc0605c18be044df66bdfe0b0e5474edf",
+    "bytes": 293227,
+    "matched_authored_source_files": 180
+  },
+  "performance": {
+    "context": "installed wheel from /tmp; remote SSH-forwarded worker; existing 12-CPU/96GiB/L40S allocation; other task acceptance idle",
+    "first_worker_guest_command_ms": 7210.51943814382,
+    "latency": {
+      "cold_after_worker_first_command": {
+        "n": 19,
+        "p50_ms": 812.8152887802571,
+        "p95_ms": 897.981618065387,
+        "p99_ms": 897.981618065387,
+        "max_ms": 1037.660286994651
+      },
+      "guest_shell_true": {
+        "n": 100,
+        "p50_ms": 15.427192905917764,
+        "p95_ms": 27.11054589599371,
+        "p99_ms": 51.58748500980437,
+        "max_ms": 54.36697578988969
+      },
+      "direct_true": {
+        "n": 100,
+        "p50_ms": 15.292169991880655,
+        "p95_ms": 21.44314208999276,
+        "p99_ms": 53.024962078779936,
+        "max_ms": 56.06808699667454
+      },
+      "filesystem_restore_first_command": {
+        "n": 20,
+        "p50_ms": 1067.937807412818,
+        "p95_ms": 1113.382123876363,
+        "p99_ms": 1113.382123876363,
+        "max_ms": 1438.9258669689298
+      },
+      "ready_pool_checkout": {
+        "n": 30,
+        "p50_ms": 0.05890592001378536,
+        "p95_ms": 0.06831088103353977,
+        "p99_ms": 0.06958190351724625,
+        "max_ms": 0.07035094313323498
+      },
+      "ready_pool_checkout_first_command": {
+        "n": 30,
+        "p50_ms": 24.834685493260622,
+        "p95_ms": 47.96073888428509,
+        "p99_ms": 52.933938801288605,
+        "max_ms": 55.24225207045674
+      },
+      "pool_refill_wait": {
+        "n": 30,
+        "p50_ms": 732.9009149689227,
+        "p95_ms": 800.0946259126067,
+        "p99_ms": 815.8879450056702,
+        "max_ms": 818.8305490184575
+      }
+    }
+  },
+  "gpu_graphics_memory_restore": "unsupported; filesystem snapshots start fresh GPU processes",
+  "experimental": [
+    "CUDA-only memory capture/restore with opt-in at both ends",
+    "cooperative MPS sharing",
+    "sampled userspace CPU and runtime-memory controls",
+    "preserved Wayland lab path; not newly qualified by SDK tests"
+  ],
+  "outside_current_acceptance": [
+    "all historical application workflows (e.g. Earth, Resolve and Alyx)",
+    "fresh Linux distributions or arbitrary cloud/container providers",
+    "Windows VM or KVM execution",
+    "RoboCasa/articulated robotics (extension example is a toy point mass)",
+    "transparent failover, incremental snapshots or automatic artifact eviction",
+    "optional standalone directory artifact API"
+  ],
+  "engine_revision": "c2f78eb0077f8394917b9bcdece2e521e3150d76",
+  "assets_registry_sha256": "37eec63bee37f8a34738da8289d2dcdb8ced71f061b93b51b0beae8339167f1d",
+  "reports": {
+    "host-final.xml": {
+      "path": "runs/sdk-acceptance/host-final.xml",
+      "sha256": "24552b49e60f5ea6acc37f3e23d2a90d2512a226ee3b60395400aa927437e23d",
+      "bytes": 13918
+    },
+    "release-final.xml": {
+      "path": "runs/sdk-acceptance/release-final.xml",
+      "sha256": "4c366bc581f0f0f31458dabeb9446906c6f4308f3d2084eccf3e5cf8d2fe854f",
+      "bytes": 7620
+    },
+    "installed-final.json": {
+      "path": "runs/sdk-acceptance/installed-final.json",
+      "sha256": "556dd5f900b25467d6cf8610af9431398e60fafe61af92e4ffbe6417bd70ca4e",
+      "bytes": 24240
+    },
+    "wheel-sources.json": {
+      "path": "runs/sdk-acceptance/wheel-sources.json",
+      "sha256": "e7ff9dbb486c8d0c637d4fb52eac0f18298a54afb8312cf121f88812279ae1d3",
+      "bytes": 193
+    },
+    "scale-32.json": {
+      "path": "runs/sdk-acceptance/scale-32.json",
+      "sha256": "24dbafccc7cf46f14a3ed9687d7cdd10435d7ae638faa45392960730dbd96c44",
+      "bytes": 771
+    },
+    "multiworker.json": {
+      "path": "runs/sdk-acceptance/multiworker.json",
+      "sha256": "8045a571f008ff832095be4057e068d7a08e0a75b65262354b58abe2b419ee21",
+      "bytes": 1559
+    },
+    "local-gpu.json": {
+      "path": "runs/sdk-acceptance/local-gpu.json",
+      "sha256": "29a1a19333c68b9453159392ccd8792730e561c197bf2f16c55599508833b4f7",
+      "bytes": 231
+    },
+    "cua-full/report.json": {
+      "path": "runs/sdk-acceptance/cua-full/report.json",
+      "sha256": "857095fcbef937ccbda09316dc6769824c59d1e60f241c033838dee33e35f3e5",
+      "bytes": 19556
+    },
+    "gameplay/gamepad-1/result.json": {
+      "path": "runs/sdk-acceptance/gameplay/gamepad-1/result.json",
+      "sha256": "0aecd751dd40ba867ce9d5ed45443d9a0315744063ff2841355c7d64a13063bd",
+      "bytes": 1440
+    },
+    "gameplay/motion-2/result.json": {
+      "path": "runs/sdk-acceptance/gameplay/motion-2/result.json",
+      "sha256": "a9a83ebd8dffa668eec6f73bd3b0a61dca15ce8812560b55c254fe305bb900c3",
+      "bytes": 69779
+    },
+    "gameplay/motion-2/aligned-metrics.json": {
+      "path": "runs/sdk-acceptance/gameplay/motion-2/aligned-metrics.json",
+      "sha256": "e6efdefb1d477781650a969d1593305824eecac270811914eb0a973b7770dc2e",
+      "bytes": 1223
+    },
+    "erofs-final2.log": {
+      "path": "runs/sdk-acceptance/erofs-final2.log",
+      "sha256": "23436fb2d66c940deb610c5abb75a8deb8f842048c2c1dd15161281c13d30565",
+      "bytes": 491
+    },
+    "vr/final-video-verification.json": {
+      "path": "runs/sdk-acceptance/vr/final-video-verification.json",
+      "sha256": "86aa8fb0eca7e21eb050095835a90054dda99fa9c953b8e138d42768fa7bbd3a",
+      "bytes": 1520
+    },
+    "resources/quota.json": {
+      "path": "runs/sdk-acceptance/resources/quota.json",
+      "sha256": "8f1e5a92c84c888e60c051c956afd7f6df9a45e828023f7c625631c2981761e2",
+      "bytes": 52
+    },
+    "resources/sharing.json": {
+      "path": "runs/sdk-acceptance/resources/sharing.json",
+      "sha256": "2dbcbe5d9d51ebe40590051d1d1df1dd9e0e3f2124d852b8e8374e9084b3e4fc",
+      "bytes": 119
+    },
+    "sdist-sources.json": {
+      "path": "runs/sdk-acceptance/sdist-sources.json",
+      "sha256": "2a665b584536eefc725fd297fd4b56dd13ec8b5fe46eaaaa20b10955b216472f",
+      "bytes": 238
+    },
+    "release-node-sources.json": {
+      "path": "runs/sdk-acceptance/release-node-sources.json",
+      "sha256": "cf1cd2440fe63ac59ced4c958ac6d9e610fae8987cf251cd541732c5573fd431",
+      "bytes": 479
+    },
+    "sdist-wheel-verification.json": {
+      "path": "runs/sdk-acceptance/sdist-wheel-verification.json",
+      "bytes": 239,
+      "sha256": "c7cf32498e1639dbaab6e3b2d9b01ea6ff2069d7a3a64bc9df30897095fe3962"
+    },
+    "vr/opensaber-69571713/video-verification.json": {
+      "path": "runs/sdk-acceptance/vr/opensaber-69571713/video-verification.json",
+      "sha256": "11e18a6de0a7d37b876898f11391038d372743dc12deaaeb455f35132cc105f3",
+      "bytes": 3500
+    },
+    "release-qualified.xml": {
+      "path": "runs/sdk-acceptance/release-qualified.xml",
+      "sha256": "e719ac58731fbc9db1f2b481d0bd9c766ba741f6bcdbbe72ed0bcbbe14c581be",
+      "bytes": 7871
+    },
+    "release-artifact-audit.json": {
+      "path": "runs/sdk-acceptance/release-artifact-audit.json",
+      "sha256": "bb1ab8d19323b7f026a8ca25973c4f2b2b7d10dd94fc57b08a66f8972df7f05d",
+      "bytes": 272
+    },
+    "vr/gunspinning-4ad0781b/video-verification.json": {
+      "path": "runs/sdk-acceptance/vr/gunspinning-4ad0781b/video-verification.json",
+      "sha256": "055858b705dbc47af50ec6d495df0a4ea15ddbc1c16e563568130c4983345245",
+      "bytes": 3541
+    },
+    "cleanup.json": {
+      "path": "runs/sdk-acceptance/cleanup.json",
+      "sha256": "aff25bbd6a73fc381348628f68add6c9a9e32d735b871aa26a5e3e45ff6939db",
+      "bytes": 4632
+    }
+  },
+  "sdk_sources_sha256": "0ad06b61c9b4fb10c0195a53a9bb51c9b5524b0b51d3239ebbd5fd78fd7da0a3",
+  "engine_scripts_sha256": "2e5d82ddd1a9fefaad593b00c7b1ca557b4ef72efa7edb65759946c944eeee90",
+  "source_archive": {
+    "path": "dist/sandweave-0.1.0.tar.gz",
+    "bytes": 282130,
+    "sha256": "41f814c5ff65a18affcf87e6f6ab17ecec8fbf20d117e58a6e529a1b41767ee3",
+    "members": 261,
+    "source_checks": "passed",
+    "excluded_generated_and_user_artifacts": true,
+    "builds_equivalent_package": true
+  },
+  "recording_application_fps": {
+    "whole_recording": {
+      "application_frames": 2711,
+      "application_fps": 80.71045407337937,
+      "observed_application_seconds": 33.576815186,
+      "application_frame_interval_ms": {
+        "median": 11.9579235,
+        "p95": 18.256462,
+        "p99": 25.138215,
+        "max": 196.573253
+      },
+      "compositor_frames": 1884,
+      "compositor_fps": 57.15683025116358
+    },
+    "last_10_seconds_of_recording": {
+      "application_frames": 833,
+      "application_fps": 83.39142547583262,
+      "observed_application_seconds": 9.977044945,
+      "application_frame_interval_ms": {
+        "median": 11.952268,
+        "p95": 17.613263,
+        "p99": 21.958887,
+        "max": 23.966847
+      },
+      "compositor_frames": 459,
+      "compositor_fps": 47.54325307058824
+    }
+  },
+  "recording_capture": {
+    "eye_count": 2,
+    "frames_received": 698,
+    "frames_saved": 698,
+    "recorder_dropped": 0,
+    "requested_fps": 30,
+    "observed_fps": 20.972995490506086,
+    "duration_seconds": 33.233211742,
+    "ring_frames_skipped": 998,
+    "meaning": "paired compositor capture cadence; application submission FPS is measured separately"
+  },
+  "gameplay_videos": {
+    "left-eye.mp4": {
+      "path": "runs/sdk-acceptance/gameplay/motion-2/frames/left-eye.mp4",
+      "sha256": "532ad763b1dcfd6d1a02a7a6dd1365ba372b61f2681357980de2cad743e69817",
+      "bytes": 3958095
+    },
+    "right-eye.mp4": {
+      "path": "runs/sdk-acceptance/gameplay/motion-2/frames/right-eye.mp4",
+      "sha256": "78ae67e49ccf2d8ffe91447ab7e865485a875355fcdd65e3fd6e35ededb96de3",
+      "bytes": 3668031
+    },
+    "gameplay.mp4": {
+      "path": "runs/sdk-acceptance/gameplay/motion-2/frames/gameplay.mp4",
+      "sha256": "7bec89136cbf1d123c848f3d7a5067f52c2f0c9cbb9d1a2b4357202ac74f72e7",
+      "bytes": 7815605
+    }
+  },
+  "live_suite_command": "srun --jobid=10367253 --overlap --ntasks=1 --cpus-per-task=12 env SANDWEAVE_HOME=<dedicated-home> SANDWEAVE_ASSETS=<prepared-assets> SANDWEAVE_INTEGRATION=1 SANDWEAVE_GPU_INTEGRATION=1 PYTHONPATH=<checkout>/src python -m pytest tests -v",
+  "prior_combined_run": {
+    "tests": 60,
+    "live_integration_tests": 46,
+    "sdk_host_tests": 14,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": 787.24,
+    "modules": {
+      "tests.integration.test_cuda": 4,
+      "tests.integration.test_desktop": 1,
+      "tests.integration.test_docker": 1,
+      "tests.integration.test_files_lifetime": 6,
+      "tests.integration.test_mounts": 4,
+      "tests.integration.test_native": 2,
+      "tests.integration.test_pool_cli": 7,
+      "tests.integration.test_resources_network": 6,
+      "tests.integration.test_runtime_smoke": 1,
+      "tests.integration.test_sdk": 3,
+      "tests.integration.test_snapshots": 4,
+      "tests.integration.test_terminal": 5,
+      "tests.integration.test_vr": 2,
+      "tests.test_cli_config": 2,
+      "tests.test_foundations": 12
+    }
+  },
+  "latest_complete_combined_run": {
+    "tests": 62,
+    "live_integration_tests": 46,
+    "sdk_host_tests": 16,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 761.403,
+    "modules": {
+      "tests.integration.test_cuda": 4,
+      "tests.integration.test_desktop": 1,
+      "tests.integration.test_docker": 1,
+      "tests.integration.test_files_lifetime": 6,
+      "tests.integration.test_mounts": 4,
+      "tests.integration.test_native": 2,
+      "tests.integration.test_pool_cli": 7,
+      "tests.integration.test_resources_network": 6,
+      "tests.integration.test_runtime_smoke": 1,
+      "tests.integration.test_sdk": 3,
+      "tests.integration.test_snapshots": 4,
+      "tests.integration.test_terminal": 5,
+      "tests.integration.test_vr": 2,
+      "tests.test_cli_config": 3,
+      "tests.test_foundations": 13
+    },
+    "path": "runs/sdk-acceptance/release-qualified.xml"
+  },
+  "unique_automated_tests": 153,
+  "unique_automated_tests_note": "46 live integration tests plus 107 host tests; the 16 SDK host tests in the combined run are counted once. CUA repetitions and standalone acceptance scripts are separate.",
+  "final_snapshot_audit": [
+    {
+      "workspace": "runs/sdk-release-qualified-home/workers/babel-q9-16-10367253-e405e7809482/482be64aa6613d6a",
+      "sandbox_records": {
+        "terminated": 90,
+        "stopped": 8,
+        "failed": 5
+      },
+      "snapshot_verification": {
+        "passed": 27
+      }
+    }
+  ],
+  "cleanup": {
+    "owned_job": "10367253",
+    "state": "CANCELLED",
+    "other_jobs_cancelled_by_final_cleanup": []
+  }
+}

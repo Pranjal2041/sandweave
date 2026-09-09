@@ -20,10 +20,22 @@ class AllocationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'outside'):
                 gvisor_gpu.allocated_device(0)
 
-    def test_missing_allocation_rejected(self):
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(ValueError, 'allocation'):
+    def test_cpu_only_slurm_allocation_cannot_discover_host_devices(self):
+        with patch.dict(os.environ, {'SLURM_JOB_ID': '123', 'SANDWEAVE_GPU_DEVICES': '0'}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'outside'):
                 gvisor_gpu.allocated_device(0)
+
+    def test_local_visibility_uses_nvml_ordinal_and_uuid_not_minor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            info = Path(directory) / 'information'
+            info.write_text('Device Minor: 0\nGPU UUID: GPU-test\n')
+            with patch.dict(os.environ, {'CUDA_VISIBLE_DEVICES': '3', 'NVIDIA_VISIBLE_DEVICES': 'GPU-test'}, clear=True), \
+                 patch.object(Path, 'glob', return_value=[info]), \
+                 patch.object(gvisor_gpu.subprocess, 'check_output', return_value='3, GPU-test\n'), \
+                 patch.object(gvisor_gpu.os, 'open', return_value=42), patch.object(gvisor_gpu.os, 'close'):
+                self.assertEqual(gvisor_gpu.eligible_devices(), [0])
+                os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+                self.assertEqual(gvisor_gpu.eligible_devices(), [])
 
     def test_malformed_allocation_rejected(self):
         with patch.dict(os.environ, {'SLURM_JOB_GPUS': 'all', 'SLURM_STEP_GPUS': ''}):

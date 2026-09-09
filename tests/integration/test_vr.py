@@ -33,7 +33,8 @@ def test_vr_both_eyes_controls_pause_record_and_restore(game):
     directory = Path(os.environ['SANDWEAVE_ASSETS']) / 'runs/sdk-acceptance/vr' / (game + '-' + uuid.uuid4().hex[:8])
     existing = os.environ.get('SANDWEAVE_TEST_VR_EXISTING') if game == 'opensaber' else None
     instance = (Sandbox.connect(existing, target=target()) if existing else
-                Sandbox(template='vr/' + game, gpu='L40S', target=target()))
+                Sandbox(template='vr/' + game, gpu='L40S', target=target(),
+                        network='offline' if game == 'gunspinning' else 'internet'))
     with instance as env:
         assert env.run('test ! -e /dev/kvm').returncode == 0
         observation = env.vr.observe()
@@ -57,12 +58,21 @@ def test_vr_both_eyes_controls_pause_record_and_restore(game):
         assert recording.metadata['eye_count'] == 2
         for path in recording.metadata['videos'].values():
             assert Path(path).stat().st_size > 1000
-        Image.fromarray(env.vr.observe().left).save(directory / 'final-left.png')
-        Image.fromarray(env.vr.observe().right).save(directory / 'final-right.png')
+        final = env.vr.observe()
+        Image.fromarray(final.left).save(directory / 'final-left.png')
+        Image.fromarray(final.right).save(directory / 'final-right.png')
         saved = env.stop()
         assert saved.state == 'filesystem'
     with Sandbox(cache=saved, target=target()) as restored:
+        # A first painted eye can still be the application's splash screen.
+        # Exercise sustained rendering/input after cold restore and preserve
+        # both videos for review of the application's later usable state.
+        with restored.vr.record(directory / 'restored', fps=10):
+            for i in range(60):
+                restored.vr.step({'head': {'position': [.04 if i % 2 else -.04, 1.6, 0]}})
+                time.sleep(.1)
         observation = restored.vr.observe()
         assert observation.left.shape == observation.right.shape
+        assert np.any(observation.left != observation.right)
         Image.fromarray(observation.left).save(directory / 'restored-left.png')
         Image.fromarray(observation.right).save(directory / 'restored-right.png')

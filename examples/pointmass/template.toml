@@ -1,0 +1,5 @@
+extends = "coding"
+
+[capabilities.robotics]
+provider = "pointmass"
+dt = 0.1

@@ -139,15 +139,23 @@ def verify(lab, snapshot):
         write_json(snapshot / 'verification.json', status)
         cache = {}
 
-        def digest(path, expected_stat=None):
+        def digest(path, expected_stat=None, expected_sha256=None):
             before = signature(path)
             if expected_stat is not None and before != expected_stat:
                 raise ValueError('captured source changed before verification: ' + str(path))
             key = tuple(before.values())
             if key not in cache:
                 result = runtime_store.digest(path)
-                if signature(path) != before:
-                    raise ValueError('file changed during verification: ' + str(path))
+                after = signature(path)
+                if after != before:
+                    # Adding a hard link changes ctime even when immutable
+                    # content is unchanged. Only a previously pinned SHA-256
+                    # permits that metadata-only change; frozen unhashed
+                    # checkpoint sources retain the strict signature check.
+                    content_identity = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns')
+                    if (expected_sha256 is None or result != expected_sha256 or
+                            any(after[k] != before[k] for k in content_identity)):
+                        raise ValueError('file changed during verification: ' + str(path))
                 cache[key] = result
             return cache[key]
 
@@ -165,7 +173,7 @@ def verify(lab, snapshot):
                 if expected is None:
                     source = contained(reference_path(), name)
                     expected = digest(source, reference['files'][name])
-                actual = digest(contained(snapshot, name))
+                actual = digest(contained(snapshot, name), expected_sha256=expected)
                 if actual != expected:
                     raise ValueError('snapshot digest mismatch: ' + name)
                 info['sha256'] = actual
@@ -176,12 +184,12 @@ def verify(lab, snapshot):
             if expected is None:
                 reference_path()
                 expected = digest(Path(reference['base_path']), reference['base_stat'])
-            if digest(contained(lab, base['path'])) != expected:
+            if digest(contained(lab, base['path']), expected_sha256=expected) != expected:
                 raise ValueError('base image digest mismatch')
             base['sha256'] = expected
             runtime = runtime_store.validate(lab, manifest['runtime'], verify=False)
             for name, expected in manifest['runtime']['sha256'].items():
-                if digest(runtime / name) != expected:
+                if digest(runtime / name, expected_sha256=expected) != expected:
                     raise ValueError('runtime digest mismatch: ' + name)
             # Publish hashes only after the complete comparison succeeds. Restore
             # readers see either complete metadata version through atomic rename.

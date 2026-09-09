@@ -2,6 +2,8 @@
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+import asyncio
+import inspect
 import threading
 
 from .asyncio import dualmethod
@@ -68,6 +70,18 @@ class Pool:
         self.close()
         raise error
 
+    @start.async_impl
+    async def _start_async(self):
+        task = asyncio.create_task(asyncio.to_thread(self.start))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            try:
+                await asyncio.shield(task)
+            finally:
+                await self.close.aio()
+            raise
+
     def _refill(self):
         while not self.closed and len(self.idle) + self.pending < self.warm and len(self.all) + self.pending < self.size:
             target = self._target()
@@ -95,12 +109,18 @@ class Pool:
         finally:
             env.close()
 
-    @contextmanager
     def acquire(self):
+        cancelled = threading.Event()
+        return Lease(self._acquire(cancelled), cancelled)
+
+    @contextmanager
+    def _acquire(self, cancelled):
         self.start()
         create = False
         with self.condition:
             while True:
+                if cancelled.is_set():
+                    raise InterruptedError('pool checkout cancelled')
                 if self.closed:
                     raise RuntimeError('pool is closed')
                 if self.failure:
@@ -115,7 +135,7 @@ class Pool:
                     target = self._target()
                     create = True
                     break
-                self.condition.wait()
+                self.condition.wait(.1)
         if create:
             try:
                 env = Sandbox(target=target, **self.options)
@@ -149,7 +169,8 @@ class Pool:
                 self._refill()
                 self.condition.notify_all()
 
-    def map(self, function, values):
+    @dualmethod
+    def map(self, function, values, *, return_exceptions=False):
         """Ordered streaming results with at most size tasks submitted at once."""
         self.start()
 
@@ -167,7 +188,12 @@ class Pool:
                     except StopIteration:
                         break
                 while pending:
-                    result = pending.popleft().result()
+                    try:
+                        result = pending.popleft().result()
+                    except Exception as error:
+                        if not return_exceptions:
+                            raise
+                        result = error
                     yield result
                     try:
                         pending.append(executor.submit(run, next(source)))
@@ -176,6 +202,47 @@ class Pool:
             finally:
                 for future in pending:
                     future.cancel()
+
+    @map.async_impl
+    async def _map_async(self, function, values, *, return_exceptions=False):
+        await self.start.aio()
+
+        async def run(value):
+            async with self.acquire() as env:
+                if inspect.iscoroutinefunction(function):
+                    return await function(env, value)
+                task = asyncio.create_task(asyncio.to_thread(function, env, value))
+                try:
+                    return await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    # Python threads cannot be killed safely. Drain a running
+                    # host callback before disposing its owned guest lease.
+                    await asyncio.shield(task)
+                    raise
+
+        source, pending = iter(values), deque()
+        try:
+            for _ in range(self.size):
+                try:
+                    pending.append(asyncio.create_task(run(next(source))))
+                except StopIteration:
+                    break
+            while pending:
+                try:
+                    result = await pending.popleft()
+                except Exception as error:
+                    if not return_exceptions:
+                        raise
+                    result = error
+                yield result
+                try:
+                    pending.append(asyncio.create_task(run(next(source))))
+                except StopIteration:
+                    pass
+        finally:
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
 
     @dualmethod
     def close(self):
@@ -206,3 +273,37 @@ class Pool:
 
     async def __aexit__(self, *args):
         await self.close.aio()
+
+
+class Lease:
+    """The same owned episode supports sync and async context managers."""
+    def __init__(self, scope, cancelled):
+        self.scope, self.cancelled = scope, cancelled
+
+    def __enter__(self):
+        return self.scope.__enter__()
+
+    def __exit__(self, *args):
+        return self.scope.__exit__(*args)
+
+    async def __aenter__(self):
+        task = asyncio.create_task(asyncio.to_thread(self.__enter__))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            try:
+                await asyncio.shield(task)
+            except InterruptedError:
+                pass
+            else:
+                await asyncio.to_thread(self.__exit__, None, None, None)
+            raise
+
+    async def __aexit__(self, *args):
+        task = asyncio.create_task(asyncio.to_thread(self.__exit__, *args))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await asyncio.shield(task)
+            raise

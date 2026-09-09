@@ -9,12 +9,28 @@ from pathlib import Path
 import shutil
 import socket
 import tempfile
+import threading
+import weakref
 
 from .errors import ResourceUnavailable
+
+_path_locks = weakref.WeakValueDictionary()
+_path_locks_guard = threading.Lock()
 
 
 def home():
     return Path(os.environ.get('SANDWEAVE_HOME', Path.home() / '.local/share/sandweave')).expanduser().resolve()
+
+
+def worker_key():
+    """Workers may only share authority within the same eligible resource set."""
+    eligibility = {'cpus': sorted(os.sched_getaffinity(0)),
+                   'gpu': {key: os.environ.get(key) for key in
+                           ('SLURM_STEP_GPUS', 'SLURM_JOB_GPUS', 'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'SANDWEAVE_GPU_DEVICES')},
+                   'memory': {key: os.environ.get(key) for key in
+                              ('SLURM_MEM_PER_NODE', 'SLURM_MEM_PER_CPU', 'SANDWEAVE_MEMORY_BUDGET')}}
+    digest = hashlib.sha256(json.dumps(eligibility, sort_keys=True).encode()).hexdigest()[:12]
+    return socket.gethostname() + '-' + os.environ.get('SLURM_JOB_ID', 'local') + '-' + digest
 
 
 def atomic_json(path, value):
@@ -34,11 +50,19 @@ def atomic_json(path, value):
 
 @contextmanager
 def locked(path):
-    path = Path(path)
+    path = Path(path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a') as lock:
+    # Shared filesystems can implement flock ownership per client/process.
+    # Serialize our threads before entering that filesystem lock, and release
+    # explicitly instead of depending on close while another fd is waiting.
+    with _path_locks_guard:
+        thread_lock = _path_locks.setdefault(str(path), threading.Lock())
+    with thread_lock, path.open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        yield
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def engine_sources():
@@ -109,20 +133,32 @@ def stage_tree(source, destination):
 def prepare():
     source = engine_sources()
     files = sorted(p for p in source.iterdir()
-                   if p.suffix in ('.py', '.sh', '.c') and not p.name.startswith('test-'))
+                   if p.suffix in ('.py', '.sh', '.c') and not p.name.startswith(('test-', 'sdk-')))
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.name.encode()); digest.update(path.read_bytes())
-    key = socket.gethostname() + '-' + os.environ.get('SLURM_JOB_ID', 'local')
-    root = home() / 'workers' / key / digest.hexdigest()[:16]
+    engine_digest = digest.hexdigest()
+    sdk = Path(__file__).resolve().parents[1]
+    sdk_digest = hashlib.sha256()
+    for path in sorted(sdk.rglob('*')):
+        if path.is_file() and path.suffix in ('.py', '.toml', '.sh') and '_engine' not in path.parts:
+            sdk_digest.update(str(path.relative_to(sdk)).encode()); sdk_digest.update(path.read_bytes())
+    digest.update(sdk_digest.digest())
+    root = home() / 'workers' / worker_key() / digest.hexdigest()[:16]
     with locked(root / '.prepare.lock'):
         if (root / 'prepared.json').exists():
-            return root
+            prepared = json.loads((root / 'prepared.json').read_text())
+            if Path(prepared['local']).is_dir():
+                return root
+            # Durable checkpoints outlive node-local active runtime storage.
+            # Recreate only this worker's local directories after a node loss.
         base = assets()
         for directory in ('scripts', 'runs', 'downloads', 'snapshots', 'images/fixtures', 'tools/gpu'):
             (root / directory).mkdir(parents=True, exist_ok=True)
         for path in files:
             shutil.copy2(path, root / 'scripts' / path.name)
+        if (base / 'sandweave-assets.json').is_file():
+            shutil.copy2(base / 'sandweave-assets.json', root / 'sandweave-assets.json')
         for name in ('bench', 'seccomp-trap', 'gs-base-probe', 'debian-trixie.sif'):
             _immutable(base / 'tools' / name, root / 'tools' / name)
         for directory in ('runtime-builds', 'fast-io', 'network', 'erofs', 'gvisor-nightly-20260906'):
@@ -145,6 +181,9 @@ def prepare():
         for directory in ('gvisor/bundles', 'gvisor/state', 'gvisor/checkpoints'):
             (local / directory).mkdir(parents=True, exist_ok=True)
         (root / 'runs/local-path.txt').write_text(str(local) + '\n')
-        atomic_json(root / 'prepared.json', {'assets': str(base), 'engine_sources_sha256': digest.hexdigest(),
+        registry = base / 'sandweave-assets.json'
+        atomic_json(root / 'prepared.json', {'assets': str(base), 'engine_sources_sha256': engine_digest,
+                                            'sdk_sources_sha256': sdk_digest.hexdigest(),
+                                            'assets_sha256': hashlib.sha256(registry.read_bytes()).hexdigest() if registry.exists() else None,
                                             'hostname': socket.gethostname(), 'local': str(local)})
     return root

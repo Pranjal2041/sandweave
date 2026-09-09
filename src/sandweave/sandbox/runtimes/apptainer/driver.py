@@ -100,7 +100,7 @@ class Runtime:
                   'mounts': spec.get('mounts', [])}
         atomic_json(directory / 'native.json', record)
         client = Connection('localhost', 0, token, unix_path=str(directory / 'control/agent.sock'), timeout=30)
-        deadline = time.monotonic() + spec.get('startup_timeout', 300)
+        deadline = spec.get('_startup_deadline', time.monotonic() + spec.get('startup_timeout', 300))
         while True:
             if process.poll() is not None:
                 raise ResourceUnavailable('native guest failed: ' + (directory / 'launcher.log').read_text()[-4000:])

@@ -1,0 +1,21 @@
+schema_version = 1
+extends = "vr/gunspinning@1"
+
+# This game's historical gamepad mode uses its flat desktop presentation.
+# The controller/Monado version remains vr/gunspinning with two actual eyes.
+[capabilities.vr]
+enabled = false
+
+[capabilities.gamepad]
+provider = "gamepad"
+
+[services.game]
+user = "ga"
+command = ["sh", "/opt/vr/vr-vulkan-xvnc.sh", "/opt/engine-gpu/vr/gunspinning-linux-2.0.1/GunSpinningVR", "-screen-fullscreen", "0", "-screen-width", "1280", "-screen-height", "720", "-vrmode", "None", "-force-vulkan", "-noaudio", "-logFile", "/tmp/gunspinning-gamepad.log"]
+ready_timeout = 90
+
+[services.game.env]
+SDL_DYNAMIC_API = "/opt/gunspinning-lab/libsdl-gamepad-proxy.so"
+
+[services.game.ready]
+exec = ["xdotool", "search", "--name", "GunSpinning"]

@@ -88,3 +88,47 @@ def test_sampled_quota_accounts_runtime_cpu():
         directory = Path(os.environ['SANDWEAVE_ASSETS']) / 'runs/sdk-acceptance/resources'
         directory.mkdir(parents=True, exist_ok=True)
         (directory / 'quota.json').write_text(json.dumps({'cpu_equivalents': rate, 'target': 1}))
+
+
+def test_weighted_sharing_and_borrowing_idle_capacity():
+    # Read only registrations belonging to these two SDK-owned environments.
+    with Sandbox(cpu=CPU(vcpus=8, weight=300), memory='512MiB') as first, \
+         Sandbox(cpu=CPU(vcpus=8, weight=100), memory='512MiB') as second:
+        root = Path(first.status()['workspace'])
+        local = Path((root / 'runs/local-path.txt').read_text().strip())
+        def usage():
+            for path in (local / 'gvisor/cpu-brokers').glob('*/status.json'):
+                values = json.loads(path.read_text())['jobs']
+                keys = ['job-' + env.id + '.json' for env in (first, second)]
+                if all(key in values for key in keys):
+                    return [values[key]['cpu_seconds'] for key in keys]
+            raise AssertionError('both peers must share the same CPU broker')
+        command = "python -c 'import os; [os.fork() for _ in range(3)]; exec(\"while True: pass\")'"
+        a, b = first.exec(command), second.exec(command)
+        time.sleep(1)
+        before = usage(); time.sleep(8); after = usage()
+        used = [end-start for start,end in zip(before, after)]
+        ratio = used[0]/used[1]
+        assert 1.8 < ratio < 4.5, (used, ratio)
+        a.terminate()
+        before = usage(); time.sleep(4); after = usage()
+        borrowed_rate = (after[1]-before[1])/4
+        b.terminate()
+        assert borrowed_rate > used[1]/8 * 1.5
+        directory = Path(os.environ['SANDWEAVE_ASSETS']) / 'runs/sdk-acceptance/resources'
+        (directory / 'sharing.json').write_text(json.dumps({'ratio': ratio, 'cpu_seconds': used,
+                                                          'borrowed_cpu_equivalents': borrowed_rate}))
+
+
+def test_broker_failure_releases_only_its_owned_guest():
+    import sys
+    with Sandbox(cpu=CPU(vcpus=2, quota=.2)) as env:
+        # Wait for the broker's quota pause, which differs from an SDK pause
+        # of guest tasks. Kill only this dedicated broker after that fence.
+        env.exec("python -c 'exec(\"while True: pass\")'")
+        root = Path(env.status()['workspace'])
+        result = subprocess.run([sys.executable,
+            str(Path(os.environ['SANDWEAVE_ASSETS']) / 'scripts/test-cpu-controller-failure.py'),
+            env.id, '--lab', str(root)], capture_output=True, text=True, timeout=45)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert env.status()['runtime_status']['status'] == 'stopped'

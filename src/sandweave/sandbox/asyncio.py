@@ -1,6 +1,7 @@
 """One implementation for ordinary calls and Modal-style .aio calls."""
 import asyncio
 import functools
+import inspect
 
 
 class dualmethod:
@@ -26,7 +27,8 @@ class dualmethod:
             # Read/wait cancellation does not cancel the underlying process.
             return await asyncio.to_thread(function, *args, **kwargs)
 
-        call.aio = aio
+        call.aio = (self.async_function.__get__(instance, owner)
+                    if inspect.isasyncgenfunction(self.async_function) else aio)
         return call
 
 

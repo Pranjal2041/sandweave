@@ -39,15 +39,12 @@ class Runtime:
     def gpu(self, requested):
         if requested is None:
             return None
-        allocation = os.environ.get('SLURM_STEP_GPUS') or os.environ.get('SLURM_JOB_GPUS', '')
+        gpu_module = importlib.import_module('gvisor_gpu')
+        allocation = gpu_module.eligible_devices()
         if not allocation:
             raise ResourceUnavailable('no GPU devices are allocated to this worker')
-        gpu_module = importlib.import_module('gvisor_gpu')
         selected = None
-        for value in allocation.split(','):
-            if not value.isdigit():
-                raise ResourceUnavailable('this engine requires numeric allocated GPU device minors')
-            index = int(value)
+        for index in allocation:
             gpu_module.allocated_device(index)
             identity = gpu_module.device_identity(index)
             model = subprocess.check_output(['nvidia-smi', '-i', identity['uuid'], '--query-gpu=name',
@@ -107,6 +104,12 @@ class Runtime:
 
     def create(self, identity, spec, *, snapshot=None, token=None):
         token = token or secrets.token_hex(32)
+        deadline = spec.get('_startup_deadline', time.monotonic() + spec.get('startup_timeout', 300))
+        def remaining():
+            value = deadline - time.monotonic()
+            if value <= 0:
+                raise TimeoutError('runtime startup deadline exceeded: ' + identity)
+            return value
         options = self.options(spec)
         path = self.root / 'sandboxes' / (identity + '.mounts.json')
         atomic_json(path, spec.get('mounts', []))
@@ -142,15 +145,14 @@ class Runtime:
         if snapshot:
             manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
             self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),
-                              options=options, timeout=spec.get('startup_timeout', 300),
+                              options=options, timeout=remaining(),
                               experimental_gpu_live=spec.get('experimental_gpu_live', False))
             cold = manifest['kind'] == 'filesystem'
         else:
             self.manager.start(identity, command=command, options=options,
-                               timeout=spec.get('startup_timeout', 300))
+                               timeout=remaining())
             cold = True
         if init in ('systemd', 'docker') and cold:
-            deadline = time.monotonic() + spec.get('startup_timeout', 300)
             while True:
                 try:
                     self.manager._run([*self.manager._command(identity), 'exec', identity,
@@ -164,8 +166,7 @@ class Runtime:
                                'systemd-run', '--unit=sandweave-agent', '--collect',
                                'python3', '-u', '-c', agent_source(), str(AGENT_PORT), token], timeout=30)
         port = self.manager.status(identity)['ports'][str(AGENT_PORT)]
-        client = Connection('127.0.0.1', port, token, timeout=30)
-        deadline = time.monotonic() + spec.get('startup_timeout', 300)
+        client = Connection('127.0.0.1', port, token, timeout=min(1, remaining()))
         while True:
             try:
                 client.call('ping')
@@ -174,7 +175,8 @@ class Runtime:
                 if time.monotonic() >= deadline:
                     raise TimeoutError('guest command service did not become ready: ' + identity)
                 time.sleep(.1)
-        self.connections[identity] = client
+        client.close()
+        self.connections[identity] = Connection('127.0.0.1', port, token, timeout=30)
         return {'port': port, 'token': token}
 
     def agent(self, identity, metadata):

@@ -10,8 +10,9 @@ import cpu_broker
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('name')
+p.add_argument('--lab', type=Path, default=Path(__file__).resolve().parent.parent)
 a = p.parse_args()
-lab = Path(__file__).resolve().parent.parent
+lab = a.lab.resolve()
 local = Path((lab / 'runs/local-path.txt').read_text().strip())
 logs = lab / 'runs/gvisor' / a.name
 registrations = list((local / 'gvisor/cpu-brokers').glob('*/job-' + a.name + '.json'))

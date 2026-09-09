@@ -8,14 +8,56 @@ import stat
 import subprocess
 
 
+def eligible_devices():
+    allocation = os.environ.get('SLURM_STEP_GPUS') or os.environ.get('SLURM_JOB_GPUS')
+    if allocation:
+        if any(not part.isdecimal() for part in allocation.split(',')):
+            raise ValueError('this runtime requires a Slurm allocation with numeric full-GPU device minors')
+        return list(map(int, allocation.split(',')))
+    if os.environ.get('SLURM_JOB_ID'):
+        return []  # A CPU-only allocation must never discover unallocated GPUs.
+    explicit = os.environ.get('SANDWEAVE_GPU_DEVICES')
+    if explicit is not None:
+        if explicit == '':
+            return []
+        if any(not part.isdecimal() for part in explicit.split(',')):
+            raise ValueError('SANDWEAVE_GPU_DEVICES must list numeric device minors')
+        return list(map(int, explicit.split(',')))
+    # Local/SSH workers respect the container's visibility filters and actual
+    # device permissions. Numeric CUDA visibility uses NVML ordinals, not minors.
+    visible = subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid', '--format=csv,noheader'], text=True)
+    selected = []
+    for line in visible.splitlines():
+        ordinal, identifier = (part.strip() for part in line.split(','))
+        eligible = True
+        for key in ('CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES'):
+            value = os.environ.get(key)
+            if value is None or value == 'all':
+                continue
+            if not any(item == ordinal or (item.startswith('GPU-') and identifier.startswith(item))
+                       for item in value.split(',')):
+                eligible = False
+        if not eligible:
+            continue
+        for path in Path('/proc/driver/nvidia/gpus').glob('*/information'):
+            fields = {k.strip(): v.strip() for k, v in (line.split(':', 1) for line in path.read_text().splitlines() if ':' in line)}
+            if fields.get('GPU UUID') != identifier:
+                continue
+            minor = int(fields['Device Minor'])
+            try:
+                fd = os.open('/dev/nvidia' + str(minor), os.O_RDWR)
+            except OSError:
+                continue
+            os.close(fd)
+            selected.append(minor)
+    return selected
+
+
 def allocated_device(index):
     if not re.fullmatch(r'0|[1-9][0-9]*', str(index)):
         raise ValueError('GPU must be a physical numeric index')
-    allocation = os.environ.get('SLURM_STEP_GPUS') or os.environ.get('SLURM_JOB_GPUS', '')
-    if not allocation or any(not part.isdecimal() for part in allocation.split(',')):
-        raise ValueError('requires an explicit numeric Slurm GPU allocation')
-    if str(index) not in allocation.split(','):
-        raise ValueError(f'GPU {index} is outside the Slurm allocation {allocation}')
+    if int(index) not in eligible_devices():
+        raise ValueError(f'GPU {index} is outside this worker\'s eligible devices')
     paths = [f'/dev/nvidia{index}', '/dev/nvidiactl', '/dev/nvidia-uvm']
     devices = []
     for path in paths:

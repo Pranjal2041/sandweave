@@ -1,6 +1,8 @@
 """Guest file access through bounded binary transfers."""
 import io
+import os
 from pathlib import Path
+import tempfile
 import uuid
 
 from .asyncio import dualmethod
@@ -25,7 +27,8 @@ class Files:
         stream = RemoteFile(self.sandbox, str(path), binary_mode)
         buffered = (io.BufferedRandom(stream) if '+' in mode else
                     io.BufferedReader(stream) if base == 'r' else io.BufferedWriter(stream))
-        return buffered if 'b' in mode else io.TextIOWrapper(buffered, encoding=encoding, errors=errors, newline=newline)
+        return FileStream(buffered if 'b' in mode else io.TextIOWrapper(
+            buffered, encoding=encoding, errors=errors, newline=newline))
 
     @dualmethod
     def read_bytes(self, path):
@@ -56,6 +59,8 @@ class Files:
     @dualmethod
     def upload(self, source, destination):
         source = Path(source)
+        if source.is_symlink():
+            raise ValueError('upload explicit files rather than symlinks')
         if source.is_dir():
             self.sandbox._call('file', op='mkdir', path=str(destination))
             for path in sorted(source.rglob('*')):
@@ -82,15 +87,32 @@ class Files:
     @dualmethod
     def download(self, source, destination):
         destination = Path(destination)
+        info = self.stat(source)
+        if info.get('symlink') or destination.is_symlink():
+            raise ValueError('download explicit files rather than symlinks')
+        if info['directory']:
+            destination.mkdir(parents=True, exist_ok=True)
+            for entry in self.list(source):
+                name = Path(entry).name
+                if name in ('', '.', '..') or str(Path(source) / name) != entry:
+                    raise ValueError('invalid guest directory entry')
+                self.download(entry, destination / name)
+            return destination
         destination.parent.mkdir(parents=True, exist_ok=True)
         offset = 0
-        with destination.open('wb') as stream:
-            while True:
-                chunk = self.sandbox._call('file', op='read', path=str(source), offset=offset, size=CHUNK)
-                stream.write(chunk)
-                offset += len(chunk)
-                if len(chunk) < CHUNK:
-                    break
+        fd, temporary = tempfile.mkstemp(prefix='.' + destination.name + '.', dir=destination.parent)
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                while True:
+                    chunk = self.sandbox._call('file', op='read', path=str(source), offset=offset, size=CHUNK)
+                    stream.write(chunk)
+                    offset += len(chunk)
+                    if len(chunk) < CHUNK:
+                        break
+            os.chmod(temporary, info['mode'] & 0o777)
+            os.replace(temporary, destination)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
         return destination
 
     @dualmethod
@@ -100,6 +122,55 @@ class Files:
     @dualmethod
     def list(self, path):
         return self.sandbox._call('file', op='list', path=str(path))
+
+
+def stream_method(name):
+    @dualmethod
+    def call(self, *args, **kwargs):
+        return getattr(self.stream, name)(*args, **kwargs)
+    return call
+
+
+class FileStream:
+    """Normal buffered file behavior with the SDK's matching async operations."""
+    def __init__(self, stream):
+        self.stream = stream
+
+    read = stream_method('read')
+    readline = stream_method('readline')
+    readlines = stream_method('readlines')
+    write = stream_method('write')
+    writelines = stream_method('writelines')
+    seek = stream_method('seek')
+    tell = stream_method('tell')
+    truncate = stream_method('truncate')
+    flush = stream_method('flush')
+    close = stream_method('close')
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close.aio()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self.stream)
+
+    async def __aiter__(self):
+        while line := await self.readline.aio():
+            yield line
 
 
 class RemoteFile(io.RawIOBase):

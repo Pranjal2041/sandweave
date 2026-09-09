@@ -1,5 +1,6 @@
 """Select an execution adapter from each sandbox's persisted specification."""
 from pathlib import Path
+from importlib import metadata
 
 from ..wire import decode
 from ..errors import UnsupportedFeature
@@ -16,7 +17,13 @@ class Runtime:
             from .apptainer.driver import Runtime as Apptainer
             self.adapters[name] = Apptainer(self.root, self.adapters['gvisor'])
         if name not in self.adapters:
-            raise UnsupportedFeature('runtime is not registered: ' + name)
+            entries = list(metadata.entry_points(group='sandweave.runtimes.v1', name=name))
+            if len(entries) != 1:
+                raise UnsupportedFeature('runtime is missing or registered more than once: ' + name)
+            provider = entries[0].load()
+            if getattr(provider, 'api_version', None) != 1:
+                raise UnsupportedFeature('unsupported runtime adapter API version: ' + name)
+            self.adapters[name] = provider(self.root)
         return self.adapters[name]
 
     def for_identity(self, identity):

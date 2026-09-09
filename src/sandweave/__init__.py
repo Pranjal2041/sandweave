@@ -4,14 +4,14 @@ from .sandbox.mounts import Mount
 from .sandbox.errors import (
     SandboxError, CacheMiss, CacheConflict, IncompatibleSnapshot,
     UnsupportedFeature, ResourceUnavailable, CommandError, CommandTimeout,
-    OperationUnknown, SetupError,
+    OperationUnknown, SetupError, OutputLimitExceeded,
 )
 
 __version__ = '0.1.0'
 __all__ = ['Sandbox', 'Pool', 'Template', 'SnapshotRef', 'CPU', 'GPU', 'Memory',
            'Network', 'Mount', 'Slurm', 'SandboxError', 'CacheMiss', 'CacheConflict',
            'IncompatibleSnapshot', 'UnsupportedFeature', 'ResourceUnavailable',
-           'CommandError', 'CommandTimeout', 'OperationUnknown', 'SetupError']
+           'CommandError', 'CommandTimeout', 'OperationUnknown', 'SetupError', 'OutputLimitExceeded']
 
 
 def __getattr__(name):

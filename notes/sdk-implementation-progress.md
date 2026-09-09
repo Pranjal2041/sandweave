@@ -4,18 +4,20 @@ The user approved implementation around two pillars: templates define setup,
 startup and controls; sandboxes implement running instances and their lifecycle.
 The README's public API remains the contract, including command strings.
 
-## Work in progress
+## Current status
 
-- Package the existing qualified engine mechanisms as installable assets; give
-  each worker an isolated workspace without changing the lab's local-path file.
-- Implement templates, command/process/files APIs, lifecycle and snapshots,
-  preparation caching, template-owned controls, pools, async and CLI parity.
-- Exercise local, SSH/Slurm placement and the explicit Apptainer runtime.
-- Run existing host regressions and disposable CPU/GPU integration, then SDK
-  acceptance for every supported feature. Preserve unsupported-feature failures.
-- Build/install the wheel outside the checkout and inspect actual desktop/VR
-  output, including both eye videos. Record current evidence separately from
-  historical acceptance and keep all authored changes committed.
+Sandweave 0.1.0 implements the agreed Python/CLI contract, with the limits in
+[usage](sdk-usage.md). The two-pillar structure and locked README examples are
+preserved. The entries below retain the investigation history; later passing
+runs supersede earlier failures and “in progress” observations.
+
+The final feature run passed **62 tests in 761.40 seconds**: 46 real-runtime
+integration cases plus 16 SDK host cases, with no skipped or failed tests. This includes
+CUDA/MPS, desktop/VR, nested Docker, resource/network controls, snapshots,
+mounts, lifetime, pools, async operations and guest terminals. This includes the final
+concurrency and transport fixes. The separate host run passed 107 tests plus
+16 subtests; after removing overlap, that is 153 unique automated tests, plus
+the standalone application/placement/scale checks.
 
 ## Resources and preservation
 
@@ -133,3 +135,172 @@ Further live acceptance on `babel-q9-16`:
 Gamepad/application gameplay acceptance, remaining CLI/async/extension details,
 installed-wheel acceptance and the complete feature/performance report remain
 in progress. No full-feature acceptance or startup performance target is claimed.
+
+## Integration refinements and broader acceptance
+
+The combined run exposed issues absent from individual tests. Each was fixed
+before repeating the affected checks:
+
+- Concurrent asset hard-link creation changes inode ctime without changing bytes.
+  Fresh images now carry a pinned SHA-256 in the asset registry. Verification
+  permits ctime-only churn only when the complete content hash still matches;
+  unpinned frozen sources retain strict identity checks. The 7,819,030,528-byte
+  base independently matched `e3d32dfc98c01c46e99dba43a0e3bbb28dbe4cc60d1c823ae27f44e4e5222b77`.
+  Three failed artifacts created by this task were reverified successfully after
+  adding that independently established pin; original reports/manifests remain
+  in `runs/sdk-acceptance/snapshot-repair`. No user snapshots were edited.
+- The guest HTTP service previously left its request-body timeout on idle
+  keepalive connections. A 65-second idle regression now passes. Uncertain
+  transport delivery still produces an explicit error rather than replaying work.
+- Worker identity includes CPU/GPU/memory eligibility. One process owns each
+  workspace. An acknowledged shutdown publishes its transition before removing
+  its endpoint, preventing the next client from mistaking a closing worker for
+  a failed live authority.
+- Fast command output can arrive between an empty read and exit observation.
+  Streams and CLI output now perform their final drain after confirmed exit.
+- Command output spooling is bounded; terminal groups, streaming stdin, startup
+  deadlines, retained diagnostics, async pool iteration/cancellation and CLI
+  named pools have real-guest tests. Installed provider identity participates in
+  preparation fingerprints and client/worker compatibility checks.
+
+A combined run passed **53 tests in 812.26 seconds** before the final PTY/async
+file-stream additions. Terminal tests subsequently passed for both runtimes,
+including terminal resize, a controlling shell, and an open terminal restored
+from RAM. All 15 terminal/command/pool tests passed in 104.35 seconds. The final
+expanded combined run is recorded separately below when complete.
+
+The pinned CUA harness passed **100/100 entries and 500/500 repetitions**, with
+zero flaky, failed, unsupported or error cases, through the SDK desktop API.
+Of its screenshots, 480 visual verdicts matched the probe's final state; 20
+headless raw-tap checks have no visual oracle. A decoded probe screenshot was
+opened and inspected. Evidence: `runs/sdk-acceptance/cua-full`.
+
+GunSpinning's gamepad mode reached the training range and fired through the
+SDL input provider; its actual screenshots were inspected in
+`runs/sdk-acceptance/gameplay/gamepad-1`. This is flat mode. The separate motion
+controller run reached the VR training range, fired, reloaded and moved head
+and controller poses. Its 698-frame left/right/SBS videos have identical,
+strictly increasing timestamps and were decoded and inspected. Evidence:
+`runs/sdk-acceptance/gameplay/motion-2`.
+
+The motion recording delivered **20.97 stereo captures/s**, with no recorder
+queue drops, at 960x1080 per eye. Ring frames skipped between captures are
+reported separately. Aligning Monado metrics to the recording's guest clock
+measured **80.71 application submissions/s over the recording**, and **83.39/s
+in its final ten seconds**. The earlier 85.18/s figure came from a later window
+while videos were being exported. `aligned-metrics.json` keeps these scopes
+explicit; none of these measurements establishes physical headset scanout.
+Raw RPC transfer measured 28.06 ms median versus 37.57 ms with Zstandard in
+that particular run; compression reduced each pair from 8.29 MB to 2.22 MB.
+
+An installed wheel ran from `/tmp`, loaded its bundled engine, and passed
+commands, filesystem restore, pools, generic SSH attachment and a separately
+installed point-mass provider with independent saved-state restoration. The
+point-mass example is a toy extension test, not a RoboCasa claim. Initial
+performance evidence is `runs/sdk-acceptance/installed.json`; it was collected
+while other acceptance work used the same allocation.
+
+The CLI acquired GPU job **10368765** on `babel-n5-28`. A verified snapshot was
+imported from `babel-q9-16`, and a pool ran six independent ordered tasks across
+both worker workspaces. The CLI cancelled its owned job and preserved borrowed
+job `10367253`. Evidence: `runs/sdk-acceptance/multiworker.json`.
+
+Local GPU discovery, with Slurm identity removed inside the existing allocation,
+respected retained device visibility and passed CUDA initialization. This tests
+the non-Slurm discovery path on qualified hardware, not a fresh workstation.
+Weighted CPU sharing measured 2.84:1 for 3:1 weights and about 6.48 CPU equivalents
+for the surviving peer after idle capacity became available. The controller
+failure drill passed after distinguishing its quota pause from an SDK pause.
+Only the dedicated test guest's broker was killed, after checking it had no
+other registrations.
+
+The EROFS fixture probe now accepts a private SDK workspace instead of depending
+on the original lab's node-local path. Actual native/guest data, binary/empty/
+shared xattrs, named ACL grants and mask denials, and read-only enforcement all
+passed. Earlier attempts failed on missing legacy path assumptions before
+reaching the engine. Evidence: `runs/sdk-acceptance/erofs-final2.log`.
+
+The release host suite passed **105 tests plus 16 subtests**. This count includes
+the 14 SDK host tests; do not add those again when combining counts.
+
+## Final package and scale qualification
+
+The final installed wheel passed from `/tmp`, outside the checkout. Its 180
+packaged SDK/template/engine source files match the canonical source bytes.
+Commands, saved filesystem state, independent pools, real terminals, async file
+streams, a separately installed control provider and generic SSH attachment
+passed. Evidence: `runs/sdk-acceptance/installed-final.json` and
+`wheel-sources.json`. The wheel remains dependent on explicitly prepared assets.
+
+A 32-thread shared-filesystem lock reproduction exposed stalled concurrent
+`flock` waiters. Stack traces were preserved and only that test's clients and
+sandboxes were retired. Lock acquisition now serializes same-process threads
+before entering the filesystem lock and explicitly unlocks on every exit.
+The isolated 3,200-acquisition probe passed in 1.42 s. The full pool drill then
+held **32 simultaneous independent leases**, ran **64 clean ordered tasks**,
+and completed in **20.85 s**, including 10.11 s baseline/eight-warm preparation,
+9.87 s mapping and cleanup. Evidence: `scale-first-failure.json`,
+`scale-client-stacks.txt` and `scale-32.json` in `runs/sdk-acceptance`.
+
+Small HTTP replies now buffer their headers and body together. Diagnostic runs
+isolated intermittent approximately 40 ms transport delays; buffering reduced
+fragmented small replies, but no claim is made that all remote latency spikes
+are eliminated. The final installed-package benchmark ran after the other
+acceptance processes finished on the dedicated 12-CPU L40S allocation:
+
+| Operation | Samples | Median | p95 |
+| --- | ---: | ---: | ---: |
+| Cold guest plus first Python command, existing worker | 19 | 812.82 ms | 897.98 ms |
+| Existing guest, shell `true` | 100 | 15.43 ms | 27.11 ms |
+| Existing guest, literal argv `true` | 100 | 15.29 ms | 21.44 ms |
+| Filesystem restore plus first command | 20 | 1067.94 ms | 1113.38 ms |
+| Ready pool checkout | 30 | 0.059 ms | 0.068 ms |
+| Ready checkout plus first command | 30 | 24.83 ms | 47.96 ms |
+| Wait for warm reserve refill | 30 | 732.90 ms | 800.09 ms |
+
+The first worker preparation plus first guest/command took 7.21 s. Scheduler
+queue time is excluded because the allocation already existed. These are
+measurements on this allocation, not cross-machine guarantees. Cold creation
+has not met a few-millisecond target. A warm handle alone is not completed work.
+
+Visual review of the previous restore screenshots found first-painted splash
+screens. The final VR test therefore adds sustained input and paired recordings
+after cold restoration. Initial game recordings have already been decoded in
+full, their left/right/SBS timestamps matched, and both eye images inspected.
+The post-restore recordings are reviewed separately in the final result below.
+
+The final host regressions passed **107 tests plus 16 subtests in 1.17 s**,
+including 16 SDK host tests. Historical application workflows such as Earth,
+Resolve and Alyx were not all repeated in this SDK task. The CUA catalog,
+GunSpinning gameplay and the current runtime feature tests establish their
+stated scopes; they do not upgrade historical or experimental features to
+universal support. The optional directory-artifact API in the proposal remains
+future work; whole-sandbox filesystem capture is implemented and tested.
+
+## Completed release acceptance
+
+The final combined run passed **62/62 tests in 761.40 seconds**, with no errors,
+failures or skips. Evidence: `runs/sdk-acceptance/release-qualified.xml`.
+All 27 snapshot verification reports in that run's private workspace passed,
+and no sandbox remained in a creating, preparing, ready or paused state. Stopped
+and negative-test records are retained for evidence.
+
+Open Saber (`opensaber-69571713`) and offline GunSpinning
+(`gunspinning-4ad0781b`) passed the extended cold-restore check. Both original
+and restored sets contain real left-eye, right-eye and synchronized stereo
+videos. All twelve videos decoded completely and have identical, strictly
+increasing timestamps within each set. Decoded frames from both eyes show each
+game's menu and tracked controllers after restoration. The separate GunSpinning
+training-range recordings above establish shooting gameplay.
+
+The installed wheel and a wheel rebuilt from the source archive contain the
+same 180 package source files. Authored implementation, tests, examples and
+documentation are committed; generated packages, runtime state and recordings
+are deliberately ignored. The [machine-readable acceptance report](sdk-acceptance.json)
+pins report/video hashes, package identity, source identities, measured timings
+and the limits of the claims.
+
+Final cleanup checked 27 task-owned worker endpoints and cancelled only the
+owned `sandweave-e2e` allocation `10367253`; Slurm confirms `CANCELLED`.
+Saved artifacts remain on durable storage. Existing user jobs/desktops and
+`previous_transcript.txt` were preserved.

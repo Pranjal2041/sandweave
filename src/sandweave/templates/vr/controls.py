@@ -143,7 +143,7 @@ class AttachedVR:
                 user=config.get('game_user', 'ga'), env=config.get('game_env', {}),
                 cwd=config.get('game_cwd', '/workspace'))
             context.worker.process_stdin(context.id, self.process_id, close=True)
-            deadline = time.monotonic() + config.get('ready_timeout', 90)
+            deadline = time.monotonic() + context.remaining(config.get('ready_timeout', 90))
             sequence = 0
             while True:
                 state = context.worker.process_status(context.id, self.process_id)

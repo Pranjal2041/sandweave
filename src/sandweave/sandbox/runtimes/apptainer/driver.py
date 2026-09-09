@@ -88,9 +88,11 @@ class Runtime:
         binds = []
         for mount in spec.get('mounts', []):
             binds += ['--bind', mount['source'] + ':' + mount['destination'] + (':ro' if mount['read_only'] else ':rw')]
+        gpu_device = None
         if resources['gpu']:
             selected = self.gvisor.gpu(resources['gpu'])
             import gvisor_gpu
+            gpu_device = gvisor_gpu.device_identity(selected)
             for device in gvisor_gpu.allocated_device(selected):
                 binds += ['--bind', device['path'] + ':' + device['path']]
             binds += ['--bind', str(self.root / 'tools/gpu') + ':/opt/engine-gpu:ro']
@@ -109,7 +111,7 @@ class Runtime:
                                        stderr=subprocess.STDOUT, start_new_session=True)
         self.children[identity] = process
         record = {'id': identity, 'pid': process.pid, 'start': self.ownership.process_table([process.pid])[process.pid]['start'],
-                  'state': 'running', 'gpu': bool(resources['gpu']), 'cpus': cpus,
+                  'state': 'running', 'gpu': bool(resources['gpu']), 'gpu_device': gpu_device, 'cpus': cpus,
                   'memory_limit': memory_bytes(resources['memory']['guest']) + memory_bytes(resources['memory']['runtime']),
                   'mounts': spec.get('mounts', []), 'base_image': str(image.relative_to(self.root))}
         atomic_json(directory / 'native.json', record)
@@ -161,8 +163,13 @@ class Runtime:
             return {'status': 'missing', 'name': identity}
         record = self.metadata(identity)
         running = bool(self._members(record))
+        gpus = []
+        if running and record['gpu']:
+            from ..gpu_information import describe
+            gpus = [describe(record['gpu_device'])] if record.get('gpu_device') else None
         return {'name': identity, 'status': record['state'] if running else 'stopped', 'gpu': record['gpu'],
-                'logs': str(self.directory(identity)), 'runtime': self.descriptor(), 'error': record.get('error')}
+                'gpus': gpus, 'logs': str(self.directory(identity)),
+                'runtime': self.descriptor(), 'error': record.get('error')}
 
     def agent(self, identity, metadata):
         if identity not in self.connections:

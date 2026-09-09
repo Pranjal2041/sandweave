@@ -161,6 +161,52 @@ command string: `env.run(argv=["python", "main.py"])`. The forms are mutually
 exclusive, and `shell` cannot accompany `argv`. The CLI accepts one quoted
 command string after `--`, or `--argv -- PROGRAM ARG ...` for literal arguments.
 
+## Inspect a sandbox
+
+`env.info` returns a fresh dictionary on each access. `sandweave info ID`
+prints the same fields as JSON; a unique sandbox name also works.
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `name`, `state` | Identity and current lifecycle state. |
+| `template`, `runtime` | Resolved template name and chosen runtime. |
+| `worker` | Worker `hostname` and `job_id` (`None` outside Slurm). |
+| `cpu` | Configured `vcpus`, sharing `weight` and optional `quota`. |
+| `memory` | Configured `guest` and `runtime` budgets, in the units supplied at creation. |
+| `gpus` | Selected devices, each with `model`, `uuid` and worker `device` path. |
+| `vnc` | A ready Xvnc desktop's `url`, worker-side `port`, `worker_host` and `ssh_command`; otherwise `None`. |
+
+CPU and memory are configuration, not live utilization or dedicated host
+reservations. gVisor rounds memory budgets up to whole MiB; CPU weights and
+quotas use its sampled controller. With native Apptainer, `vcpus` selects the
+number of eligible host CPUs in the affinity mask. Native memory enforcement
+uses one sampled RSS limit equal to the sum of both configured budgets.
+See [resource limits](#limits-that-matter).
+
+`gpus=[]` means no GPU is selected, including after the runtime stops.
+The runtime's launch record supplies device identity, independently of a model
+filter such as `gpu="L40S"`. A GPU remains selected while the sandbox is paused.
+Its model is `None` if the worker cannot read the NVIDIA driver metadata.
+An older worker or third-party runtime that does not report selected devices
+returns `gpus=None` for a running GPU sandbox. Unknown worker fields are also
+`None`; the client never substitutes its own hostname for a remote worker.
+
+VNC URLs use `127.0.0.1` **on the worker**. Reading `env.info` does not open a
+tunnel. From another machine, run `ssh_command` and keep it running while
+using the URL. It forwards the same local port to the worker's VNC port and
+uses your configured SSH alias, including that alias's SSH configuration.
+If you need a different login or jump host from the viewer's machine, adjust
+the command there. If the local port is occupied, choose another local port
+in `-L` and use that port in the viewer URL. On the worker itself, open the
+URL directly. TigerVNC also accepts `127.0.0.1::PORT` for an explicit TCP port.
+VNC authentication still uses the desktop's configured password.
+
+Accessing `env.info` contacts the worker and raises on a lost connection or a
+closed handle. It excludes setup payloads, environment variables, and control
+tokens. `env.spec` remains the full creation specification; `env.status()`
+remains the detailed lifecycle/runtime record. Async callers can fetch that
+record with `await env.status.aio()`.
+
 ## Templates
 
 | Template | Provides |

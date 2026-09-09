@@ -4,6 +4,40 @@ The user approved implementation around two pillars: templates define setup,
 startup and controls; sandboxes implement running instances and their lifecycle.
 The README's public API remains the contract, including command strings.
 
+## Sandbox information (2026-09-09)
+
+`env.info` and `sandweave info ID` collect lifecycle state, template/runtime,
+worker hostname/job ID, configured CPU/memory budgets, selected GPU identity
+and VNC connection details. VNC URLs are worker-local; the summary supplies an
+SSH forwarding command using the client's target alias. Reading it does not
+open a tunnel. Coding guests' reserved VNC ports and stale ports after
+pause/termination are not advertised as ready desktops.
+
+The host suite passed 117 cases, with one optional dependency case skipped.
+Coverage includes fresh state, private payload exclusion, older worker data,
+SSH/Slurm aliases, and UUID-based GPU identification. Adding the integration
+module initially exposed a duplicate test filename during whole-suite
+collection; renaming it fixed collection, and the full host suite passed.
+
+Five installed-wheel integration cases passed from `/tmp`: GNOME/VNC/CLI and
+both command runtimes in 45.29 seconds, then both GPU runtimes in 43.13 seconds.
+The GNOME summary matched guest CPU count and `/proc/meminfo`, its advertised
+port returned an RFB banner, and pause/resume/termination updated the summary.
+The dedicated preempt L40S job `10376165` on `babel-o5-28` verified that gVisor
+and native Apptainer reported the exact model and UUID seen by guest
+`nvidia-smi`, including the physical `/dev/nvidia5` selection. It completed with
+exit code zero. Remote alias formatting has host tests; this change's live VNC
+check ran on the worker without an SSH tunnel.
+
+Artifacts are under ignored `runs/sandbox-info-wuourK`: `host.xml`, `wheel.xml`,
+`gpu.xml`, the JSON summaries, `wheel-sources.json` and `cleanup.json`.
+All nine changed package modules match the wheel and installed source bytes.
+All eight disposable sandboxes (including three earlier source-checkout
+checks) were terminated, their workers shut down, and both original user
+desktops remained ready and running. CPU/memory values remain configuration,
+not utilization measurements; [field semantics](sdk-usage.md#inspect-a-sandbox)
+describe runtime differences and unavailable metadata on older workers.
+
 ## Process ownership and detached environments (2026-09-09)
 
 New sandboxes now follow their creating Python process by default, including

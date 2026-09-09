@@ -148,6 +148,46 @@ time spent launching the runtime, running setup and waiting for the desktop.
 First-use installation and worker preparation happen before this timer starts.
 See [startup measurements](notes/gnome-startup-profiling.md) for the breakdown.
 
+## Inspect a sandbox
+
+`env.info` fetches a summary from the worker:
+
+```python
+from pprint import pprint
+
+pprint(env.info)
+```
+
+It includes the sandbox's ID, name, state, template, runtime, worker hostname
+and Slurm job ID, CPU and memory settings, selected GPUs, and VNC connection
+details. For example, a default GNOME sandbox has:
+
+```python
+info = env.info
+print(info["cpu"])     # {"vcpus": 4, "weight": 100, "quota": None}
+print(info["memory"])  # {"guest": "8GiB", "runtime": "1GiB"}
+print(info["gpus"])    # [] unless you requested a GPU
+print(info["vnc"]["url"])
+```
+
+CPU and memory values are configured budgets, not current utilization. GPU
+entries identify the selected device by model, UUID and device path.
+
+VNC listens on the worker's loopback address. If your viewer is on another
+machine, run the command in `info["vnc"]["ssh_command"]` there first, then open
+the URL. The command uses your SSH target alias when one was configured.
+`vnc` is `None` when there is no ready Xvnc desktop.
+
+The CLI provides the same summary:
+
+```bash
+sandweave info SANDBOX_ID
+```
+
+Replace `SANDBOX_ID` with `env.id` or a unique sandbox name.
+See [inspection details](notes/sdk-usage.md#inspect-a-sandbox) for field meanings
+and compatibility with older workers.
+
 ## Cache and reuse an environment
 
 Continuing with the desktop above:

@@ -171,7 +171,7 @@ def parser():
     shell = sub.add_parser('shell'); shell.add_argument('id'); shell.add_argument('--target')
     command_options(shell); shell.set_defaults(command=['/bin/bash -i'], pty=True)
     listing = sub.add_parser('list'); listing.add_argument('--target'); listing.add_argument('--all', action='store_true')
-    for name in ('status', 'inspect', 'pause', 'resume', 'terminate', 'stop', 'snapshot'):
+    for name in ('info', 'status', 'inspect', 'pause', 'resume', 'terminate', 'stop', 'snapshot'):
         p = sub.add_parser(name); p.add_argument('id'); p.add_argument('--target')
         if name in ('stop', 'snapshot'):
             p.add_argument('--state', default='auto' if name == 'stop' else 'memory',
@@ -370,7 +370,9 @@ def main(argv=None):
                 if op == 'shell' and not args.command:
                     args.command = ['/bin/bash -i']
                 return execute(env, args)
-            if op in ('status', 'inspect', 'pause', 'resume', 'terminate'):
+            if op == 'info':
+                output(env.info)
+            elif op in ('status', 'inspect', 'pause', 'resume', 'terminate'):
                 output(getattr(env, 'status' if op == 'inspect' else op)())
             elif op in ('stop', 'snapshot'):
                 output(getattr(env, op)(state=args.state, experimental_gpu_live=args.experimental_gpu_live))

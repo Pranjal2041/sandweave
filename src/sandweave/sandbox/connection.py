@@ -19,9 +19,10 @@ class UnixHTTPConnection(http.client.HTTPConnection):
 
 
 class Connection:
-    def __init__(self, host, port, token, *, timeout=300, unix_path=None):
+    def __init__(self, host, port, token, *, timeout=300, unix_path=None, ssh_host=None):
         self.host, self.port, self.token, self.timeout = host, int(port), token, timeout
         self.unix_path = unix_path
+        self.ssh_host = ssh_host
         self.local = threading.local()
         self.connections, self.lock = [], threading.Lock()
 

@@ -175,7 +175,7 @@ def connect(target=None, *, template=None):
             command += ['--template', workload(template)]
     info = json.loads(_ssh(host, command, timeout=None if template is not None else 180))
     port = _tunnel(host, info['port'])
-    connection = Connection('127.0.0.1', port, info['token'])
+    connection = Connection('127.0.0.1', port, info['token'], ssh_host=host)
     connection.call('ping')
     return connection
 
@@ -356,11 +356,13 @@ class Slurm:
                     raise TimeoutError('allocated worker did not publish readiness metadata')
                 time.sleep(.1)
         info = json.loads(metadata.read_text())
+        ssh_host = None
         if hostname == socket.gethostname():
             port = info['port']
         else:
-            port = _tunnel(self.config.get('host', hostname), info['port'])
-        connection = Connection('127.0.0.1', port, info['token'])
+            ssh_host = self.config.get('host', hostname)
+            port = _tunnel(ssh_host, info['port'])
+        connection = Connection('127.0.0.1', port, info['token'], ssh_host=ssh_host)
         connection.call('ping')
         return connection
 

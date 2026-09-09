@@ -267,7 +267,8 @@ class Worker:
                     record.update(state='failed', error='runtime was lost or exited outside a lifecycle operation')
                     self.write(record)
         # Secret guest control tokens stay in the worker's private record.
-        return {key: value for key, value in {**record, 'runtime_status': status}.items()
+        worker = {'hostname': socket.gethostname(), 'job_id': os.environ.get('SLURM_JOB_ID')}
+        return {key: value for key, value in {**record, 'runtime_status': status, 'worker': worker}.items()
                 if key not in ('agent', 'owner')}
 
     def list(self):

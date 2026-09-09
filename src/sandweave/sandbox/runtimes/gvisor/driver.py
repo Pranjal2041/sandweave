@@ -221,7 +221,19 @@ class Runtime:
             connection.close()
 
     def status(self, identity):
-        return self.manager.status(identity)
+        status = self.manager.status(identity)
+        status['gpus'] = []
+        if status['status'] in ('running', 'paused') and status.get('gpu'):
+            # The launch record contains the selected device, whereas the
+            # public spec only contains a model constraint (or gpu=True).
+            try:
+                from ..gpu_information import describe
+                status['gpus'] = [describe(self.manager._settings(identity)['gpu'])]
+            except (OSError, ValueError, KeyError):
+                # Inspection must remain possible if runtime files disappear
+                # during cleanup. Unknown is distinct from no selected device.
+                status['gpus'] = None
+        return status
 
     def pause(self, identity):
         self.detach(identity)

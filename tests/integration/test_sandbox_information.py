@@ -51,8 +51,8 @@ def test_gnome_info_cli_and_vnc_follow_the_live_lifecycle(workers):
     with Sandbox(template='gnome') as env:
         remember(env, workers)
         info = env.info
-        assert info['worker']['hostname'] == socket.gethostname()
-        assert info['worker']['job_id'] == os.environ.get('SLURM_JOB_ID')
+        assert info['worker'] == {'hostname': socket.gethostname()}
+        assert set(info['vnc']) == {'url', 'port', 'worker_host'}
         assert info['cpu']['vcpus'] == 4
         assert info['memory'] == {'guest': '8GiB', 'runtime': '1GiB'}
         assert info['gpus'] == []

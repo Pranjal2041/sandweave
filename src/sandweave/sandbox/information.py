@@ -1,9 +1,8 @@
 """Small public summaries of a worker's sandbox records."""
 import copy
-import shlex
 
 
-def summarize(record, *, ssh_host=None):
+def summarize(record):
     spec = record['spec']
     runtime = record.get('runtime_status', {})
     worker = record.get('worker', {})
@@ -21,15 +20,12 @@ def summarize(record, *, ssh_host=None):
         port = runtime.get('ports', {}).get('5901')
         if port is not None:
             port = int(port)
-            host = ssh_host or hostname
             vnc = {'url': f'vnc://127.0.0.1:{port}', 'port': port,
-                   'worker_host': hostname,
-                   'ssh_command': shlex.join(['ssh', '-N', '-o', 'ExitOnForwardFailure=yes',
-                       '-L', f'127.0.0.1:{port}:127.0.0.1:{port}', host]) if host else None}
+                   'worker_host': hostname}
     return copy.deepcopy({
         'id': record['id'], 'name': record.get('name'), 'state': record['state'],
         'template': spec['template']['name'], 'runtime': spec['runtime'],
-        'worker': {'hostname': hostname, 'job_id': worker.get('job_id')},
+        'worker': {'hostname': hostname},
         'cpu': resources['cpu'], 'memory': resources['memory'],
         'gpus': gpus,
         'vnc': vnc,

@@ -170,11 +170,11 @@ prints the same fields as JSON; a unique sandbox name also works.
 | --- | --- |
 | `id`, `name`, `state` | Identity and current lifecycle state. |
 | `template`, `runtime` | Resolved template name and chosen runtime. |
-| `worker` | Worker `hostname` and `job_id` (`None` outside Slurm). |
+| `worker` | Worker `hostname`. |
 | `cpu` | Configured `vcpus`, sharing `weight` and optional `quota`. |
 | `memory` | Configured `guest` and `runtime` budgets, in the units supplied at creation. |
 | `gpus` | Selected devices, each with `model`, `uuid` and worker `device` path. |
-| `vnc` | A ready Xvnc desktop's `url`, worker-side `port`, `worker_host` and `ssh_command`; otherwise `None`. |
+| `vnc` | A ready Xvnc desktop's `url`, worker-side `port` and `worker_host`; otherwise `None`. |
 
 CPU and memory are configuration, not live utilization or dedicated host
 reservations. gVisor rounds memory budgets up to whole MiB; CPU weights and
@@ -191,14 +191,9 @@ An older worker or third-party runtime that does not report selected devices
 returns `gpus=None` for a running GPU sandbox. Unknown worker fields are also
 `None`; the client never substitutes its own hostname for a remote worker.
 
-VNC URLs use `127.0.0.1` **on the worker**. Reading `env.info` does not open a
-tunnel. From another machine, run `ssh_command` and keep it running while
-using the URL. It forwards the same local port to the worker's VNC port and
-uses your configured SSH alias, including that alias's SSH configuration.
-If you need a different login or jump host from the viewer's machine, adjust
-the command there. If the local port is occupied, choose another local port
-in `-L` and use that port in the viewer URL. On the worker itself, open the
-URL directly. TigerVNC also accepts `127.0.0.1::PORT` for an explicit TCP port.
+VNC URLs use `127.0.0.1` **on the worker**. Remote access depends on your setup.
+The summary provides connection details without scheduler metadata or generated
+connection commands. TigerVNC also accepts `127.0.0.1::PORT` for an explicit TCP port.
 VNC authentication still uses the desktop's configured password.
 
 Accessing `env.info` contacts the worker and raises on a lost connection or a

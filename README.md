@@ -158,9 +158,9 @@ from pprint import pprint
 pprint(env.info)
 ```
 
-It includes the sandbox's ID, name, state, template, runtime, worker hostname
-and Slurm job ID, CPU and memory settings, selected GPUs, and VNC connection
-details. For example, a default GNOME sandbox has:
+It includes the sandbox's ID, name, state, template, runtime, worker hostname,
+CPU and memory settings, selected GPUs, and VNC connection details.
+For example, a default GNOME sandbox has:
 
 ```python
 info = env.info
@@ -173,9 +173,7 @@ print(info["vnc"]["url"])
 CPU and memory values are configured budgets, not current utilization. GPU
 entries identify the selected device by model, UUID and device path.
 
-VNC listens on the worker's loopback address. If your viewer is on another
-machine, run the command in `info["vnc"]["ssh_command"]` there first, then open
-the URL. The command uses your SSH target alias when one was configured.
+VNC URLs use the worker's loopback address; remote access depends on your setup.
 `vnc` is `None` when there is no ready Xvnc desktop.
 
 The CLI provides the same summary:

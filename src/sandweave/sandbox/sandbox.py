@@ -145,10 +145,10 @@ class Sandbox:
         """Fetch state, configured resources, selected GPUs and worker-local VNC.
 
         CPU and memory describe settings, not live utilization. VNC URLs use
-        the worker's loopback address; use ssh_command from another machine.
+        the worker's loopback address.
         """
         from .information import summarize
-        return summarize(self.status(), ssh_host=self._connection.ssh_host)
+        return summarize(self.status())
 
     @property
     def timings(self):

@@ -1,6 +1,5 @@
 import copy
 import json
-import shlex
 from types import SimpleNamespace
 
 import pytest
@@ -34,14 +33,13 @@ def test_summary_is_json_serializable_and_does_not_return_recipe_payloads_or_sec
     assert source['spec']['resources']['cpu']['weight'] == 200
 
 
-def test_vnc_uses_worker_port_and_remote_ssh_alias_without_claiming_a_client_tunnel():
-    value = summarize(record(), ssh_host='alice@compute-alias')
-    assert value['worker'] == {'hostname': 'worker.example', 'job_id': '12345'}
-    assert value['vnc']['worker_host'] == 'worker.example'
-    assert value['vnc']['url'] == 'vnc://127.0.0.1:43210'
-    command = shlex.split(value['vnc']['ssh_command'])
-    assert command[-1] == 'alice@compute-alias'
-    assert command[command.index('-L') + 1] == '127.0.0.1:43210:127.0.0.1:43210'
+def test_summary_reports_vnc_endpoint_without_scheduler_metadata_or_connection_commands():
+    value = summarize(record())
+    assert value['worker'] == {'hostname': 'worker.example'}
+    assert value['vnc'] == {'worker_host': 'worker.example', 'port': 43210,
+                            'url': 'vnc://127.0.0.1:43210'}
+    serialized = json.dumps(value)
+    assert 'job_id' not in serialized and 'ssh_command' not in serialized
 
 
 @pytest.mark.parametrize('template,state,runtime_state', [
@@ -66,12 +64,12 @@ def test_legacy_worker_uses_launcher_host_and_does_not_invent_gpu_selection():
     del source['worker']
     source['runtime_status']['launcher'] = {'hostname': 'old-worker'}
     info = summarize(source)
-    assert info['worker'] == {'hostname': 'old-worker', 'job_id': None}
+    assert info['worker'] == {'hostname': 'old-worker'}
     assert info['gpus'] is None
-    assert shlex.split(info['vnc']['ssh_command'])[-1] == 'old-worker'
+    assert info['vnc']['worker_host'] == 'old-worker'
     del source['runtime_status']['launcher']
     info = summarize(source)
-    assert info['worker']['hostname'] is None and info['vnc']['ssh_command'] is None
+    assert info['worker']['hostname'] is None and info['vnc']['worker_host'] is None
     source['runtime_status']['status'] = 'stopped'
     assert summarize(source)['gpus'] == []
 
@@ -80,7 +78,7 @@ def test_info_fetches_current_state_and_mutation_cannot_change_the_handle():
     source = record()
     env = Sandbox.__new__(Sandbox)
     env.id, env._closed = source['id'], False
-    env._connection = SimpleNamespace(ssh_host=None, call=lambda *a, **kw: copy.deepcopy(source))
+    env._connection = SimpleNamespace(call=lambda *a, **kw: copy.deepcopy(source))
     assert env.info['state'] == 'ready'
     env.info['cpu']['vcpus'] = 100
     assert env.spec['resources']['cpu']['vcpus'] == 4
@@ -120,20 +118,19 @@ def test_runtime_gpu_report_uses_launch_identity_and_survives_missing_metadata(m
     assert runtime.status('sw-info')['gpus'] == []
 
 
-def test_ssh_target_preserves_alias_for_vnc(monkeypatch):
+def test_ssh_target_still_connects_through_the_control_tunnel(monkeypatch):
     from sandweave.sandbox import targets
     monkeypatch.setattr(targets, '_ssh', lambda *a, **kw: json.dumps({'port': 1234, 'token': 'secret'}))
     monkeypatch.setattr(targets, '_tunnel', lambda host, port: 54321)
     monkeypatch.setattr(targets.Connection, 'call', lambda *a, **kw: {})
     connection = targets.connect({'host': 'alice@compute-alias', 'metadata': '/worker.json'})
     try:
-        assert connection.ssh_host == 'alice@compute-alias'
         assert connection.port == 54321
     finally:
         connection.close()
 
 
-def test_slurm_target_preserves_remote_alias_but_local_placement_needs_none(monkeypatch, tmp_path):
+def test_slurm_target_uses_a_control_tunnel_only_for_remote_placement(monkeypatch, tmp_path):
     from sandweave.sandbox import targets
     monkeypatch.setattr(targets, 'home', lambda: tmp_path)
     monkeypatch.setattr(targets.Slurm, '_wait', lambda *a, **kw: {'NumNodes': '1', 'NodeList': 'worker'})
@@ -143,10 +140,10 @@ def test_slurm_target_preserves_remote_alias_but_local_placement_needs_none(monk
     metadata = tmp_path / 'worker.json'
     metadata.write_text(json.dumps({'port': 1234, 'token': 'secret'}))
     target = targets.Slurm.connect('12345', host='alice@compute-alias', metadata=str(metadata))
-    for client_host, expected in [('client', 'alice@compute-alias'), ('worker', None)]:
+    for client_host, expected in [('client', 54321), ('worker', 1234)]:
         monkeypatch.setattr(targets.socket, 'gethostname', lambda: client_host)
         connection = target.connection()
         try:
-            assert connection.ssh_host == expected
+            assert connection.port == expected
         finally:
             connection.close()

@@ -24,6 +24,10 @@ def unescape(value):
 def inventory(spec, mountinfo):
     """Fail rather than silently omit unrecognized writable storage."""
     configured = {m['destination']: m for m in spec['mounts']}
+    external = json.loads(spec.get('annotations', {}).get('dev.sandweave.external-mounts', '[]'))
+    if any(m['snapshot'] != 'rebind' for m in external):
+        raise ValueError('external mount policy rejects capture; explicitly choose rebind for shared external state')
+    rebound = {m['destination'] for m in external}
     result = []
     seen = set()
     for line in mountinfo.splitlines():
@@ -33,6 +37,8 @@ def inventory(spec, mountinfo):
         if destination == '/' or any(destination == p or destination.startswith(p + '/') for p in VOLATILE):
             continue
         if 'ro' in fields[5].split(','):
+            continue
+        if destination in rebound:
             continue
         # Docker's overlay mounts refer back to data captured in its storage
         # directory. Docker reconstructs these when containers start again.

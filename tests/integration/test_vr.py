@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from sandweave import Sandbox, UnsupportedFeature
+from sandweave import Sandbox, Slurm, UnsupportedFeature
 from sandweave.sandbox.targets import local_connection
 
 pytestmark = [pytest.mark.integration, pytest.mark.gpu,
@@ -16,9 +16,14 @@ pytestmark = [pytest.mark.integration, pytest.mark.gpu,
 @pytest.fixture(scope='module', autouse=True)
 def release_idle_test_worker():
     yield
-    connection = local_connection()
+    connection = target().connection() if target() else local_connection()
     connection.call('_shutdown_if_idle')
     connection.close()
+
+
+def target():
+    job = os.environ.get('SANDWEAVE_TEST_JOB')
+    return Slurm.connect(job, cpus=12) if job else None
 
 
 @pytest.mark.parametrize('game', ['opensaber', 'gunspinning'])
@@ -26,7 +31,10 @@ def test_vr_both_eyes_controls_pause_record_and_restore(game):
     import numpy as np
     from PIL import Image
     directory = Path(os.environ['SANDWEAVE_ASSETS']) / 'runs/sdk-acceptance/vr' / (game + '-' + uuid.uuid4().hex[:8])
-    with Sandbox(template='vr/' + game, gpu='L40S') as env:
+    existing = os.environ.get('SANDWEAVE_TEST_VR_EXISTING') if game == 'opensaber' else None
+    instance = (Sandbox.connect(existing, target=target()) if existing else
+                Sandbox(template='vr/' + game, gpu='L40S', target=target()))
+    with instance as env:
         assert env.run('test ! -e /dev/kvm').returncode == 0
         observation = env.vr.observe()
         assert observation.left.shape == observation.right.shape == (1080, 960, 3)
@@ -53,7 +61,7 @@ def test_vr_both_eyes_controls_pause_record_and_restore(game):
         Image.fromarray(env.vr.observe().right).save(directory / 'final-right.png')
         saved = env.stop()
         assert saved.state == 'filesystem'
-    with Sandbox(cache=saved) as restored:
+    with Sandbox(cache=saved, target=target()) as restored:
         observation = restored.vr.observe()
         assert observation.left.shape == observation.right.shape
         Image.fromarray(observation.left).save(directory / 'restored-left.png')

@@ -16,6 +16,7 @@ import runtime_store
 import snapshot_store
 import filesystem_snapshot
 import gvisor_gpu
+import external_mounts
 import gvisor_mps
 import signal
 
@@ -48,6 +49,7 @@ parser.add_argument('--cpu-quota', type=float, help='experimental average CPU eq
 parser.add_argument('--nftables', action='store_true')
 parser.add_argument('--docker-data', action='store_true')
 parser.add_argument('--docker-archive', type=Path, help='previously exported Docker state archive')
+parser.add_argument('--mounts', type=Path, help='validated external mount JSON; sources are worker paths')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
 runtime_choice = parser.add_mutually_exclusive_group()
@@ -167,6 +169,11 @@ runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 launch_settings = {'settings': settings, 'runtime': runtime}
+mounts = external_mounts.normalize(json.loads(args.mounts.read_text()) if args.mounts else
+                                   (saved_settings or {}).get('external_mounts', []))
+mount_file = bundle / 'external-mounts.json'
+mount_file.write_text(json.dumps(mounts))
+launch_settings['external_mounts'] = mounts
 if snapshot_manifest is not None:
     launch_settings['base_image'] = snapshot_manifest['base_image']
 (bundle / 'launch-settings.json').write_text(json.dumps(launch_settings, indent=2) + '\n')
@@ -222,6 +229,7 @@ if args.restore and saved_settings.get('gpu'):
     if spec['process']['args'][0] == '/usr/local/bin/engine-gpu-init':
         spec['process']['args'].pop(0)
 spec['linux']['resources']['cpu'] = {}
+external_mounts.configure(spec, mounts)
 spec['linux']['resources']['memory']['limit'] = args.memory_mib * 1024**2
 if args.gpu is not None:
     launch_settings['gpu'] = gvisor_gpu.configure(spec, args.gpu, lab / 'tools/gpu', lab)
@@ -378,6 +386,8 @@ try:
                     '--nvproxy-allowed-driver-capabilities=compute,utility,graphics,video' + (',profiling' if mps else '')]
         if mps:
             command += mps.flags()
+    if mounts:
+        command[4:4] = ['--mounts', str(mount_file)]
     if args.restore and not filesystem_restore:
         checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
         timings['snapshot_storage'] = str(checkpoint)
@@ -393,7 +403,7 @@ try:
     if args.docker_data:
         if not args.restore:
             command += ['--pass-fd=3:3']
-            wrapper_end = 6 if args.gpu is not None else 4
+            wrapper_end = 4 + (2 if args.gpu is not None else 0) + (2 if mounts else 0)
             command[wrapper_end:wrapper_end] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
     command += [f'--bundle=/local/gvisor/bundles/{args.name}', args.name]
     (logs / 'launch.json').write_text(json.dumps(command, indent=2) + '\n')
@@ -413,6 +423,8 @@ try:
         if filesystem_restore:
             def restore_mounts():
                 control = [str(lab / 'scripts/gvisor-host.sh')]
+                if mounts:
+                    control += ['--mounts', str(mount_file)]
                 if args.gpu is not None:
                     control += ['--gpu', str(args.gpu)]
                 control += [runtime_arg, '--root=/local/gvisor/state']

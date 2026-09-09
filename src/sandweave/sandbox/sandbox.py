@@ -8,8 +8,9 @@ import uuid
 from .asyncio import dualmethod, dualclassmethod
 from .errors import CommandError, UnsupportedFeature
 from .files import Files
+from .mounts import serialize as mount_spec
 from .process import Process
-from .resources import normalize, CPU, GPU, Memory, Network
+from .resources import normalize, positive, CPU, GPU, Memory, Network
 from .snapshots import SnapshotRef
 from .targets import connect
 from ..templates.resolve import Template, setup_step
@@ -19,7 +20,7 @@ class Sandbox:
     def __init__(self, *, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, startup_timeout=300, keep_on_error=False,
-                 refresh=False):
+                 refresh=False, experimental_gpu_live=False):
         if sum(x is not None for x in (cache, snapshot)) > 1:
             raise ValueError('cache and snapshot are alternative sources')
         reference = cache if cache is not None else snapshot
@@ -28,7 +29,8 @@ class Sandbox:
         if refresh and cache_key is None:
             raise ValueError('refresh requires cache_key')
         if ttl is not None:
-            raise UnsupportedFeature('lifecycle TTL is being implemented')
+            positive(ttl, 'ttl')
+        positive(startup_timeout, 'startup_timeout')
         self._connection = connect(target)
         saved = self._connection.call('snapshot_spec', reference=str(reference)) if reference is not None else None
         if saved:
@@ -56,8 +58,9 @@ class Sandbox:
                               gpu=gpu if gpu is not None else defaults.get('gpu', False),
                               network=network if network is not None else defaults.get('network', 'internet'))
         spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
-                'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mounts or [], 'name': name,
-                'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error}
+                'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
+                'ttl': ttl, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
+                'experimental_gpu_live': experimental_gpu_live}
         self.id = ('vr-sw-' if 'vr' in recipe['capabilities'] else 'sw-') + uuid.uuid4().hex
         self._owned, self._closed, self._terminated = True, False, False
         self._target = target
@@ -187,16 +190,18 @@ class Sandbox:
         return self._call('setup', step=setup_step(path, inputs=inputs, user=user))
 
     @dualmethod
-    def cache(self, key, *, state='filesystem'):
-        return SnapshotRef.from_record(self._call('capture', state=state, key=key), self._connection)
+    def cache(self, key, *, state='filesystem', experimental_gpu_live=False):
+        return SnapshotRef.from_record(self._call('capture', state=state, key=key,
+            experimental_gpu_live=experimental_gpu_live), self._connection)
 
     @dualmethod
-    def snapshot(self, *, state='memory'):
-        return SnapshotRef.from_record(self._call('capture', state=state), self._connection)
+    def snapshot(self, *, state='memory', experimental_gpu_live=False):
+        return SnapshotRef.from_record(self._call('capture', state=state,
+            experimental_gpu_live=experimental_gpu_live), self._connection)
 
     @dualmethod
-    def stop(self, *, state='auto'):
-        saved = self._call('stop', state=state)
+    def stop(self, *, state='auto', experimental_gpu_live=False):
+        saved = self._call('stop', state=state, experimental_gpu_live=experimental_gpu_live)
         self._terminated = True
         return SnapshotRef.from_record(saved, self._connection)
 

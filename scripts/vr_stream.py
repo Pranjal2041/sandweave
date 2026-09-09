@@ -162,7 +162,7 @@ class VRStream:
                                        stderr=subprocess.STDOUT, start_new_session=True, pass_fds=(self.ring.fd,))
         def drain_log():
             with self.log_path.open('wb') as log:
-                while chunk := self.monado.stdout.read(8192):
+                while chunk := os.read(self.monado.stdout.fileno(), 8192):
                     log.write(chunk)
                     log.flush()
         self.log_thread = threading.Thread(target=drain_log, daemon=True)

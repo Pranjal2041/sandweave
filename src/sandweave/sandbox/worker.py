@@ -26,6 +26,28 @@ class Worker:
         self.records = self.root / 'sandboxes'
         self.records.mkdir(exist_ok=True)
         self.locks, self.guard, self.controls = {}, threading.RLock(), {}
+        from .admission import budget
+        self.memory_budget = budget()
+        threading.Thread(target=self.expire, name='sandweave-ttl', daemon=True).start()
+
+    def expire(self):
+        while True:
+            for path in self.records.glob('*.bin'):
+                try:
+                    record = self.read(path.stem)
+                    if (record['state'] in ('ready', 'paused') and record.get('expires_at') is not None
+                            and time.time() >= record['expires_at']):
+                        with self.lock(record['id']):
+                            record = self.read(record['id'])
+                            if record['state'] in ('ready', 'paused'):
+                                self.terminate(record['id'])
+                                record = self.read(record['id'])
+                                record['termination_reason'] = 'ttl'
+                                self.write(record)
+                except Exception as error:
+                    # Leave failed cleanup retryable and retain a diagnostic.
+                    atomic_json(self.root / 'ttl-error.json', {'id': path.stem, 'error': str(error), 'time': time.time()})
+            time.sleep(.25)
 
     def lock(self, identity):
         with self.guard:
@@ -57,9 +79,10 @@ class Worker:
                 previous = self.store.alias(cache_key)
                 if previous and previous['provenance'] != 'prepared':
                     raise CacheConflict('cache name contains a manual capture: ' + cache_key)
+                prepared = json.loads((self.root / 'prepared.json').read_text())
                 stamp = fingerprint({k: v for k, v in spec.items()
                                      if k not in ('name', 'ttl', 'startup_timeout', 'keep_on_error')} |
-                                    {'engine': (self.root / 'prepared.json').read_text(),
+                                    {'engine': prepared['engine_sources_sha256'],
                                      'runtime': (self.root / 'tools/gvisor-socket/runtime.json').read_text()})
                 if not refresh and previous and previous['fingerprint'] == stamp:
                     return self._create(spec, identity, operation_id=operation_id, reference=previous['id'])
@@ -87,14 +110,18 @@ class Worker:
                 raise SandboxError('previous creation did not finish', sandbox_id=identity,
                                    operation_id=operation_id, phase=record['state'])
             self.runtime.adapter(spec['runtime'])
-            if spec.get('mounts'):
-                raise UnsupportedFeature('explicit mount support is not yet configured')
+            import external_mounts
+            spec['mounts'] = external_mounts.normalize(spec.get('mounts', []))
+            external_mounts.configure({'mounts': []}, spec['mounts'])
             from ..templates.controls import descriptors
             declared = descriptors(spec['template'])
             record = {'id': identity, 'name': spec.get('name'), 'spec': spec, 'state': 'creating',
                       'operation_id': operation_id, 'created_at': time.time(), 'agent': None,
                       'timings': {}, 'workspace': str(self.root), 'capabilities': declared}
-            self.write(record)
+            from .admission import admit
+            with self.guard:
+                record['admission'] = admit(self, spec)
+                self.write(record)
             try:
                 saved = self.store.resolve(reference) if reference else None
                 if saved and saved['state'] == 'memory':
@@ -117,6 +144,8 @@ class Worker:
                     self.start_services(identity)
                 self.attach_controls(identity, cold=cold)
                 record['state'] = 'ready'
+                if spec.get('ttl') is not None:
+                    record['expires_at'] = time.time() + spec['ttl']
                 record['timings']['ready_seconds'] = time.monotonic() - started
                 self.write(record)
                 return self.describe(identity)
@@ -225,17 +254,20 @@ class Worker:
     def snapshot_verify(self, reference):
         return self.store.verify(self.store.resolve(reference))
 
-    def capture(self, identity, state='memory', key=None):
+    def capture(self, identity, state='memory', key=None, experimental_gpu_live=False):
         previous = self.store.alias(key) if key is not None else None
         if previous and previous['provenance'] != 'captured':
             raise CacheConflict('cache name contains a preparation build: ' + key)
         record = self.read(identity)
         if state == 'memory' and record['spec']['resources']['gpu']:
-            raise UnsupportedFeature('live GPU graphics checkpoints are unsupported; choose filesystem state')
+            if not experimental_gpu_live or record['spec']['template']['capabilities']:
+                raise UnsupportedFeature('live GPU graphics checkpoints are unsupported; CUDA-only capture requires experimental_gpu_live=True')
+        if experimental_gpu_live and (state != 'memory' or not record['spec']['resources']['gpu']):
+            raise ValueError('experimental GPU live capture requires GPU memory state')
         revision = 'snap-' + uuid.uuid4().hex
         self.detach_controls(identity, reason='snapshot')
         try:
-            saved = self.runtime.capture(identity, revision, state)
+            saved = self.runtime.capture(identity, revision, state, experimental_gpu_live=experimental_gpu_live)
         finally:
             if record['state'] == 'ready':
                 self.attach_controls(identity, cold=False)
@@ -244,14 +276,14 @@ class Worker:
             self.store.publish(key, metadata, (previous or {}).get('id'))
         return self.store.public(metadata)
 
-    def stop(self, identity, state='auto'):
+    def stop(self, identity, state='auto', experimental_gpu_live=False):
         record = self.read(identity)
         if record['state'] == 'stopped' and record.get('checkpoint'):
             return self.snapshot_info(record['checkpoint'])
         previous = record['state']
         self.pause(identity)
         try:
-            saved = self.capture(identity, state=state)
+            saved = self.capture(identity, state=state, experimental_gpu_live=experimental_gpu_live)
         except BaseException:
             if previous == 'ready':
                 self.resume(identity)
@@ -341,6 +373,11 @@ class Worker:
         return self.controls[identity][name].call(method, parameters)
 
     def dispatch(self, operation, parameters):
+        if operation == '_debug_threads':
+            import sys
+            import traceback
+            return {str(identity): ''.join(traceback.format_stack(frame))
+                    for identity, frame in sys._current_frames().items()}
         if operation == '_shutdown_if_idle':
             if any(self.runtime.status(p.stem)['status'] in ('running', 'paused', 'starting')
                    for p in self.records.glob('*.bin')):
@@ -355,7 +392,7 @@ class Worker:
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
-        if identity:
+        if identity and operation != 'describe':
             with self.lock(identity):
                 return getattr(self, operation)(**parameters)
         return getattr(self, operation)(**parameters)

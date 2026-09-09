@@ -115,11 +115,12 @@ class Store:
         manifest = json.loads((path / 'snapshot-manifest.json').read_text())
         status = path / 'verification.json'
         return {**{k: record[k] for k in ('id', 'state', 'location', 'digest', 'source', 'template')},
-                'dependencies': {k: manifest[k] for k in ('runtime', 'base_image', 'files')},
+                'dependencies': {**{k: manifest[k] for k in ('runtime', 'base_image', 'files')},
+                                 'external_mounts': record['spec'].get('mounts', [])},
                 'verification': json.loads(status.read_text()) if status.exists() else {'status': 'missing'}}
 
     def verify(self, record):
-        if record['spec']['runtime'] == 'apptainer':
+        if record.get('spec', {}).get('runtime', 'gvisor') == 'apptainer':
             from .runtimes.apptainer.driver import verify
             return verify(Path(record['workspace']), Path(record['location']))
         import snapshot_store
@@ -129,7 +130,7 @@ class Store:
         """Make all engine-relative inputs available on this worker, without aliases outside it."""
         import snapshot_store
         source, workspace = Path(record['location']), Path(record['workspace'])
-        native = record['spec']['runtime'] == 'apptainer'
+        native = record.get('spec', {}).get('runtime', 'gvisor') == 'apptainer'
         manifest = (json.loads((source / 'snapshot-manifest.json').read_text()) if native
                     else snapshot_store.inspect(workspace, source))
         if native and self.verify(record)['status'] != 'passed':

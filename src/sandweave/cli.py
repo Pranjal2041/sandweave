@@ -122,6 +122,7 @@ def parser():
     desktop = sub.add_parser('desktop').add_subparsers(dest='desktop_operation', required=True)
     shot = desktop.add_parser('screenshot'); shot.add_argument('id'); shot.add_argument('--output', required=True); shot.add_argument('--target')
     step = desktop.add_parser('step'); step.add_argument('id'); step.add_argument('action', help='JSON action'); step.add_argument('--output', required=True); step.add_argument('--target')
+    action = desktop.add_parser('action'); action.add_argument('id'); action.add_argument('--input', required=True, help='JSON action'); action.add_argument('--target')
     record = sub.add_parser('vr').add_subparsers(dest='vr_operation', required=True).add_parser('record')
     record.add_argument('id'); record.add_argument('--duration', type=float, required=True); record.add_argument('--output', required=True)
     record.add_argument('--fps', type=int, default=30); record.add_argument('--target')
@@ -177,6 +178,9 @@ def main(argv=None):
             elif op == 'files':
                 getattr(env.files, args.file_operation)(args.source, args.destination)
             elif op == 'desktop':
+                if args.desktop_operation == 'action':
+                    output(env.desktop.action(json.loads(args.input)))
+                    return 0
                 image = env.desktop.screenshot() if args.desktop_operation == 'screenshot' else env.desktop.step(json.loads(args.action)).image
                 image.save(args.output)
             elif op == 'vr':

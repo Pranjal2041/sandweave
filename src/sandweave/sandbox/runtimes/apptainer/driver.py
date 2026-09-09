@@ -72,6 +72,8 @@ class Runtime:
         source = directory / 'control/agent.py'
         source.write_text(agent_source())
         binds = []
+        for mount in spec.get('mounts', []):
+            binds += ['--bind', mount['source'] + ':' + mount['destination'] + (':ro' if mount['read_only'] else ':rw')]
         if resources['gpu']:
             selected = self.gvisor.gpu(resources['gpu'])
             import gvisor_gpu
@@ -94,7 +96,8 @@ class Runtime:
         self.children[identity] = process
         record = {'id': identity, 'pid': process.pid, 'start': self.ownership.process_table([process.pid])[process.pid]['start'],
                   'state': 'running', 'gpu': bool(resources['gpu']), 'cpus': cpus,
-                  'memory_limit': memory_bytes(resources['memory']['guest']) + memory_bytes(resources['memory']['runtime'])}
+                  'memory_limit': memory_bytes(resources['memory']['guest']) + memory_bytes(resources['memory']['runtime']),
+                  'mounts': spec.get('mounts', [])}
         atomic_json(directory / 'native.json', record)
         client = Connection('localhost', 0, token, unix_path=str(directory / 'control/agent.sock'), timeout=30)
         deadline = time.monotonic() + spec.get('startup_timeout', 300)
@@ -203,7 +206,9 @@ class Runtime:
         atomic_json(self.directory(identity) / 'native.json', record)
         return self.status(identity)
 
-    def capture(self, identity, label, state):
+    def capture(self, identity, label, state, *, experimental_gpu_live=False):
+        if any(m['snapshot'] != 'rebind' for m in self.metadata(identity).get('mounts', [])):
+            raise UnsupportedFeature('external writable mount rejects capture; explicitly choose snapshot="rebind" for shared state')
         if state not in ('filesystem', 'auto'):
             raise UnsupportedFeature('native memory checkpoints are unavailable; choose filesystem state')
         previous = self.status(identity)['status']

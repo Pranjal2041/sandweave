@@ -59,8 +59,14 @@ class Runtime:
             raise ResourceUnavailable('no allocated GPU matches ' + str(requested.get('model')))
         with locked(self.root / 'tools/gpu/.driver.lock'):
             destination = self.root / 'tools/gpu/driver'
+            destination.parent.chmod(0o755)
             if not destination.exists():
                 gpu_module.stage_driver(destination)
+            destination.chmod(0o755)
+            (destination / 'driver.json').chmod(0o644)
+            for directory in destination.rglob('*'):
+                if directory.is_dir() and not directory.is_symlink():
+                    directory.chmod(0o755)
             # Rendering launchers and CUDA checkpoint tools are immutable assets.
             from ...workspace import assets, stage_tree
             source = assets() / 'tools/gpu'
@@ -102,6 +108,9 @@ class Runtime:
     def create(self, identity, spec, *, snapshot=None, token=None):
         token = token or secrets.token_hex(32)
         options = self.options(spec)
+        path = self.root / 'sandboxes' / (identity + '.mounts.json')
+        atomic_json(path, spec.get('mounts', []))
+        options += ['--mounts', str(path)]
         if snapshot is None and spec['template'].get('base_snapshot'):
             from ...workspace import assets
             from ...snapshots import Store
@@ -121,6 +130,15 @@ class Runtime:
         command = ['python3', '-u', '-c', agent_source(), str(AGENT_PORT), token]
         if init in ('systemd', 'docker'):
             command = ['/sbin/init']
+        archive = spec['template']['runtime_options'].get('docker_archive')
+        if archive and snapshot is None:
+            from ...workspace import assets, _immutable
+            relative = Path(archive)
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('Docker archive must name a relative immutable asset')
+            _immutable(assets() / relative, self.root / relative)
+            options += ['--docker-data', '--docker-archive', str(self.root / relative)]
+            command = ['/usr/local/bin/engine-docker', 'init']
         if snapshot:
             manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
             self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),
@@ -180,9 +198,13 @@ class Runtime:
     def resume(self, identity):
         return self.manager.resume(identity)
 
-    def capture(self, identity, label, state):
+    def capture(self, identity, label, state, *, experimental_gpu_live=False):
+        if any(m['snapshot'] != 'rebind' for m in self.manager._settings(identity).get('external_mounts', [])):
+            raise UnsupportedFeature('external writable mount rejects capture; explicitly choose snapshot="rebind" for shared state')
         self.detach(identity)
         mode = {'memory': 'live', 'filesystem': 'filesystem', 'auto': 'auto'}.get(state)
+        if experimental_gpu_live and state == 'memory':
+            mode = 'experimental-gpu-live'
         if mode is None:
             raise ValueError('snapshot state must be filesystem, memory or auto')
         return self.manager.save(identity, label, mode=mode)

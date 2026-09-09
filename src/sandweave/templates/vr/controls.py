@@ -23,7 +23,16 @@ class VR:
 
     def _frame(self, method='observe', **parameters):
         from .frames import Frame
-        value = self.sandbox._call('control', name='vr', method=method, parameters=parameters)
+        value = self.sandbox._call('control', name='vr', method=method,
+                                  parameters={**parameters, 'codec': self.config.get('transport', 'zstd')})
+        if value.get('codec') == 'zstd':
+            import zstandard
+            expected = value['frame']['width'] * value['frame']['height'] * 4
+            if not 0 < expected <= 2 * 4096 * 4096 * 4:
+                raise ValueError('invalid VR frame dimensions')
+            value['frame']['rgba'] = zstandard.ZstdDecompressor().decompress(value['frame']['rgba'], max_output_size=expected)
+            if len(value['frame']['rgba']) != expected:
+                raise ValueError('invalid decoded VR frame length')
         return Frame(**value['frame']), value['metadata']
 
     @dualmethod
@@ -119,6 +128,8 @@ class Recording:
 class AttachedVR:
     def __init__(self, context, config, cold):
         from vr_stream import VRStream
+        import zstandard
+        self.compressor = zstandard.ZstdCompressor(level=1)
         self.context = context
         self.stream = VRStream(context.id, manager=context.runtime.manager, start_game=False,
                                **{k: config[k] for k in ('width', 'height', 'fps', 'hz', 'mirror', 'slots') if k in config})
@@ -132,9 +143,21 @@ class AttachedVR:
                 user=config.get('game_user', 'ga'), env=config.get('game_env', {}),
                 cwd=config.get('game_cwd', '/workspace'))
             context.worker.process_stdin(context.id, self.process_id, close=True)
-            frame = self.stream.latest(timeout=config.get('ready_timeout', 90))
-            if frame.eye_count != 2:
-                raise RuntimeError('VR template did not produce both eye images')
+            deadline = time.monotonic() + config.get('ready_timeout', 90)
+            sequence = 0
+            while True:
+                state = context.worker.process_status(context.id, self.process_id)
+                if state['returncode'] is not None:
+                    error = context.worker.process_output(context.id, self.process_id, stream='stderr', size=4096)
+                    raise RuntimeError('VR application exited during startup: ' + error.decode(errors='replace'))
+                frame = self.stream.latest(after=sequence, timeout=max(.001, deadline-time.monotonic()))
+                sequence = frame.sequence
+                if frame.eye_count != 2:
+                    raise RuntimeError('VR template did not produce both eye images')
+                if not config.get('wait_for_content', True) or (frame.left.any() and frame.right.any()):
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('VR application did not paint both eyes before readiness deadline')
         except BaseException:
             self.stream.abort_attachment()
             raise
@@ -162,7 +185,14 @@ class AttachedVR:
             after = frame.sequence
             if time.monotonic() >= deadline:
                 raise TimeoutError('no paired-eye capture after input acknowledgement')
-        return {'frame': vars(frame), 'metadata': {**frame.metadata(), 'input': ack,
+        codec = parameters.get('codec', 'raw')
+        if codec not in ('raw', 'zstd'):
+            raise ValueError('VR transport must be raw or zstd')
+        started = time.monotonic_ns()
+        payload = self.compressor.compress(frame.rgba) if codec == 'zstd' else frame.rgba
+        return {'frame': {**vars(frame), 'rgba': payload}, 'codec': codec,
+                'metadata': {**frame.metadata(), 'input': ack,
+                'transport': {'codec': codec, 'bytes': len(payload), 'encode_ns': time.monotonic_ns()-started},
                 'guest_to_host_ns': self.stream.guest_to_host_ns,
                 'minimum_ping_rtt_ns': self.stream.clock_rtt_ns,
                 'acknowledgement': 'runtime received state; no game-consumption or fixed-tick guarantee'}}

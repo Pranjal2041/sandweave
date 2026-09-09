@@ -81,6 +81,55 @@ Further public-API acceptance on the same owned allocation:
   passed in 40.97 s and the screenshot was inspected. Its initial overview still
   requires leaving overview before application keyboard input.
 
-Resource admission/TTL/mounts, GPU/VR qualification,
-remaining CLI parity, installed-wheel acceptance and the full feature matrix
-remain in progress. No performance target or full-feature acceptance is claimed.
+Further live acceptance on `babel-q9-16`:
+
+- Real guest file descriptors support buffered text/binary streams, seek,
+  truncate, append, exclusive creation and reading after rename. TTL survives
+  client disconnect and expires paused guests. Memory admission counts both
+  guest and runtime budgets, and live names are unique. These checks plus the
+  four checkpoint regressions passed eight tests (57.73 s); subsequent stream
+  and mount acceptance passed eight tests without warnings (28.57 s).
+- `Mount(source, destination)` defaults to read-only worker-path access.
+  External writable mounts reject capture unless explicitly marked
+  `snapshot="rebind"`; rebind preserves shared external state independently
+  of the sandbox timeline. Both runtimes passed real write protection,
+  filesystem restore/rebind/removal, and failed-save survival checks.
+- Open Saber and GunSpinning passed paired-eye observation, input ACK ordering,
+  owned pixel buffers, retained Monado PID across pause/resume, paired recordings,
+  rejection of graphics RAM capture, filesystem stop and cold restore. Both
+  passed again with lossless Zstandard RPC transport (300.46 s for both games).
+  Actual decoded left/right/SBS videos were inspected in
+  `runs/sdk-acceptance/vr/opensaber-f6719313` and `gunspinning-d77ecd3a`.
+  These particular clips show menus and tracked controllers, not shooting or
+  level completion. The 20-FPS requested remote recordings delivered about
+  12.6–13.6 paired captures/s; application submission FPS is a separate measure.
+- GPU asset staging now makes deliberately guest-readable asset directories
+  traversable under the worker's private umask. Private workspace ancestors
+  remain private. Previously the desktop user could not load staged GPU tools.
+  GunSpinning readiness now waits past its initial black frames.
+- Three CUDA tests passed (71.50 s): gVisor/native compute and GPU readback,
+  retained nonce/value across pause, filesystem persistence with fresh CUDA
+  processes, and explicit experimental gVisor RAM/CUDA restore preserving
+  nonce, PID, allocation address and contents. Capture and restore each require
+  `experimental_gpu_live=True`; normal GPU graphics snapshots still fail.
+- Cooperative MPS acceptance passed (31.13 s): distinct four/eight-SM clients,
+  actual PTX kernel results, the 1 GiB per-client memory boundary, and a surviving
+  peer after the first owner terminates. This is not hardware GPU isolation.
+- Nested Docker acceptance passed (63.44 s): real Moodle and its nested MariaDB,
+  RAM/open deleted file/offset/ownership/abstract socket/cross-network-namespace
+  TCP checkpoint state, live web service after restore and pause/resume, and
+  cold filesystem restore with the nested database still available.
+- Guest CPU/memory views, a refused allocation above the guest page budget,
+  continued guest liveness, host canary denial and internet/offline egress passed.
+  The CPU-quota check initially looked up the wrong broker record key; after
+  correcting the test it passed (10.49 s), with the measured rate recorded in
+  `runs/sdk-acceptance/resources/quota.json`.
+- Explicit `Slurm.acquire` succeeded with owned GPU job `10368361`; remote
+  commands/lifecycle/cache restore passed, then its allocation context cancelled
+  that job. Borrowed job `10367253` was preserved.
+- 28 affected legacy environment/filesystem/VR host tests passed, plus two
+  subtests. The extended CLI's agreed `desktop action --input` is implemented.
+
+Gamepad/application gameplay acceptance, remaining CLI/async/extension details,
+installed-wheel acceptance and the complete feature/performance report remain
+in progress. No full-feature acceptance or startup performance target is claimed.

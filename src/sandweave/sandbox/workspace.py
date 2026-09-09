@@ -96,6 +96,10 @@ def stage_tree(source, destination):
             destination.symlink_to(target)
     elif source.is_dir():
         destination.mkdir(parents=True, exist_ok=True)
+        # These are deliberately guest-readable immutable assets. The worker's
+        # private umask must not turn directories exposed to guest UID 1000 into
+        # root-only paths. The surrounding worker workspace remains private.
+        destination.chmod(0o755)
         for child in source.iterdir():
             stage_tree(child, destination / child.name)
     else:

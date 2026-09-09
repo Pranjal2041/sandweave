@@ -24,7 +24,7 @@ class Agent:
     def __init__(self, root='/var/lib/sandweave/processes'):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
-        self.processes, self.lock = {}, threading.RLock()
+        self.processes, self.handles, self.lock = {}, {}, threading.RLock()
         # A cold boot retains process logs but cannot retain their old liveness.
         # Memory restore resumes this object and never executes this initializer.
         for directory in self.root.iterdir():
@@ -63,6 +63,7 @@ class Agent:
         if timeout is not None and (not isinstance(timeout, (float, int)) or timeout <= 0):
             raise ValueError('timeout must be positive')
         request = {'argv': argv, 'cwd': cwd, 'env': env or {}, 'user': user, 'timeout': timeout}
+        account = pwd.getpwuid(int(user)) if str(user).isdigit() else pwd.getpwnam(user)
         directory = self.directory(identity)
         with self.lock:
             if directory.exists():
@@ -71,7 +72,6 @@ class Agent:
                 return self.status(identity)
             directory.mkdir()
             (directory / 'request.json').write_text(json.dumps(request))
-            account = pwd.getpwuid(int(user)) if str(user).isdigit() else pwd.getpwnam(user)
             child_env = {**os.environ, 'HOME': account.pw_dir, 'USER': account.pw_name,
                          'LOGNAME': account.pw_name, **(env or {})}
             kwargs = {}
@@ -168,7 +168,37 @@ class Agent:
                 pass
         return self.status(identity)
 
-    def file(self, op, path, data=b'', offset=0, size=4*1024**2, truncate=False, mode=None):
+    def file(self, op, path=None, data=b'', offset=0, size=4*1024**2, truncate=False, mode=None,
+             handle=None, whence=0):
+        if op == 'open':
+            if not Path(path).is_absolute() or mode not in ('rb', 'wb', 'ab', 'xb', 'r+b', 'w+b', 'a+b', 'x+b'):
+                raise ValueError('invalid file mode or path')
+            self.directory(handle)  # Validate opaque handle syntax.
+            with self.lock:
+                if handle not in self.handles:
+                    self.handles[handle] = (path, mode, open(path, mode, buffering=0))
+                elif self.handles[handle][:2] != (path, mode):
+                    raise ValueError('file handle already used for another open')
+            return handle
+        if handle is not None:
+            with self.lock:
+                if op == 'close':
+                    saved = self.handles.pop(handle, None)
+                    if saved:
+                        saved[2].close()
+                    return None
+                stream = self.handles[handle][2]
+                if op == 'read' and 0 <= size <= 4*1024**2:
+                    return stream.read(size)
+                if op == 'write' and len(data) <= 4*1024**2:
+                    return stream.write(data)
+                if op == 'seek':
+                    return stream.seek(offset, whence)
+                if op == 'tell':
+                    return stream.tell()
+                if op == 'truncate':
+                    return stream.truncate(size)
+            raise ValueError('invalid open-file operation')
         path = Path(path)
         if not path.is_absolute() or offset < 0 or not 0 <= size <= 4*1024**2:
             raise ValueError('file paths must be absolute and chunks bounded')
@@ -191,6 +221,9 @@ class Agent:
                     'directory': path.is_dir()}
         if op == 'list':
             return [str(p) for p in sorted(path.iterdir())]
+        if op == 'mkdir':
+            path.mkdir(parents=True, exist_ok=True)
+            return None
         raise ValueError('unknown file operation')
 
     def call(self, operation, parameters):

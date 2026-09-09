@@ -101,6 +101,8 @@ class EnvironmentManager:
         settings = self._settings(name)
         runtime = runtime_store.validate(self.lab, settings['runtime'], verify=False)
         command = [str(self.lab / 'scripts/gvisor-host.sh')]
+        if settings.get('external_mounts'):
+            command += ['--mounts', str(self._bundle(name) / 'external-mounts.json')]
         if settings.get('gpu'):
             command += ['--gpu', str(settings['gpu']['device_minor'])]
         return command + ['/lab/' + str(runtime.relative_to(self.lab)) + '/runsc', '--root=/local/gvisor/state']

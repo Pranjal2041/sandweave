@@ -9,3 +9,11 @@ memory = "8GiB"
 init = "docker"
 nftables = true
 cgroup = "v1"
+
+[services.docker]
+command = "systemctl start docker && exec sleep infinity"
+user = "root"
+ready_timeout = 90
+
+[services.docker.ready]
+exec = ["docker", "info", "--format", "{{.ServerVersion}}"]

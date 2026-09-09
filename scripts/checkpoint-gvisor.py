@@ -103,10 +103,14 @@ if recorded_base.get('path') == base_info['path'] and recorded_base.get('sha256'
 mark('input_setup_seconds')
 
 with environment_control.suspended_cpu(local, a.name):
+    if any(m['snapshot'] != 'rebind' for m in settings.get('external_mounts', [])):
+        raise ValueError('external writable mount policy rejects capture')
     # Exec-donated frame FDs cannot be restored. Detach them from Xvnc and
     # reap the helper before freezing; the next I/O call reconnects lazily.
     fast_io.detach(EnvironmentManager(lab), a.name)
     command = [str(lab / 'scripts/gvisor-host.sh')]
+    if settings.get('external_mounts'):
+        command += ['--mounts', str(bundle / 'external-mounts.json')]
     if settings.get('gpu'):
         command += ['--gpu', str(settings['gpu']['device_minor'])]
     command += ['/lab/' + str(runtime_root.relative_to(lab)) + '/runsc', '--root=/local/gvisor/state']

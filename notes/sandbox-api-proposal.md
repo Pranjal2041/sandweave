@@ -1,12 +1,17 @@
-# Sandbox API proposal: Sandweave
+# Agreed sandbox API contract: Sandweave
 
-Status: **design for review, not an implemented SDK**. No runtime changes or
-environment launches accompany this proposal. `sandweave` is a working Python
-package/CLI name for composing reusable sandboxes; naming can change without
-changing this contract. No package or domain is being registered.
+Status: **agreed contract v1, frozen on 2026-09-08; not an implemented SDK**.
+The user approved the design with single command strings as the default for
+`run`/`exec`. The [README contract](../README.md#agreed-public-api-contract-v1)
+is the source of truth for implementation and the future public repository;
+this document specifies its detailed semantics. Changes to the documented
+interface or behavior require an explicit agreed contract revision, not silent
+implementation drift. `sandweave` remains the working package/CLI name; no
+package or domain is being registered. No runtime changes or environment
+launches accompany this documentation.
 
 See [downstream examples](sandbox-api-examples.md) and the existing
-[feature inventory](feature-inventory.md). Proposed method names in this document
+[feature inventory](feature-inventory.md). Agreed method names in this document
 must not be mistaken for methods already available in `scripts/environment.py`.
 
 ## 1. Design commitments
@@ -29,7 +34,7 @@ backend. CPU/GPU, display, XR and placement remain separately configurable.
 | Primary source | Relevant finding and design choice |
 | --- | --- |
 | [Modal Sandbox reference](https://modal.com/docs/sdk/py/latest/Sandbox) | A sandbox is a handle with creation parameters, process execution and resource configuration. Borrow that shape; omit a mandatory Modal-style App object for local use. |
-| [Modal command execution](https://modal.com/docs/guide/sandbox-spawn) | `exec` returns a process with streams and waiting, including `.aio` methods. Keep this process contract and add a blocking `run` convenience. |
+| [Modal command execution](https://modal.com/docs/guide/sandbox-spawn) | `exec` returns a process with streams and waiting, including `.aio` methods. Keep this process contract and add a blocking `run` convenience. Our command-string default is a deliberate interface choice; it does not copy Modal's positional argument convention. |
 | [Modal readiness](https://modal.com/docs/guide/sandboxes#readiness-probes) | Container startup and service readiness differ. Our convenient constructor waits for the template's declared readiness; this is a deliberate difference from returning an asynchronously provisioning handle. |
 | [Modal images and caching](https://modal.com/docs/guide/images#image-caching-and-rebuilds) | Image definitions drive cache reuse and rebuilds. Use recipe fingerprints and explicit refresh; do not trust a human cache label alone. |
 | [Modal sandbox snapshots](https://modal.com/docs/guide/sandbox-snapshots) | Filesystem, directory and memory snapshots have distinct meanings and limits. Keep filesystem caches and process checkpoints distinguishable. We do not adopt Modal's retention periods or its current memory-snapshot limitations as our own. |
@@ -38,7 +43,7 @@ backend. CPU/GPU, display, XR and placement remain separately configurable.
 | [Daytona warm pools](https://www.daytona.io/docs/en/warm-pools/) | Precreated running sandboxes can satisfy matching creation requests. Design an explicit pool whose compatibility key includes the actual environment configuration. This source is architectural precedent, not evidence of our latency. |
 
 These findings were checked against the current official documentation. The
-following choices are our proposal, not claims that those vendors expose this
+following choices are our agreed design, not claims that those vendors expose this
 exact API. Their performance claims are not transferred to this lab.
 
 ## 3. Small public surface
@@ -60,8 +65,9 @@ creation is `await Sandbox.create.aio(...)`; I/O methods have the same Modal-sty
 | `Sandbox(cache=...)` | Create an independent environment from a named cache or immutable cache reference, including saved template/capability metadata. A miss raises `CacheMiss`. |
 | `Sandbox(snapshot=...)` | Restore a particular checkpoint into a new environment; enforce its compatibility constraints. |
 | `Sandbox.connect(id)` | Attach to an existing environment; never creates a replacement or implicitly resumes a paused one. |
-| `env.run(*argv, ...)` | Wait for a command; return `CommandResult(stdout, stderr, returncode, ...)`. Raise on nonzero exit by default; `check=False` supports test/evaluation outcomes. |
-| `env.exec(*argv, ...)` | Return a `Process` immediately after process creation, with stdin/stdout/stderr, `wait`, `poll` and `terminate`. |
+| `env.run(command, ...)` | Run one command string through the guest shell and wait; return `CommandResult(stdout, stderr, returncode, ...)`. Raise on nonzero exit by default; `check=False` supports test/evaluation outcomes. |
+| `env.exec(command, ...)` | Run one command string through the guest shell; return a `Process` immediately after process creation, with stdin/stdout/stderr, `wait`, `poll` and `terminate`. |
+| `env.run(argv=[...], ...)` / `env.exec(argv=[...], ...)` | Explicit advanced direct-process execution with literal arguments and no shell. Mutually exclusive with a command string. |
 | `env.setup(path, ...)` | Upload an explicit local script/context and execute it inside the sandbox. Wait for success; never execute it on the SDK host. |
 | `env.files` | File read/write, upload/download and streaming access. |
 | `env.cache(key, state="filesystem")` | Capture and publish a reusable immutable environment revision under a human-readable name; return a `SnapshotRef`. Leave the source alive. |
@@ -272,11 +278,28 @@ An unknown remote outcome is reconciled, not declared cleaned up speculatively.
 
 ### Commands and failures
 
-`run` and `exec` accept an argument vector: `run("python", "main.py")`. There is
-no implicit shell or host interpolation. For shell syntax, explicitly request
-`run("bash", "-lc", command)`. Optional `cwd`, `env`, `user` and `timeout` apply
-inside the guest. Repeated commands are new processes, not a persistent Python
-interpreter or shell session; `exec`/PTY or a domain adapter can supply sessions.
+`run` and `exec` take **one command string** by default:
+`env.run("python -c 'print(2 + 2)'")`. The string is sent unchanged to a shell
+inside the sandbox. Core default: `/bin/sh -c`, noninteractive and non-login.
+Quoting, variables, globbing, pipes, redirection and `&&` have that shell's
+semantics. No SDK-host shell expansion or whitespace splitting/rejoining occurs.
+The template may declare `command_shell`; per-call `shell="/bin/bash"` overrides
+it, still using `-c` without login startup files. The selected shell must exist
+inside the guest; missing shells fail explicitly. Exit status is the shell's
+status; the SDK does not implicitly add `errexit` or `pipefail`.
+
+`env.run(argv=["python", "main.py"])` and `env.exec(argv=[...])` are the explicit
+advanced form for literal arguments/direct execution, avoiding shell parsing
+and startup. Exactly one of `command` or a nonempty `argv` is required;
+`shell` is invalid with `argv`. Variadic positional command arguments are not
+part of v1. String and `argv` forms have identical result, timeout, streaming and
+async semantics. Use `argv` for programmatically supplied literal argument data.
+
+Optional `cwd`, `env`, `user` and `timeout` apply inside the guest. Repeated
+commands start new processes/shells, not a persistent Python interpreter or
+shell session; a `cd` or shell variable in one call does not affect another.
+`exec`/PTY or a domain adapter can supply sessions. Execution timeouts apply to
+the owned shell and its process group, including pipelines.
 
 `exec` provides text streams by default and an explicit binary mode. `run`
 drains both output streams concurrently and uses bounded spooling; output over
@@ -315,7 +338,7 @@ or replay is imposed on the RL application.
 | `with Sandbox.connect(id) as env:` | Borrowed handle: exit closes this client's connection, leaving the existing sandbox alive. |
 | A pool lease | Ephemeral independent episode; leaving the lease disposes its used sandbox after owned actions/recorders close. |
 
-The ephemeral-context behavior is a proposed convenience and is deliberately
+The ephemeral-context behavior is an agreed convenience and is deliberately
 documented; it does not change the existing manager's save-before-stop default.
 Snapshot/pause hooks detach non-restorable I/O and release held inputs in order.
 A live resume restores the same process identity; `stop` followed by
@@ -467,6 +490,9 @@ Implementation performance requirements:
   include queue, provisioning, materialization, runtime, setup, capability-ready,
   first-command and first-observation timings. Include contention and steady
   refill demand. A local API-only microbenchmark is not end-to-end startup.
+  Measure the default command-string path including its guest-shell startup,
+  separately from explicit direct `argv` execution; do not silently parse a
+  command string into arguments as a performance shortcut.
 
 ## 10. Internal module boundaries
 
@@ -501,8 +527,11 @@ one command; `create` returns an explicitly managed environment ID.
 
 Lifecycle and inspection accept `--json`; ordinary `exec`/`run` forward command
 stdout/stderr and return its exit code. Control diagnostics go to stderr, never
-corrupt image/process stdout. Argument vectors follow `--`, with no extra shell
-interpretation. Capability actions accept the same JSON schema as Python;
+corrupt image/process stdout. By default, `run`/`exec` require exactly one quoted
+command string after `--`, passed unchanged to the guest shell, matching Python.
+The caller quotes it for their local shell; the CLI never reconstructs it by
+joining multiple arguments. Explicit `--argv -- PROGRAM ARG ...` selects direct
+execution and matches Python's `argv=[...]`. Capability actions accept the same JSON schema as Python;
 third-party capabilities can expose commands from their registered descriptors.
 
 ## 12. Implementation sequence and acceptance gates
@@ -512,7 +541,7 @@ workloads; no phase is authorized to silently replace existing user environments
 
 | Phase | Work | Gate before claiming it works |
 | --- | --- | --- |
-| 1. Freeze the contract | Review the small examples, source/cache precedence, readiness, ownership and typed result/error schemas. Define the serialization and extension boundaries. | Examples are coherent; Python/CLI semantics agree; experimental capabilities are explicit. |
+| 1. Preserve the agreed contract | The README v1 examples, command-string interface, source/cache rules, readiness and ownership are agreed. Flesh out serialization and extension details consistently; seek an explicit contract revision for public behavior changes. | Implementation and public-repository docs conform to the README; experimental capabilities remain explicit. |
 | 2. Package the existing mechanisms | SDK/CLI over current lifecycle, resource/network controls and gVisor; command/files interface; packaged coding/GNOME/VR templates; explicit cache references and preserved capability metadata. | Fresh, cached and restored examples pass in disposable sandboxes; no regressions in CPU live, GPU cold, desktop actions or both-eye VR. |
 | 3. Optimize the training path | Persistent worker/control channels, preparation deduplication, async calls, bounded pool creation/refill and clean episode leases. | End-to-end latency distributions and isolation across leases; no stale action/eye observations or hidden output/recording loss. Millisecond goals remain goals until measured. |
 | 4. Add placement adapters | SSH targets, existing Slurm jobs, explicit acquisition and pools across heterogeneous workers. | Respect allocated CPU/GPU boundaries, handle target loss and cache compatibility; never cancel unrelated jobs or silently resubmit actions. |

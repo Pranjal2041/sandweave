@@ -1,9 +1,11 @@
-# Proposed downstream API examples
+# Agreed downstream API examples
 
-**Design examples only. The `sandweave` package and commands below have not been
-implemented.** They illustrate the [proposed contract](sandbox-api-proposal.md),
-including future templates, pools and placement adapters. Python/TOML/shell
-syntax can be checked without running these examples; that is not SDK acceptance.
+**Agreed contract v1 (2026-09-08), not an implemented SDK.** These examples expand
+the authoritative [README examples](../README.md#agreed-public-api-contract-v1)
+and [detailed contract](sandbox-api-proposal.md), including future templates,
+pools and placement adapters. Keep them consistent when implementing or moving
+to the public repository. Python/TOML/shell syntax can be checked without running
+these examples; that is not SDK acceptance.
 
 All `setup` files below are user-authored guest scripts. No Chrome or other new
 application compatibility is claimed: the current browser acceptance is Firefox.
@@ -17,12 +19,16 @@ managed; `stop` saves, whereas `terminate` discards the current running state.
 from sandweave import Sandbox
 
 with Sandbox() as env:
-    result = env.run("python", "-c", "print(2 + 2)")
+    result = env.run("python -c 'print(2 + 2)'")
     print(result.stdout)  # "4\n"
 ```
 
 No desktop, GPU, cloud account or deployment command is implied. `run` waits
-for completion and checks the exit status. Arguments are passed directly.
+for completion and checks the exit status. One command string runs through
+`/bin/sh -c` inside the sandbox by default. Shell quoting, pipes, redirects and
+`&&` work there. `exec` and async methods use the same command-string convention.
+Advanced literal arguments use `env.run(argv=[...])`; neither form executes
+through a shell on the SDK host.
 
 To run generated code and inspect failures as evaluation results:
 
@@ -32,7 +38,7 @@ from sandweave import Sandbox
 def evaluate_code(code):
     with Sandbox(template="coding") as env:
         env.files.write_text("/workspace/solution.py", code)
-        result = env.run("python", "/workspace/solution.py",
+        result = env.run("python /workspace/solution.py",
                          timeout=5, check=False)
         return {"returncode": result.returncode,
                 "stdout": result.stdout, "stderr": result.stderr}
@@ -89,7 +95,7 @@ For an exact reproducible baseline, pass the returned immutable
 from sandweave import Sandbox
 
 with Sandbox(setup="./setup-coding.sh") as env:
-    print(env.run("python", "--version").stdout)
+    print(env.run("python --version").stdout)
 
 with Sandbox(template="./my-desktop.toml") as env:
     image = env.desktop.screenshot()
@@ -139,7 +145,7 @@ from sandweave import Pool
 
 def evaluate(env, source):
     env.files.write_text("/workspace/main.py", source)
-    return env.run("python", "/workspace/main.py",
+    return env.run("python /workspace/main.py",
                    timeout=5, check=False).stdout
 
 tasks = ["print(1 + 1)", "print(2 + 2)", "print(3 + 3)"]
@@ -177,7 +183,7 @@ from sandweave import Sandbox
 async def evaluate_one(source):
     async with await Sandbox.create.aio(template="coding") as env:
         await env.files.write_text.aio("/workspace/main.py", source)
-        result = await env.run.aio("python", "/workspace/main.py", timeout=5)
+        result = await env.run.aio("python /workspace/main.py", timeout=5)
         return result.stdout
 
 async def main():
@@ -197,7 +203,7 @@ from sandweave import Sandbox
 
 with Sandbox() as env:
     env.files.upload("./script.py", "/workspace/script.py")
-    process = env.exec("python", "-u", "/workspace/script.py", timeout=60)
+    process = env.exec("python -u /workspace/script.py", timeout=60)
     for line in process.stdout:
         print(line, end="")
     process.wait(check=True)
@@ -229,7 +235,7 @@ For an explicit native Apptainer code path:
 from sandweave import Sandbox
 
 with Sandbox(template="coding", runtime="apptainer") as env:
-    print(env.run("python", "-c", "print('hello')").stdout)
+    print(env.run("python -c 'print(2 + 2)'").stdout)
     print(env.capabilities)
 ```
 
@@ -373,7 +379,7 @@ and robotics use their own interaction schemas above the same sandbox lifecycle.
 
 ```bash
 # One ephemeral coding sandbox, with the command's stdout and exit code.
-sandweave run --template coding -- python -c 'print(2 + 2)'
+sandweave run --template coding -- "python -c 'print(2 + 2)'"
 
 # A persistent desktop: template supplies the desktop action capability.
 sandweave create --template gnome --setup ./install-tools.sh --name workbench
@@ -403,3 +409,7 @@ sandbox IDs. Persistent examples deliberately remain available until explicitly
 stopped/terminated. File operations, shell access, snapshots and target/allocation
 inspection follow the same Python contract rather than adding a separate set of
 runtime semantics.
+
+`run`/`exec` take one quoted command string after `--`, interpreted by the guest
+shell. An explicit `--argv -- PROGRAM ARG ...` selects direct execution; the CLI
+does not guess between forms or join multiple arguments into a shell string.

@@ -6,10 +6,262 @@ The [feature inventory](notes/feature-inventory.md) lists execution modes,
 lifecycle and snapshots, resource/network controls, desktops, automation,
 GPU/VR, recording and verified application workflows, with experimental limits.
 
-The [proposed public API](notes/sandbox-api-proposal.md) and
-[downstream Python/CLI examples](notes/sandbox-api-examples.md) describe a simpler
-template/cache/capability interface. These are design documents, not an
-implemented replacement for the existing lab scripts.
+## Agreed public API contract (v1)
+
+**Agreed on 2026-09-08; SDK and CLI not implemented yet.** `sandweave`
+(Sandweave) is the working package/CLI name. This section is the source of truth
+for implementation and the future public repository. Preserve these examples,
+names, defaults, return semantics and lifecycle behavior. Any public contract
+change requires an explicit agreed revision; do not silently substitute a
+different interface during implementation. The [detailed contract](notes/sandbox-api-proposal.md)
+and [extended examples](notes/sandbox-api-examples.md) must stay consistent with
+this section. Existing lab scripts below remain the implemented interface.
+
+### A coding sandbox
+
+```python
+from sandweave import Sandbox
+
+with Sandbox() as env:
+    result = env.run("python -c 'print(2 + 2)'")
+    print(result.stdout)
+```
+
+The default is a small coding environment with Python, shell and basic tools.
+`Sandbox(...)` returns only when the environment and its declared capabilities
+are ready. No desktop, GPU, cloud account, host sudo or KVM is required for this
+coding example. Templates, setup scripts and hardware remain configurable.
+
+**`run` and `exec` take one command string.** The default is `/bin/sh -c` inside
+the sandbox, with shell quoting, variable expansion, pipes, redirection and `&&`.
+No SDK-host shell runs the command. Templates may declare `command_shell`, and
+`shell="/bin/bash"` selects a different guest shell for a call; execution is
+noninteractive and non-login. Each call starts a new process/shell, so use `cwd`
+and `env` arguments for per-call state. The result uses the selected shell's exit
+status, with no implicit `errexit` or `pipefail`.
+
+`run` waits and returns `CommandResult` with `stdout`, `stderr` and `returncode`.
+Nonzero exits raise unless `check=False`; execution timeouts remain typed errors.
+`exec` returns a `Process` with stdin/stdout/stderr, `wait`, `poll` and `terminate`:
+
+```python
+from sandweave import Sandbox
+
+with Sandbox() as env:
+    env.files.upload("./train.py", "/workspace/train.py")
+    process = env.exec("python -u /workspace/train.py", timeout=60)
+    for line in process.stdout:
+        print(line, end="")
+    process.wait(check=True)
+```
+
+This example uses a user-provided `train.py`.
+Advanced direct execution is available as `env.run(argv=["python", "main.py"])`
+or `env.exec(argv=[...])`, with literal arguments and no shell. Exactly one
+command string or nonempty `argv` is required; `shell` cannot accompany `argv`.
+Variadic positional command arguments are not part of v1.
+
+### A custom desktop in three lines
+
+```python
+from sandweave import Sandbox
+env = Sandbox(template="gnome")
+env.setup("./install-chrome-and-myapp.sh")
+```
+
+The user-written setup script runs inside the guest. The template automatically
+supplies the desktop and interaction capability:
+
+```python
+image = env.desktop.screenshot()
+env.desktop.mouse.click(400, 300)
+env.desktop.keyboard.type("hello")
+```
+
+Users choose the installed applications and preparation scripts. A custom
+template declares services that must start on every fresh boot. Chrome here is
+an illustrative installation choice, not a newly verified application.
+
+### Cache once, restore by name
+
+```python
+baseline = env.cache("my-workbench")
+env.terminate()
+
+with Sandbox(cache="my-workbench") as env:
+    image = env.desktop.screenshot()
+```
+
+A cache includes the resolved template, service startup and capability metadata,
+so restoring it does not need the template again. `env.cache()` defaults to
+filesystem state: installed software/files survive, while processes start fresh.
+The returned immutable `baseline` reference can replace the name to pin an exact
+revision. Each restore receives independent writable state; explicitly shared
+external volumes have their own policies.
+
+For automatic reuse of preparation:
+
+```python
+with Sandbox(template="gnome", setup="./install-tools.sh",
+             cache_key="tools-build") as env:
+    image = env.desktop.screenshot()
+```
+
+`cache_key` reuses matching preparation or prepares a new revision when the
+template, script or declared inputs change. `cache` restores saved state and
+raises on a miss. A setup script alone uses the coding template; a template may
+also be a local file or object:
+
+```python
+with Sandbox(setup="./setup-coding.sh") as env:
+    print(env.run("python --version").stdout)
+
+with Sandbox(template="./my-desktop.toml") as env:
+    image = env.desktop.screenshot()
+```
+
+### Many independent coding environments
+
+```python
+from sandweave import Pool
+
+def evaluate(env, source):
+    env.files.write_text("/workspace/main.py", source)
+    return env.run("python /workspace/main.py", timeout=5, check=False)
+
+programs = ["print(1 + 1)", "print(2 + 2)"]
+
+with Pool(template="coding", size=32, warm=8) as pool:
+    results = list(pool.map(evaluate, programs))
+```
+
+`evaluate` runs in the caller's Python process with a leased sandbox. `size`
+bounds concurrent leases; `warm` requests an idle-ready reserve within that
+capacity and actual resources. Pool entry waits for the initial reserve.
+Every task receives independent starting state. Used sandboxes are disposed of
+and replaced from an immutable baseline; deleting a workspace directory does
+not establish a clean episode. Pools also accept `cache=baseline` and pin its
+revision. Results preserve input order by default, and outstanding work is bounded.
+
+### Async uses the same contract
+
+```python
+from sandweave import Sandbox
+
+async def evaluate_one(source):
+    async with await Sandbox.create.aio(template="coding") as env:
+        await env.files.write_text.aio("/workspace/main.py", source)
+        result = await env.run.aio("python /workspace/main.py", timeout=5)
+        return result.stdout
+```
+
+Blocking I/O methods have Modal-style `.aio` counterparts. `run` completes a
+command; `exec` exposes a process. Neither requires an RL framework.
+
+### VR games and agent loops always observe both eyes
+
+```python
+from sandweave import Sandbox
+
+def play_episode(policy):
+    with Sandbox(template="vr/gunspinning", gpu=True) as env:
+        observation = env.vr.observe()
+        with env.vr.record("./episode", fps=30):
+            for _ in range(300):
+                action = policy(observation.left, observation.right)
+                if action is None:
+                    break
+                observation = env.vr.step(action)
+```
+
+The template supplies game startup, Monado/xrizer, virtual controllers and
+stereo I/O. Observations contain actual left/right images from the same
+compositor frame. Recording preserves lossless pairs and finalizes both eye
+videos, a synchronized side-by-side preview and timing/drop metadata.
+`vr.step` captures after runtime acknowledgement; it does not imply game-level
+input consumption or exactly one simulation tick. GPU filesystem caches boot
+fresh game processes; they do not promise live graphics restoration.
+
+Desktop agents use `env.desktop.step(action)` and receive an observation with
+`.image` and timing/acknowledgement metadata. Capturing after an input-server
+fence does not promise application repaint completion. Plugins may add
+`env.capability("robotics")` with their own action/observation schemas and
+simulator stepping semantics. Policy, reward and training-stack choices remain
+downstream. [Extended examples](notes/sandbox-api-examples.md) include desktop
+and robotics loops, file transfer, explicit allocation and checkpoint restoration.
+
+### Resources and placement stay explicit
+
+```python
+from sandweave import CPU, Memory, Sandbox
+
+with Sandbox(template="cuda", gpu="L40S",
+             cpu=CPU(vcpus=2, weight=200, quota=1.5),
+             memory=Memory(guest="4GiB", runtime="1GiB")) as env:
+    print(env.run("nvidia-smi").stdout)
+```
+
+Scalar conveniences such as `cpu=2`, `memory="4GiB"` and `gpu=True` remain
+available. CPU weights apply within a worker's shared CPU pool; runtime/helper
+memory is additional to the guest budget. GPU selection uses eligible allocated
+devices. New Slurm allocation is an explicit `Slurm.acquire(...)` operation;
+closing a sandbox must never cancel an unrelated or borrowed allocation.
+
+gVisor is the default runtime, with `runtime="apptainer"` an explicit alternative
+that reports its actual capabilities. Runtime choice is separate from local/SSH
+placement and multi-worker pools. These paths require neither KVM nor host sudo;
+host syscall/user-namespace restrictions and device compatibility still matter.
+
+### State, ownership and performance
+
+| Operation or source | Locked meaning |
+| --- | --- |
+| Template/setup | Inspectable preparation, startup, readiness and capabilities. |
+| Filesystem cache | Reusable software/files; fresh processes on restore. |
+| `env.snapshot(state="memory")` | Supported running process/kernel state; unsupported GPU graphics capture fails explicitly. |
+| `env.pause()` / `env.resume()` | Suspend/continue the same resident environment, retaining memory/VRAM. |
+| `env.stop()` | Save before releasing; save failure keeps the source alive. Return a checkpoint reference. |
+| `env.terminate()` | Release without a new save; preserve previously published caches and external volumes. |
+| `env.close()` | Disconnect this client only. |
+| `with Sandbox(...)` | Owned ephemeral scope; discard unsaved state on exit. Save/cache or successfully stop first to retain state. |
+| `with Sandbox.connect(id)` | Borrowed handle; exit only disconnects. |
+| Prestarted pool | Ready independent environments; checkout and refill are separate work. |
+
+Optimize cold startup, prepared restore, actions and execution. A few
+milliseconds for local warm checkout plus the first small command is a target,
+not a current measurement or promise for cold desktop/Slurm startup. Measure
+usable readiness and first work, including queue time, at p50/p95/p99. Use
+persistent control/data paths and clean baselines; do not hide startup work
+behind early handle creation or sacrifice episode isolation for reuse.
+Measure guest-shell launch cost in the default command-string path as well as
+the explicit direct-execution path.
+
+The internal boundaries remain template resolution, runtime operations, target
+and allocation handling, artifact storage, capability plugins and pooling.
+Built-in desktop/VR capabilities must use the public extension mechanism.
+
+### CLI parity
+
+```bash
+sandweave run --template coding -- "python -c 'print(2 + 2)'"
+
+sandweave create --template gnome --setup ./install-tools.sh --name workbench
+sandweave desktop screenshot workbench --output screen.png
+sandweave cache save workbench my-workbench
+sandweave create --cache my-workbench --name restored
+
+sandweave create --template vr/gunspinning --gpu auto --name gunspin
+sandweave vr record gunspin --duration 30 --output ./episode
+```
+
+`run` creates an ephemeral sandbox for one command; `create` returns an explicitly
+managed environment. `run`/`exec` take exactly one quoted command string after
+`--` for the guest shell. Advanced `--argv -- PROGRAM ARG ...` bypasses it. The
+CLI never joins separate arguments into a shell command. Process stdout/stderr
+and exit codes pass through; control diagnostics go to stderr. Python and CLI
+share lifecycle and capability semantics.
+
+## Current lab implementation and evidence
 
 Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Earth Pro 7.3.7 have been exercised. The user requested closing those desktops. The current fixed desktop is `resolve-optfix`, running GPU-accelerated DaVinci Resolve 21.0.4 at **24 fps** on the tested project, up from 8.9 fps after repairing GPU completion notifications. Import, color grading, project reopening and ProRes export also passed. The original `resolve-gpu2` remains available. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
 

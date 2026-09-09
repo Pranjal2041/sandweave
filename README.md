@@ -6,6 +6,11 @@ The [feature inventory](notes/feature-inventory.md) lists execution modes,
 lifecycle and snapshots, resource/network controls, desktops, automation,
 GPU/VR, recording and verified application workflows, with experimental limits.
 
+The [repository architecture proposal](notes/repository-architecture.md) maps the
+agreed API to six pillars, their atomic units and adapter contracts, with a
+package layout and an extraction plan for the existing lab. It is design-only;
+the public package has not been scaffolded or implemented.
+
 ## Agreed public API contract (v1)
 
 **Agreed on 2026-09-08; SDK and CLI not implemented yet.** `sandweave`

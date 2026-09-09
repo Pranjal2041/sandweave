@@ -6,6 +6,11 @@ The [feature inventory](notes/feature-inventory.md) lists execution modes,
 lifecycle and snapshots, resource/network controls, desktops, automation,
 GPU/VR, recording and verified application workflows, with experimental limits.
 
+The [proposed public API](notes/sandbox-api-proposal.md) and
+[downstream Python/CLI examples](notes/sandbox-api-examples.md) describe a simpler
+template/cache/capability interface. These are design documents, not an
+implemented replacement for the existing lab scripts.
+
 Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Earth Pro 7.3.7 have been exercised. The user requested closing those desktops. The current fixed desktop is `resolve-optfix`, running GPU-accelerated DaVinci Resolve 21.0.4 at **24 fps** on the tested project, up from 8.9 fps after repairing GPU completion notifications. Import, color grading, project reopening and ProRes export also passed. The original `resolve-gpu2` remains available. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
 
 ## Four controls implemented and tested

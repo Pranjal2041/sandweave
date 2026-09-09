@@ -6,10 +6,9 @@ The [feature inventory](notes/feature-inventory.md) lists execution modes,
 lifecycle and snapshots, resource/network controls, desktops, automation,
 GPU/VR, recording and verified application workflows, with experimental limits.
 
-The [repository architecture proposal](notes/repository-architecture.md) maps the
-agreed API to six pillars, their atomic units and adapter contracts, with a
-package layout and an extraction plan for the existing lab. It is design-only;
-the public package has not been scaffolded or implemented.
+The [repository structure proposal](notes/repository-architecture.md) has three
+pillars: templates define, sandboxes run, capabilities interact. It is design-only;
+the agreed API is unchanged and the public package has not been implemented.
 
 ## Agreed public API contract (v1)
 

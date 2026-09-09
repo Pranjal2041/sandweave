@@ -15,8 +15,8 @@ desktops when testing; use separate disposable environments for new tests.
 
 ## Communication and scope
 
-- The README's "Agreed public API contract (v1)" is the source of truth for the
-  SDK/CLI and the future public repository. Preserve its examples and semantics,
+- The README's public examples define the agreed v1 contract for the SDK/CLI
+  and the future public repository. Preserve its examples and semantics,
   including single command strings for `run`/`exec`. Keep the detailed API notes
   consistent; public contract changes require an explicit agreed revision.
 - Do not give recommendations unless the user explicitly asks for them. Answer

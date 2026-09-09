@@ -1,8 +1,8 @@
 # Using Sandweave
 
 The Python SDK and CLI use the same lifecycle. A template defines setup,
-services and controls; a sandbox is one running instance. The locked examples
-in [README](../README.md#agreed-public-api-contract-v1) remain the public contract.
+services and controls; a sandbox is one running instance. Start with the
+[README examples](../README.md#agreed-public-api-contract-v1).
 
 ## Install and configure
 
@@ -13,10 +13,13 @@ compatible NVIDIA device and driver. These requirements are not established for
 every Linux distribution or hosting provider.
 
 ```bash
-python -m pip install '.[vr]'  # Includes desktop, array and recording dependencies.
+python -m pip install '.[vr]'  # Python dependencies for desktop and VR use.
 sandweave configure --assets /path/to/prepared-assets
 sandweave run --template coding -- "python -c 'print(2 + 2)'"
 ```
+
+VR video export also requires FFmpeg with `libx264` on the Python client's
+`PATH`; the Python extras do not install it.
 
 From this checkout, assets are discovered automatically. For a wheel installed
 elsewhere, use `configure` or `SANDWEAVE_ASSETS`. `SANDWEAVE_HOME` selects the
@@ -44,8 +47,10 @@ from this implementation in the existing lab.
 | `games/gunspinning-gamepad` | GunSpinning's flat gamepad mode, SDL input and desktop output. |
 
 VR recipes require the configured `vr-base@1` prepared asset. Gamepad flat mode
-does not produce a stereo observation. VR recordings always export actual left,
-right and synchronized side-by-side videos.
+does not produce a stereo observation. VR recordings save lossless eye pairs
+and export lossy left, right and synchronized side-by-side MP4 previews.
+Video export requires at least two recorded frames; ending an episode
+immediately can leave the recording too short to export.
 
 A local TOML recipe can extend a built-in template:
 
@@ -97,8 +102,10 @@ keys include the recipe, declared setup inputs, engine/SDK/provider code and
 asset registry. A missing cache raises instead of silently rebuilding it.
 
 Snapshot verification is asynchronous and explicit `reference.verify()` waits
-for a complete content check. Finish verification before relying on a snapshot
-after its source node disappears: initial verification of an unhashed capture
+for a complete content check. Check that its returned `status` is `"passed"`;
+an integrity mismatch returns `"failed"`. Error details depend on the runtime.
+Finish verification before relying on a snapshot after its source node
+disappears: initial verification of an unhashed capture
 can still need that node's frozen source. Completed artifacts can be imported
 by another worker with access to the shared store and recorded dependencies.
 

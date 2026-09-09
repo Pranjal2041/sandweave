@@ -1,34 +1,35 @@
-# Sandweave: sandboxes without host sudo or KVM
+# Sandweave
 
-The Python SDK and `sandweave` CLI implement the agreed template/sandbox contract.
-See [installation and usage](notes/sdk-usage.md) and
-[current acceptance](notes/sdk-implementation-progress.md).
+Sandweave runs Linux sandboxes for agent training and evaluation. Use Python or
+the CLI to run code, control a desktop, or interact with a VR game. Sandboxes run
+on your own workers without host sudo or KVM.
 
-Default runtime: patched **gVisor systrap**, running in unprivileged Apptainer with no KVM access, host sudo, or administrator changes. This independent lab retains a Linux desktop, guest root, systemd, and actual nested Docker. Gym Anything's runtime code remains untouched.
+A template defines the installed software, startup services and controls.
+A sandbox is a running instance of that template. You can use a built-in
+template, provide a setup script, or write your own template.
 
-The [feature inventory](notes/feature-inventory.md) lists execution modes,
-lifecycle and snapshots, resource/network controls, desktops, automation,
-GPU/VR, recording and verified application workflows, with experimental limits.
+## Install
 
-The [repository structure](notes/repository-architecture.md) has two pillars:
-templates define setup, startup and controls; sandboxes implement running instances.
-[Implementation and acceptance progress](notes/sdk-implementation-progress.md)
-tracks which parts of the agreed API have passed current end-to-end tests.
+From this checkout, with Python 3.11 or newer:
 
-## Agreed public API contract (v1)
+```bash
+python -m pip install .
+sandweave configure --assets /path/to/prepared-assets
+```
 
-**Agreed on 2026-09-08; implemented as Sandweave 0.1.0.** `sandweave`
-is the package/CLI name. This section is the source of truth
-for implementation and the future public repository. Preserve these examples,
-names, defaults, return semantics and lifecycle behavior. Any public contract
-change requires an explicit agreed revision; do not silently substitute a
-different interface during implementation. The [detailed contract](notes/sandbox-api-proposal.md)
-and [extended examples](notes/sandbox-api-examples.md) must stay consistent with
-this section. The lab scripts below also remain available. The SDK currently
-uses configured, prepared runtime assets; the wheel does not include large
-images, runtime binaries or game downloads.
+Workers currently require Linux x86-64, Apptainer, unprivileged user namespaces
+and prepared runtime assets. The package includes the SDK and engine scripts;
+runtime binaries, base images and game files must be prepared separately. See
+[runtime preparation](notes/gvisor-lab-reproduction.md) and
+[configuration](notes/sdk-usage.md#install-and-configure).
 
-### A coding sandbox
+For desktop use, install `'.[desktop]'`; for VR, install `'.[vr]'`. VR video
+export also needs FFmpeg with `libx264` on the Python client's `PATH`.
+GPU templates require a compatible NVIDIA device and driver on the worker.
+
+<a id="agreed-public-api-contract-v1"></a>
+
+## Run commands
 
 ```python
 from sandweave import Sandbox
@@ -38,22 +39,24 @@ with Sandbox() as env:
     print(result.stdout)
 ```
 
-The default is a small coding environment with Python, shell and basic tools.
-`Sandbox(...)` returns only when the environment and its declared capabilities
-are ready. No desktop, GPU, cloud account, host sudo or KVM is required for this
-coding example. Templates, setup scripts and hardware remain configurable.
+This prints `4`. The default `coding` template provides Python, a shell and
+basic tools, with one virtual CPU, 1 GiB of guest memory and a separate 512 MiB
+runtime budget. `Sandbox(...)` waits for the template's services and controls to be ready.
+Leaving the `with` block terminates the sandbox and discards unsaved state.
 
-**`run` and `exec` take one command string.** The default is `/bin/sh -c` inside
-the sandbox, with shell quoting, variable expansion, pipes, redirection and `&&`.
-No SDK-host shell runs the command. Templates may declare `command_shell`, and
-`shell="/bin/bash"` selects a different guest shell for a call; execution is
-noninteractive and non-login. Each call starts a new process/shell, so use `cwd`
-and `env` arguments for per-call state. The result uses the selected shell's exit
-status, with no implicit `errexit` or `pipefail`.
+`run` takes one command string, runs it through `/bin/sh -c` inside the sandbox
+by default, and waits for completion. Pipes, redirects, variable expansion and
+`&&` use the guest shell. The result contains `stdout`, `stderr` and `returncode`. A nonzero
+exit raises unless you pass `check=False`; a timeout raises an error.
 
-`run` waits and returns `CommandResult` with `stdout`, `stderr` and `returncode`.
-Nonzero exits raise unless `check=False`; execution timeouts remain typed errors.
-`exec` returns a `Process` with stdin/stdout/stderr, `wait`, `poll` and `terminate`:
+Each call starts a new process. Use `cwd` and `env` for per-call working
+directories and environment variables, or `shell="/bin/bash"` to select another
+guest shell. By default, shells are noninteractive and non-login, with no
+implicit `errexit` or `pipefail`. For literal arguments without a shell, use
+`env.run(argv=["python", "main.py"])`. Supply either a command string or `argv`;
+`shell` applies only to the command-string form.
+
+To stream output, use `exec`:
 
 ```python
 from sandweave import Sandbox
@@ -66,13 +69,12 @@ with Sandbox() as env:
     process.wait(check=True)
 ```
 
-This example uses a user-provided `train.py`.
-Advanced direct execution is available as `env.run(argv=["python", "main.py"])`
-or `env.exec(argv=[...])`, with literal arguments and no shell. Exactly one
-command string or nonempty `argv` is required; `shell` cannot accompany `argv`.
-Variadic positional command arguments are not part of v1.
+`exec` returns a `Process` with stdin, stdout, stderr, `wait`, `poll` and
+`terminate`. Here, `train.py` is your local script; `wait(check=True)` checks its
+exit status. File access also includes `write_text`, `read_text`, `download` and
+streaming through `env.files.open(...)`.
 
-### A custom desktop in three lines
+## Set up a desktop
 
 ```python
 from sandweave import Sandbox
@@ -80,8 +82,9 @@ env = Sandbox(template="gnome")
 env.setup("./install-chrome-and-myapp.sh")
 ```
 
-The user-written setup script runs inside the guest. The template automatically
-supplies the desktop and interaction capability:
+Write `install-chrome-and-myapp.sh` to install your applications. The setup
+script runs inside the sandbox. The `gnome` template starts GNOME with Xvnc and
+provides screenshots, mouse input and keyboard input:
 
 ```python
 image = env.desktop.screenshot()
@@ -89,11 +92,15 @@ env.desktop.mouse.click(400, 300)
 env.desktop.keyboard.type("hello")
 ```
 
-Users choose the installed applications and preparation scripts. A custom
-template declares services that must start on every fresh boot. Chrome here is
-an illustrative installation choice, not a newly verified application.
+Keyboard input goes to the focused window; mouse clicks use desktop coordinates.
+For an agent loop, `env.desktop.step(action)` applies a mouse/keyboard action and returns an
+observation with `.image` and timing metadata. It captures after the input server
+acknowledges the action; your application may still be processing it.
+See the [desktop loop example](notes/sandbox-api-examples.md#4-a-desktop-agent-loop).
 
-### Cache once, restore by name
+## Cache and reuse an environment
+
+Continuing with the desktop above:
 
 ```python
 baseline = env.cache("my-workbench")
@@ -103,14 +110,16 @@ with Sandbox(cache="my-workbench") as env:
     image = env.desktop.screenshot()
 ```
 
-A cache includes the resolved template, service startup and capability metadata,
-so restoring it does not need the template again. `env.cache()` defaults to
-filesystem state: installed software/files survive, while processes start fresh.
-The returned immutable `baseline` reference can replace the name to pin an exact
-revision. Each restore receives independent writable state; explicitly shared
-external volumes have their own policies.
+Caches save filesystem state by default, including installed software and files.
+The saved template also supplies startup services and controls, so you can
+restore by cache name alone. Processes start fresh, and each restore gets
+independent writable state. Shared external volumes keep their own state.
 
-For automatic reuse of preparation:
+The returned `baseline` reference pins an immutable revision. Pass
+`cache=baseline` to reuse that revision even if the name is later updated.
+A missing cache raises an error.
+
+To reuse setup automatically, pass a `cache_key`:
 
 ```python
 with Sandbox(template="gnome", setup="./install-tools.sh",
@@ -118,10 +127,24 @@ with Sandbox(template="gnome", setup="./install-tools.sh",
     image = env.desktop.screenshot()
 ```
 
-`cache_key` reuses matching preparation or prepares a new revision when the
-template, script or declared inputs change. `cache` restores saved state and
-raises on a miss. A setup script alone uses the coding template; a template may
-also be a local file or object:
+`cache_key` reuses matching preparation or builds a new revision when the
+template, script or declared inputs change. `cache` loads saved state.
+The setup scripts in these examples are files you provide.
+
+## Choose or write a template
+
+| Template | Includes |
+| --- | --- |
+| `coding` | Python, shell and file access; the default. |
+| `gnome` | GNOME desktop, screenshots, mouse and keyboard controls. |
+| `cuda` | Coding environment with one eligible NVIDIA GPU. |
+| `docker` | A Docker daemon inside the sandbox. |
+| `vr/opensaber` | Open Saber, virtual controllers and paired eye images. |
+| `vr/gunspinning` | GunSpinning VR with motion controllers and paired eye images. |
+| `games/gunspinning-gamepad` | GunSpinning's flat gamepad mode with desktop output. |
+
+A setup script on its own uses the coding template. A template can also be a
+local TOML file or a `Template` object:
 
 ```python
 with Sandbox(setup="./setup-coding.sh") as env:
@@ -131,7 +154,13 @@ with Sandbox(template="./my-desktop.toml") as env:
     image = env.desktop.screenshot()
 ```
 
-### Many independent coding environments
+You provide both files. A custom desktop template can extend `gnome` and declare
+services to start on every fresh boot. See
+[writing templates](notes/sdk-usage.md#templates) for a TOML example. Templates
+can also add controls through installed Python packages; the
+[point-mass example](examples/pointmass/README.md) shows how to write an extension.
+
+## Run a pool of sandboxes
 
 ```python
 from sandweave import Pool
@@ -146,15 +175,16 @@ with Pool(template="coding", size=32, warm=8) as pool:
     results = list(pool.map(evaluate, programs))
 ```
 
-`evaluate` runs in the caller's Python process with a leased sandbox. `size`
-bounds concurrent leases; `warm` requests an idle-ready reserve within that
-capacity and actual resources. Pool entry waits for the initial reserve.
-Every task receives independent starting state. Used sandboxes are disposed of
-and replaced from an immutable baseline; deleting a workspace directory does
-not establish a clean episode. Pools also accept `cache=baseline` and pin its
-revision. Results preserve input order by default, and outstanding work is bounded.
+`size` limits the number of sandboxes in use at once. `warm` requests a reserve
+of ready sandboxes within that capacity and the worker's available resources.
+Entering the pool waits for the initial reserve.
 
-### Async uses the same contract
+Each task receives independent starting state. After a task, the pool discards
+the used sandbox and replaces it from the baseline. The callback runs in your
+Python process, and results preserve input order. Use `cache=baseline` for a
+prepared environment or `targets=[...]` to distribute tasks across workers.
+
+## Use async calls
 
 ```python
 from sandweave import Sandbox
@@ -166,10 +196,10 @@ async def evaluate_one(source):
         return result.stdout
 ```
 
-Blocking I/O methods have Modal-style `.aio` counterparts. `run` completes a
-command; `exec` exposes a process. Neither requires an RL framework.
+Creation, commands, file operations and lifecycle methods have `.aio`
+counterparts. Async contexts follow the same cleanup rules as synchronous ones.
 
-### VR games and agent loops always observe both eyes
+## Run a VR agent loop
 
 ```python
 from sandweave import Sandbox
@@ -185,23 +215,24 @@ def play_episode(policy):
                 observation = env.vr.step(action)
 ```
 
-The template supplies game startup, Monado/xrizer, virtual controllers and
-stereo I/O. Observations contain actual left/right images from the same
-compositor frame. Recording preserves lossless pairs and finalizes both eye
-videos, a synchronized side-by-side preview and timing/drop metadata.
-`vr.step` captures after runtime acknowledgement; it does not imply game-level
-input consumption or exactly one simulation tick. GPU filesystem caches boot
-fresh game processes; they do not promise live graphics restoration.
+Pass your policy to `play_episode`. It receives left and right images from the
+same compositor frame and returns head/controller input, or `None` to end the
+loop. The template starts the game, Monado/xrizer and virtual controllers from
+the prepared VR assets.
 
-Desktop agents use `env.desktop.step(action)` and receive an observation with
-`.image` and timing/acknowledgement metadata. Capturing after an input-server
-fence does not promise application repaint completion. Plugins may add
-`env.capability("robotics")` with their own action/observation schemas and
-simulator stepping semantics. Policy, reward and training-stack choices remain
-downstream. [Extended examples](notes/sandbox-api-examples.md) include desktop
-and robotics loops, file transfer, explicit allocation and checkpoint restoration.
+Recording saves lossless eye pairs, separate left/right MP4 previews, a
+synchronized side-by-side MP4 preview, and timing and dropped-frame metadata.
+The MP4 previews use lossy encoding. Video export requires at least two recorded
+frames; a policy that ends immediately can leave the recording too short.
+`fps=30` requests a capture cadence, not a game frame rate.
 
-### Resources and placement stay explicit
+`vr.step` returns a capture taken after the runtime acknowledges the input.
+Acknowledgement does not guarantee that the game consumed the input or advanced
+one simulation tick. See [VR actions and caching](notes/sandbox-api-examples.md#9-a-vr-game-and-agent-loop)
+for the action format and offline reuse. Filesystem restores start fresh game
+processes; live graphics checkpoints are unsupported.
+
+## Set resources and choose a worker
 
 ```python
 from sandweave import CPU, Memory, Sandbox
@@ -212,46 +243,68 @@ with Sandbox(template="cuda", gpu="L40S",
     print(env.run("nvidia-smi").stdout)
 ```
 
-Scalar conveniences such as `cpu=2`, `memory="4GiB"` and `gpu=True` remain
-available. CPU weights apply within a worker's shared CPU pool; runtime/helper
-memory is additional to the guest budget. GPU selection uses eligible allocated
-devices. New Slurm allocation is an explicit `Slurm.acquire(...)` operation;
-closing a sandbox must never cancel an unrelated or borrowed allocation.
+You can also use `cpu=2`, `memory="4GiB"` and `gpu=True`. CPU weights and quotas
+use sampled userspace scheduling within a worker's eligible CPUs. Guest memory
+and runtime/helper memory have separate budgets; the runtime guard is sampled.
+GPU selection uses devices already available to the worker.
 
-gVisor is the default runtime, with `runtime="apptainer"` an explicit alternative
-that reports its actual capabilities. Runtime choice is separate from local/SSH
-placement and multi-worker pools. These paths require neither KVM nor host sudo;
-host syscall/user-namespace restrictions and device compatibility still matter.
+Sandboxes run locally by default. To use an existing Slurm job:
 
-### State, ownership and performance
+```python
+from sandweave import Sandbox, Slurm
 
-| Operation or source | Locked meaning |
+allocation = Slurm.connect("12345")
+with Sandbox(target=allocation) as env:
+    print(env.run("hostname").stdout)
+```
+
+Replace `12345` with your job ID. `Slurm.connect` borrows an allocation; sandbox
+cleanup leaves the job running. `Slurm.acquire(...)` creates a new allocation
+and its context closes only the job it owns. SSH targets and pools across
+workers are also supported. See [placement and pools](notes/sdk-usage.md#placement-and-pools)
+for configuration and shared-storage requirements.
+
+gVisor is the default runtime. For native Apptainer command environments, pass
+`runtime="apptainer"`. That runtime uses the host kernel and network, with a
+single mapped UID and fewer resource controls. It supports filesystem capture;
+CPU weights and quotas, filtered networking and memory snapshots are unavailable.
+
+## Pause, checkpoint and restore
+
+```python
+from sandweave import Sandbox
+
+with Sandbox() as env:
+    env.files.write_text("/workspace/note.txt", "saved state")
+    env.pause()
+    env.resume()
+    checkpoint = env.snapshot(state="memory")
+    if checkpoint.verify()["status"] != "passed":
+        raise RuntimeError("Checkpoint verification failed")
+
+with Sandbox(snapshot=checkpoint) as restored:
+    print(restored.files.read_text("/workspace/note.txt"))
+```
+
+Memory snapshots preserve supported process and kernel state as well as files.
+The example waits for verification and checks the result before restoring the
+checkpoint. CUDA-only memory restore is experimental and requires
+`experimental_gpu_live=True` at capture and restore; ordinary GPU graphics state
+cannot be restored.
+
+| Operation | Effect |
 | --- | --- |
-| Template/setup | Inspectable preparation, startup, readiness and capabilities. |
-| Filesystem cache | Reusable software/files; fresh processes on restore. |
-| `env.snapshot(state="memory")` | Supported running process/kernel state; unsupported GPU graphics capture fails explicitly. |
-| `env.pause()` / `env.resume()` | Suspend/continue the same resident environment, retaining memory/VRAM. |
-| `env.stop()` | Save before releasing; save failure keeps the source alive. Return a checkpoint reference. |
-| `env.terminate()` | Release without a new save; preserve previously published caches and external volumes. |
-| `env.close()` | Disconnect this client only. |
-| `with Sandbox(...)` | Owned ephemeral scope; discard unsaved state on exit. Save/cache or successfully stop first to retain state. |
-| `with Sandbox.connect(id)` | Borrowed handle; exit only disconnects. |
-| Prestarted pool | Ready independent environments; checkout and refill are separate work. |
+| `env.pause()` / `env.resume()` | Suspend or continue the same resident sandbox, retaining memory and VRAM. |
+| `env.stop()` | Save a checkpoint, then release the runtime. Returns the checkpoint; a failed save keeps the source alive. |
+| `env.terminate()` | Release the runtime and discard unsaved state. Existing caches and external volumes remain. |
+| `env.close()` | Disconnect this client; the sandbox keeps running. |
+| `with Sandbox(...)` | Create an owned sandbox and terminate it on exit. Save first to retain state. |
+| `with Sandbox.connect(id)` | Borrow a handle; leaving the block only disconnects. |
 
-Optimize cold startup, prepared restore, actions and execution. A few
-milliseconds for local warm checkout plus the first small command is a target,
-not a current measurement or promise for cold desktop/Slurm startup. Measure
-usable readiness and first work, including queue time, at p50/p95/p99. Use
-persistent control/data paths and clean baselines; do not hide startup work
-behind early handle creation or sacrifice episode isolation for reuse.
-Measure guest-shell launch cost in the default command-string path as well as
-the explicit direct-execution path.
+See [saved state and ownership](notes/sdk-usage.md#saved-state-and-ownership) for
+snapshot storage, verification and external mounts.
 
-The internal boundaries remain template resolution, runtime operations, target
-and allocation handling, artifact storage, capability plugins and pooling.
-Built-in desktop/VR capabilities must use the public extension mechanism.
-
-### CLI parity
+## Use the CLI
 
 ```bash
 sandweave run --template coding -- "python -c 'print(2 + 2)'"
@@ -265,188 +318,19 @@ sandweave create --template vr/gunspinning --gpu auto --name gunspin
 sandweave vr record gunspin --duration 30 --output ./episode
 ```
 
-`run` creates an ephemeral sandbox for one command; `create` returns an explicitly
-managed environment. `run`/`exec` take exactly one quoted command string after
-`--` for the guest shell. Advanced `--argv -- PROGRAM ARG ...` bypasses it. The
-CLI never joins separate arguments into a shell command. Process stdout/stderr
-and exit codes pass through; control diagnostics go to stderr. Python and CLI
-share lifecycle and capability semantics.
+`run` creates a sandbox for one command and terminates it afterward. `create`
+leaves a managed sandbox running. Use `sandweave stop ID` to save and release it,
+or `sandweave terminate ID` to discard unsaved state.
 
-## Current lab implementation and evidence
+Both `run` and `exec` take one quoted command string after `--`.
+`--argv -- PROGRAM ARG ...` selects literal arguments without a shell. Command
+stdout, stderr and exit codes pass through to your terminal. Python and CLI
+operations share the same lifecycle.
 
-Moodle 4.5.13 with Docker inside Docker and MariaDB, Firefox 155, and Google Earth Pro 7.3.7 have been exercised. The user requested closing those desktops. The current fixed desktop is `resolve-optfix`, running GPU-accelerated DaVinci Resolve 21.0.4 at **24 fps** on the tested project, up from 8.9 fps after repairing GPU completion notifications. Import, color grading, project reopening and ProRes export also passed. The original `resolve-gpu2` remains available. This is a lab compatibility result; the project's complete environment/task suite and an actual node without a KVM device remain untested.
+## Reference
 
-## Four controls implemented and tested
-
-| Area | Current behavior |
-|---|---|
-| CPU | Weighted sharing by default; idle capacity can be borrowed. Optional average CPU-equivalent quotas. Affinity selects eligible CPUs, without exclusive ownership. |
-| Memory | Guest page allocator budget; separate sampled Go-runtime guard; address-space limits for network helpers. This is not an aggregate host-cgroup RSS cap. |
-| Network | Outside-guest policy allows public IPv4 while denying host/private/cross-environment destinations. Offline mode keeps incoming forwards and blocks egress. Nested Docker networking remains available. |
-| Snapshots | CPU environments: whole running environment save/restore, including RAM, processes, writable files, open descriptors, IPC, nested namespaces, firewall/NAT state and internal TCP. GPU environments: persistent-filesystem cold restore is supported; RAM + processes + CUDA is experimental; live graphics restore is unsupported. |
-
-Defaults for new launches: 4 advertised guest CPUs, 8 GiB guest-page budget, 1 GiB runtime guard, weight 100, and the inherited Slurm CPU allocation as the shared pool. CPU control is sampled userspace scheduling; the runtime guard permits transient overshoot. The Resolve desktop overrides the guest-page budget to 48 GiB.
-
-Read [implementation, measurements and limits](notes/resource-snapshot-implementation.md), [machine-readable status](notes/resource-snapshot-status.json), and [reproduction instructions](notes/gvisor-lab-reproduction.md).
-
-[Xvnc fast I/O](notes/xvnc-fast-io.md) is implemented and tested with CPU GTK and
-NVIDIA-accelerated Firefox: persistent acknowledged input plus direct host-shared
-screenshots. At 1280×800, fresh RGB captures measured roughly 5–6 ms median;
-GPU 1080p tail latency remains above 10 ms. Pause/save detaches the shared buffer
-and resume/load reconnects it. Use the `scripts/fastio.py` CLI or
-`EnvironmentManager().fast_io(ENV)`.
-[The cua-auto-harness audit](notes/cua-harness-fast-io.md) records canonical
-action coverage and reference comparisons. [The action repairs](notes/fast-io-action-fixes.md)
-add back/forward buttons, horizontal/diagonal scrolling and reusable Unicode
-mappings, with explicit synchronization and per-batch limits. The full rerun
-passes **100/100 cases and 500/500 repetitions**, with no unsupported cases.
-[Fast-I/O research](notes/fast-io-research.md) records the preceding source analysis.
-[Display architecture research](notes/display-architecture-research.md) compares
-Xvnc with headless GNOME/Mutter and records the host render-node capabilities
-and gVisor device support needed for a GPU compositor.
-[The Wayland source investigation](notes/wayland-source-investigation.md)
-identifies upstream headless-session fixes, NVIDIA DMA-BUF/timeline operations,
-and the missing engine and packaging integration. [The Wayland runtime experiment](notes/wayland-runtime-experiment.md)
-now verifies headless GNOME GPU composition and Open Saber through Xwayland SHM
-with the existing VirtualGL renderer, controller input and stereo recording.
-Native GPU Wayland presentation remains unresolved, and no overall speedup is
-established. **Xvnc is the default for future testing.** Wayland remains an
-explicit experimental option through `scripts/wayland-lab.py` and the VR stream's
-`--x11-display` / `--xauthority` arguments. Controller and Monado/XR support are
-separate capabilities.
-
-[The first VR experiment](notes/vr-monado-experiment.md) runs the published
-Open Saber game through Monado with a virtual headset and controllers, using
-the existing gVisor GPU sandbox. Gameplay and a composed eye image were verified.
-The sampled game rate was 90 FPS with a 120 Hz compositor target and continuous
-desktop readback disabled; the live Xvnc mirror configuration measured 61 FPS.
-This uses an explicit experimental Monado patch. Physical headset delivery,
-audio and virtual haptics remain unvalidated or unsupported.
-
-[The Alyx startup experiment](notes/alyx-startup-experiment.md) reuses an existing
-Windows installation through Wine, DXVK, xrizer and Monado. All assets are now
-imported and readable inside the sandbox. The
-[fresh-allocation investigation](notes/preempt-vr-debug.md) reaches the stereo
-main menu and accepts controller input on L40S and RTX PRO 6000. L40S level
-loading still fails, with evidence of host memory-mapping exhaustion. No Alyx
-level gameplay is established. Recovery of the earlier NVIDIA wait is untested.
-
-[The Automobilista 2 Demo experiment](notes/ams2-demo-experiment.md) has acquired
-and fully imported the free 2026 demo through the user's Windows Steam. A
-fresh RTX Xvnc/GPU/Monado sandbox passed the splash and rendered a stereo
-sign-in error stating that Steam is not running. Racing gameplay remains
-unverified; the earlier host NVIDIA wait is a separate unresolved observation.
-The startup investigation also exposed a Wine exception-classification gap;
-the engine repair passes Windows fault recovery and a live CPU restore test.
-The [Linux Steam client check](notes/steam-client-experiment.md) found a separate
-startup blocker: its 32-bit bootstrap is rejected by the current 64-bit-only
-gVisor executable loader. Alyx itself has a native Linux build; its earlier
-Linux launch stopped at Steam initialization.
-The [standalone Linux VR shortlist](notes/standalone-linux-vr-games.md) records
-free game candidates, their Linux/XR evidence, and outstanding offline/runtime
-checks. [GunSpinning VR now runs in both native gamepad and tracked-controller
-modes](notes/gunspinning-vr-experiment.md), through a userspace joystick proxy
-or xrizer/Monado. Offline launch, aiming, firing and reloading were exercised;
-the verified VR gameplay sample reached 61 FPS on L40S with Xvnc presentation.
-Gamepad analog triggers, audio, physical headset delivery and full-game
-completion remain unvalidated.
-The [GunSpinning stereo recording](notes/gunspinning-vr-experiment.md#both-eye-video-demo)
-includes separate left/right eye videos and a synchronized side-by-side preview.
-The [broader Linux VR catalogue](notes/linux-vr-catalog-and-build-options.md)
-separates native games, community VR ports, reported Proton gameplay, and
-original games we could build for training. It records source, store, input,
-and compatibility limitations; Windows VM work is paused.
-The [Windows-without-KVM investigation](notes/windows-without-kvm-research.md)
-examines fast Windows execution, Drawbridge's user-mode NT precedent, the new
-Helios GPU stack, and separate CPU, graphics and XR requirements. The
-[native Windows kernel experiments](notes/windows-native-kernel-experiments.md)
-now execute five actual Microsoft kernel routines inside gVisor with selective
-memory-access rewriting. A 10,000-operation differential tree check passes;
-the selected tree benchmark measures about 5.5% overhead. This is a component
-result: Windows has not booted, and VM/game performance remains unestablished.
-KVM and TCG remain excluded.
-
-[Continuous VR I/O](notes/vr-continuous-io.md) delivers paired left/right eye
-images to a host Python client through a bounded, size-sealed shared-memory ring,
-while accepting persistent acknowledged controller/headset state. Each pair has
-one compositor frame ID and timestamp. Both eyes are recorded losslessly, and
-the viewing video packs them side by side. [Stereo measurements and API examples](notes/vr-stereo-io.md)
-document the tested path; the earlier monocular measurements remain in the history.
-
-## Pause, resume and stop
-
-Use `python scripts/env.py pause ENV`, `resume ENV`, or `stop ENV`.
-Pause retains the resident environment; stop saves a snapshot before terminating.
-CPU environments default to a live snapshot, GPU environments to a filesystem
-snapshot. `stop ENV --discard` explicitly skips saving. `save ENV LABEL` and
-`load snapshots/LABEL NEW_ENV` expose the same snapshot implementation.
-The [lifecycle API](notes/environment-lifecycle.md) documents the Python interface,
-start/status/list commands, GPU limits and tested cleanup behavior.
-
-## Restore the validated desktop
-
-```bash
-cd ~/scratch/general-vm
-python scripts/run-gvisor.py --detach --restore snapshots/full-desktop-ready my-desktop
-```
-
-The launcher checks snapshot sizes and recorded base/runtime metadata, restores its settings, and allocates fresh loopback ports. Normal restores do not scan payloads for checksums. If an unchanged frozen capture is still available on this node, the launcher reuses it instead of reading the persistent copy. `runs/gvisor/my-desktop/ports.json` identifies VNC port 5901's host mapping. Connect through an SSH tunnel; the lab VNC password is `labvnc01`. The snapshot contains a logged-in Moodle course in Firefox and a running nested database.
-
-Save another complete running environment with:
-
-```bash
-python scripts/checkpoint-gvisor.py my-desktop my-checkpoint
-```
-
-Snapshots are durable under `snapshots/`, with shared immutable dependencies under `images/` and `tools/runtime-builds/`. Preserve every dependency listed in `snapshot-manifest.json` when moving them. External peers do not roll back with the snapshot; applications must reconnect external sessions. Local internal TCP is included and tested.
-
-Save returns after publication and starts checksum verification in a detached, lower-priority worker. Check `snapshots/my-checkpoint/verification.json` for `pending`, `running`, `passed`, or `failed`. Restore can proceed while verification is pending/running; a known failure blocks new restores until a successful recheck. Keep the local capture until initial verification passes, including before moving the checkpoint to another node.
-
-For explicit verification, use `python scripts/verify-snapshot.py snapshots/my-checkpoint`, or add `--verify` to a restore to wait for full verification first. [Timing breakdown and verification behavior](notes/asynchronous-snapshot-verification.md) document the checks and live measurements. Incremental checkpoints remain deferred.
-
-## Single-GPU experiment
-
-The lab can expose one allocated NVIDIA GPU through gVisor `nvproxy`, still using
-systrap without KVM or host sudo. PyTorch GPU training, interactive Firefox
-WebGL/WebRender, Google Earth Pro rendering/search, and CUDA/OpenGL buffer sharing
-passed on this node's L40S and driver 610.43.02. Earth has a recorded shutdown
-crash requiring further investigation. Resolve's CUDA/OpenGL processing and a
-five-second 1080p ProRes export passed; games are not yet tested.
-GPU environments now support whole persistent-filesystem snapshots and cold
-restore, including separate Docker storage mounts. Use
-`python scripts/checkpoint-gvisor.py --filesystem ENV LABEL`, then the normal
-`run-gvisor.py --restore` command. **RAM + processes + CUDA snapshots are
-experimental**, requiring `--experimental-gpu-live` for both save and restore.
-Only a small CUDA control passed; broader CUDA workloads need validation.
-Firefox/Earth/Resolve live graphics snapshots failed and remain unsupported.
-See [GPU filesystem snapshots and live-state evidence](notes/gpu-filesystem-snapshots.md).
-
-See [GPU setup, evidence, measurements and limitations](notes/single-gpu.md).
-The [sharing and partitioning investigation](notes/gpu-sharing-partitioning.md)
-records cross-environment monitoring visibility and the initial native MPS test.
-Opt-in [experimental CUDA MPS partitions](notes/experimental-gpu-mps.md) now work
-across environments. Add `--experimental-gpu-sm-chunks 2` to a `--gpu 0` launch
-for eight SMs on this L40S; optionally add
-`--experimental-gpu-client-memory-mib 1024` for a per-CUDA-client memory limit.
-Two concurrent guests, CUDA kernels, allocation rejection and lifecycle cleanup
-passed. These are cooperative CUDA controls; graphics and memory bandwidth stay
-shared, and MPS snapshots remain deferred. Ordinary GPU launches keep their
-existing behavior.
-The [GPU application investigation](notes/gpu-applications.md) records Earth's
-VirtualGL fixes and interactive checks. [Resolve setup and acceptance](notes/resolve-gpu.md)
-records the futex engine fix, audio setup, export verification and performance limits.
-The [GPU notification repair](notes/resolve-gpu-notifications.md) records the
-playback fix and native/before/after measurements. The fixed desktop is forwarded
-to Mac VNC `127.0.0.1:5913`, password `labvnc01`.
-
-## Recovery and history
-
-This lab is tracked on branch `experiment/no-kvm-slurm`. Scripts, tests, notes,
-patches and source probes belong in Git; generated data and downloaded dependencies
-are covered by `.gitignore`. The engine has its own checkout in `sources/gvisor`;
-[source revisions](notes/source-revisions.json) pin its exact commit and cumulative
-patch. Check both repositories for a clean working tree when completing changes.
-
-The CPU snapshot implementation recovery bundle is `checkpoints/async-snapshots-8c8b143/`. It records source, exact binaries, launch fixtures, scripts, documentation, checksums and test evidence. It is distinct from a frozen running snapshot. The earlier implementation remains at `checkpoints/resources-snapshots-8c8b143-r3/`, and the baseline at `checkpoints/baseline-ae303ca/`.
-
-[Detailed experiment history](notes/gvisor-prototype-progress.md) preserves both failures and successful trials. [Historical UML README](notes/uml-readme-history.md) records the earlier, paused UML work; it is not the current launch path.
+- [Usage guide](notes/sdk-usage.md): configuration, templates, extensions and limits.
+- [More examples](notes/sandbox-api-examples.md): agent loops, files, pools and Slurm allocation.
+- [Test results and measurements](notes/sdk-implementation-progress.md): completed acceptance checks and performance results.
+- [API design contract](notes/sandbox-api-proposal.md) and [repository structure](notes/repository-architecture.md).
+- [Lab feature inventory](notes/feature-inventory.md) and [runtime reproduction](notes/gvisor-lab-reproduction.md): engine experiments and their limits.

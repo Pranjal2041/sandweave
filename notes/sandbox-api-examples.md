@@ -1,14 +1,12 @@
-# Agreed downstream API examples
+# Sandweave examples
 
-**Agreed contract v1 (2026-09-08), not an implemented SDK.** These examples expand
-the authoritative [README examples](../README.md#agreed-public-api-contract-v1)
-and [detailed contract](sandbox-api-proposal.md), including future templates,
-pools and placement adapters. Keep them consistent when implementing or moving
-to the public repository. Python/TOML/shell syntax can be checked without running
-these examples; that is not SDK acceptance.
+These examples expand the [README](../README.md#agreed-public-api-contract-v1).
+See the [usage guide](sdk-usage.md) for installation and requirements, and
+[acceptance results](sdk-implementation-progress.md) for tested behavior.
+The robotics example requires a separately implemented extension.
 
-All `setup` files below are user-authored guest scripts. No Chrome or other new
-application compatibility is claimed: the current browser acceptance is Firefox.
+All `setup` files below are scripts you provide. Application installation
+depends on those scripts; choosing a template does not install Chrome.
 An owned `with Sandbox(...)` scope is ephemeral and discards unsaved state on
 exit. Cache/snapshot first when state must survive. Plain handles are explicitly
 managed; `stop` saves, whereas `terminate` discards the current running state.
@@ -236,11 +234,12 @@ from sandweave import Sandbox
 
 with Sandbox(template="coding", runtime="apptainer") as env:
     print(env.run("python -c 'print(2 + 2)'").stdout)
-    print(env.capabilities)
+    print(env.status()["runtime_status"]["runtime"])
 ```
 
-The adapter must report its actual isolation/enforcement/snapshot capabilities.
-The shared process API does not imply full gVisor feature parity.
+The status includes the runtime's isolation, resource controls and supported
+snapshot types. Native Apptainer uses the host kernel and network; CPU weights
+and quotas, filtered networking and memory snapshots are unavailable.
 
 ## 9. A VR game and agent loop
 
@@ -274,10 +273,12 @@ action = {
 ```
 
 Omitted pose/control fields persist; a later action releases a held trigger.
-The policy can inspect `env.vr.action_spec`. The returned eyes are actual paired
-compositor views. The call does not promise an exact simulation tick, game-level
-success or physical headset display. The recording finalizes both eye videos,
-the side-by-side preview, timing logs and explicit drop counts.
+The returned eyes are paired compositor views. `step` captures after the runtime
+acknowledges input; it does not guarantee game consumption or a fixed number of
+simulation ticks.
+Recording saves lossless eye pairs and exports lossy left, right and side-by-side
+MP4 previews with timing and drop counts. Video export needs FFmpeg with
+`libx264` on the Python client's `PATH` and at least two recorded frames.
 
 For repeated offline runs, prepare a filesystem cache once:
 
@@ -326,8 +327,9 @@ env.close()  # Disconnect the client; the restored desktop remains running.
 
 ## 11. Existing workers and explicit Slurm acquisition
 
-These are proposed placement adapters, not existing distributed SDK behavior.
-Configured target names can refer to separate SSH-accessible Slurm allocations:
+Configured target names can refer to separate SSH-accessible Slurm allocations.
+The current Slurm adapter requires shared access to SDK metadata and assets;
+see [placement configuration](sdk-usage.md#placement-and-pools).
 
 ```python
 from sandweave import Pool
@@ -393,8 +395,8 @@ sandweave create --cache chrome-workbench-v1 --name workbench-copy
 # Explicit lifecycle; stop saves, terminate discards the current running state.
 sandweave pause workbench
 sandweave resume workbench
-sandweave stop workbench --json
-sandweave inspect workbench-copy --json
+sandweave stop workbench
+sandweave inspect workbench-copy
 
 # Both-eye VR recording.
 sandweave create --template vr/gunspinning --gpu auto --name gunspin

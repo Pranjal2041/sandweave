@@ -1,18 +1,19 @@
 # Agreed sandbox API contract: Sandweave
 
-Status: **agreed contract v1, frozen on 2026-09-08; not an implemented SDK**.
+Status: **agreed contract v1, frozen on 2026-09-08**. Sandweave 0.1.0 implements
+the core contract. This document records the design, including optional
+extensions; use the [usage guide](sdk-usage.md) and
+[acceptance results](sdk-implementation-progress.md) for current support.
 The user approved the design with single command strings as the default for
 `run`/`exec`. The [README contract](../README.md#agreed-public-api-contract-v1)
 is the source of truth for implementation and the future public repository;
 this document specifies its detailed semantics. Changes to the documented
 interface or behavior require an explicit agreed contract revision, not silent
-implementation drift. `sandweave` remains the working package/CLI name; no
-package or domain is being registered. No runtime changes or environment
-launches accompany this documentation.
+implementation drift. `sandweave` is the package and CLI name.
 
 See [downstream examples](sandbox-api-examples.md) and the existing
-[feature inventory](feature-inventory.md). Agreed method names in this document
-must not be mistaken for methods already available in `scripts/environment.py`.
+[feature inventory](feature-inventory.md). The Python SDK lives in
+`src/sandweave`; the older `scripts/environment.py` has a separate API.
 
 ## 1. Design commitments
 
@@ -56,8 +57,8 @@ env.setup("./install-tools.sh")
 ```
 
 `Sandbox(...)` is a synchronous convenience for `Sandbox.create(...)`. Async
-creation is `await Sandbox.create.aio(...)`; I/O methods have the same Modal-style
-`.aio` counterpart. No synchronous constructor is called inside an async example.
+creation is `await Sandbox.create.aio(...)`. Commands, file operations and
+lifecycle methods have `.aio` counterparts.
 
 | Operation | Contract |
 | --- | --- |
@@ -89,9 +90,9 @@ be shell commands, existing sandbox IDs or templates interchangeably.
 ### Defaults and overrides
 
 - Default template: a small coding environment with Python, shell and basic
-  tools, no desktop, no GPU and no systemd requirement. Initial proposed preset:
+  tools, no desktop, no GPU and no systemd requirement. Default resources:
   one advertised CPU, 1 GiB guest-page budget and a separate 512 MiB runtime
-  guard. These are tunable defaults to qualify, not current startup results.
+  guard. These resource defaults can be overridden.
   A minimal supervisor keeps it available and reaps command children; one
   command exiting does not implicitly end the whole sandbox.
 - Default runtime: gVisor. Apptainer-only execution is an explicit alternative,
@@ -106,10 +107,11 @@ be shell commands, existing sandbox IDs or templates interchangeably.
 - Template-specific resources, execution user, services and display settings
   are defaults. Explicit constructor values override them. Required hardware
   and unsupported operations are validated, not faked by silent downgrades.
-- `setup` uses the template's preparation user (guest root for the proposed
-  built-ins); `run`/`exec` use its application user, matching the desktop session
-  when present. Both accept an explicit user override. The coding template
-  provides a writable Python environment for that application user.
+- Template preparation uses `[setup].user`, defaulting to guest root.
+  `env.setup(...)` separately defaults to `user="root"` and accepts an override.
+  `run`/`exec` use the template's application user unless overridden, matching
+  the desktop session when present. The coding template provides a writable
+  Python environment for that application user.
 - No automatic lifecycle timeout in the core SDK; a user/template/provider can
   set one. The enclosing allocation's expiry remains a real external limit.
 - `env.spec` reports the resolved, immutable launch specification, including
@@ -132,12 +134,12 @@ A versioned template consists of:
 5. Interaction adapters and their action/observation schema versions.
 6. Cold-start, snapshot-detach and restore-attach hooks where required.
 
-Built-in examples: `coding`, `gnome`, `docker`, `cuda`, `vr/opensaber`,
-`vr/gunspinning`. These are proposed packaged templates around the lab's accepted
-workflows, not template files already shipped today. Third-party templates use
-the same public mechanism. A bare image or imported OCI image can be described
-by a `Template` object; image conversion is a preparation step, not a promise
-that every registry image works unchanged with every runtime.
+Built-in templates: `coding`, `gnome`, `docker`, `cuda`, `vr/opensaber`,
+`vr/gunspinning` and `games/gunspinning-gamepad`. The package includes these
+recipes; runtime and application assets are prepared separately. Third-party
+templates use the same public mechanism. The current adapters use prepared
+runtime assets and registered base snapshots. Generic bare-image or OCI import
+through `Template` remains a design extension; it is not implemented.
 
 Local TOML is the initial declarative format. Paths are relative to that file.
 Inheritance is explicit, pinned when resolved, and rejects cycles. Nested

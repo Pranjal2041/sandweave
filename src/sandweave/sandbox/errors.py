@@ -33,6 +33,10 @@ class OperationUnknown(SandboxError):
     pass
 
 
+class OwnerExpired(SandboxError):
+    pass
+
+
 class SetupError(SandboxError):
     pass
 

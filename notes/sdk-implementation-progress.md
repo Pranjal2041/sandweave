@@ -4,6 +4,20 @@ The user approved implementation around two pillars: templates define setup,
 startup and controls; sandboxes implement running instances and their lifecycle.
 The README's public API remains the contract, including command strings.
 
+## Process ownership and detached environments (2026-09-09)
+
+New sandboxes now follow their creating Python process by default, including
+crash cleanup. `detached=True` preserves them after that process exits. CLI
+`create` remains persistent; borrowed handles and explicit context cleanup keep
+their established behavior. Local process monitoring and remote heartbeat
+expiry run in the worker, independently of Python exit hooks.
+
+The final wheel passed 13 ownership cases, including SIGKILL, interrupted
+startup, detached/paused guests, native Apptainer and GNOME. The host suite
+passed 102 cases; 13 existing pool/CLI/lifetime cases passed in the focused
+regression run. All 68 test environments were terminated and original user
+desktops remained running. See [ownership implementation and evidence](process-ownership.md).
+
 ## GNOME startup profiling (2026-09-09)
 
 The [startup investigation](gnome-startup-profiling.md) reproduced the user's

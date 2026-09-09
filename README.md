@@ -60,6 +60,19 @@ basic tools, with one virtual CPU and 1 GiB of guest memory.
 `Sandbox(...)` waits for the template's services and controls to be ready.
 Leaving the `with` block terminates the sandbox and discards unsaved state.
 
+By default, a sandbox also terminates when its creating Python process exits,
+including a crash or an IPython kernel shutdown. Remote workers allow a
+30-second heartbeat grace period. To keep an environment running after Python
+exits, pass `detached=True`:
+
+```python
+env = Sandbox(template="gnome", detached=True)
+print(env.id)  # Reconnect later with Sandbox.connect(id).
+```
+
+Detached environments still respect `ttl` and explicit termination. A `with`
+block still terminates a sandbox it creates, including a detached one.
+
 `run` takes one command string, runs it through `/bin/sh -c` inside the sandbox
 by default, and waits for completion. Pipes, redirects, variable expansion and
 `&&` use the guest shell. The result contains `stdout`, `stderr` and `returncode`. A nonzero
@@ -370,7 +383,7 @@ cannot be restored.
 | `env.pause()` / `env.resume()` | Suspend or continue the same resident sandbox, retaining memory and VRAM. |
 | `env.stop()` | Save a checkpoint, then release the runtime. Returns the checkpoint; a failed save keeps the source alive. |
 | `env.terminate()` | Release the runtime and discard unsaved state. Existing caches and external volumes remain. |
-| `env.close()` | Disconnect this client; the sandbox keeps running. |
+| `env.close()` | Disconnect this handle; process ownership and TTL still apply. |
 | `with Sandbox(...)` | Create an owned sandbox and terminate it on exit. Save first to retain state. |
 | `with Sandbox.connect(id)` | Borrow a handle; leaving the block only disconnects. |
 
@@ -392,7 +405,8 @@ sandweave vr record gunspin --duration 30 --output ./episode
 ```
 
 `run` creates a sandbox for one command and terminates it afterward. `create`
-leaves the sandbox running until you stop or terminate it:
+uses `detached=True`, leaving the sandbox running until its TTL expires or you
+stop or terminate it:
 
 ```bash
 # Save the sandbox before stopping it.

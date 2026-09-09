@@ -8,8 +8,9 @@ The robotics example requires a separately implemented extension.
 All `setup` files below are scripts you provide. Application installation
 depends on those scripts; choosing a template does not install Chrome.
 An owned `with Sandbox(...)` scope is ephemeral and discards unsaved state on
-exit. Cache/snapshot first when state must survive. Plain handles are explicitly
-managed; `stop` saves, whereas `terminate` discards the current running state.
+exit. Cache/snapshot first when state must survive. Plain handles follow their
+creating Python process unless created with `detached=True`; `stop` saves,
+whereas `terminate` discards the current running state.
 
 ## 1. A coding sandbox
 
@@ -321,8 +322,8 @@ from sandweave import Sandbox
 
 env = Sandbox(template="gnome")
 saved = env.stop()  # Save before release; failure keeps the source alive.
-env = Sandbox(snapshot=saved)
-env.close()  # Disconnect the client; the restored desktop remains running.
+env = Sandbox(snapshot=saved, detached=True)
+env.close()  # The restored desktop also survives this Python process exiting.
 ```
 
 ## 11. Existing workers and explicit Slurm acquisition

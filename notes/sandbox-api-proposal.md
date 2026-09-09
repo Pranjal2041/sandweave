@@ -15,6 +15,10 @@ See [downstream examples](sandbox-api-examples.md) and the existing
 [feature inventory](feature-inventory.md). The Python SDK lives in
 `src/sandweave`; the older `scripts/environment.py` has a separate API.
 
+Agreed revision, 2026-09-09: newly created SDK sandboxes follow their creating
+Python process by default. `detached=True` opts into survival after that process
+exits. Explicit context cleanup and TTL retain their existing meanings.
+
 ## 1. Design commitments
 
 | User priority | API consequence |
@@ -112,14 +116,16 @@ be shell commands, existing sandbox IDs or templates interchangeably.
   `run`/`exec` use the template's application user unless overridden, matching
   the desktop session when present. The coding template provides a writable
   Python environment for that application user.
-- No automatic lifecycle timeout in the core SDK; a user/template/provider can
-  set one. The enclosing allocation's expiry remains a real external limit.
+- No default maximum lifetime (`ttl=None`). The default sandbox belongs to its
+  creating Python process and terminates when that process exits. Remote owner
+  loss is detected through heartbeat expiry. `detached=True` disables owner-exit
+  cleanup; explicit TTL and the enclosing allocation's expiry still apply.
 - `env.spec` reports the resolved, immutable launch specification, including
   defaults. Configuration precedence is core defaults, template inheritance,
   explicit launch overrides, then validation against target constraints.
 
 Optional advanced arguments include `cpu`, `memory`, `gpu`, `network`, `env`,
-`mounts`, `target`, `runtime`, `name`, `ttl`, `startup_timeout`, `keep_on_error`,
+`mounts`, `target`, `runtime`, `name`, `ttl`, `detached`, `startup_timeout`, `keep_on_error`,
 and typed runtime/provider options. Do not forward arbitrary host shell flags
 through the common API. Extension-specific settings are namespaced and validated.
 
@@ -335,13 +341,18 @@ or replay is imposed on the RL application.
 
 | Usage | Lifetime |
 | --- | --- |
-| `env = Sandbox(...)` | Explicitly managed lifetime; `close` disconnects, `stop` saves then releases, `terminate` releases without saving. Garbage collection is not lifecycle control. |
+| `env = Sandbox(...)` | Follows the creating Python process; the worker terminates it when the owner exits or its remote heartbeat expires. `close` disconnects without removing ownership. Garbage collection is not lifecycle control. |
+| `env = Sandbox(detached=True)` | Survives the creating process. Explicit `stop`, `terminate`, TTL and worker/allocation limits still apply. |
 | `with Sandbox(...) as env:` | Explicit ephemeral scope: on exit terminate this newly owned sandbox, including on an exception. Publish a cache/checkpoint or call `stop` first to retain its state. A prior successful `stop` makes scope cleanup a no-op. |
-| `with Sandbox.connect(id) as env:` | Borrowed handle: exit closes this client's connection, leaving the existing sandbox alive. |
+| `with Sandbox.connect(id) as env:` | Borrowed handle: exit closes this client's connection. Connecting does not transfer ownership or cancel the existing lifetime policy. |
 | A pool lease | Ephemeral independent episode; leaving the lease disposes its used sandbox after owned actions/recorders close. |
 
 The ephemeral-context behavior is an agreed convenience and is deliberately
 documented; it does not change the existing manager's save-before-stop default.
+`detached=True` changes process ownership, not explicit context cleanup. Local
+process death is checked directly; remote clients have a 30-second grace period
+after their last heartbeat. Ownership is established before startup and is not
+inherited by snapshot clones or included in preparation cache fingerprints.
 Snapshot/pause hooks detach non-restorable I/O and release held inputs in order.
 A live resume restores the same process identity; `stop` followed by
 `Sandbox(snapshot=ref)` creates a new environment. Pause retains memory/VRAM and
@@ -531,7 +542,7 @@ The complete short CLI examples are in [the examples document](sandbox-api-examp
 Commands cover `create`, `exec`, `run`, `setup`, `shell`, `list`, `inspect`,
 `pause`, `resume`, `stop`, `terminate`, `cache`, `snapshot`, `files`, `desktop`,
 `vr`, `pool`, `targets` and `slurm`. `run` creates an ephemeral sandbox around
-one command; `create` returns an explicitly managed environment ID.
+one command; `create` uses `detached=True` and returns a persistent environment ID.
 
 Lifecycle and inspection accept `--json`; ordinary `exec`/`run` forward command
 stdout/stderr and return its exit code. Control diagnostics go to stderr, never

@@ -262,9 +262,41 @@ by another worker with access to the shared store and recorded dependencies.
 
 `stop()` saves before terminating; a failed save preserves the source.
 `terminate()` discards unsaved state, while existing artifacts and external
-volumes remain. `close()` disconnects only. An owned context terminates on exit;
-a `Sandbox.connect(...)` context is borrowed and only disconnects. TTL counts
-wall time from readiness, including pauses and disconnected clients.
+volumes remain. By default, the worker also terminates a sandbox when its
+creating Python process exits, including normal exit, a crash or a killed
+IPython kernel. Use `Sandbox(detached=True)` to let it outlive that process.
+Stopping a cell while its kernel remains alive is not a process exit.
+
+`close()` disconnects the handle; it does not remove process ownership.
+An owned `with`/`async with` context terminates on exit even with `detached=True`.
+A `Sandbox.connect(...)` context is borrowed and only disconnects; connecting
+does not transfer ownership or extend the creator's lifetime. CLI `create`
+creates detached sandboxes; CLI `run` uses an owned scope.
+
+Local workers identify an owner by its process ID, start time, host boot and PID
+namespace. A live local process is retained even if it is suspended. Remote
+clients send heartbeats every five seconds over a separate connection shared
+by their sandboxes on each worker. After 30 seconds without a heartbeat, the
+worker expires ownership. A network outage of that duration can therefore
+terminate a remote sandbox even if Python is still alive. Late heartbeats do
+not revive expired environments.
+
+Ownership is registered before sandbox creation. A client that dies during
+startup cannot leave a default environment running indefinitely. Cleanup runs
+on the worker, checks every 250 ms and retries failures. In-flight lifecycle
+operations finish or reach a startup check before cleanup takes their lock;
+these intervals are detection intervals, not a bound on termination duration.
+Owner records survive worker restarts. Cleanup needs a running worker; this
+does not add worker failover or protection from allocation/host loss.
+
+TTL counts wall time from readiness, including pauses and disconnected clients,
+and applies to detached environments too. It is unset by default. Automatic
+cleanup releases the runtime without taking a new checkpoint; saved caches,
+snapshots, logs and external volumes remain. Restores receive new ownership
+from the creating process rather than inheriting the source's owner or detached
+setting. `keep_on_error=True` retains a failed environment while its owner is
+alive; use it with `detached=True` to inspect after the creating process exits.
+Existing environments with no ownership record retain their earlier lifetime.
 
 Read-only worker-path mounts use `Mount(source, destination)`. External writable
 mounts require an explicit capture policy: `snapshot="rebind"` keeps shared

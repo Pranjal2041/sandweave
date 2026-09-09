@@ -4,6 +4,7 @@ import fcntl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -30,28 +31,60 @@ class Worker:
         self.locks, self.guard, self.controls, self.deadlines = {}, threading.RLock(), {}, {}
         self.stopping = False
         self.pools = {}
+        from .ownership import Owners
+        self.owners = Owners(self.root)
         from .admission import budget
         self.memory_budget = budget()
-        threading.Thread(target=self.expire, name='sandweave-ttl', daemon=True).start()
+        threading.Thread(target=self.expire, name='sandweave-cleanup', daemon=True).start()
 
     def expire(self):
         while True:
-            for path in self.records.glob('*.bin'):
-                try:
-                    record = self.read(path.stem)
-                    if (record['state'] in ('ready', 'paused') and record.get('expires_at') is not None
-                            and time.time() >= record['expires_at']):
-                        with self.lock(record['id']):
-                            record = self.read(record['id'])
-                            if record['state'] in ('ready', 'paused'):
-                                self.terminate(record['id'])
-                                record = self.read(record['id'])
-                                record['termination_reason'] = 'ttl'
-                                self.write(record)
-                except Exception as error:
-                    # Leave failed cleanup retryable and retain a diagnostic.
-                    atomic_json(self.root / 'ttl-error.json', {'id': path.stem, 'error': str(error), 'time': time.time()})
+            try:
+                self.expire_once()
+            except Exception:
+                logging.getLogger(__name__).exception('Sandbox cleanup scan failed; will retry')
             time.sleep(.25)
+
+    def expiry_reason(self, record):
+        if record['state'] in ('terminated', 'stopped') or record.get('cleanup_complete'):
+            return None
+        if (record['state'] in ('ready', 'paused') and record.get('expires_at') is not None
+                and time.time() >= record['expires_at']):
+            return 'ttl'
+        # Records from older workers have no owner and retain their lifetime.
+        return self.owners.reason(record.get('owner'))
+
+    def expire_once(self):
+        for path in self.records.glob('*.bin'):
+            try:
+                if not self.expiry_reason(self.read(path.stem)):
+                    continue
+                lock = self.lock(path.stem)
+                # A busy create/checkpoint must not prevent cleanup elsewhere.
+                # Startup checks ownership between its stages as well.
+                if not lock.acquire(blocking=False):
+                    continue
+                try:
+                    reason = self.expiry_reason(self.read(path.stem))
+                    if reason:
+                        self.terminate(path.stem)
+                        record = self.read(path.stem)
+                        record['termination_reason'] = reason
+                        self.write(record)
+                finally:
+                    lock.release()
+            except Exception as error:
+                # Leave failed cleanup retryable and retain a diagnostic.
+                try:
+                    atomic_json(self.root / 'cleanup-error.json', {'id': path.stem, 'error': str(error), 'time': time.time()})
+                except OSError:
+                    logging.getLogger(__name__).exception('Could not record cleanup failure for %s', path.stem)
+
+    def owner_register(self, identity, process):
+        return self.owners.register(identity, process)
+
+    def owner_heartbeat(self, identity):
+        return self.owners.heartbeat(identity)
 
     def lock(self, identity):
         with self.guard:
@@ -73,7 +106,14 @@ class Worker:
         temporary.chmod(0o600)
         os.replace(temporary, destination)
 
-    def create(self, spec, identity, *, operation_id=None, reference=None, cache_key=None, refresh=False):
+    def create(self, spec, identity, *, operation_id=None, reference=None, cache_key=None, refresh=False, owner=None):
+        if not spec.get('detached', True) and owner is None:
+            raise ValueError('an attached sandbox requires a process owner')
+        if spec.get('detached') and owner is not None:
+            raise ValueError('a detached sandbox cannot have a process owner')
+        reason = self.owners.reason(owner)
+        if reason:
+            raise SandboxError('sandbox owner is no longer active: ' + reason, sandbox_id=identity)
         if cache_key is not None:
             from ..templates.resolve import fingerprint
             from .workspace import locked
@@ -86,15 +126,15 @@ class Worker:
                 prepared = json.loads((self.root / 'prepared.json').read_text())
                 from ..templates.controls import descriptors
                 stamp = fingerprint({k: v for k, v in spec.items()
-                                     if k not in ('name', 'ttl', 'startup_timeout', 'keep_on_error')} |
+                                     if k not in ('name', 'ttl', 'detached', 'startup_timeout', 'keep_on_error')} |
                                     {'engine': prepared['engine_sources_sha256'],
                                      'sdk': prepared.get('sdk_sources_sha256'),
                                      'assets': prepared.get('assets_sha256'),
                                      'controls': descriptors(spec['template']),
                                      'runtime': (self.root / 'tools/gvisor-socket/runtime.json').read_text()})
                 if not refresh and previous and previous['fingerprint'] == stamp:
-                    return self._create(spec, identity, operation_id=operation_id, reference=previous['id'])
-                result = self._create(spec, identity, operation_id=operation_id)
+                    return self._create(spec, identity, operation_id=operation_id, reference=previous['id'], owner=owner)
+                result = self._create(spec, identity, operation_id=operation_id, owner=owner)
                 try:
                     saved = self.capture(identity, state='filesystem')
                     self.store.publish(cache_key, saved, (previous or {}).get('id'),
@@ -104,9 +144,9 @@ class Worker:
                         self.terminate(identity)
                     raise
                 return result
-        return self._create(spec, identity, operation_id=operation_id, reference=reference)
+        return self._create(spec, identity, operation_id=operation_id, reference=reference, owner=owner)
 
-    def _create(self, spec, identity, *, operation_id=None, reference=None):
+    def _create(self, spec, identity, *, operation_id=None, reference=None, owner=None):
         started = time.monotonic()
         with self.lock(identity), collect() as timings:
             if self.path(identity).exists():
@@ -124,7 +164,7 @@ class Worker:
             from ..templates.controls import descriptors
             declared = descriptors(spec['template'])
             record = {'id': identity, 'name': spec.get('name'), 'spec': spec, 'state': 'creating',
-                      'operation_id': operation_id, 'created_at': time.time(), 'agent': None,
+                      'operation_id': operation_id, 'owner': owner, 'created_at': time.time(), 'agent': None,
                       'timings': timings, 'workspace': str(self.root), 'capabilities': declared}
             from .admission import admit
             with self.guard:
@@ -135,6 +175,7 @@ class Worker:
             timings['admission_seconds'] = time.monotonic() - started
             try:
                 self.deadlines[identity] = started + spec['startup_timeout']
+                self.remaining(identity)
                 with measure('snapshot_seconds'):
                     saved = self.store.resolve(reference) if reference else None
                     if saved and saved['state'] == 'memory':
@@ -142,6 +183,7 @@ class Worker:
                             if spec[key] != saved['spec'][key]:
                                 raise IncompatibleSnapshot('memory restore cannot change ' + key)
                     snapshot = self.store.materialize(saved) if saved else None
+                self.remaining(identity)
                 token = saved['agent']['token'] if saved and saved['state'] == 'memory' else None
                 with measure('runtime_seconds'):
                     record['agent'] = self.runtime.create(identity, {**spec, '_startup_deadline': self.deadlines[identity]},
@@ -178,13 +220,18 @@ class Worker:
                         setattr(error, key, value)
                 record.update(state='failed', error=str(error))
                 self.write(record)
-                if not spec.get('keep_on_error'):
+                owner_reason = self.owners.reason(owner)
+                if owner_reason:
+                    record['termination_reason'] = owner_reason
+                if owner_reason or not spec.get('keep_on_error'):
                     try:
                         self.detach_controls(identity, reason='terminate')
                         state = self.runtime.status(identity)['status']
                         if state in ('starting', 'running', 'paused'):
                             self.runtime.terminate(identity)
                         record['cleanup_complete'] = True
+                        if owner_reason:
+                            record['state'] = 'terminated'
                     except Exception as cleanup_error:
                         record['cleanup_error'] = str(cleanup_error)
                     self.write(record)
@@ -194,6 +241,9 @@ class Worker:
         deadline = self.deadlines.get(identity)
         if deadline is None:
             return limit
+        reason = self.owners.reason(self.read(identity).get('owner'))
+        if reason:
+            raise SandboxError('sandbox owner is no longer active: ' + reason, sandbox_id=identity)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('sandbox startup deadline exceeded: ' + identity)
@@ -218,7 +268,7 @@ class Worker:
                     self.write(record)
         # Secret guest control tokens stay in the worker's private record.
         return {key: value for key, value in {**record, 'runtime_status': status}.items()
-                if key not in ('agent',)}
+                if key not in ('agent', 'owner')}
 
     def list(self):
         return [self.describe(path.stem) for path in sorted(self.records.glob('*.bin'))]
@@ -281,6 +331,7 @@ class Worker:
         self.command_start(identity, process, argv=argv, cwd=directory,
                            user=step.get('user', 'root'), timeout=self.remaining(identity, step.get('timeout')))
         while (status := self.process_status(identity, process))['returncode'] is None:
+            self.remaining(identity)
             time.sleep(.02)
         if status['returncode']:
             stderr = self.process_output(identity, process, stream='stderr', size=65536).decode(errors='replace')
@@ -380,6 +431,7 @@ class Worker:
             if ready:
                 deadline = time.monotonic() + self.remaining(identity, service.get('ready_timeout', 120))
                 while True:
+                    self.remaining(identity)
                     if self.process_status(identity, process)['returncode'] is not None:
                         raise SetupError('template service exited before readiness: ' + name)
                     result = context.run(argv=ready if isinstance(ready, list) else None,
@@ -489,6 +541,7 @@ class Worker:
                    'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
         allowed.add('pool')
         allowed.add('process_resize')
+        allowed.update(('owner_register', 'owner_heartbeat'))
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
                     'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget}

@@ -19,7 +19,7 @@ from ..templates.resolve import Template, setup_step
 class Sandbox:
     def __init__(self, *, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
-                 env=None, mounts=None, name=None, ttl=None, startup_timeout=300, keep_on_error=False,
+                 env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False):
         options = dict(locals()); options.pop('self')
         self._connection = None
@@ -32,7 +32,7 @@ class Sandbox:
 
     def _initialize(self, *, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
                     cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
-                    env=None, mounts=None, name=None, ttl=None, startup_timeout=300, keep_on_error=False,
+                    env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False):
         if sum(x is not None for x in (cache, snapshot)) > 1:
             raise ValueError('cache and snapshot are alternative sources')
@@ -41,6 +41,8 @@ class Sandbox:
             raise ValueError('a saved source cannot be combined with a new recipe')
         if refresh and cache_key is None:
             raise ValueError('refresh requires cache_key')
+        if type(detached) is not bool:
+            raise ValueError('detached must be a bool')
         if ttl is not None:
             positive(ttl, 'ttl')
         positive(startup_timeout, 'startup_timeout')
@@ -75,7 +77,7 @@ class Sandbox:
                               network=network if network is not None else defaults.get('network', 'internet'))
         spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
                 'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
-                'ttl': ttl, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
+                'ttl': ttl, 'detached': detached, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
                 'experimental_gpu_live': experimental_gpu_live}
         self.id = ('vr-sw-' if 'vr' in recipe['capabilities'] else 'sw-') + uuid.uuid4().hex
         self._owned, self._closed, self._terminated = True, False, False
@@ -86,8 +88,10 @@ class Sandbox:
         # Select the worker after installing the recipe's dependencies. A
         # saved recipe needs the same check when restored on another worker.
         self._connection = connect(target, template=recipe)
+        from .ownership import client_owner
+        owner = None if detached else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
-                                          reference=reference, cache_key=cache_key, refresh=refresh)
+                                          reference=reference, cache_key=cache_key, refresh=refresh, owner=owner)
         self.files = Files(self)
         self._controls = {}
 

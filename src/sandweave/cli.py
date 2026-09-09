@@ -342,7 +342,8 @@ def main(argv=None):
             save_configuration(assets=str(path))
             return 0
         if op == 'create':
-            env = Sandbox(**creation(args))
+            # create deliberately outlives this short-lived CLI process.
+            env = Sandbox(detached=True, **creation(args))
             print(env.id); env.close()
             return 0
         if op == 'run':

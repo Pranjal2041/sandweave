@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sandweave"
+version = "0.1.0"
+description = "Reusable sandboxes without host sudo or KVM"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+desktop = ["Pillow", "numpy"]
+vr = ["Pillow", "numpy", "zstandard"]
+test = ["pytest"]
+
+[project.scripts]
+sandweave = "sandweave.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sandweave = ["templates/**/*.toml", "templates/**/*.sh", "sandbox/runtimes/gvisor/_engine/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["integration: requires an explicitly configured sandbox worker", "gpu: requires an allocated GPU"]

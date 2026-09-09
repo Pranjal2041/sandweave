@@ -1,0 +1,11 @@
+schema_version = 1
+extends = "coding@1"
+
+[resources]
+cpu = 4
+memory = "8GiB"
+
+[runtime_options]
+init = "docker"
+nftables = true
+cgroup = "v1"

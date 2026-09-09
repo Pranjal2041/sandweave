@@ -1,67 +1,38 @@
 # Repository structure
 
-Proposal for review. The [agreed API](../README.md#agreed-public-api-contract-v1)
-is unchanged; no implementation or scaffolding accompanies this revision.
+**A template is the definition. A sandbox is a running instance.**
 
-**Templates define. Sandboxes run. Capabilities interact.**
-
-| Pillar | Atomic unit | Contract |
-| --- | --- | --- |
-| `templates/` | One recipe | Describe installation, startup, readiness and attached capabilities. |
-| `sandbox/` | One sandbox | Own execution, files, resources, lifecycle and saved state. |
-| `capabilities/` | One interaction interface | Attach to a sandbox and supply actions/observations and lifecycle hooks. |
+The user approved this two-pillar structure. The [agreed API](../README.md#agreed-public-api-contract-v1)
+remains the public contract; [implementation progress](sdk-implementation-progress.md)
+records current acceptance.
 
 ```text
-sandweave/
-├── README.md
-├── pyproject.toml
-├── src/sandweave/
-│   ├── __init__.py              # Agreed public imports
-│   ├── cli.py                   # Calls the same API
-│   ├── templates/
-│   │   ├── coding/
-│   │   ├── gnome/
-│   │   └── vr/gunspinning/
-│   ├── sandbox/
-│   │   ├── sandbox.py           # Sandbox and its lifecycle
-│   │   ├── pool.py              # Collections of independent sandboxes
-│   │   ├── process.py
-│   │   ├── files.py
-│   │   ├── snapshots.py
-│   │   ├── runtimes/            # gVisor, Apptainer
-│   │   └── targets/             # Local, SSH, Slurm
-│   └── capabilities/
-│       ├── desktop/
-│       └── vr/
-├── tests/
-├── benchmarks/
-├── examples/
-└── scripts/                    # Build/development/job convenience commands
+src/sandweave/
+├── __init__.py
+├── cli.py
+├── sandbox/               # Execution, files, resources, lifecycle, saved state
+│   ├── sandbox.py
+│   ├── process.py
+│   ├── files.py
+│   ├── snapshots.py
+│   ├── pool.py
+│   ├── runtimes/
+│   └── targets.py
+└── templates/             # Definition, preparation, startup and controls
+    ├── coding/
+    ├── gnome/
+    └── vr/
+        ├── opensaber/
+        └── gunspinning/
 ```
 
-A template is a `template.toml` with optional setup/start scripts. Adding an
-application that uses existing controls changes only its template. Built-ins
-ship as package data; users can also pass local templates or setup scripts.
+Templates select reusable control implementations using the existing extension
+contract. GNOME brings desktop controls; VR templates share VR controls and add
+their game's setup/startup. Adding an app with existing controls changes only its
+template. Sandbox code handles running instances without application-specific
+branches. CLI and pools reuse the same lifecycle.
 
-A capability implements one action/observation contract. Templates select and
-configure it. Desktop and VR use the same extension mechanism available to a
-new robotics capability. Domain-specific code stays here; the sandbox supplies
-guest execution, file access and lifecycle hooks through a small interface.
-
-Runtime, placement and storage have independent implementations **inside the
-sandbox pillar**. The sandbox coordinates them; they do not import individual
-applications. Pools reuse that same lifecycle. Slurm allocation logic belongs
-in `sandbox/targets/`; helper scripts call it. Native helpers/build recipes stay
-beside their owning runtime or capability; generated artifacts stay outside Git.
-
-Put each internal contract beside the module that owns it. Add a shared type or
-abstraction when actual callers require it. Local and remote operation share
-the same sandbox behavior; persistent workers and channels are execution
-mechanisms within this structure. The detailed behavior remains in the
-[API contract](sandbox-api-proposal.md), including clean pool state, snapshot
-compatibility, readiness and both-eye VR. Those guarantees do not require a
-separate top-level pillar for every mechanism.
-
-The test for the structure is change locality: **new app -> template; new
-interaction -> capability; new execution platform -> sandbox implementation.**
-Create files as behavior is implemented, keeping helpers with their owner.
+Native engine sources are currently bundled into the installed package from
+the qualified lab scripts. Their workspace and runtime inputs are isolated from
+existing lab environments. The wheel must operate without the source checkout;
+prepared runtime binaries and images remain external, configured artifacts.

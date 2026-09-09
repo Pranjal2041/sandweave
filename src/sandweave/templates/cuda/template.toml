@@ -1,0 +1,7 @@
+schema_version = 1
+extends = "coding@1"
+
+[resources]
+cpu = 2
+memory = "4GiB"
+gpu = true

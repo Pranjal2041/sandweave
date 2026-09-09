@@ -1,0 +1,3 @@
+include README.md
+recursive-include scripts *.py *.sh *.c
+recursive-include src/sandweave/templates *.toml *.sh

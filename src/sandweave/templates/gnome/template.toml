@@ -1,0 +1,14 @@
+schema_version = 1
+user = "ga"
+command_shell = "/bin/sh"
+
+[resources]
+cpu = 4
+memory = "8GiB"
+
+[runtime_options]
+init = "systemd"
+
+[capabilities.desktop]
+resolution = [1280, 800]
+backend = "xvnc"

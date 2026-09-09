@@ -6,13 +6,14 @@ The [feature inventory](notes/feature-inventory.md) lists execution modes,
 lifecycle and snapshots, resource/network controls, desktops, automation,
 GPU/VR, recording and verified application workflows, with experimental limits.
 
-The [repository structure proposal](notes/repository-architecture.md) has three
-pillars: templates define, sandboxes run, capabilities interact. It is design-only;
-the agreed API is unchanged and the public package has not been implemented.
+The [repository structure](notes/repository-architecture.md) has two pillars:
+templates define setup, startup and controls; sandboxes implement running instances.
+[Implementation and acceptance progress](notes/sdk-implementation-progress.md)
+tracks which parts of the agreed API have passed current end-to-end tests.
 
 ## Agreed public API contract (v1)
 
-**Agreed on 2026-09-08; SDK and CLI not implemented yet.** `sandweave`
+**Agreed on 2026-09-08; SDK/CLI implementation in progress.** `sandweave`
 (Sandweave) is the working package/CLI name. This section is the source of truth
 for implementation and the future public repository. Preserve these examples,
 names, defaults, return semantics and lifecycle behavior. Any public contract

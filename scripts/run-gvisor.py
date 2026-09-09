@@ -65,9 +65,13 @@ parser.add_argument('--experimental-gpu-client-memory-mib', type=int,
 parser.add_argument('--runtime-debug', action=argparse.BooleanOptionalAction, default=True,
                     help='verbose engine logging; disable when measuring GPU throughput')
 parser.add_argument('--profile', action='store_true', help='enable runtime profiling RPCs for a diagnostic guest')
+parser.add_argument('--forward', type=int, action='append', default=[],
+                    help='additional guest TCP port to forward on a fresh host loopback port')
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
+if any(not 1 <= port <= 65535 for port in args.forward):
+    parser.error('forwarded guest ports must be between 1 and 65535')
 try:
     gvisor_mps.validate(args.gpu, args.experimental_gpu_sm_chunks, args.experimental_gpu_client_memory_mib)
 except ValueError as error:
@@ -246,7 +250,7 @@ mps_watch = None
 watch_done = threading.Event()
 reservations = []
 ports = {}
-for guest_port in (80, 8080, 8000, 5901, 22):
+for guest_port in dict.fromkeys((80, 8080, 8000, 5901, 22, *args.forward)):
     reservation = socket.socket()
     reservation.bind(('127.0.0.1', 0))
     reservations.append(reservation)

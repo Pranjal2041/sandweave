@@ -21,6 +21,9 @@ __pycache__/
 *.log
 .pytest_cache/
 .venv/
+/build/
+/dist/
+/src/*.egg-info/
 .env
 .env.*
 !.env.example

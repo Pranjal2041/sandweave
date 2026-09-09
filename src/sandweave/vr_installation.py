@@ -5,6 +5,7 @@ import zipfile
 
 from .bootstrap import build_input, download, extract_source
 from .sandbox import workspace
+from .setup_progress import Stage
 
 GUNSPINNING_SHA256 = '85c440f22f16fcbeec018b0f4be4df8bb3b3ac091a3eda83f43cf2c8d06ad392'
 
@@ -12,8 +13,11 @@ GUNSPINNING_SHA256 = '85c440f22f16fcbeec018b0f4be4df8bb3b3ac091a3eda83f43cf2c8d0
 def extract_zip(archive, destination):
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive) as source:
-        for member in source.infolist():
+    with Stage('Extract ' + Path(archive).name, unit='files', detail='Reading archive') as progress, zipfile.ZipFile(archive) as source:
+        members = source.infolist()
+        progress.update(total=len(members))
+        for member in members:
+            progress.update(detail=member.filename)
             relative = Path(member.filename)
             mode = member.external_attr >> 16
             if relative.is_absolute() or '..' in relative.parts or (mode & 0o170000) == 0o120000:
@@ -28,6 +32,7 @@ def extract_zip(archive, destination):
                 with source.open(member) as stream, target.open('wb') as output:
                     shutil.copyfileobj(stream, output)
                 target.chmod(0o755 if mode & 0o111 else 0o644)
+            progress.update(advance=1)
 
 
 def prepare_inputs(builder, root, profile):

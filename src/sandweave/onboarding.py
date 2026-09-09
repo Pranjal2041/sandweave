@@ -15,6 +15,7 @@ import uuid
 
 from .sandbox import workspace
 from .templates.resolve import Template
+from .setup_progress import Stage, run_logged
 
 APPTAINER_VERSION = '1.5.3'
 APPTAINER_INSTALLER = ('https://raw.githubusercontent.com/apptainer/apptainer/'
@@ -347,11 +348,11 @@ def install_packages(packages):
         # interpreter; never invoke a different environment's `pip` executable.
         if importlib.util.find_spec('ensurepip') is None:
             raise ValueError('This Python has neither uv, pip nor ensurepip. Install uv, then run setup again.')
-        subprocess.run([sys.executable, '-m', 'ensurepip'], check=True, env=environment)
+        run_logged([sys.executable, '-m', 'ensurepip'], workspace.home(),
+                   label='Prepare Python installer', env=environment)
         command = [sys.executable, '-m', 'pip', 'install', *packages]
-    print('Running ' + shlex.join(command), flush=True)
     try:
-        subprocess.run(command, check=True, env=environment)
+        run_logged(command, workspace.home(), label='Install Python packages', env=environment)
     except KeyboardInterrupt:
         print('Installation interrupted; some packages may already be installed. Run sandweave doctor to check.', file=sys.stderr)
         raise
@@ -394,16 +395,19 @@ def install_apptainer():
         wrapper.write_text('#!/bin/sh\nexec ' + shlex.join([
             sys.executable, '-m', 'sandweave.installer_tools', name]) + ' "$@"\n')
         wrapper.chmod(0o755)
-    with urllib.request.urlopen(APPTAINER_INSTALLER, timeout=30) as response:
-        script = response.read(1024 * 1024)
-    if hashlib.sha256(script).hexdigest() != APPTAINER_INSTALLER_SHA256:
-        raise ValueError('Apptainer installer checksum mismatch')
+    with Stage('Download Apptainer installer', unit='bytes') as progress:
+        with urllib.request.urlopen(APPTAINER_INSTALLER, timeout=30) as response:
+            script = response.read(1024 * 1024)
+            progress.update(completed=len(script), detail='Verifying installer')
+        if hashlib.sha256(script).hexdigest() != APPTAINER_INSTALLER_SHA256:
+            raise ValueError('Apptainer installer checksum mismatch')
     path = destination / 'install.sh'
     path.write_bytes(script)
     try:
-        subprocess.run(['bash', '-o', 'pipefail', str(path), '-v', APPTAINER_VERSION, str(destination / 'runtime')],
-                       check=True, env={**os.environ, 'PATH': str(helpers) + os.pathsep + workspace.tool_path(),
-                                        'TMPDIR': str(destination)})
+        run_logged(['bash', '-o', 'pipefail', str(path), '-v', APPTAINER_VERSION, str(destination / 'runtime')],
+                   workspace.home(), label='Install Apptainer',
+                   env={**os.environ, 'PATH': str(helpers) + os.pathsep + workspace.tool_path(),
+                        'TMPDIR': str(destination)})
     except KeyboardInterrupt:
         print('Installation interrupted; partial files remain in ' + str(destination), file=sys.stderr)
         raise
@@ -588,6 +592,7 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
                  (pending_info.get('assets'), current.get('assets')) if isinstance(value, str) and value]
     sources = list(dict.fromkeys([*preferred, *sources]))
     print('Sandweave files: ' + str(selected), flush=True)
+    print('Setup logs: ' + str(selected / 'logs/setup'), flush=True)
     assets = getattr(args, 'assets', None)
     if automatic and os.environ.get('SANDWEAVE_ASSETS'):
         from .sandbox.preparation import source
@@ -614,7 +619,8 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
         previous_assets = os.environ.get('SANDWEAVE_ASSETS')
         os.environ['SANDWEAVE_ASSETS'] = str(installed)
         try:
-            checks = inspect(template, assets=installed)
+            with Stage('Check installation'):
+                checks = inspect(template, assets=installed)
             if automatic:
                 # Allocation checks belong to the requested Sandbox, whose
                 # resource overrides may differ from the built-in defaults.
@@ -622,7 +628,8 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
             for check in checks:
                 if check.fix and check.name not in ('assets', 'apptainer', 'python'):
                     repair(check.name, template, yes=yes)
-            checks = inspect(template, assets=installed)
+            with Stage('Check installation'):
+                checks = inspect(template, assets=installed)
             if automatic:
                 checks = [check for check in checks if check.name != 'gpu']
             show(checks, template)
@@ -633,11 +640,11 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
             # Leave the saved configuration intact until acceptance succeeds.
             if not automatic:
                 from .sandbox.preparation import checking
-                print('Preparing worker files...', flush=True)
-                workspace.prepare()
+                with Stage('Prepare worker files'):
+                    workspace.prepare()
                 # This candidate has already been installed and checked. Its
                 # disposable Sandbox must not recursively acquire setup.lock.
-                with checking(selected, installed):
+                with checking(selected, installed), Stage('Test ' + template + ' sandbox'):
                     smoke_test(template)
         finally:
             if previous_assets is None:

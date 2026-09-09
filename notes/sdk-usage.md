@@ -32,6 +32,14 @@ packages, and checks a disposable sandbox of that template. Selecting VR
 therefore starts the game for the check. Setup releases its test sandbox;
 it does not acquire or cancel GPU jobs. `python -m pip install sandweave` also works.
 
+In a terminal, setup shows a live bar, elapsed time and the latest activity for
+each stage. Downloads with a known size show bytes and a percentage; source
+extraction shows file counts. Builds and other work without a known total use a
+pulsing bar. After ten seconds without an update, the display shows how long
+the stage has been quiet. Full subprocess output is saved in `logs/setup`
+under the selected storage directory, including on failure. Redirected output
+uses plain text with periodic updates instead of terminal animations.
+
 Doctor opens a terminal menu with the checks and available repairs. It can
 install or repair runtime files, install missing Python packages, register an existing
 Apptainer executable or run its upstream installer, and install FFmpeg for VR.

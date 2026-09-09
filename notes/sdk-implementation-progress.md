@@ -4,6 +4,38 @@ The user approved implementation around two pillars: templates define setup,
 startup and controls; sandboxes implement running instances and their lifecycle.
 The README's public API remains the contract, including command strings.
 
+## Setup progress (2026-09-09)
+
+Setup now shows live stage progress, elapsed time and the latest subprocess
+output. Downloads report received bytes and use a percentage when the server
+provides the total. Archive extraction counts files; compilation and other work
+without a known total use a pulsing bar. A separate line reports ten seconds or
+more without new output, including on narrow terminals. The spinner and timer
+continue during verification after a download reaches 100 percent.
+
+Apptainer installation, Python package installation and source builds retain
+complete subprocess logs under the selected directory's `logs/setup`. The UI
+reads only a bounded tail, and redirected output uses plain text with periodic
+updates. Cancellation stops the build's own process group and retains its log.
+Failures and interrupted stages never display a successful completion.
+
+The host suite passed 126 cases, with one optional dependency case skipped and
+65 integration cases deselected. New checks cover large log output, command
+failure, SIGINT cleanup, known and unknown download sizes, truncated downloads
+and checksum failures. Actual terminal sessions at 100 and 44 columns exercised
+a slow local HTTP download and a controlled subprocess with a quiet interval.
+Their captured terminal screens were rendered, opened and visually inspected;
+the first narrow-terminal check exposed a hidden quiet-time notice, which was
+fixed and checked again. These fixtures did not compile gVisor or launch a guest.
+
+A wheel installed into a fresh environment passed setup CLI help and logged
+subprocess checks from `/tmp`. All five changed package modules match the built
+and installed wheel bytes, and Rich is included in its dependencies. Rich loads
+only when an installation stage needs an interactive display. Evidence is under
+ignored `runs/setup-progress-BcoUZO`, including `host.xml`, terminal recordings
+and images, and `wheel-check.txt`. The Orchard installation and existing user
+sandboxes were not changed. This update has not been published to PyPI.
+
 ## Public PyPI release (2026-09-09)
 
 [Sandweave 0.1.0](https://pypi.org/project/sandweave/) is published as a wheel and

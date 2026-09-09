@@ -4,8 +4,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -14,6 +12,7 @@ import uuid
 
 from .sandbox import workspace
 from .installation import record_installation
+from .setup_progress import Stage, run_logged
 
 BUILDER = ('docker://us-central1-docker.pkg.dev/gvisor-presubmit/'
            'gvisor-presubmit-images/default_x86_64:c48008cead6d6826')
@@ -53,16 +52,25 @@ def download(url, directory, name, *, sha256=None):
     fd, filename = tempfile.mkstemp(prefix='.' + name + '.', dir=directory)
     temporary = Path(filename)
     try:
-        print('Downloading ' + name + '...', flush=True)
-        with os.fdopen(fd, 'wb') as output, urllib.request.urlopen(url, timeout=60) as response:
-            shutil.copyfileobj(response, output, length=1024 * 1024)
+        with os.fdopen(fd, 'wb') as output, Stage('Download ' + name, unit='bytes', detail='Connecting') as progress:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                length = response.headers.get('Content-Length', '')
+                total = int(length) if length.isdecimal() else None
+                progress.update(total=total, detail='Downloading')
+                read = getattr(response, 'read1', response.read)
+                while chunk := read(256 * 1024):
+                    output.write(chunk)
+                    progress.update(advance=len(chunk))
+                if total is not None and output.tell() != total:
+                    raise ValueError('Incomplete download: ' + name)
+            progress.update(detail='Verifying download')
             output.flush()
             os.fsync(output.fileno())
-        actual = workspace.file_digest(temporary)
-        if sha256 is not None and actual != sha256:
-            raise ValueError('Download checksum mismatch: ' + name)
-        os.replace(temporary, target)
-        workspace.atomic_json(receipt, {'url': url, 'sha256': actual, 'size': target.stat().st_size})
+            actual = workspace.file_digest(temporary)
+            if sha256 is not None and actual != sha256:
+                raise ValueError('Download checksum mismatch: ' + name)
+            os.replace(temporary, target)
+            workspace.atomic_json(receipt, {'url': url, 'sha256': actual, 'size': target.stat().st_size})
         return target
     finally:
         temporary.unlink(missing_ok=True)
@@ -72,18 +80,21 @@ def extract_source(archive, destination):
     """Extract source trees without device files, host ownership or escaping links."""
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive) as source:
+    with Stage('Extract ' + Path(archive).name, unit='files', detail='Reading archive') as progress, tarfile.open(archive) as source:
         members = source.getmembers()
+        progress.update(total=len(members))
         top = {Path(member.name).parts[0] for member in members if Path(member.name).parts}
         if len(top) != 1:
             raise ValueError('Source archive must have a single top-level directory')
         prefix = next(iter(top))
         for member in members:
+            progress.update(detail=member.name)
             relative = Path(member.name)
             if relative.is_absolute() or '..' in relative.parts:
                 raise ValueError('Source archive path escapes its directory')
             relative = relative.relative_to(prefix)
             if relative == Path('.'):
+                progress.update(advance=1)
                 continue
             path = destination / relative
             if not path.resolve().is_relative_to(destination):
@@ -104,6 +115,7 @@ def extract_source(archive, destination):
                 path.symlink_to(member.linkname)
             else:
                 raise ValueError('Unsupported source archive entry: ' + member.name)
+            progress.update(advance=1)
 
 
 class Builder:
@@ -122,29 +134,7 @@ class Builder:
             Path(self.env[name]).mkdir(parents=True, exist_ok=True)
 
     def run(self, command, *, cwd=None, label='build'):
-        logs = self.directory / 'logs/setup'
-        logs.mkdir(parents=True, exist_ok=True)
-        log = logs / (label + '-' + uuid.uuid4().hex[:8] + '.log')
-        print(label + ' · ' + str(log), flush=True)
-        with log.open('wb') as output:
-            process = subprocess.Popen(command, cwd=cwd, env=self.env, stdin=subprocess.DEVNULL,
-                                       stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
-            try:
-                code = process.wait()
-            except BaseException:
-                if process.poll() is None:
-                    os.killpg(process.pid, signal.SIGTERM)
-                    try:
-                        process.wait(timeout=15)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait()
-                raise
-        if code:
-            with log.open('rb') as output:
-                output.seek(max(0, log.stat().st_size - 6000))
-                detail = output.read().decode(errors='replace')
-            raise ValueError(label + ' failed. Log: ' + str(log) + '\n' + detail)
+        return run_logged(command, self.directory, label=label, env=self.env, cwd=cwd)
 
     def pull(self, reference, target):
         target = Path(target)
@@ -162,9 +152,10 @@ class Builder:
         temporary = target.with_name('.' + target.name + '-' + uuid.uuid4().hex)
         try:
             self.run([self.apptainer, 'pull', str(temporary), reference], label='Download container image')
-            actual = workspace.file_digest(temporary)
-            os.replace(temporary, target)
-            workspace.atomic_json(receipt, {'reference': reference, 'sha256': actual})
+            with Stage('Verify ' + target.name):
+                actual = workspace.file_digest(temporary)
+                os.replace(temporary, target)
+                workspace.atomic_json(receipt, {'reference': reference, 'sha256': actual})
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -297,7 +288,7 @@ done
         if base is None:
             ubuntu = download(UBUNTU_URL, self.downloads, 'ubuntu-base-22.04.5-amd64.tar.gz', sha256=UBUNTU_SHA256)
             import gzip
-            with gzip.open(ubuntu, 'rb') as source, (root / 'ubuntu.tar').open('wb') as output:
+            with Stage('Extract Ubuntu filesystem'), gzip.open(ubuntu, 'rb') as source, (root / 'ubuntu.tar').open('wb') as output:
                 shutil.copyfileobj(source, output)
             self.erofs(root, root / 'ubuntu.tar', root / IMAGE)
         from .onboarding import workload
@@ -348,13 +339,16 @@ done
         if base is None:
             (root / IMAGE).unlink()
         workspace.atomic_json(root / 'sandweave-assets.json', registry)
-        validate_assets(root, recipe)
+        with Stage('Verify runtime files'):
+            validate_assets(root, recipe)
         # Build work is disposable and never part of a published runtime.
-        for name in ('sources', 'build-tmp', 'input', 'output', 'scripts', 'runs'):
-            shutil.rmtree(root / name, ignore_errors=True)
-        for name in ('ubuntu.tar', 'engine.patch', 'mounts.json'):
-            (root / name).unlink(missing_ok=True)
-        record_installation(root)
+        with Stage('Remove temporary build files'):
+            for name in ('sources', 'build-tmp', 'input', 'output', 'scripts', 'runs'):
+                shutil.rmtree(root / name, ignore_errors=True)
+            for name in ('ubuntu.tar', 'engine.patch', 'mounts.json'):
+                (root / name).unlink(missing_ok=True)
+        with Stage('Record installed files'):
+            record_installation(root)
         target = root.parent / ('built-' + uuid.uuid4().hex[:24])
         root.rename(target)
         return target

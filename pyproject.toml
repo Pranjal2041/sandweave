@@ -9,7 +9,7 @@ description = "Fast, modular sandboxes for AI agents"
 readme = "README.md"
 license-files = ["LICENSES/*"]
 requires-python = ">=3.11"
-dependencies = ["questionary>=2,<3"]
+dependencies = ["questionary>=2,<3", "rich>=14,<15"]
 
 [project.urls]
 Homepage = "https://pypi.org/project/sandweave/"
@@ -20,7 +20,7 @@ Issues = "https://github.com/Pranjal2041/sandweave/issues"
 [project.optional-dependencies]
 desktop = ["Pillow", "numpy"]
 vr = ["Pillow", "numpy", "zstandard"]
-test = ["pytest"]
+test = ["pytest", "pyte>=0.8,<0.9"]
 
 [project.scripts]
 sandweave = "sandweave.cli:main"

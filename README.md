@@ -39,6 +39,9 @@ Setup asks what you want to start with and where to store files. The directory
 can be empty. It installs the template and checks a temporary sandbox. Downloads,
 installed runtimes and caches stay in the selected directory. Other templates
 are installed when you first use them.
+Setup shows live progress, elapsed time and the latest build output. Downloads
+show byte progress when the server provides a size. Full logs are saved in
+`logs/setup` inside your selected directory.
 See [installation details](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#install-and-configure).
 
 To check your installation or fix a problem:

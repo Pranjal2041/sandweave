@@ -9,6 +9,7 @@ import tempfile
 import uuid
 
 from .sandbox import workspace
+from .setup_progress import Stage
 
 
 @contextmanager
@@ -158,8 +159,11 @@ def import_runtime(source, directory, recipe):
                 target = store / (identity + '-' + uuid.uuid4().hex[:12])
         temporary = Path(tempfile.mkdtemp(prefix='.import-', dir=store))
         try:
-            for name in selected:
-                workspace.stage_tree(_inside(source, name), temporary / name)
+            with Stage('Copy runtime files', total=len(selected), unit='inputs') as progress:
+                for name in selected:
+                    progress.update(detail=name)
+                    workspace.stage_tree(_inside(source, name), temporary / name)
+                    progress.update(advance=1)
             workspace.atomic_json(temporary / 'tools/gvisor-socket/runtime.json', runtime)
             workspace.atomic_json(temporary / 'sandweave-assets.json', registry)
             if needs_helpers(temporary, recipe):
@@ -167,8 +171,9 @@ def import_runtime(source, directory, recipe):
                 (temporary / 'build-tmp').mkdir()
                 Builder(directory).helpers(temporary)
                 shutil.rmtree(temporary / 'build-tmp')
-            validate_assets(temporary, recipe)
-            record_installation(temporary)
+            with Stage('Verify runtime files'):
+                validate_assets(temporary, recipe)
+                record_installation(temporary)
             temporary.rename(target)
         finally:
             if temporary.exists():

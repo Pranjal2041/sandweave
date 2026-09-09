@@ -16,10 +16,10 @@ storage and install a template before creating a sandbox.
 The SDK host needs Python 3.11 or newer. Workers need Linux x86-64, Bash and
 permission to run containers. Setup installs Apptainer if needed and prepares
 the runtime files. GPU workers also need an allocated NVIDIA device and a
-compatible driver. From a checkout, inside your Python environment:
+compatible driver. Inside your Python environment:
 
 ```bash
-uv pip install .
+uv pip install sandweave
 sandweave setup
 sandweave doctor
 sandweave run --template coding -- "python -c 'print(2 + 2)'"
@@ -30,7 +30,7 @@ The storage directory can be empty. It imports a usable existing runtime or
 builds one from upstream inputs, installs the selected workload's Python
 packages, and checks a disposable sandbox of that template. Selecting VR
 therefore starts the game for the check. Setup releases its test sandbox;
-it does not acquire or cancel GPU jobs. `python -m pip install .` also works.
+it does not acquire or cancel GPU jobs. `python -m pip install sandweave` also works.
 
 Doctor opens a terminal menu with the checks and available repairs. It can
 install or repair runtime files, install missing Python packages, register an existing

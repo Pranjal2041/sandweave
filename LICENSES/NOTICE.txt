@@ -1,0 +1,25 @@
+The license texts in this directory accompany the bundled patches to upstream
+projects. They apply to their respective upstream material, not to all of
+Sandweave. Runtime images, games and downloaded dependencies are not included
+in the Python distribution and retain their own licenses.
+
+gvisor-no-kvm-prototype.patch
+  Upstream: https://github.com/google/gvisor
+  Base revision: 0a1316b0d180600212bd607aa0ccfe2a9b09a899
+  License text: gvisor.txt
+  The patch records Sandweave's modifications to gVisor. Copyright and license
+  notices for new source files are retained in the patch.
+
+monado-vr-lab.patch
+  Upstream: https://gitlab.freedesktop.org/monado/monado
+  Base revision: f8dfadfeaeb46df3eec17bd76b7abdf42a79108c
+  License text: monado.txt (Boost Software License 1.0)
+  The patch adds target selection and stereo frame capture to Monado.
+
+primus-vk-visible-rows.patch
+  Upstream: https://github.com/felixdoerre/primus_vk
+  Base revision: 7076c2e6a55cfc7c292eb68ca17b00dae498ef81
+  Copyright (c) 2018, Felix Doerre
+  License text: primus-vk.txt (BSD 2-Clause)
+  The patch changes image copying to use visible rows rather than allocation
+  padding when graphics drivers report different linear image layouts.

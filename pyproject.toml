@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,10 +7,12 @@ name = "sandweave"
 version = "0.1.0"
 description = "Fast, modular sandboxes for AI agents"
 readme = "README.md"
+license-files = ["LICENSES/*"]
 requires-python = ">=3.11"
 dependencies = ["questionary>=2,<3"]
 
 [project.urls]
+Homepage = "https://pypi.org/project/sandweave/"
 Repository = "https://github.com/Pranjal2041/sandweave"
 Documentation = "https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md"
 Issues = "https://github.com/Pranjal2041/sandweave/issues"

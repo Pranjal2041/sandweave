@@ -1,8 +1,8 @@
 <div align="center">
   <h1>Sandweave</h1>
   <p>Fast, modular sandboxes for AI agents.</p>
-  <a href="#install"><img src="https://img.shields.io/badge/PyPI-Coming_soon-3776AB?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI: coming soon"></a>
-  <a href="notes/sdk-usage.md"><img src="https://img.shields.io/badge/Docs-Read-2563EB?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read the docs"></a>
+  <a href="https://pypi.org/project/sandweave/"><img src="https://img.shields.io/pypi/v/sandweave?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI version"></a>
+  <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md"><img src="https://img.shields.io/badge/Docs-Read-2563EB?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read the docs"></a>
   <a href="#install"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11 and newer"></a>
 </div>
 
@@ -16,18 +16,13 @@ template, provide a setup script, or write your own template.
 
 ## Install
 
-PyPI publication is coming soon. For now, clone this repository:
+Inside a Python 3.11+ environment on a Linux x86-64 worker:
 
 ```bash
-git clone https://github.com/Pranjal2041/sandweave.git
-cd sandweave
+uv pip install sandweave
 ```
 
-From this checkout, inside a Python 3.11+ environment on a Linux x86-64 worker:
-
-```bash
-uv pip install .
-```
+You can also use `pip install sandweave`.
 
 Creating a local sandbox installs its template on first use. Sandweave reuses
 your configured storage directory, or creates `.sandweave` in the current
@@ -44,7 +39,7 @@ Setup asks what you want to start with and where to store files. The directory
 can be empty. It installs the template and checks a temporary sandbox. Downloads,
 installed runtimes and caches stay in the selected directory. Other templates
 are installed when you first use them.
-See [installation details](notes/sdk-usage.md#install-and-configure).
+See [installation details](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#install-and-configure).
 
 To check your installation or fix a problem:
 
@@ -104,7 +99,7 @@ with Sandbox() as env:
     print(result.returncode)
 ```
 
-See [command options](notes/sdk-usage.md#commands) for shells, timeouts and terminals.
+See [command options](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#commands) for shells, timeouts and terminals.
 
 To stream output, use `exec`:
 
@@ -148,7 +143,7 @@ Keyboard input goes to the focused window; mouse clicks use desktop coordinates.
 For an agent loop, `env.desktop.step(action)` applies a mouse/keyboard action and returns an
 observation with `.image` and timing metadata. It captures after the input server
 acknowledges the action; your application may still be processing it.
-See the [desktop loop example](notes/sandbox-api-examples.md#4-a-desktop-agent-loop).
+See the [desktop loop example](https://github.com/Pranjal2041/sandweave/blob/main/notes/sandbox-api-examples.md#4-a-desktop-agent-loop).
 
 To inspect startup time:
 
@@ -159,7 +154,7 @@ print(env.timings)
 `ready_seconds` measures sandbox startup on the worker. The other entries show
 time spent launching the runtime, running setup and waiting for the desktop.
 First-use installation and worker preparation happen before this timer starts.
-See [startup measurements](notes/gnome-startup-profiling.md) for the breakdown.
+See [startup measurements](https://github.com/Pranjal2041/sandweave/blob/main/notes/gnome-startup-profiling.md) for the breakdown.
 
 ## Inspect a sandbox
 
@@ -197,7 +192,7 @@ sandweave info SANDBOX_ID
 ```
 
 Replace `SANDBOX_ID` with `env.id` or a unique sandbox name.
-See [inspection details](notes/sdk-usage.md#inspect-a-sandbox) for field meanings
+See [inspection details](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#inspect-a-sandbox) for field meanings
 and compatibility with older workers.
 
 ## Cache and reuse an environment
@@ -272,8 +267,8 @@ script = "install-tools.sh"
 ```
 
 Write `install-tools.sh` to install your applications. See
-[writing templates](notes/sdk-usage.md#templates) for startup services and custom
-controls. The [point-mass example](examples/pointmass/README.md) shows how to
+[writing templates](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#templates) for startup services and custom
+controls. The [point-mass example](https://github.com/Pranjal2041/sandweave/blob/main/examples/pointmass/README.md) shows how to
 add controls through an installed Python package.
 
 ## Run a pool of sandboxes
@@ -347,7 +342,7 @@ frames; a policy that ends immediately can leave the recording too short.
 
 `vr.step` returns a capture taken after the runtime acknowledges the input.
 Acknowledgement does not guarantee that the game consumed the input or advanced
-one simulation tick. See [VR actions and caching](notes/sandbox-api-examples.md#9-a-vr-game-and-agent-loop)
+one simulation tick. See [VR actions and caching](https://github.com/Pranjal2041/sandweave/blob/main/notes/sandbox-api-examples.md#9-a-vr-game-and-agent-loop)
 for the action format and offline reuse. Filesystem restores start fresh game
 processes; live graphics checkpoints are unsupported.
 
@@ -387,7 +382,7 @@ with Sandbox(template="cuda", gpu="L40S",
 GPU selection uses hardware already allocated to the worker. Native Apptainer
 supports commands and filesystem caches, with fewer isolation and resource
 controls than gVisor, the default runtime. See
-[resource and runtime limits](notes/sdk-usage.md#limits-that-matter).
+[resource and runtime limits](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#limits-that-matter).
 
 ## Choose a worker
 
@@ -404,7 +399,7 @@ with Sandbox(target=allocation) as env:
 Replace `12345` with your job ID. `Slurm.connect` borrows an allocation; sandbox
 cleanup leaves the job running. `Slurm.acquire(...)` creates a new allocation
 and its context closes only the job it owns. SSH targets and pools across
-workers are also supported. See [placement and pools](notes/sdk-usage.md#placement-and-pools)
+workers are also supported. See [placement and pools](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#placement-and-pools)
 for configuration and shared-storage requirements.
 
 ## Pause, checkpoint and restore
@@ -439,7 +434,7 @@ cannot be restored.
 | `with Sandbox(...)` | Create an owned sandbox and terminate it on exit. Save first to retain state. |
 | `with Sandbox.connect(id)` | Borrow a handle; leaving the block only disconnects. |
 
-See [saved state and ownership](notes/sdk-usage.md#saved-state-and-ownership) for
+See [saved state and ownership](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#saved-state-and-ownership) for
 snapshot storage, verification and external mounts.
 
 ## Use the CLI
@@ -476,8 +471,8 @@ operations share the same lifecycle.
 
 ## Reference
 
-- [Usage guide](notes/sdk-usage.md): configuration, templates, extensions and limits.
-- [More examples](notes/sandbox-api-examples.md): agent loops, files, pools and Slurm allocation.
-- [Test results and measurements](notes/sdk-implementation-progress.md): completed acceptance checks and performance results.
-- [API design contract](notes/sandbox-api-proposal.md) and [repository structure](notes/repository-architecture.md).
-- [Lab feature inventory](notes/feature-inventory.md) and [runtime reproduction](notes/gvisor-lab-reproduction.md): engine experiments and their limits.
+- [Usage guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md): configuration, templates, extensions and limits.
+- [More examples](https://github.com/Pranjal2041/sandweave/blob/main/notes/sandbox-api-examples.md): agent loops, files, pools and Slurm allocation.
+- [Test results and measurements](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-implementation-progress.md): completed acceptance checks and performance results.
+- [API design contract](https://github.com/Pranjal2041/sandweave/blob/main/notes/sandbox-api-proposal.md) and [repository structure](https://github.com/Pranjal2041/sandweave/blob/main/notes/repository-architecture.md).
+- [Lab feature inventory](https://github.com/Pranjal2041/sandweave/blob/main/notes/feature-inventory.md) and [runtime reproduction](https://github.com/Pranjal2041/sandweave/blob/main/notes/gvisor-lab-reproduction.md): engine experiments and their limits.

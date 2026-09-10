@@ -57,8 +57,8 @@ def test_command_strings_files_streams_and_timeouts(tmp_path):
             env.run('echo partial; sleep 20', timeout=.1)
         with pytest.raises(OutputLimitExceeded):
             env.run("python -c 'print(\"x\" * 65536)'", max_output_bytes=1024)
-        cli = subprocess.run([str(Path(sys.executable).parent / 'sandweave'), 'exec', env.id,
-                              '--no-stdin', '--', 'echo output; echo problem >&2; exit 7'],
+        cli = subprocess.run([str(Path(sys.executable).parent / 'sandweave'), 'exec', '--no-stdin',
+                              env.id, '--', 'echo output; echo problem >&2; exit 7'],
                              capture_output=True, text=True, timeout=30)
         assert (cli.stdout, cli.stderr, cli.returncode) == ('output\n', 'problem\n', 7)
 

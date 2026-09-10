@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 
 import pytest
 
@@ -80,7 +81,7 @@ def test_untracked_user_files_are_not_archived(deploy, repo, tmp_path):
     release = deploy.preflight(root)
     archive = tmp_path / 'committed.tar'
     git('archive', '--output=' + str(archive), release['commit'])
-    with deploy.tarfile.open(archive) as contents:
+    with tarfile.open(archive) as contents:
         assert 'private.txt' not in contents.getnames()
     assert (root / 'private.txt').read_text() == 'user work'
 
@@ -113,6 +114,23 @@ def test_pypi_conflict_stops_before_any_mutation(deploy, files, monkeypatch):
     monkeypatch.setattr(deploy, 'token', lambda: pytest.fail('conflict should stop before requesting credentials'))
     with pytest.raises(ValueError, match='different files'):
         deploy.publish(files[0].parent, release, files)
+
+
+def test_failed_recheck_invalidates_previous_pass(deploy, repo, monkeypatch):
+    root, _ = repo
+    release = deploy.preflight(root)
+    directory = root / 'runs/deploy' / (release['version'] + '-' + release['commit'][:12])
+    directory.mkdir(parents=True)
+    receipt = directory / 'validated.json'
+    receipt.write_text('{}')
+    monkeypatch.setattr(deploy, 'ROOT', root)
+    def failed(*args):
+        raise ValueError('new check failed')
+    monkeypatch.setattr(deploy, 'validate', failed)
+    monkeypatch.setattr(sys, 'argv', ['deploy', '--check', '--recheck'])
+    with pytest.raises(ValueError, match='new check failed'):
+        deploy.main()
+    assert not receipt.exists()
 
 
 def test_credentials_are_parsed_as_data(deploy, tmp_path, monkeypatch):

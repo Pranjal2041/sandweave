@@ -11,7 +11,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 import tomllib
@@ -105,7 +104,7 @@ def validate(directory, release):
         'SANDWEAVE_INTEGRATION', 'UV_PUBLISH_TOKEN', 'PYPI_API_KEY', 'PYPI_API_TOKEN')}
     env['SOURCE_DATE_EPOCH'] = run('git', 'show', '-s', '--format=%ct', release['commit'], capture=True).strip()
     dist = work / 'dist'
-    run('uv', 'build', '--out-dir', dist, source, cwd=work, env=env)
+    run('uv', 'build', '--no-build-logs', '--out-dir', dist, source, cwd=work, env=env)
     files = [*dist.glob('*.whl'), *dist.glob('*.tar.gz')]
     if len(files) != 2:
         raise ValueError('Build must produce exactly one wheel and one source distribution')
@@ -113,9 +112,10 @@ def validate(directory, release):
     run('uvx', 'twine', 'check', '--strict', *files, cwd=work, env=env)
     unpacked = work / 'sdist'
     unpacked.mkdir()
-    with tarfile.open(sdist) as archive:
-        archive.extractall(unpacked, filter='data')
-    run('uv', 'build', '--wheel', '--out-dir', work / 'rebuilt', next(unpacked.iterdir()), cwd=work, env=env)
+    # This archive was just built from our committed source. Use the same tar
+    # tool as above so the release command also works on early Python 3.11.
+    run('tar', '-xf', sdist, '-C', unpacked, cwd=work, env=env)
+    run('uv', 'build', '--no-build-logs', '--wheel', '--out-dir', work / 'rebuilt', next(unpacked.iterdir()), cwd=work, env=env)
     if wheel_contents(wheel) != wheel_contents(next((work / 'rebuilt').glob('*.whl'))):
         raise ValueError('Source distribution does not reproduce the wheel contents')
     python = work / 'venv/bin/python'
@@ -241,7 +241,9 @@ def main():
         os.dup2(tee.stdin.fileno(), 1)
         os.dup2(tee.stdin.fileno(), 2)
         try:
-            files = None if args.recheck else validated_files(directory, release)
+            if args.recheck:
+                (directory / 'validated.json').unlink(missing_ok=True)
+            files = validated_files(directory, release)
             files = files or validate(directory, release)
             if preflight(ROOT) != release:
                 raise ValueError('Source changed during validation; start a new release check')

@@ -11,8 +11,14 @@ def configure(sub):
     p.add_argument('--no-worker', action='store_true')
     p.add_argument('--slots', type=int)
     p.add_argument('--memory')
+    p.add_argument('--cpus', type=int, help='Maximum eligible CPU cores for the local worker')
+    p.add_argument('--gpus', type=int, help='Maximum eligible GPUs for the local worker; 0 disables GPUs')
+    p.add_argument('--listen', help='Controller bind address, for example 0.0.0.0:8765')
+    p.add_argument('--tls-cert'); p.add_argument('--tls-key'); p.add_argument('--token-file')
     p = cluster.add_parser('connect', help='Save a target for a controller on another machine')
-    p.add_argument('name'); p.add_argument('--host', required=True); p.add_argument('--directory', required=True)
+    p.add_argument('name'); p.add_argument('address', nargs='?')
+    p.add_argument('--host'); p.add_argument('--directory')
+    p.add_argument('--token-file'); p.add_argument('--ca-file')
     for action in ('status', 'workers', 'stop', 'events'):
         p = cluster.add_parser(action); p.add_argument('name', nargs='?', default='lab')
         if action == 'events':
@@ -21,6 +27,10 @@ def configure(sub):
         p = cluster.add_parser(action, help='Register an existing worker' if action == 'add' else 'Join from this worker machine')
         p.add_argument('name', nargs='?', default='lab'); p.add_argument('--target', default='local')
         p.add_argument('--slots', type=int); p.add_argument('--memory')
+        if action == 'join':
+            p.add_argument('--cpus', type=int, help='Maximum eligible CPU cores; defaults to all available')
+            p.add_argument('--gpus', type=int, help='Maximum eligible GPUs; defaults to all available')
+            p.add_argument('--token-file'); p.add_argument('--ca-file')
         p.add_argument('--label', action='append', default=[], metavar='KEY=VALUE')
     for action in ('drain', 'resume', 'remove'):
         p = cluster.add_parser(action); p.add_argument('name'); p.add_argument('worker')
@@ -46,22 +56,33 @@ def main(args):
         action = args.cluster_operation
         if action == 'start':
             cluster = Cluster.start(args.name, directory=args.directory, local_worker=not args.no_worker,
-                                    slots=args.slots, memory=args.memory)
+                                    slots=args.slots, memory=args.memory, cpus=args.cpus, gpus=args.gpus,
+                                    listen=args.listen, tls_cert=args.tls_cert, tls_key=args.tls_key, token_file=args.token_file)
         elif action == 'connect':
             from .client import save_target
             from ..sandbox.targets import _ssh
-            info = json.loads(_ssh(args.host, ['python3', '-c',
-                'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())',
-                str(Path(args.directory) / 'controller.json')]))
-            config = {'hostname': info['hostname'], 'ssh_host': args.host, 'directory': args.directory}
-            cluster = Cluster(config, args.name)
+            if args.address:
+                if args.host or args.directory:
+                    raise ValueError('provide an address or --host and --directory, not both')
+                cluster = Cluster.connect(args.address, token_file=args.token_file, ca_file=args.ca_file)
+                config = {**cluster.config, 'forward': True}
+            else:
+                if not args.host or not args.directory or not Path(args.directory).is_absolute():
+                    raise ValueError('provide a controller URL, or --host with an absolute --directory')
+                info = json.loads(_ssh(args.host, ['python3', '-c',
+                    'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())',
+                    str(Path(args.directory) / 'controller.json')]))
+                config = {'hostname': info['hostname'], 'ssh_host': args.host, 'directory': args.directory, 'forward': True}
+                cluster = Cluster(config, args.name)
             cluster.connection.call('ping')
             save_target(args.name, config)
             cluster.close()
-            output({'name': args.name, 'connected': True})
+            output({'name': args.name, 'address': args.address or 'ssh://' + args.host + args.directory,
+                    'connected': True})
             return 0
         else:
-            cluster = Cluster.connect(args.name)
+            cluster = Cluster.connect(args.name, token_file=getattr(args, 'token_file', None),
+                                      ca_file=getattr(args, 'ca_file', None))
         try:
             if action in ('start', 'status'):
                 output(cluster.info)
@@ -84,12 +105,13 @@ def main(args):
                     labels[key] = value
                 target = args.target
                 if action == 'join':
-                    from ..sandbox.targets import local_connection, Endpoint
-                    from ..templates.resolve import Template
-                    connection = local_connection(template=Template('coding').resolve())
-                    target = Endpoint(connection.port, connection.token)
-                    connection.close()
-                output(cluster.add_worker(target, slots=args.slots, memory=args.memory, labels=labels))
+                    if target != 'local':
+                        raise ValueError('join starts a worker on this machine; use cluster add for remote targets')
+                    from .worker import start
+                    output(start(cluster.config, cpus=args.cpus, gpus=args.gpus,
+                                 slots=args.slots, memory=args.memory, labels=labels))
+                else:
+                    output(cluster.add_worker(target, slots=args.slots, memory=args.memory, labels=labels))
         finally:
             cluster.close()
         return 0

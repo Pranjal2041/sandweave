@@ -41,6 +41,7 @@ def cluster(tmp_path_factory):
     cpus = sorted(os.sched_getaffinity(0))
     assert len(cpus) >= 4
     processes, connections, logs = [], [], []
+    bridges = []
     controller_directory = os.environ.get('SANDWEAVE_WEAVE_CONTROLLER_DIRECTORY') or tmp_path_factory.mktemp('weave-controller')
     cluster = Cluster.start('weave-live', directory=controller_directory, local_worker=False)
     try:
@@ -67,7 +68,13 @@ def cluster(tmp_path_factory):
             info = json.loads(marker.read_text())
             connection = Connection('127.0.0.1', info['port'], info['token'])
             connections.append(connection)
-            cluster.add_worker({'endpoint': {'hostname': socket.gethostname(), 'port': info['port'], 'token': info['token']}},
+            endpoint = {'hostname': socket.gethostname(), 'port': info['port'], 'token': info['token']}
+            if os.environ.get('SANDWEAVE_WEAVE_RELAY'):
+                from sandweave.weave.worker import Bridge
+                endpoint['relay'] = uuid.uuid4().hex
+                bridges.append(Bridge({'url': cluster.info['connection']['address'],
+                    'token': cluster.connection.token}, endpoint['relay']).start())
+            cluster.add_worker({'endpoint': endpoint},
                                slots=2, memory='4GiB', name='acceptance-' + str(index))
         cluster.test_workers = connections
         yield cluster
@@ -85,6 +92,8 @@ def cluster(tmp_path_factory):
             cluster.stop()
         finally:
             cluster.close()
+            for bridge in bridges:
+                bridge.close()
             for connection in connections:
                 for record in connection.call('list'):
                     if record['state'] not in ('terminated', 'stopped'):

@@ -53,7 +53,7 @@ def worker_key(source=None):
     eligibility = {'assets': asset_identity(source), 'software': software_identity(),
                    'cpus': sorted(os.sched_getaffinity(0)),
                    'gpu': {key: os.environ.get(key) for key in
-                           ('SLURM_STEP_GPUS', 'SLURM_JOB_GPUS', 'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'SANDWEAVE_GPU_DEVICES')},
+                           ('SLURM_STEP_GPUS', 'SLURM_JOB_GPUS', 'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'SANDWEAVE_GPU_DEVICES', 'SANDWEAVE_GPU_LIMIT')},
                    'memory': {key: os.environ.get(key) for key in
                               ('SLURM_MEM_PER_NODE', 'SLURM_MEM_PER_CPU', 'SANDWEAVE_MEMORY_BUDGET')}}
     digest = hashlib.sha256(json.dumps(eligibility, sort_keys=True).encode()).hexdigest()[:12]

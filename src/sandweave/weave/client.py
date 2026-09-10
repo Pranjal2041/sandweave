@@ -24,7 +24,15 @@ def cluster_config(target):
         return target.config
     if isinstance(target, dict):
         return target.get('cluster')
+    if isinstance(target, str) and target.startswith('ssh://'):
+        from urllib.parse import urlsplit
+        if urlsplit(target).path:
+            from .transport import address
+            return address(target)
     if isinstance(target, str) and target not in ('local', '') and not target.startswith('ssh://'):
+        if target.startswith(('http://', 'https://')):
+            from .transport import address
+            return address(target)
         path = home() / 'config.json'
         if path.is_file():
             return json.loads(path.read_text()).get('targets', {}).get(target, {}).get('cluster')
@@ -36,7 +44,8 @@ def metadata(config):
     if config['hostname'] == socket.gethostname():
         return json.loads(Path(path).read_text())
     return json.loads(_ssh(config.get('ssh_host', config['hostname']),
-        [config.get('python', 'python3'), '-c', 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())', path]))
+        [config.get('python', 'python3'), '-c', 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())', path],
+        port=config.get('ssh_port')))
 
 
 def save_target(name, config):
@@ -57,14 +66,24 @@ class ClusterConnection:
         if config is None:
             raise ValueError('target is not a configured cluster')
         self.config, self.timeout = dict(config), timeout
-        info = metadata(self.config)
-        self.endpoint = {k: info[k] for k in ('hostname', 'port', 'token')}
-        if config.get('ssh_host'):
-            self.endpoint['ssh_host'] = config['ssh_host']
-        self.control = providers.direct(self.endpoint, timeout=timeout)
-        self.host, self.port, self.token = info['hostname'], info['port'], info['token']
+        if 'url' in config:
+            from .transport import connect
+            self.control = connect(config, timeout=timeout)
+            self.host, self.port, self.token = self.control.host, self.control.port, self.control.token
+            self.endpoint = dict(hostname=self.host, port=self.port, token=self.token)
+        else:
+            info = metadata(self.config)
+            self.endpoint = {k: info[k] for k in ('hostname', 'port', 'token')}
+            for key in ('ssh_host', 'ssh_port'):
+                if config.get(key):
+                    self.endpoint[key] = config[key]
+            # SSH transports terminate at loopback. TLS listeners need a local
+            # plain RPC socket too, so administrative SSH access stays usable.
+            self.endpoint['port'] = info.get('local_port', info['port'])
+            self.control = providers.direct(self.endpoint, timeout=timeout)
+            self.host, self.port, self.token = info['hostname'], self.endpoint['port'], info['token']
         self.unix_path = None
-        key = (os.getpid(), self.host, str(config['directory']), self.token)
+        key = (os.getpid(), self.host, str(config.get('directory', config.get('url'))), self.token)
         with _registry_lock:
             self.registry = _registries.setdefault(key, {'routes': {}, 'owners': {}, 'lock': threading.RLock()})
         self.connections, self.heartbeats = {}, {}
@@ -123,7 +142,11 @@ class ClusterConnection:
         key = (route['id'], route['endpoint']['port'], route['endpoint']['token'])
         with self.lock:
             if key not in self.connections:
-                self.connections[key] = providers.direct(route['endpoint'], timeout=self.timeout)
+                if 'url' in self.config or self.config.get('forward') or route['endpoint'].get('relay'):
+                    from .transport import ForwardedConnection
+                    self.connections[key] = ForwardedConnection(self.control, route)
+                else:
+                    self.connections[key] = providers.direct(route['endpoint'], timeout=self.timeout)
             return self.connections[key]
 
     def call(self, operation, **params):
@@ -225,17 +248,33 @@ class Cluster:
         self.connection = ClusterConnection(config)
 
     @dualclassmethod
-    def connect(cls, name='lab'):
-        config = cluster_config(name)
+    def connect(cls, name='lab', *, token=None, token_file=None, ca_file=None):
+        if isinstance(name, str) and name.startswith(('http://', 'https://', 'ssh://')):
+            from .transport import address
+            config = address(name)
+        else:
+            config = cluster_config(name)
         if config is None:
             raise ResourceUnavailable('cluster is not configured: ' + str(name))
+        config = {**config, **{k: str(Path(v).expanduser().resolve()) for k, v in
+                             dict(token_file=token_file, ca_file=ca_file).items() if v is not None}}
+        if token is not None:
+            config['token'] = token
         return cls(config, name if isinstance(name, str) else None)
 
     @dualclassmethod
-    def start(cls, name='lab', *, directory=None, local_worker=True, slots=None, memory=None):
+    def start(cls, name='lab', *, directory=None, local_worker=True, slots=None, memory=None,
+              listen=None, tls_cert=None, tls_key=None, token_file=None, cpus=None, gpus=None):
         if not isinstance(name, str) or name == 'local' or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', name):
             raise ValueError('cluster name must use letters, digits, underscores or hyphens; local is reserved')
-        if local_worker and cluster_config(name) is None:
+        from ..sandbox.resources import positive
+        if cpus is not None:
+            positive(cpus, 'cpus', integer=True)
+        if gpus is not None and (type(gpus) is not int or gpus < 0):
+            raise ValueError('gpus must be a nonnegative integer')
+        if not local_worker and (cpus is not None or gpus is not None):
+            raise ValueError('cpus and gpus limit a local worker; omit them when local_worker=False')
+        if local_worker and cpus is None and gpus is None and cluster_config(name) is None:
             path = home() / 'config.json'
             if path.exists() and name in json.loads(path.read_text()).get('targets', {}):
                 raise FileExistsError('target name already identifies another target: ' + name)
@@ -248,6 +287,20 @@ class Cluster:
         directory = Path(directory or home() / 'clusters' / name).expanduser().resolve()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         config = {'hostname': socket.gethostname(), 'directory': str(directory)}
+        listener = None
+        if listen is not None or tls_cert is not None or tls_key is not None or token_file is not None:
+            from urllib.parse import urlsplit
+            parsed = urlsplit('//' + (listen or '127.0.0.1:0'))
+            if not parsed.hostname or parsed.port is None or parsed.path or parsed.username or parsed.query or parsed.fragment:
+                raise ValueError('listen must be HOST:PORT')
+            if bool(tls_cert) != bool(tls_key):
+                raise ValueError('TLS requires both tls_cert and tls_key')
+            listener = {'host': parsed.hostname, 'port': parsed.port,
+                        **{k: str(Path(v).expanduser().resolve()) for k, v in
+                           dict(tls_cert=tls_cert, tls_key=tls_key, token_file=token_file).items() if v}}
+            for key in ('tls_cert', 'tls_key', 'token_file'):
+                if key in listener and not Path(listener[key]).is_file():
+                    raise FileNotFoundError(listener[key])
         # Reserve the name before launching a daemon. A conflicting target must
         # never leave a controller running without a way to address it by name.
         save_target(name, config)
@@ -266,6 +319,8 @@ class Cluster:
                     if process_alive(previous.get('process')) is not False:
                         raise ResourceUnavailable('controller is alive or its status is uncertain; inspect ' + str(directory / 'controller.log'))
             if not alive:
+                if listener is not None:
+                    atomic_json(directory / 'listener.json', listener)
                 environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) + os.pathsep + os.environ.get('PYTHONPATH', '')}
                 with (directory / 'controller.log').open('ab') as log:
                     child = subprocess.Popen([sys.executable, '-m', 'sandweave.weave.server', '--directory', str(directory)],
@@ -279,8 +334,16 @@ class Cluster:
                     if time.monotonic() > deadline:
                         raise TimeoutError('controller did not become ready; inspect ' + str(directory / 'controller.log'))
                     time.sleep(.05)
+            elif listener is not None:
+                stored = directory / 'listener.json'
+                if not stored.exists() or json.loads(stored.read_text()) != listener:
+                    raise ValueError('controller is already running with different listener settings; stop it before changing them')
         result = cls(config, name)
         if local_worker and not result.workers:
+            if cpus is not None or gpus is not None:
+                from .worker import start
+                start(config, cpus=cpus, gpus=gpus, slots=slots, memory=memory)
+                return result
             from ..sandbox.targets import local_connection
             from ..templates.resolve import Template
             # New installations use the same automatic setup as Sandbox().
@@ -292,7 +355,12 @@ class Cluster:
 
     @property
     def info(self):
-        return self.connection.call('status')
+        result = self.connection.call('status')
+        if 'directory' in self.config:
+            info = metadata(self.config)
+            result['connection'] = {'address': info.get('address'),
+                'token_file': str(Path(self.config['directory']) / 'credentials.json')}
+        return result
 
     @property
     def workers(self):

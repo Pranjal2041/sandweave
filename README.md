@@ -328,8 +328,30 @@ with Pool(target="lab", size=8, warm=2) as pool:
 
 Add an existing SSH worker with
 `sandweave cluster add lab --target ssh://worker-two`. Each worker needs
-Sandweave installed. You can also register existing Slurm allocations. Commands,
-desktop observations and files use the assigned worker directly.
+Sandweave installed. You can also register existing Slurm allocations.
+
+`lab` is a saved connection name. For a controller on another machine, use its
+address. For example, after setting `SANDWEAVE_TOKEN_FILE` to your copy of the
+controller's credential file:
+
+```python
+from sandweave import Sandbox
+
+with Sandbox(target="https://master.example:8765") as env:
+    print(env.run("python --version").stdout)
+```
+
+A worker can join that controller and contribute part of its allocation:
+
+```bash
+sandweave cluster join https://master.example:8765 --cpus 8 --gpus 1
+```
+
+Omit the limits to contribute all CPUs and GPUs available to that worker
+process. Workers initiate their connections; clients need only reach the
+controller. HTTP and SSH connections are also supported. See the
+[connection examples](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-usage.md#add-workers)
+for starting the listener, credentials, TLS certificates and SSH addresses.
 
 Submit a command that can outlive your Python process:
 

@@ -4,7 +4,7 @@ from ..sandbox.errors import CacheMiss, CacheConflict, OperationUnknown, Resourc
 
 
 def register(controller, reference, endpoint, key=None, *, expected=None, compare=False):
-    connection = providers.direct(endpoint)
+    connection = controller.connection(endpoint)
     try:
         spec = connection.call('snapshot_spec', reference=reference)
         info = connection.call('snapshot_info', reference=spec['reference'])
@@ -50,7 +50,7 @@ def ensure(controller, reference, destination, endpoint):
     for location in record['locations']:
         source = None
         try:
-            source = providers.direct(location)
+            source = controller.connection(location)
             metadata = source.call('artifact_metadata', reference=record['id'])
             try:
                 destination.call('artifact_import', metadata=metadata)
@@ -92,7 +92,7 @@ def dispatch(controller, operation, parameters):
     for endpoint in record['locations']:
         connection = None
         try:
-            connection = providers.direct(endpoint)
+            connection = controller.connection(endpoint)
             return connection.call(operation, reference=record['id'])
         except Exception as error:
             errors.append(str(error))

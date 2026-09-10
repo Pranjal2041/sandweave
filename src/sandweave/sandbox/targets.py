@@ -29,15 +29,16 @@ def _validate_host(host):
     return host
 
 
-def _ssh(host, command, *, timeout=180):
+def _ssh(host, command, *, timeout=180, port=None):
     _validate_host(host)
-    return subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', host,
+    return subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+                           *(['-p', str(port)] if port is not None else []), host,
                            shlex.join(command)], capture_output=True, text=True, timeout=timeout, check=True).stdout
 
 
-def _tunnel(host, port):
+def _tunnel(host, port, *, ssh_port=None):
     _validate_host(host)
-    key = host, port
+    key = host, port, ssh_port
     with _tunnel_lock:
         previous = _tunnels.get(key)
         if previous and previous[0].poll() is None:
@@ -47,6 +48,7 @@ def _tunnel(host, port):
             local_port = reservation.getsockname()[1]
         process = subprocess.Popen(['ssh', '-N', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
             '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
+            *(['-p', str(ssh_port)] if ssh_port is not None else []),
             '-L', f'127.0.0.1:{local_port}:127.0.0.1:{port}', host], stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
         deadline = time.monotonic() + 15

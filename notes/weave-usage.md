@@ -1,8 +1,9 @@
 # Manage sandboxes with Weave
 
 Weave runs a controller alongside your Sandweave workers. The controller assigns
-sandboxes, maintains pools and tracks submitted jobs. Commands and observations
-travel directly between your Python process and the assigned worker.
+sandboxes, maintains pools and tracks submitted jobs. Clients and workers can
+connect through HTTP, HTTPS or SSH. Remote clients can send sandbox operations
+through the controller, so they do not need an inbound route to each worker.
 
 This API is available in the source checkout. Install it with
 `uv pip install -e .` before trying these examples; it is not in PyPI 0.1.2.
@@ -36,6 +37,123 @@ in cluster status.
 
 ## Add workers
 
+`lab` is a connection name saved on the machine where you run a command. It is
+not a hostname and does not discover a server. A remote client needs the actual
+controller address and credentials, or a saved connection that contains them.
+
+To accept HTTP connections on a private network, start the controller with an
+explicit listener:
+
+```bash
+sandweave cluster start lab --no-worker --listen 0.0.0.0:8765 \
+    --directory /path/to/controller-state
+```
+
+The command prints its address and the path to its private `credentials.json`.
+Give authorized clients and workers a private copy of that credential file.
+Paths in the following examples refer to each machine's own files. HTTP does
+not encrypt credentials or traffic; use HTTPS or SSH across untrusted networks.
+
+On a worker, join using the controller's reachable hostname or IP address:
+
+```bash
+export SANDWEAVE_TOKEN_FILE=/path/to/controller-credentials.json
+sandweave cluster join http://master.example:8765 --cpus 8 --gpus 1
+```
+
+This starts a persistent agent and prints its state directory and log. First-use
+preparation runs there; the controller lists the worker after registration.
+Repeating the command reconnects to the same live agent. The agent opens outbound
+connections to the controller. The controller does not need SSH or an inbound
+connection to this worker. Removing a drained worker from the cluster stops its
+agent; it does not cancel the machine's allocation.
+
+`--cpus` limits the worker to at most that many currently eligible logical CPU
+cores. Child runtimes inherit this affinity. `--gpus` limits the eligible device
+set; `--gpus 0` contributes no GPUs. Omitting either option uses all resources
+available to that process, respecting its existing allocation and visibility
+filters. A maximum larger than the available count uses the available count.
+`--slots` separately limits concurrent sandboxes and defaults to the number of
+eligible CPU cores. `--memory 16GiB` caps the worker's memory reservation budget.
+Worker status reports the actual CPU IDs, GPU devices and admission budgets.
+
+On a client, use the address directly:
+
+```python
+from sandweave import Sandbox
+
+# SANDWEAVE_TOKEN_FILE names this client's copy of the controller credential.
+with Sandbox(target="http://master.example:8765") as env:
+    print(env.run("python --version").stdout)
+```
+
+To supply credentials in Python instead:
+
+```python
+from sandweave import Cluster, Sandbox
+
+with Cluster.connect("http://master.example:8765",
+                     token_file="/path/to/controller-credentials.json") as cluster:
+    with Sandbox(target=cluster) as env:
+        print(env.run("python --version").stdout)
+```
+
+For a short name, save the connection once on each client or worker:
+
+```bash
+sandweave cluster connect lab http://master.example:8765 \
+    --token-file /path/to/controller-credentials.json
+```
+
+Now `Sandbox(target="lab")` and `sandweave cluster join lab` use that saved
+address and credential file. Names are optional; direct addresses work for
+cluster pools and jobs too.
+
+### HTTPS and SSH
+
+For HTTPS, provide a certificate and its private key on the controller:
+
+```bash
+sandweave cluster start lab --no-worker --listen 0.0.0.0:8765 \
+    --directory /path/to/controller-state \
+    --tls-cert /path/to/server.crt --tls-key /path/to/server.key
+```
+
+Clients and workers then use `https://master.example:8765`. Certificates must
+match that hostname. System certificate authorities are trusted by default;
+for a private authority, pass `ca_file` to `Cluster.connect`, use `--ca-file`
+with `cluster connect` or `cluster join`, or set `SANDWEAVE_CA_FILE`. Certificate
+verification is always enabled. HTTPS can also terminate at your existing
+reverse proxy, forwarding to the controller's loopback HTTP listener.
+
+SSH needs no exposed controller port. Start the controller with its default
+loopback listener and connect using its absolute state directory:
+
+```bash
+sandweave cluster connect lab ssh://user@master.example/path/to/controller-state
+sandweave cluster join lab --cpus 8 --gpus 0
+```
+
+SSH uses your account configuration to read the private controller credential
+and forward its loopback RPC port. A custom SSH port can be included in the
+address, for example `ssh://user@master.example:2222/path/to/controller-state`.
+The worker still initiates the connection. SSH requires `python3` on the
+controller for reading its connection metadata.
+
+HTTP and HTTPS carry Sandweave RPC requests. SSH tunnels those requests; RPC is
+the calling convention, not a separate network transport. gRPC and WebSocket
+endpoints are not implemented. A VPN, TCP tunnel or other forwarding service
+can supply a reachable HTTP/HTTPS address without a new Sandweave adapter.
+
+Forwarding adds a controller hop for commands, files and observations. It does
+not forward arbitrary guest ports or a VNC viewer's separate TCP connection.
+For an attached sandbox, a prolonged loss of the forwarding path can expire its
+30-second owner heartbeat lease. Detached sandboxes retain their existing
+lifetime policy. Direct worker connections remain available for local targets
+and existing deployments that have that connectivity.
+
+### Existing SSH workers
+
 Register another machine through your existing SSH configuration:
 
 ```bash
@@ -54,8 +172,8 @@ If your client is on another machine, save the controller target there:
 sandweave cluster connect lab --host controller-host --directory /path/to/controller-state
 ```
 
-You can also register a worker from its own machine with `sandweave cluster join
-lab`, after configuring that cluster target.
+Unlike an outbound worker agent, this form requires the controller to reach the
+worker through SSH.
 
 An existing Slurm allocation can supply a worker:
 

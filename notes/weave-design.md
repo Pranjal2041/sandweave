@@ -150,8 +150,12 @@ There are three non-negotiable rules:
 
 ## Performance and deployment
 
-Commands, observations and video use the existing worker path; they do not pass
-through the controller or its database. Warm acquisition avoids preparation.
+Commands, observations and video can use the existing direct worker path when
+the client can reach it. HTTP/HTTPS clients and outbound worker agents can instead
+forward sandbox RPCs through the controller; payloads do not enter its database.
+This permits clients and workers with no direct route to one another, at the cost
+of an extra network hop. Arbitrary guest TCP ports remain separate.
+Warm acquisition avoids preparation.
 Bounded worker reservations can later support batched, local claims without
 weakening ownership rules. Recoverable status updates can be coalesced; ownership
 and result commits cannot.

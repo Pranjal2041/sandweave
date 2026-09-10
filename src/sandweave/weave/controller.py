@@ -26,6 +26,8 @@ class Controller:
             settings = self.state.put('settings', {'id': 'cluster', 'cluster_id': uuid.uuid4().hex})
         self.id = settings['cluster_id']
         self.connector = connector or providers.attach
+        from .relay import Broker
+        self.relay = Broker()
         self.owners = Owners(self.state.root)
         # A controller outage is not owner death. Give surviving remote clients
         # time to renew after restart; previously decided expiry stays final.
@@ -44,6 +46,27 @@ class Controller:
             self.thread = threading.Thread(target=self._loop, name='weave-controller', daemon=True)
             self.thread.start()
         return self
+
+    def connection(self, endpoint, **options):
+        if endpoint.get('relay'):
+            from .relay import RelayConnection
+            return RelayConnection(self.relay, endpoint, **options)
+        return providers.direct(endpoint, **options)
+
+    def _attach(self, target, **options):
+        if isinstance(target, dict) and target.get('endpoint', {}).get('relay'):
+            return self.connection(target['endpoint'])
+        return self.connector(target, **options)
+
+    def sandbox_rpc(self, identity, method, parameters):
+        # Resolve stored routes, never accept an arbitrary destination from a
+        # client. The worker still validates the sandbox-scoped credential.
+        route = self.allocation_route(identity)
+        connection = self.connection(route['endpoint'])
+        try:
+            return connection.call(method, **parameters)
+        finally:
+            connection.close()
 
     def _loop(self):
         while not self.stopping.is_set():
@@ -98,7 +121,7 @@ class Controller:
     def worker_add(self, target='local', *, slots=None, memory=None, labels=None, name=None):
         target = providers.serialize(target)
         from ..templates.resolve import Template
-        connection = self.connector(target, template=Template('coding').resolve())
+        connection = self._attach(target, template=Template('coding').resolve())
         try:
             info = connection.call('inventory')
             ping = connection.call('ping')
@@ -116,6 +139,15 @@ class Controller:
             raise ValueError('worker labels must map strings to strings')
         identity = 'worker-' + hashlib.sha256(encode([info['hostname'], info['workspace']])).hexdigest()[:16]
         with self.state.transaction():
+            previous = self.state.get('worker', identity, required=False)
+            if previous and previous['state'] != 'removed':
+                if (previous['capacity']['slots'] != slots or previous['capacity']['memory'] != memory or
+                        previous.get('labels', {}) != (labels or {})):
+                    raise ValueError('worker is already registered with different limits or labels; drain and remove it before rejoining')
+                self.state.put('worker', {**previous, 'target': target})
+                self._accept_worker(identity, connection, info, ping=ping)
+                # Retain draining and every outstanding assignment on retry.
+                return self._public_worker(self.state.get('worker', identity))
             for other in self.state.list('worker'):
                 if other['id'] == identity or other['state'] == 'removed':
                     continue
@@ -126,7 +158,8 @@ class Controller:
                         raise ValueError('worker GPU allocation overlaps registered worker ' + other['id'])
             record = self.state.put('worker', dict(id=identity, state='ready', target=target,
                 name=name or info['hostname'], endpoint=route, labels=labels or {}, inventory=info,
-                capacity={'slots': slots, 'memory': memory, 'gpu': len(info['gpus'])},
+                capacity={'slots': slots, 'cpus': len(info['cpus']), 'memory': memory, 'gpu': len(info['gpus'])},
+                cpu_ids=info['cpus'],
                 gpus=info['gpus'], runtimes=info['runtimes'], draining=False, seen=time.time(),
                 instances={info['workspace']: {'endpoint': route, 'external': self._external(info)}},
                 external=self._external(info)), event={'message': 'worker registered'})
@@ -147,7 +180,7 @@ class Controller:
     @staticmethod
     def _public_worker(record):
         return {k: record.get(k) for k in ('id', 'name', 'state', 'labels', 'capacity', 'external',
-                                         'gpus', 'draining', 'seen', 'error')}
+                                         'cpu_ids', 'gpus', 'draining', 'seen', 'error')}
 
     def worker_list(self):
         return [self._public_worker(w) for w in self.state.list('worker')]
@@ -179,14 +212,16 @@ class Controller:
         connection = None
         try:
             try:
-                connection = providers.direct(record['endpoint'], timeout=5)
+                connection = self.connection(record['endpoint'], timeout=5)
                 info = connection.call('inventory')
             except Exception:
                 if connection:
                     connection.close()
+                if record['endpoint'].get('relay'):
+                    raise  # Outbound agents reconnect themselves; no inbound fallback.
                 # Existing targets check exact process ownership before they
                 # restart a dead worker. Opaque endpoints are only reconnectable.
-                connection = self.connector(record['target'])
+                connection = self._attach(record['target'])
                 info = connection.call('inventory')
                 if info['workspace'] != record['inventory']['workspace']:
                     raise ResourceUnavailable('worker workspace changed while disconnected; existing assignments remain reserved')
@@ -197,7 +232,7 @@ class Controller:
             for workspace, instance in record.get('instances', {}).items():
                 if workspace == info['workspace']:
                     continue
-                previous = providers.direct(instance['endpoint'], timeout=5)
+                previous = self.connection(instance['endpoint'], timeout=5)
                 try:
                     old_info = previous.call('inventory')
                     with self.state.transaction():
@@ -224,9 +259,9 @@ class Controller:
             if connection:
                 connection.close()
 
-    def _accept_worker(self, identity, connection, information=None, *, promote=False):
+    def _accept_worker(self, identity, connection, information=None, *, promote=False, ping=None):
         info = information or connection.call('inventory')
-        ping = connection.call('ping')
+        ping = ping or connection.call('ping')
         with self.state.transaction():
             record = self.state.get('worker', identity)
             old = record['inventory']
@@ -332,17 +367,17 @@ class Controller:
             worker = self.state.get('worker', record['worker'])
             route = record.get('endpoint')
             if route is None:
-                preparer = providers.direct(worker['endpoint'])
+                preparer = self.connection(worker['endpoint'])
                 try:
                     prepared = preparer.call('managed_prepare', template=record['spec']['template'])
                 finally:
                     preparer.close()
                 route = {**worker['endpoint'], **{k: prepared['information'][k]
                          for k in ('hostname', 'port', 'workspace')}, 'token': prepared['token']}
-                connection = providers.direct(route)
+                connection = self.connection(route)
                 route = self._accept_worker(worker['id'], connection, promote=True)
             else:
-                connection = providers.direct(route)
+                connection = self.connection(route)
             with self.state.transaction():
                 record = self.state.get('allocation', identity)
                 if record['desired'] != 'running':
@@ -387,7 +422,7 @@ class Controller:
             return self._launch(identity)
         connection = None
         try:
-            connection = providers.direct(record['endpoint'], timeout=5)
+            connection = self.connection(record['endpoint'], timeout=5)
             info = connection.call('describe', identity=identity)
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
@@ -408,7 +443,7 @@ class Controller:
         route = record.get('endpoint') or self.state.get('worker', record['worker'])['endpoint']
         connection = None
         try:
-            connection = providers.direct(route)
+            connection = self.connection(route)
             response = connection.call('managed_apply', identity=identity, cluster=self.id,
                 generation=record['generation'], action='terminate')
             with self.state.transaction():
@@ -488,6 +523,10 @@ class Controller:
                 'jobs': [self.job_status(j['id']) for j in self.state.list('job')]}
 
     def dispatch(self, operation, parameters):
+        if operation == 'relay_poll':
+            return self.relay.poll(**parameters)
+        if operation == 'relay_result':
+            return self.relay.result(**parameters)
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL}
         if operation == 'events':
@@ -505,7 +544,7 @@ class Controller:
             return dispatch(self, operation, parameters)
         if operation not in {'create', 'allocation_get', 'allocation_route', 'allocation_ack',
                              'allocation_cancel', 'worker_add', 'worker_list', 'worker_update',
-                             'owner_register', 'owner_heartbeat', 'owner_routes', 'status'}:
+                             'owner_register', 'owner_heartbeat', 'owner_routes', 'status', 'sandbox_rpc'}:
             raise ValueError('unknown cluster operation: ' + operation)
         return getattr(self, operation)(**parameters)
 
@@ -520,6 +559,7 @@ class Controller:
     def close(self):
         # Stopping this process leaves durable desired state and live guests.
         self.stopping.set()
+        self.relay.close()
         if self.thread:
             self.thread.join()
         self.executor.shutdown(wait=True)

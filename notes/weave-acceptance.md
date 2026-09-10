@@ -3,6 +3,63 @@
 Date: 2026-09-09. This covers the initial coordination stage of the
 [design](weave-design.md). The [guide](weave-usage.md) describes the available API.
 
+## Explicit connections and outbound workers
+
+Date: 2026-09-10. Added HTTP/HTTPS controller addresses, SSH controller URLs,
+outbound worker agents, controller forwarding and worker CPU/GPU limits.
+
+| Check | Result | Record |
+| --- | --- | --- |
+| Source host suite | 184 passed, 3 skipped | `runs/weave-transport-host-final.xml` |
+| Installed-wheel host suite, with optional dependencies | 187 passed | `runs/weave-transport-wheel-host.xml` |
+| Existing live suite through outbound HTTP channels | 7 passed; 305.91 s | `runs/weave-transport-live.xml` |
+| Real two-host HTTPS/SSH test, including CLI join | 1 passed; 61.69 s | `runs/weave-network-live-verified.xml` |
+
+The network test started a disposable TLS controller on `babel-p9-28` and an
+outbound worker agent on `babel-p9-16`. CLI join capped the worker at CPU IDs
+32–33, zero GPUs and a 4 GiB memory budget. The test checked repeated join,
+commands, binary-backed file RPCs, the absence of `/dev/kvm`, SSH forwarding to
+the controller, and a Python client running on the other host. Direct worker
+connections were rejected in the local test client. Drain/remove stopped the
+agent, and its idle worker and controller were shut down. No allocation was
+created or cancelled, and existing user workloads were not changed.
+
+The HTTP live suite exercised commands/files, pristine warm pools, asynchronous
+calls, controller crash/restart during a job, batch jobs, explicit retries,
+timeouts, CLI exit codes and snapshot transfer/restore through forwarding.
+It preceded the final listener validation and agent identity changes; the
+two-host test above used the final source, including those changes.
+
+Socket tests cover token rejection, TLS trust verification, an incomplete TLS
+connection that must not stall other clients, stable ports and credentials after
+restart, binary result correlation, late/duplicate replies, sandbox-scoped
+authorization, and saved aliases with absolute credential paths. GPU tests prove
+that the device cap intersects the existing Slurm allocation; this change does
+not claim a new live GPU workload qualification.
+
+The final bridge retains at most four local worker connections per polling
+thread. A real-socket regression cycles through ten sandboxes with one poller
+and checks that old scoped connections close. This prevents connection growth
+over repeated episodes. The two-host test was repeated after this change.
+
+The wheel and source archive are in `runs/weave-transport-package/`. All 63 SDK
+Python files and the bundled GPU eligibility helper matched the checkout bytes.
+
+- Wheel SHA-256: `22d171761d677da1697fc0a64e2bf5c0a94d9972829ad6929709f5a85b75c566`.
+- Source archive SHA-256: `c10b2d5e7a201a9639e84dde29448eb6a1e16ce8ba12ee6ea69f3385a839ef08`.
+
+The successful network run followed two test corrections: reading the hostname
+from the worker summary, and selecting the ready worker when a reused test
+directory also contained removed worker records. The unsuccessful test receipts
+and logs remain under `runs/weave-network-live*`.
+
+The forwarding path carries sandbox RPCs; it does not tunnel arbitrary guest
+TCP ports. It adds a controller dependency to remote attached-owner heartbeats:
+an outage beyond their grace period can expire the sandbox. The existing direct
+path can still renew workers independently. The controller remains a service
+for one trusted account, not a multi-tenant API, and this test makes no
+large-cluster throughput or latency claim.
+
 ## Final package checks
 
 The package including remote-owner route acknowledgement passed:

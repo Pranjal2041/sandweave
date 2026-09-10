@@ -297,7 +297,7 @@ def _capture(controller, pool_id, builder_id):
     from . import providers
     try:
         record = controller.state.get('allocation', builder_id)
-        connection = providers.direct(record['endpoint'])
+        connection = controller.connection(record['endpoint'])
         try:
             saved = connection.call('capture', identity=builder_id, state='filesystem')
             verification = connection.call('snapshot_verify', reference=saved['id'])
@@ -323,7 +323,7 @@ def _claim(controller, pool_id, lease_id, sandbox_id):
     lease = controller.state.get('lease', lease_id)
     record = controller.state.get('allocation', sandbox_id)
     pool = resolve(controller, pool_id)
-    connection = providers.direct(record['endpoint'])
+    connection = controller.connection(record['endpoint'])
     try:
         response = connection.call('managed_apply', identity=sandbox_id, cluster=controller.id,
             generation=record['generation'], action='claim', owner=lease.get('owner'),

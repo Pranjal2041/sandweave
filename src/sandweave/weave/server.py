@@ -1,4 +1,4 @@
-"""Private authenticated controller service, reachable remotely through SSH."""
+"""Authenticated controller service with HTTP, TLS and loopback SSH access."""
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
@@ -8,6 +8,7 @@ from pathlib import Path
 import secrets
 import socket
 import threading
+import ssl
 
 from .controller import Controller
 from ..sandbox.ownership import process_identity
@@ -18,11 +19,17 @@ from ..sandbox.workspace import atomic_json
 def serve(directory):
     controller = Controller(directory)
     directory = controller.state.root
+    settings_file = directory / 'listener.json'
+    settings = json.loads(settings_file.read_text()) if settings_file.exists() else {}
     credential_file = directory / 'credentials.json'
     if credential_file.exists():
         token = json.loads(credential_file.read_text())['token']
     else:
-        token = secrets.token_hex(32)
+        if settings.get('token_file'):
+            from .transport import credential
+            token = credential({'token_file': settings['token_file']})
+        else:
+            token = secrets.token_hex(32)
         atomic_json(credential_file, {'token': token})
     marker = directory / 'controller.json'
     previous = json.loads(marker.read_text()) if marker.exists() else {}
@@ -41,6 +48,7 @@ def serve(directory):
 
         def do_POST(self):
             if self.path != '/rpc' or not hmac.compare_digest(self.headers.get('X-Sandweave-Token', ''), token):
+                self.close_connection = True
                 self.send_error(403)
                 return
             try:
@@ -66,15 +74,44 @@ def serve(directory):
             self.end_headers()
             self.wfile.write(payload)
 
-    server = ThreadingHTTPServer(('127.0.0.1', previous.get('port', 0)), Handler)
+    hostname = settings.get('host', '127.0.0.1')
+    server_type = ThreadingHTTPServer
+    if ':' in hostname:
+        class IPv6HTTPServer(ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+        server_type = IPv6HTTPServer
+    server = server_type((hostname, settings.get('port') or previous.get('port', 0)), Handler)
     server.daemon_threads = True
+    local_server = None
+    if settings.get('tls_cert'):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(settings['tls_cert'], settings['tls_key'])
+        # Handshakes run in request threads under their socket timeout. An
+        # incomplete TLS connection must not block the server's accept loop.
+        server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    if settings.get('tls_cert') or hostname not in ('127.0.0.1', 'localhost', '0.0.0.0'):
+        local_port = previous.get('local_port', 0)
+        if local_port == server.server_port:
+            local_port = 0
+        local_server = ThreadingHTTPServer(('127.0.0.1', local_port), Handler)
+        local_server.daemon_threads = True
+        threading.Thread(target=local_server.serve_forever, daemon=True).start()
     controller.start()
+    advertised = socket.gethostname() if hostname in ('0.0.0.0', '::') else hostname
+    if ':' in advertised:
+        advertised = '[' + advertised + ']'
     atomic_json(marker, {'hostname': socket.gethostname(), 'port': server.server_port, 'token': token,
+                        'local_port': local_server.server_port if local_server else server.server_port,
+                        'address': ('https' if settings.get('tls_cert') else 'http') + '://' +
+                            advertised + ':' + str(server.server_port),
                         'pid': os.getpid(), 'process': process_identity(), 'status': 'ready'})
     try:
         server.serve_forever(poll_interval=.1)
     finally:
         server.server_close()
+        if local_server:
+            local_server.shutdown()
+            local_server.server_close()
         controller.close()
         atomic_json(marker, {**json.loads(marker.read_text()), 'status': 'stopped'})
 

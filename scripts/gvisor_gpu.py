@@ -10,6 +10,19 @@ import tempfile
 
 
 def eligible_devices():
+    limit = os.environ.get('SANDWEAVE_GPU_LIMIT')
+    if limit == '':
+        return []
+    devices = _eligible_devices()
+    if limit is not None:
+        if any(not part.isdecimal() for part in limit.split(',')):
+            raise ValueError('SANDWEAVE_GPU_LIMIT must list numeric device minors')
+        allowed = set(map(int, limit.split(',')))
+        devices = [device for device in devices if device in allowed]
+    return devices
+
+
+def _eligible_devices():
     allocation = os.environ.get('SLURM_STEP_GPUS') or os.environ.get('SLURM_JOB_GPUS')
     if allocation:
         if any(not part.isdecimal() for part in allocation.split(',')):

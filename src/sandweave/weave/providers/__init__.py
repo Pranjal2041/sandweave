@@ -22,6 +22,8 @@ def endpoint(information, connection, target=None):
     value = {'hostname': information['hostname'], 'port': information['port'], 'token': connection.token}
     if information.get('workspace'):
         value['workspace'] = information['workspace']
+    if isinstance(target, dict) and target.get('endpoint', {}).get('relay'):
+        value['relay'] = target['endpoint']['relay']
     if isinstance(target, dict) and target.get('host'):
         value['ssh_host'] = target['host']
     elif isinstance(target, str) and target.startswith('ssh://'):
@@ -32,7 +34,8 @@ def endpoint(information, connection, target=None):
 def direct(value, *, token=None, timeout=300):
     hostname, port = value['hostname'], value['port']
     if hostname != socket.gethostname():
-        port = _tunnel(value.get('ssh_host', hostname), port)
+        port = (_tunnel(value.get('ssh_host', hostname), port, ssh_port=value['ssh_port'])
+                if value.get('ssh_port') else _tunnel(value.get('ssh_host', hostname), port))
     return Connection('127.0.0.1', port, token or value['token'], timeout=timeout)
 
 

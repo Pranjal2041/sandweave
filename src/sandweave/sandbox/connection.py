@@ -3,6 +3,7 @@ import http.client
 import socket
 import select
 import threading
+import ssl
 
 from . import errors
 from .wire import decode, encode, MAX_BODY
@@ -20,15 +21,17 @@ class UnixHTTPConnection(http.client.HTTPConnection):
 
 
 class Connection:
-    def __init__(self, host, port, token, *, timeout=300, unix_path=None):
+    def __init__(self, host, port, token, *, timeout=300, unix_path=None, tls=False, ca_file=None, rpc_path='/rpc'):
         self.host, self.port, self.token, self.timeout = host, int(port), token, timeout
         self.unix_path = unix_path
+        self.tls, self.ca_file, self.rpc_path = tls, ca_file, rpc_path
         self.local = threading.local()
         self.connections, self.lock = [], threading.Lock()
 
     def clone(self, *, timeout=None):
         return Connection(self.host, self.port, self.token,
-                          timeout=self.timeout if timeout is None else timeout, unix_path=self.unix_path)
+                          timeout=self.timeout if timeout is None else timeout, unix_path=self.unix_path,
+                          tls=self.tls, ca_file=self.ca_file, rpc_path=self.rpc_path)
 
     def call(self, operation, **parameters):
         connection = getattr(self.local, 'connection', None)
@@ -38,7 +41,10 @@ class Connection:
             # a mutation. Failures after sending still have uncertain outcomes.
             try:
                 readable = select.select([connection.sock], [], [], 0)[0]
-                stale = bool(readable) and connection.sock.recv(1, socket.MSG_PEEK) == b''
+                # SSL sockets cannot use MSG_PEEK. With no outstanding request,
+                # readable TLS data may be close_notify or a session ticket;
+                # replacing the idle connection is safe in either case.
+                stale = bool(readable) and (self.tls or connection.sock.recv(1, socket.MSG_PEEK) == b'')
             except OSError:
                 stale = True
             if stale:
@@ -49,14 +55,19 @@ class Connection:
                 connection = None
                 self.local.connection = None
         if connection is None:
-            connection = UnixHTTPConnection(self.unix_path, self.timeout) if self.unix_path else http.client.HTTPConnection(
-                self.host, self.port, timeout=self.timeout)
+            if self.unix_path:
+                connection = UnixHTTPConnection(self.unix_path, self.timeout)
+            elif self.tls:
+                connection = http.client.HTTPSConnection(self.host, self.port, timeout=self.timeout,
+                    context=ssl.create_default_context(cafile=self.ca_file))
+            else:
+                connection = http.client.HTTPConnection(self.host, self.port, timeout=self.timeout)
             self.local.connection = connection
             with self.lock:
                 self.connections.append(connection)
         body = encode({'op': operation, 'params': parameters})
         try:
-            connection.request('POST', '/rpc', body=body,
+            connection.request('POST', self.rpc_path, body=body,
                                headers={'X-Sandweave-Token': self.token,
                                         'Content-Type': 'application/vnd.sandweave.frame'})
             response = connection.getresponse()
@@ -75,6 +86,10 @@ class Connection:
             self.local.connection = None
             raise errors.OperationUnknown(f'{operation}: transport failed; delivery outcome unknown: {error}',
                                           operation_id=parameters.get('operation_id') or parameters.get('identity')) from error
+        return self.unwrap(result)
+
+    @staticmethod
+    def unwrap(result):
         if 'error' in result:
             detail = result['error']
             kind = getattr(errors, detail['kind'], None)

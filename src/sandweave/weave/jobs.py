@@ -238,7 +238,7 @@ def _step(controller, task_id):
                 # renew the worker directly, even if the controller disappears.
                 return
         try:
-            connection = providers.direct(route['endpoint'], timeout=10)
+            connection = controller.connection(route['endpoint'], timeout=10)
         except (OSError, subprocess.SubprocessError, ResourceUnavailable) as error:
             raise OperationUnknown('job worker cannot be reached') from error
         request = job['request']

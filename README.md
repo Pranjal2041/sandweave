@@ -88,8 +88,9 @@ block still terminates a sandbox it creates, including a detached one.
 
 `run` takes one command string, runs it through `/bin/sh -c` inside the sandbox
 by default, and waits for completion. Pipes, redirects, variable expansion and
-`&&` use the guest shell. The result contains `stdout`, `stderr` and `returncode`. A nonzero
-exit raises unless you pass `check=False`; a timeout raises an error.
+`&&` use the guest shell. The result contains `stdout`, `stderr` and `returncode`.
+By default, a nonzero exit returns a result. Pass `check=True` to raise a
+`CommandError` instead. Timeouts and sandbox connection failures still raise.
 
 Each call starts a new process. Set command options when you need them:
 
@@ -99,9 +100,13 @@ with Sandbox() as env:
     result = env.run("echo $MODE", cwd="/workspace", env={"MODE": "eval"})
     print(result.stdout)
 
-    # Inspect a failed command instead of raising an exception.
-    result = env.run("exit 1", check=False)
-    print(result.returncode)
+    # Read the guest's traceback and exit code.
+    result = env.run("python -c 'print(2 / 0)'")
+    print(result.stderr)
+    print(result.returncode)  # 1
+
+    # Require a command to succeed.
+    env.run("python -c 'print(2 + 2)'", check=True)
 ```
 
 See [command options](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#commands) for shells, timeouts and terminals.
@@ -283,7 +288,7 @@ from sandweave import Pool
 
 def evaluate(env, source):
     env.files.write_text("/workspace/main.py", source)
-    return env.run("python /workspace/main.py", timeout=5, check=False)
+    return env.run("python /workspace/main.py", timeout=5)
 
 programs = ["print(1 + 1)", "print(2 + 2)"]
 
@@ -476,6 +481,7 @@ operations share the same lifecycle.
 
 ## Reference
 
+- [Contributing and releases](https://github.com/Pranjal2041/sandweave/blob/main/CONTRIBUTING.md): development checks and `./deploy`.
 - [Usage guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md): configuration, templates, extensions and limits.
 - [More examples](https://github.com/Pranjal2041/sandweave/blob/main/notes/sandbox-api-examples.md): agent loops, files, pools and Slurm allocation.
 - [Test results and measurements](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-implementation-progress.md): completed acceptance checks and performance results.

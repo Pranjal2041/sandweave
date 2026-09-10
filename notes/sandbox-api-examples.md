@@ -23,7 +23,7 @@ with Sandbox() as env:
 ```
 
 No desktop, GPU, cloud account or deployment command is implied. `run` waits
-for completion and checks the exit status. One command string runs through
+for completion and returns the exit status. One command string runs through
 `/bin/sh -c` inside the sandbox by default. Shell quoting, pipes, redirects and
 `&&` work there. `exec` and async methods use the same command-string convention.
 Advanced literal arguments use `env.run(argv=[...])`; neither form executes
@@ -38,13 +38,13 @@ def evaluate_code(code):
     with Sandbox(template="coding") as env:
         env.files.write_text("/workspace/solution.py", code)
         result = env.run("python /workspace/solution.py",
-                         timeout=5, check=False)
+                         timeout=5)
         return {"returncode": result.returncode,
                 "stdout": result.stdout, "stderr": result.stderr}
 ```
 
 Execution timeout remains a typed infrastructure/control outcome; a nonzero
-program exit is available normally with `check=False`.
+program exit returns a result by default. Use `check=True` to raise on a nonzero exit.
 
 ## 2. Three lines to a custom desktop
 

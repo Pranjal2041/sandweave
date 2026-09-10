@@ -215,7 +215,8 @@ class Sandbox:
 
     @dualmethod
     def run(self, command=None, *, argv=None, cwd='/workspace', env=None, user=None,
-            timeout=None, shell=None, check=True, binary=False, max_output_bytes=None, pty=False):
+            timeout=None, shell=None, check=False, binary=False, max_output_bytes=None, pty=False):
+        """Return output and exit status; check=True raises on a nonzero exit."""
         process = self.exec(command, argv=argv, cwd=cwd, env=env, user=user,
                             timeout=timeout, shell=shell, binary=binary, max_output_bytes=max_output_bytes, pty=pty)
         process.stdin.close()
@@ -226,7 +227,7 @@ class Sandbox:
         return result
 
     @run.async_impl
-    async def _run_async(self, command=None, *, check=True, **kwargs):
+    async def _run_async(self, command=None, *, check=False, **kwargs):
         process = await self.exec.aio(command, **kwargs)
         try:
             await process.stdin.close.aio()

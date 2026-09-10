@@ -1,10 +1,13 @@
 """End-to-end public API acceptance in an explicitly selected disposable worker."""
 import asyncio
 import os
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
-from sandweave import Sandbox, CommandError, CommandTimeout
+from sandweave import Sandbox, CommandError, CommandTimeout, OutputLimitExceeded
 from sandweave.sandbox.targets import local_connection
 
 pytestmark = [pytest.mark.integration,
@@ -30,8 +33,13 @@ def test_command_strings_files_streams_and_timeouts(tmp_path):
         env.files.download('/workspace/a.txt', tmp_path/'a.txt')
         env.files.upload(tmp_path/'a.txt', '/workspace/b.txt')
         assert env.run('cmp /workspace/a.txt /workspace/b.txt').returncode == 0
+        result = env.run('echo output; echo problem >&2; exit 7')
+        assert (result.stdout, result.stderr, result.returncode) == ('output\n', 'problem\n', 7)
+        result = env.run("python -c 'print(2 / 0)'")
+        assert result.returncode == 1 and not result.stdout
+        assert 'ZeroDivisionError' in result.stderr
         with pytest.raises(CommandError) as failed:
-            env.run('echo problem >&2; exit 7')
+            env.run('echo problem >&2; exit 7', check=True)
         assert failed.value.result.returncode == 7
         assert failed.value.result.stderr == 'problem\n'
         assert env.run('exit 9', check=False).returncode == 9
@@ -47,6 +55,12 @@ def test_command_strings_files_streams_and_timeouts(tmp_path):
         assert process.stdout.read() == 'survived\n'
         with pytest.raises(CommandTimeout):
             env.run('echo partial; sleep 20', timeout=.1)
+        with pytest.raises(OutputLimitExceeded):
+            env.run("python -c 'print(\"x\" * 65536)'", max_output_bytes=1024)
+        cli = subprocess.run([str(Path(sys.executable).parent / 'sandweave'), 'exec', env.id,
+                              '--no-stdin', '--', 'echo output; echo problem >&2; exit 7'],
+                             capture_output=True, text=True, timeout=30)
+        assert (cli.stdout, cli.stderr, cli.returncode) == ('output\n', 'problem\n', 7)
 
 
 def test_setup_and_borrowed_handle(tmp_path):
@@ -67,4 +81,13 @@ def test_async_create_execute_and_cleanup():
         async with await Sandbox.create.aio() as env:
             result = await env.run.aio("python -c 'print(42)'")
             assert result.stdout == '42\n'
+            result = await env.run.aio('echo output; echo problem >&2; exit 7')
+            assert (result.stdout, result.stderr, result.returncode) == ('output\n', 'problem\n', 7)
+            with pytest.raises(CommandError) as failed:
+                await env.run.aio('echo problem >&2; exit 7', check=True)
+            assert (failed.value.stderr, failed.value.returncode) == ('problem\n', 7)
+            with pytest.raises(CommandTimeout):
+                await env.run.aio('sleep 20', timeout=.1)
+            with pytest.raises(OutputLimitExceeded):
+                await env.run.aio("python -c 'print(\"x\" * 65536)'", max_output_bytes=1024)
     asyncio.run(exercise())

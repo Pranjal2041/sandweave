@@ -471,7 +471,7 @@ def smoke_test(template='coding'):
     """Check the selected workload using a sandbox owned by this invocation."""
     from . import Sandbox
     with Sandbox(template=template, startup_timeout=300) as env:
-        result = env.run("python -c 'print(2 + 2)'", timeout=10)
+        result = env.run("python -c 'print(2 + 2)'", timeout=10, check=True)
         if result.stdout.strip() != '4':
             raise ValueError('Sandbox returned an unexpected command result')
         if 'desktop' in env.capabilities:
@@ -481,7 +481,7 @@ def smoke_test(template='coding'):
             if observation.left.size == 0 or observation.right.size == 0:
                 raise ValueError('VR observation must contain both eye images')
         if env.spec['resources']['gpu']:
-            env.run('nvidia-smi', timeout=20)
+            env.run('nvidia-smi', timeout=20, check=True)
     print(template + ' sandbox check passed; the test sandbox has been released.')
 
 

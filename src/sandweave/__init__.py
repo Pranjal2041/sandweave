@@ -7,7 +7,12 @@ from .sandbox.errors import (
     OperationUnknown, SetupError, OutputLimitExceeded,
 )
 
-__version__ = '0.1.0'
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version('sandweave')
+except PackageNotFoundError:
+    __version__ = '0+unknown'
 __all__ = ['Sandbox', 'Pool', 'Template', 'SnapshotRef', 'CPU', 'GPU', 'Memory',
            'Network', 'Mount', 'Slurm', 'SandboxError', 'CacheMiss', 'CacheConflict',
            'IncompatibleSnapshot', 'UnsupportedFeature', 'ResourceUnavailable',

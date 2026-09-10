@@ -174,9 +174,13 @@ pipes and redirects follow that shell; there is no implicit `errexit` or
 `pipefail`. Calls use a noninteractive, non-login shell by default.
 
 Each call starts a fresh process. `cwd` and `env` apply to that call; `cd` or
-`export` in an earlier command do not persist. `run` waits and checks the exit
-status unless `check=False`. `exec` returns a process; use `wait(check=True)` to
-raise on its nonzero exit. Command timeouts raise typed errors.
+`export` in an earlier command do not persist. `run` waits and returns `stdout`,
+`stderr` and `returncode`, including when the command fails. Both `run` and
+`run.aio` default to `check=False` starting in 0.1.2. Pass `check=True` to raise
+`CommandError` on a nonzero exit; the exception retains the command's result.
+`exec` returns a process; use `wait(check=True)` to raise on its nonzero exit.
+Timeouts, output limits and sandbox connection failures still raise errors.
+The CLI forwards command output and exits with the guest's exit status.
 
 For direct execution without a shell, pass a nonempty `argv` list instead of a
 command string: `env.run(argv=["python", "main.py"])`. The forms are mutually

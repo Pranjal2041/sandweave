@@ -70,7 +70,7 @@ lifecycle methods have `.aio` counterparts.
 | `Sandbox(cache=...)` | Create an independent environment from a named cache or immutable cache reference, including saved template/capability metadata. A miss raises `CacheMiss`. |
 | `Sandbox(snapshot=...)` | Restore a particular checkpoint into a new environment; enforce its compatibility constraints. |
 | `Sandbox.connect(id)` | Attach to an existing environment; never creates a replacement or implicitly resumes a paused one. |
-| `env.run(command, ...)` | Run one command string through the guest shell and wait; return `CommandResult(stdout, stderr, returncode, ...)`. Raise on nonzero exit by default; `check=False` supports test/evaluation outcomes. |
+| `env.run(command, ...)` | Run one command string through the guest shell and wait; return `CommandResult(stdout, stderr, returncode, ...)`, including nonzero exits. Set `check=True` to raise on a nonzero exit. |
 | `env.exec(command, ...)` | Run one command string through the guest shell; return a `Process` immediately after process creation, with stdin/stdout/stderr, `wait`, `poll` and `terminate`. |
 | `env.run(argv=[...], ...)` / `env.exec(argv=[...], ...)` | Explicit advanced direct-process execution with literal arguments and no shell. Mutually exclusive with a command string. |
 | `env.setup(path, ...)` | Upload an explicit local script/context and execute it inside the sandbox. Wait for success; never execute it on the SDK host. |
@@ -315,6 +315,9 @@ a configured inline limit has artifact references/truncation metadata. Large
 output must not silently consume unlimited SDK RAM or deadlock on stderr.
 `Process.wait()` returns the exit code; it raises for nonzero status only when
 asked to check. `CommandResult` records timings and whether output was truncated.
+`run` and `run.aio` default to `check=False`: a nonzero guest exit returns its
+result. `check=True` raises `CommandError` with that result attached. Timeouts,
+output limits and infrastructure failures still raise regardless of `check`.
 
 Active exec streams require their own snapshot qualification: use guest-owned
 PTY/log storage with reattachable client streams, or reject capture while an

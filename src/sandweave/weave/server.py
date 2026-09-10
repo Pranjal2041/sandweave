@@ -86,7 +86,9 @@ def serve(directory):
 
         do_HEAD = do_GET
 
-    hostname = settings.get('host', '127.0.0.1')
+    # A new cluster accepts direct HTTP and SSH through the same service.
+    # Port zero lets multiple clusters coexist without choosing ports first.
+    hostname = settings.get('host', '0.0.0.0')
     server_type = ThreadingHTTPServer
     if ':' in hostname:
         class IPv6HTTPServer(ThreadingHTTPServer):

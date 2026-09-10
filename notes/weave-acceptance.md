@@ -6,6 +6,34 @@ Date: 2026-09-09. This covers the initial coordination stage of the
 The [dashboard acceptance record](dashboard-acceptance.md) covers browser
 monitoring, resource measurements, packaged assets, and live local/SSH checks.
 
+## Default connection addresses (0.2.3)
+
+Normal cluster startup now accepts HTTP on all IPv4 interfaces with an assigned
+port and prints HTTP, SSH and reusable browser links. An explicit listener is
+still respected; local URLs are labelled accordingly. HTTPS uses the supplied
+certificates. Existing running controllers keep their listeners until restarted.
+
+| Check | Result | Record |
+| --- | --- | --- |
+| Transport checks, including default startup, network-address authentication, distinct ports, restart, explicit loopback and certificate-only HTTPS startup | 14 passed | `runs/cluster-addresses-transport-final.xml` |
+| Dashboard API checks and initial transport checks | 26 passed | `runs/cluster-addresses-host.xml` |
+| Printed startup link opened in Chromium | 1 passed | `runs/cluster-addresses-browser.xml` |
+
+The default-start test copied both printed join commands from one fresh project
+to another and authenticated against a real controller. It replaced worker
+installation with a connection check; it did not launch a sandbox. A separate
+connection used the host's non-loopback IPv4 address. Both client projects were
+on the same host; this is not a new cross-machine SSH acceptance run.
+
+The browser test ran the CLI in a separate process with no listener or transport
+flags, then followed the exact printed dashboard URL in two fresh browser
+contexts. Both signed in, refreshed and signed out. The credential disappeared
+from the address bar, stayed out of network request URLs and local storage, and
+was exchanged for an HttpOnly session cookie. The rendered overview was opened
+and inspected in `runs/cluster-addresses-browser/startup-dashboard-0.png`.
+These controllers had no workers; the page correctly showed an empty cluster.
+All test controllers were stopped. User controllers and sandboxes were untouched.
+
 ## Explicit connections and outbound workers
 
 Date: 2026-09-10. Added HTTP/HTTPS controller addresses, SSH controller URLs,

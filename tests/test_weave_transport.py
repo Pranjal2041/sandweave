@@ -243,6 +243,8 @@ def test_gpu_cap_intersects_the_existing_slurm_allocation(monkeypatch):
 
 def test_printed_join_commands_authenticate_without_a_saved_target(tmp_path, monkeypatch, capsys):
     import shlex
+    import ipaddress
+    from urllib.parse import urlsplit
     from sandweave.cli import main
     from sandweave.weave import worker as agent
     from sandweave.sandbox import workspace
@@ -252,15 +254,29 @@ def test_printed_join_commands_authenticate_without_a_saved_target(tmp_path, mon
     monkeypatch.delenv('SANDWEAVE_HOME', raising=False)
     monkeypatch.delenv('SANDWEAVE_TOKEN', raising=False)
     monkeypatch.delenv('SANDWEAVE_TOKEN_FILE', raising=False)
-    assert main(['cluster', 'start', 'demo', '--no-worker', '--transport', 'http',
-                 '--listen', '0.0.0.0:0', '--directory', str(master / 'state with spaces')]) == 0
+    assert main(['cluster', 'start', 'demo', '--no-worker',
+                 '--directory', str(master / 'state with spaces')]) == 0
     output = capsys.readouterr().out
     commands = [shlex.split(line.strip()) for line in output.splitlines()
                 if line.strip().startswith('sandweave cluster join ')]
     assert len(commands) == 2
     with Cluster.connect('demo') as owner:
-        expected = owner.info['id']
         try:
+            expected = owner.info['id']
+            url = owner.info['connection']['address']
+            # The default actually accepts non-loopback connections, without
+            # --transport or --listen and without a preconfigured client.
+            addresses = socket.getaddrinfo(urlsplit(url).hostname, urlsplit(url).port,
+                                           socket.AF_INET, socket.SOCK_STREAM)
+            host = next(item[4][0] for item in addresses if not ipaddress.ip_address(item[4][0]).is_loopback)
+            from sandweave.weave.transport import join_link
+            with Cluster.connect(join_link('http://' + host + ':' + str(urlsplit(url).port), owner.connection.token)) as peer:
+                assert peer.info['id'] == expected
+            dashboard = next(line.removeprefix('Dashboard: ') for line in output.splitlines() if line.startswith('Dashboard: '))
+            assert dashboard.startswith(url + '/dashboard/#token=')
+            assert 'HTTP: ' + commands[0][-1] in output
+            assert 'SSH: ' + commands[1][-1] in output
+            assert '--transport' not in output
             monkeypatch.chdir(client)
             assert workspace.home() == client / '.sandweave'
             calls = []
@@ -285,6 +301,77 @@ def test_printed_join_commands_authenticate_without_a_saved_target(tmp_path, mon
             assert len(calls) == 2  # Bad credentials cannot start installation.
         finally:
             owner.stop()
+
+
+def test_default_controllers_choose_distinct_ports_and_keep_them_on_restart(tmp_path, monkeypatch):
+    from sandweave.sandbox.ownership import process_alive
+    monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
+    with Cluster.start('first', local_worker=False) as first:
+        try:
+            with Cluster.start('second', local_worker=False) as second:
+                try:
+                    original = first.info['connection']['address']
+                    assert original != second.info['connection']['address']
+                    first.stop()
+                    info = json.loads((tmp_path / 'clusters/first/controller.json').read_text())
+                    deadline = time.monotonic() + 5
+                    while process_alive(info['process']) is not False:
+                        assert time.monotonic() < deadline
+                        time.sleep(.02)
+                    with Cluster.start('first', local_worker=False) as restarted:
+                        try:
+                            assert restarted.info['connection']['address'] == original
+                        finally:
+                            restarted.stop()
+                finally:
+                    second.stop()
+        finally:
+            try:
+                first.stop()
+            except OperationUnknown:
+                pass
+
+
+def test_explicit_loopback_prints_its_url_without_claiming_remote_http(tmp_path, monkeypatch, capsys):
+    from sandweave.weave.cli import instructions
+    monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
+    with Cluster.start('private', local_worker=False, listen='127.0.0.1:0') as cluster:
+        try:
+            instructions(cluster)
+            output = capsys.readouterr().out
+            assert 'HTTP (this machine only): http://127.0.0.1:' in output
+            assert 'Dashboard (this machine only): http://127.0.0.1:' in output
+            assert 'sandweave cluster join ssh://' in output
+            assert 'sandweave cluster join http://' not in output
+            assert '--transport' not in output
+        finally:
+            cluster.stop()
+
+
+def test_certificates_enable_printed_https_and_ssh_without_transport_flags(tmp_path, monkeypatch, capsys):
+    from sandweave.cli import main
+    monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
+    cert, key = tmp_path / 'cert.pem', tmp_path / 'key.pem'
+    subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+        '-subj', '/CN=' + socket.gethostname(), '-addext', 'subjectAltName=DNS:' + socket.gethostname(),
+        '-keyout', str(key), '-out', str(cert)], check=True, capture_output=True)
+    assert main(['cluster', 'start', 'secure', '--no-worker', '--tls-cert', str(cert), '--tls-key', str(key)]) == 0
+    output = capsys.readouterr().out
+    with Cluster.connect('secure') as cluster:
+        try:
+            link = next(line.removeprefix('HTTPS: ') for line in output.splitlines() if line.startswith('HTTPS: '))
+            assert 'Dashboard: https://' in output
+            assert 'SSH: ssh://' in output
+            assert 'HTTP: ' not in output
+            with Cluster.connect(link, ca_file=cert) as peer:
+                assert peer.info['id'] == cluster.info['id']
+            # An external HTTPS listener still provides plain loopback RPC
+            # for the simultaneously advertised SSH connection.
+            from sandweave.weave.client import metadata
+            info = metadata(cluster.config)
+            assert info['local_port'] != info['port']
+        finally:
+            cluster.stop()
 
 
 def test_join_fragment_never_enters_http_path_and_is_validated():

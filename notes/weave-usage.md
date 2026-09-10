@@ -5,7 +5,7 @@ sandboxes, maintains pools and tracks submitted jobs. Clients and workers can
 connect through HTTP, HTTPS or SSH. Remote clients can send sandbox operations
 through the controller, so they do not need an inbound route to each worker.
 
-These connection examples use Sandweave 0.2.1 or newer. Upgrade an existing installation
+These connection examples use Sandweave 0.2.3 or newer. Upgrade an existing installation
 with `uv pip install --upgrade sandweave` before trying these examples.
 
 ## Start a cluster
@@ -15,8 +15,9 @@ sandweave cluster start lab
 ```
 
 This starts a controller and registers a local worker. Controller state lives in
-this project's configured Sandweave directory. Startup prints complete join and
-dashboard commands. Copy a join command to the worker; no preliminary connection
+this project's configured Sandweave directory. Startup prints HTTP and SSH
+addresses, a browser dashboard URL and complete join commands. Copy a join
+command to the worker; no preliminary connection
 setup or credential-file copy is required. Use `--directory /path/to/controller-state`
 to choose a separate controller directory, and `--slots 8 --memory 16GiB` to limit
 the capacity offered by its initial worker.
@@ -38,21 +39,24 @@ in cluster status.
 
 ## Add workers
 
-The default controller accepts SSH connections through your existing SSH login.
-The join command printed at startup contains its actual user, host and state
-directory. Run that command on the worker unchanged. Add resource limits only
-if you want them; otherwise it contributes the resources available to it.
-
-For HTTP on a private network, start with:
+The default controller accepts both HTTP and SSH connections. To start a
+controller without adding the current machine as a worker:
 
 ```bash
-sandweave cluster start lab --no-worker --transport http
+sandweave cluster start lab --no-worker
 ```
 
-Copy the HTTP join command from its output. The link includes a `#token=...`
+Copy either printed join command onto the worker. The HTTP link includes a `#token=...`
 fragment which Sandweave extracts for authentication; it is never sent in the
 HTTP request URL. The link grants access to the cluster, so share it privately.
 HTTP is unencrypted. SSH or HTTPS can protect traffic across other networks.
+The SSH command includes the actual user, host and state directory, and uses your
+existing SSH login. Add resource limits only if you want them; otherwise the
+worker contributes its available resources.
+
+The dashboard URL signs in directly. It contains the same cluster credential as
+the HTTP join link and can be reused. The browser removes the credential from
+the address bar and uses a read-only session cookie after signing in.
 
 To print the complete commands again:
 
@@ -60,7 +64,9 @@ To print the complete commands again:
 sandweave cluster instructions lab
 ```
 
-Workers need a network route to the printed host. `--listen HOST:PORT` changes the
+New controllers listen on all IPv4 interfaces and choose an available port;
+restarting retains that port. Workers need a network route to the printed host.
+`--listen HOST:PORT` changes the
 bind address; `--advertise https://cluster.example.org` changes the address printed
 for an existing reverse proxy, tunnel or other route. It does not create that
 route. The advertised address is saved with the controller. `--json` on `cluster start`
@@ -159,9 +165,10 @@ with `cluster connect` or `cluster join`, or set `SANDWEAVE_CA_FILE`. Certificat
 verification is always enabled. HTTPS can also terminate at your existing
 reverse proxy, forwarding to the controller's loopback HTTP listener.
 
-SSH needs no exposed controller port. Start the controller with its default
-loopback listener and copy its printed SSH join command. An explicit address
-and optional saved name also work:
+SSH remains available alongside HTTP or HTTPS. Copy its printed join command.
+To deliberately restrict direct connections to the controller machine, use
+`--listen 127.0.0.1:0`; startup labels its HTTP and dashboard URLs as local.
+An explicit SSH address and optional saved name also work:
 
 ```bash
 sandweave cluster connect lab ssh://user@master.example/path/to/controller-state

@@ -1,23 +1,27 @@
 # Monitor a cluster
 
-Start a controller, then open its dashboard:
+Start a controller and open the dashboard URL printed in the terminal:
 
 ```bash
 sandweave cluster start lab
-sandweave dashboard lab
 ```
 
 The dashboard is included in the Python package. It runs on the controller's
 existing listener at `/dashboard/`; it needs no Node.js installation, CDN,
 separate frontend server, or external monitoring service.
 
-`sandweave dashboard` opens a single-use sign-in link. The link expires after
+The startup URL includes the cluster credential and signs in directly. Keep it
+private, just like the printed worker join link. It can be reused; the browser
+removes the credential from the address bar as it signs in.
+
+For an existing cluster, `sandweave dashboard lab` opens a single-use sign-in link. The link expires after
 60 seconds; the browser session lasts eight hours. Add `--no-open` to print the
 link without launching a browser. Opening `/dashboard/` directly shows a token
 sign-in form. The token is exchanged for an HttpOnly, SameSite browser cookie;
 it is not saved in local storage. These [cookie attributes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie)
 restrict script access and cross-site use. Sign out invalidates that browser session.
-Controller restart invalidates sessions and unused sign-in links.
+Controller restart invalidates sessions and unused single-use sign-in links;
+startup links remain valid while the cluster credential and address are unchanged.
 
 ## Connect from another machine
 

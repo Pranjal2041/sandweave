@@ -317,22 +317,18 @@ Start a controller with a local worker:
 sandweave cluster start lab
 ```
 
-Startup prints complete commands for joining a worker and opening the dashboard.
-Copy the printed join command onto another machine. The default uses SSH and
-your existing SSH login; the command already contains the controller's hostname,
-username and state path. You do not need to create a saved connection first.
+Startup prints a dashboard URL, HTTP and SSH addresses, and complete worker join
+commands. Open the dashboard link in your browser or copy either join command
+onto another machine. Both connection methods are available immediately;
+no transport selection or saved connection is needed. Use `--no-worker` to run
+only the controller.
 
-To accept HTTP connections on a private network instead:
-
-```bash
-sandweave cluster start lab --transport http
-```
-
-This prints HTTP and SSH join commands. The HTTP link includes the credential,
-so keep it private. Workers must be able to reach the printed host. Startup also
-prints the dashboard command; `sandweave cluster instructions lab` shows these
-commands again. See the [connection guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-usage.md#add-workers)
-for HTTPS, custom addresses and resource limits.
+Links include authentication, so keep them private. HTTP requires a network route
+to the printed host and port; SSH uses your existing SSH login. HTTP is
+unencrypted. HTTPS is available when you supply certificates.
+`sandweave cluster instructions lab` prints the links again. See the
+[connection guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-usage.md#add-workers)
+for certificates, custom addresses and resource limits.
 
 Use its name as the target. The controller assigns sandboxes to workers and
 maintains the pool's ready reserve:

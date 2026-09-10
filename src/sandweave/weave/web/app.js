@@ -1039,11 +1039,12 @@ async function enter() {
 }
 (async () => {
   const hash = new URLSearchParams(location.hash.slice(1));
-  if (hash.has("ticket")) {
-    const ticket = hash.get("ticket");
+  if (hash.has("ticket") || hash.has("token")) {
+    const key = hash.has("ticket") ? "ticket" : "token";
+    const value = hash.get(key);
     history.replaceState(null, "", location.pathname + location.search);
     showLogin();
-    await signIn({ ticket });
+    await signIn({ [key]: value });
     return;
   }
   try {

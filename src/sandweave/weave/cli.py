@@ -47,7 +47,7 @@ def instructions(cluster, *, advertise=None):
     from urllib.parse import urlsplit, quote
     from .client import metadata
     from .transport import join_link
-    from ..sandbox.workspace import home, atomic_json
+    from ..sandbox.workspace import atomic_json
     if 'directory' not in cluster.config:
         raise ValueError('Run cluster instructions on the controller machine using its saved name')
     cluster.connection.call('ping')
@@ -73,30 +73,28 @@ def instructions(cluster, *, advertise=None):
     if advertise:
         url = advertise
         loopback = False  # An explicit address may be a reverse proxy or tunnel.
+    link = join_link(url, info['token'])
+    base, fragment = link.split('#', 1)
+    scope = ' (this machine only)' if loopback else ''
     print('Cluster ' + str(cluster.name) + ' is running.')
-    print('Controller: ' + hostname)
-    print('State: ' + str(root))
-    print('Sandweave files: ' + str(home()))
-    print('\nOn another machine, copy one join command:')
+    print('\nDashboard' + scope + ': ' + base + '/dashboard/#' + fragment)
+    print(urlsplit(url).scheme.upper() + scope + ': ' + link)
+    print('SSH: ' + ssh)
+    print('\nJoin a worker (copy either command):' if not loopback else '\nJoin a worker through SSH:')
     if not loopback:
-        print('\n' + urlsplit(url).scheme.upper() + ':')
-        print('  sandweave cluster join ' + shlex.quote(join_link(url, info['token'])))
-        print('  This link grants cluster access. Share it privately.')
-        if urlsplit(url).scheme == 'http':
-            print('  HTTP is unencrypted; use it on a trusted private network.')
-    print('\nSSH (uses your existing SSH login):')
+        print('  sandweave cluster join ' + shlex.quote(link))
     print('  sandweave cluster join ' + shlex.quote(ssh))
-    print('\nResource limits are optional: --cpus 4 --gpus 0 --memory 8GiB')
-    print('Without limits, a worker contributes its available resources.')
-    print('\nOpen the dashboard from the machine with your browser:')
-    print('  sandweave dashboard ' + shlex.quote(ssh if loopback else join_link(url, info['token'])))
-    print('\nAvailable transports: SSH, HTTP, HTTPS. Choose with --transport when starting.')
-    if loopback:
-        print('For HTTP, stop this controller and start it again with --transport http.')
-    print('The worker must be able to reach the printed host. Use --advertise for a different HTTP(S) address.')
+    print('\nDashboard through SSH (run on your browser\'s machine):')
+    print('  sandweave dashboard ' + shlex.quote(ssh))
+    print('\nWorkers use their available resources. Optional limits: --cpus 4 --gpus 0 --memory 8GiB')
+    print('Links contain the cluster credential; share them privately.')
+    if urlsplit(url).scheme == 'http' and not loopback:
+        print('HTTP is unencrypted. SSH uses your existing SSH login.')
+    print('State: ' + str(root))
 
 
 def configure(sub):
+    import argparse
     p = sub.add_parser('dashboard', help='Open the cluster monitoring dashboard')
     p.add_argument('target', nargs='?', default='lab')
     p.add_argument('--no-open', action='store_true', help='Print the sign-in link without opening a browser')
@@ -110,9 +108,9 @@ def configure(sub):
     p.add_argument('--memory')
     p.add_argument('--cpus', type=int, help='Maximum eligible CPU cores for the local worker')
     p.add_argument('--gpus', type=int, help='Maximum eligible GPUs for the local worker; 0 disables GPUs')
-    p.add_argument('--listen', help='Controller bind address, for example 0.0.0.0:8765')
+    p.add_argument('--listen', help='Bind address (default: all IPv4 interfaces, automatically assigned port)')
     p.add_argument('--transport', choices=('ssh', 'http', 'https'),
-                   help='SSH by default; HTTP/HTTPS listen on port 8765 for remote workers')
+                   help=argparse.SUPPRESS)  # Compatibility with explicit 0.2.1 settings.
     p.add_argument('--advertise', help='Reachable HTTP(S) address to print instead of the listener address')
     p.add_argument('--json', action='store_true', help='Print machine-readable cluster status')
     p.add_argument('--tls-cert'); p.add_argument('--tls-key'); p.add_argument('--token-file')

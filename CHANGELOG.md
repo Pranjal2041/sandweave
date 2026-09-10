@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3
+
+- New clusters accept direct HTTP and SSH connections by default. Startup prints
+  both addresses and complete worker join commands without transport flags.
+  Ports are assigned automatically so multiple clusters can run on one machine.
+- Startup prints a reusable dashboard sign-in URL. The browser exchanges its
+  credential for a read-only session and removes it from the address bar.
+- HTTPS addresses are printed when certificates are configured. Explicit
+  loopback listeners retain their restriction and label their URLs as local.
+
 ## 0.2.2
 
 - Setup streams guest images and desktop/VR helpers to the host installer,

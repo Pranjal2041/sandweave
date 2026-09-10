@@ -305,7 +305,7 @@ class Cluster:
         listener = None
         if listen is not None or tls_cert is not None or tls_key is not None or token_file is not None:
             from urllib.parse import urlsplit
-            parsed = urlsplit('//' + (listen or '127.0.0.1:0'))
+            parsed = urlsplit('//' + (listen or '0.0.0.0:0'))
             if not parsed.hostname or parsed.port is None or parsed.path or parsed.username or parsed.query or parsed.fragment:
                 raise ValueError('listen must be HOST:PORT')
             if bool(tls_cert) != bool(tls_key):

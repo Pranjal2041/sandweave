@@ -2,6 +2,8 @@
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import time
 
 import pytest
@@ -9,6 +11,50 @@ import pytest
 from test_dashboard import controller, seed, dashboard_server
 
 pytestmark=pytest.mark.skipif(not os.environ.get('SANDWEAVE_BROWSER_TESTS'),reason='explicit browser acceptance required')
+
+
+def test_default_start_prints_a_reusable_browser_link(tmp_path, monkeypatch):
+    from playwright.sync_api import sync_playwright, expect
+    from sandweave import Cluster
+    from sandweave.weave.transport import address
+    monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path / 'master'))
+    output = subprocess.check_output([sys.executable, '-m', 'sandweave.cli',
+        'cluster', 'start', 'browser-link', '--no-worker'], cwd=tmp_path, text=True)
+    with Cluster.connect('browser-link') as cluster:
+        try:
+            link = next(line.removeprefix('Dashboard: ') for line in output.splitlines()
+                        if line.startswith('Dashboard: '))
+            token = address(link)['token']
+            root = Path(os.environ['SANDWEAVE_BROWSER_TESTS'])
+            root.mkdir(parents=True, exist_ok=True)
+            with sync_playwright() as browser_tools:
+                browser = browser_tools.chromium.launch(headless=True)
+                try:
+                    for attempt in range(2):
+                        # Each fresh browser has no saved session or token.
+                        context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+                        page = context.new_page()
+                        urls, errors = [], []
+                        page.on('request', lambda request: urls.append(request.url))
+                        page.on('pageerror', lambda error: errors.append(str(error)))
+                        page.goto(link)
+                        expect(page.locator('#page-title')).to_have_text('Cluster overview')
+                        expect(page.locator('#connection-status')).to_have_text('Live')
+                        assert 'token=' not in page.url
+                        assert all(token not in url for url in urls)
+                        assert page.evaluate('Object.keys(localStorage).length') == 0
+                        assert page.evaluate('document.cookie') == ''
+                        page.screenshot(path=str(root / ('startup-dashboard-' + str(attempt) + '.png')), full_page=True)
+                        page.reload()
+                        expect(page.locator('#page-title')).to_have_text('Cluster overview')
+                        page.locator('#logout').click()
+                        expect(page.locator('#login')).to_be_visible()
+                        assert not errors
+                        context.close()
+                finally:
+                    browser.close()
+        finally:
+            cluster.stop()
 
 
 def test_browser_navigation_filters_logs_updates_and_mobile(controller):

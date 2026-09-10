@@ -13,7 +13,7 @@ use keeps your selected storage directory; without a saved choice it uses
 `.sandweave` in the current directory. `sandweave setup` is available to choose
 storage and install a template before creating a sandbox.
 
-The SDK host needs Python 3.11 or newer. Workers need Linux x86-64, Bash and
+The SDK host needs Python 3.11 or newer. Workers need Linux x86-64 (kernel 5.6 or newer), Bash and
 permission to run containers. Setup installs Apptainer if needed and prepares
 the runtime files. GPU workers also need an allocated NVIDIA device and a
 compatible driver. Inside your Python environment:
@@ -26,8 +26,8 @@ sandweave run --template coding -- "python -c 'print(2 + 2)'"
 ```
 
 Setup asks what you want to start with and where to store Sandweave's files.
-The storage directory can be empty. It imports a usable existing runtime or
-builds one from upstream inputs, installs the selected workload's Python
+The storage directory can be empty. It reuses an existing runtime, downloads a
+compatible release, or builds from upstream inputs, then installs the selected workload's Python
 packages, and checks a disposable sandbox of that template. Selecting VR
 therefore starts the game for the check. Setup releases its test sandbox;
 it does not acquire or cancel GPU jobs. `python -m pip install sandweave` also works.
@@ -51,6 +51,9 @@ produces a nonzero exit status.
 ```bash
 # Prepare coding without prompts, accepting the available repairs.
 sandweave setup --yes --template coding --directory /path/to/sandweave-data
+
+# Build the engine from source instead of reusing or downloading it.
+sandweave setup --build --yes --template coding
 
 # Prepare the dependencies for desktop or VR use.
 sandweave setup --template gnome
@@ -131,12 +134,23 @@ copies across filesystems are published only after completion. Incomplete
 staged files are checked and repaired when preparing a worker. Setup does not
 change the original lab's `runs/local-path.txt`.
 
-The wheel includes an explicit set of engine scripts, build inputs and patches.
-It does not include large runtime images. Without a prepared source, setup
-downloads container images and pinned source inputs, builds the patched gVisor
-engine in an unprivileged build container, and installs guest software inside
-gVisor. Guest root privileges never become host root privileges. Network helpers
-and their dependencies are extracted into the installation when needed.
+The wheel includes engine scripts, build inputs, patches and a pinned release
+manifest checksum. Before downloading the engine, setup checks the architecture,
+kernel, CPU features and Apptainer's namespace and seccomp support. It downloads
+a matching binary from [GitHub Releases](https://github.com/Pranjal2041/sandweave/releases),
+verifies the archive and its files, and caches them in the selected directory.
+The current engine archive is about 61 MiB. Linux images and template packages
+are separate upstream downloads; Code setup skips the compiler image and Bazel.
+
+If no compatible release is available, setup builds the patched gVisor engine
+in an unprivileged build container. `--build` selects this path explicitly.
+A failed integrity check stops installation. Unsupported architectures, old
+kernels and host permission restrictions require changes beyond a local build.
+Existing installations keep their recorded engine versions.
+
+Guest software is installed inside gVisor. Guest root privileges never become
+host root privileges. Network helpers and their dependencies are extracted
+into the installation when needed.
 The first source build needs internet access, disk space for compiler output
 and image exports, and enough memory for the selected guest workload. Build
 logs are written under `logs/setup` in the selected storage directory.

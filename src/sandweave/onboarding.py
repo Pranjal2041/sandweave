@@ -116,8 +116,7 @@ def validate_assets(root, recipe, *, contents=True):
     if 'workloads' in registry and workload(recipe) not in registry['workloads']:
         raise ValueError('This runtime does not yet include ' + workload(recipe) + '; run sandweave setup to add it')
     default_image = registry.get('default_image', 'images/gvisor-ubuntu-ready-ae303ca.erofs')
-    required = ['tools/debian-trixie.sif', 'tools/bench', 'tools/seccomp-trap',
-                'tools/gs-base-probe', 'tools/gvisor-socket/runtime.json',
+    required = ['tools/debian-trixie.sif', 'tools/gvisor-socket/runtime.json',
                 default_image]
     missing = [name for name in required if not _inside(root, name).is_file()]
     if missing:
@@ -494,12 +493,16 @@ def known_sources():
     return list(dict.fromkeys([*current, *asset_candidates()]))
 
 
-def install_runtime(template, directory, *, assets=None, sources=(), game_archive=None, yes=False):
+def install_runtime(template, directory, *, assets=None, sources=(), game_archive=None, yes=False, build=False):
     from .installation import import_runtime, validate_installation, needs_helpers
     from .bootstrap import Builder
     recipe = Template(template).resolve()
     selected = assets or os.environ.get('SANDWEAVE_ASSETS')
+    if build and selected:
+        raise ValueError('--build cannot be combined with an explicit runtime source')
     candidates = [Path(selected).expanduser().resolve()] if selected else list(sources)
+    if build:
+        candidates = []
     core = None
     for source in candidates:
         try:
@@ -526,6 +529,8 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
         # an unrelated source rebuild or a fallback into the home directory.
         return import_runtime(source, directory, recipe)
     profile = workload(recipe)
+    from . import releases
+    host = releases.check_host(directory)
     if 'gunspinning' in profile:
         from .vr_installation import GUNSPINNING_SHA256
         cached = Path(directory) / 'downloads/gunspinning-vr-linux.zip'
@@ -541,9 +546,14 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
                   'Choose the free download, then select that file here.')
             archive = ask_path('GunSpinning Linux ZIP:')
         workspace._immutable(archive, cached, sha256=GUNSPINNING_SHA256)
+    engine = None
     if core is not None:
         core = import_runtime(core, directory, Template('coding').resolve())
-    print('Preparing ' + profile + ' from upstream sources. The first build can take a while.', flush=True)
+    elif not build:
+        engine = releases.install(directory, host)
+    print('Preparing ' + profile + (' with the downloaded engine.' if engine else ' from upstream sources. The first build can take a while.'), flush=True)
+    if engine is not None:
+        return Builder(directory).build(profile, recipe, base=core, engine=engine)
     return Builder(directory).build(profile, recipe, base=core)
 
 
@@ -608,7 +618,8 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
             if not repair('apptainer', template, yes=yes):
                 return 1
         installed = install_runtime(template, selected, assets=assets, sources=sources,
-                                    game_archive=getattr(args, 'game_archive', None), yes=yes)
+                                    game_archive=getattr(args, 'game_archive', None), yes=yes,
+                                    build=getattr(args, 'build', False))
         workspace.atomic_json(pending, {'assets': str(installed), 'template': template, 'status': 'checking'})
         missing = [package for module, package in python_packages(Template(template).resolve())
                    if importlib.util.find_spec(module) is None]

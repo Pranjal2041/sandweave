@@ -76,12 +76,14 @@ def download(url, directory, name, *, sha256=None):
         temporary.unlink(missing_ok=True)
 
 
-def extract_source(archive, destination):
+def extract_source(archive, destination, *, max_bytes=None):
     """Extract source trees without device files, host ownership or escaping links."""
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=True)
     with Stage('Extract ' + Path(archive).name, unit='files', detail='Reading archive') as progress, tarfile.open(archive) as source:
         members = source.getmembers()
+        if max_bytes is not None and sum(member.size for member in members) > max_bytes:
+            raise ValueError('Runtime archive exceeds its declared unpacked size')
         progress.update(total=len(members))
         top = {Path(member.name).parts[0] for member in members if Path(member.name).parts}
         if len(top) != 1:
@@ -234,20 +236,20 @@ done
         finally:
             temporary.unlink(missing_ok=True)
 
-    def build(self, template, recipe, *, base=None):
+    def build(self, template, recipe, *, base=None, engine=None):
         store = self.directory / 'assets'
         store.mkdir(parents=True, exist_ok=True)
         # Only this attempt owns these paths; no running worker points into them.
         root = Path(tempfile.mkdtemp(prefix='.build-', dir=store))
         try:
-            return self._build(root, recipe, base=base)
+            return self._build(root, recipe, base=base, engine=engine)
         except BaseException:
             # Preserve the exact failed workspace and logs for diagnosis. The
             # setup lock prevents another attempt from mistaking it for ready.
             print('Build stopped. Working files: ' + str(root), file=sys.stderr, flush=True)
             raise
 
-    def _build(self, root, recipe, *, base=None):
+    def _build(self, root, recipe, *, base=None, engine=None):
         from .onboarding import validate_assets
         for name in ('tools', 'scripts', 'input', 'output', 'build-tmp', 'images/fixtures', 'runs', 'snapshots'):
             (root / name).mkdir(parents=True, exist_ok=True)
@@ -269,10 +271,16 @@ done
             self.pull('docker://debian:trixie-slim', self.downloads / 'debian-trixie.sif')
             self.run(self.container(root, self.downloads / 'debian-trixie.sif', '/bin/true'),
                      label='Check container permissions')
-            self.pull(BUILDER, self.downloads / 'gvisor-builder.sif')
-            for name in ('debian-trixie.sif', 'gvisor-builder.sif'):
-                workspace._immutable(self.downloads / name, root / 'tools' / name)
-            self.engine(root)
+            workspace._immutable(self.downloads / 'debian-trixie.sif', root / 'tools/debian-trixie.sif')
+            if engine is None:
+                self.pull(BUILDER, self.downloads / 'gvisor-builder.sif')
+                workspace._immutable(self.downloads / 'gvisor-builder.sif', root / 'tools/gvisor-builder.sif')
+                self.engine(root)
+            else:
+                from .releases import validate_engine
+                descriptor = validate_engine(engine)
+                workspace.stage_tree(Path(engine) / descriptor['path'], root / descriptor['path'])
+                workspace.atomic_json(root / 'tools/gvisor-socket/runtime.json', descriptor)
         if not (root / 'tools/gpu/bin/cuda-checkpoint').is_file():
             revision = '00d5cce84c628088d6caa203fc4af40c1538b6f7'
             checkpoint = download('https://raw.githubusercontent.com/NVIDIA/cuda-checkpoint/' + revision +

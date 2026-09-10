@@ -186,6 +186,7 @@ def parser():
     setup.add_argument('--directory', help='Store downloads, runtime files, workers and caches in this directory')
     setup.add_argument('--game-archive', help='Official GunSpinning Linux ZIP, when installing it for the first time')
     setup.add_argument('--yes', action='store_true', help='Apply available setup repairs without prompting')
+    setup.add_argument('--build', action='store_true', help='Build the runtime from source instead of using a release')
     doctor = sub.add_parser('doctor', help='Check this worker and interactively repair problems')
     doctor.add_argument('--template', help='Workload to check; defaults to the last setup selection')
     doctor.add_argument('--check', action='store_true', help='Report checks without prompts or repairs')
@@ -240,7 +241,7 @@ def main(argv=None):
         if op == 'setup':
             if bool(args.id) != bool(args.script):
                 raise ValueError('guest setup requires both ID and SCRIPT; use plain sandweave setup for this worker')
-            if args.id and (args.template or args.assets or args.directory or args.game_archive or args.yes):
+            if args.id and (args.template or args.assets or args.directory or args.game_archive or args.yes or args.build):
                 raise ValueError('worker setup options cannot be used with guest ID and SCRIPT')
             if not args.id and args.target:
                 raise ValueError('run sandweave setup on the worker; --target applies to guest script setup')

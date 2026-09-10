@@ -32,6 +32,9 @@ with tarfile.open(bundle / 'fixtures.tar', 'w') as archive:
     ] + [(p, 'usr/local/bin/engine-' + p.stem.removeprefix('gvisor-guest-'))
          for p in sorted((lab / 'scripts').glob('gvisor-guest-*.sh'))]
     for source, dest in fixtures:
+        if not source.is_file():
+            # Optional lab probes are absent from public runtime releases.
+            continue
         data = source.read_bytes()
         entry = tarfile.TarInfo('./' + dest)
         entry.mode, entry.uid, entry.gid, entry.size = 0o755, 0, 0, len(data)

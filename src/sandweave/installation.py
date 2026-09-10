@@ -71,8 +71,10 @@ def inputs(source, recipe):
     source = Path(source).resolve()
     registry_path = source / 'sandweave-assets.json'
     original_registry = json.loads(registry_path.read_text()) if registry_path.is_file() else {}
-    paths = {'tools/' + name for name in
-             ('bench', 'seccomp-trap', 'gs-base-probe', 'debian-trixie.sif')}
+    paths = {'tools/debian-trixie.sif'}
+    # Lab diagnostics are optional; normal sandbox execution does not use them.
+    paths.update('tools/' + name for name in ('bench', 'seccomp-trap', 'gs-base-probe')
+                 if (source / 'tools' / name).is_file())
     paths.add(original_registry.get('default_image', 'images/gvisor-ubuntu-ready-ae303ca.erofs'))
     paths.add('tools/gvisor-socket/runtime.json')
     runtime = json.loads((source / 'tools/gvisor-socket/runtime.json').read_text())

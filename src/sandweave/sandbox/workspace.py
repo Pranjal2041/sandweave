@@ -286,8 +286,10 @@ def prepare(*, source=None):
                 (root / 'scripts' / path.name).chmod(0o755)
         if (base / 'sandweave-assets.json').is_file():
             shutil.copy2(base / 'sandweave-assets.json', root / 'sandweave-assets.json')
-        for name in ('bench', 'seccomp-trap', 'gs-base-probe', 'debian-trixie.sif'):
-            _immutable(base / 'tools' / name, root / 'tools' / name)
+        _immutable(base / 'tools/debian-trixie.sif', root / 'tools/debian-trixie.sif')
+        for name in ('bench', 'seccomp-trap', 'gs-base-probe'):
+            if (base / 'tools' / name).is_file():
+                _immutable(base / 'tools' / name, root / 'tools' / name)
         for directory in ('runtime-builds', 'fast-io', 'network', 'erofs', 'helpers', 'gvisor-nightly-20260906'):
             src = base / 'tools' / directory
             if src.is_dir():

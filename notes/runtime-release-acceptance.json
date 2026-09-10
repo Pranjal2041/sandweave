@@ -1,0 +1,105 @@
+{
+  "runtime_manifest": {
+    "artifacts": [
+      {
+        "architecture": "x86_64",
+        "cpu_flags": [
+          "sse2"
+        ],
+        "minimum_kernel": "5.6",
+        "name": "sandweave-runtime-2026.09.09.1-linux-x86_64.tar.gz",
+        "sha256": "2c6f0ce4565cbb897b41504d270a1906713b644be744ddac7dfd37acd9a91186",
+        "size": 63766222,
+        "unpacked_bytes": 200469464,
+        "url": "https://github.com/Pranjal2041/sandweave/releases/download/runtime-v2026.09.09.1/sandweave-runtime-2026.09.09.1-linux-x86_64.tar.gz"
+      }
+    ],
+    "engine_patch_sha256": "268d1ab6d69c59d25e25e4a6281f37aaa4c4a47964e40cff18889e638f143ced",
+    "schema_version": 1,
+    "upstream_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
+    "version": "2026.09.09.1"
+  },
+  "babel": {
+    "status": "passed",
+    "host": "babel-p9-16",
+    "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+    "architecture": "x86_64",
+    "python": "3.13.0 | packaged by conda-forge | (main, Nov 27 2024, 19:18:50) [GCC 13.3.0]",
+    "sdk": "0.1.1",
+    "distribution": "candidate-local-http",
+    "first_setup_seconds": 70.02379250410013,
+    "engine": {
+      "path": "tools/runtime-builds/ddce0481feaa52f4b77bf6bf45437cac48eac318d1082692fdc3c9679d9ac641",
+      "sha256": {
+        "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+        "gvisor-bin/checkpointgofer": "e348e5c0b4d7ef349389e8b6870c797a2e4ff36f526cd959d3633541ceb62318",
+        "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+        "gvisor-bin/gvisor_sentry": "264a35d136846e8bb7767dbdaf5ea7e714fa720308314a8a655114f14f2d0ea5",
+        "gvisor-bin/runsc-metric-server": "f11730bdbb09cbfe329e14b83580034e14da00b9d979b62bbfe426dad6d8e93a",
+        "runsc": "7a58d2faa27d0d355dc0b03613ac5cf8ae0d347bb3eff060b384150d502688aa"
+      }
+    },
+    "compiler_downloaded_or_run": false,
+    "ready_seconds": 0.6680323360487819,
+    "lifecycle_seconds": 7.70962163596414,
+    "checks": [
+      "first-install",
+      "exact-engine-hashes",
+      "no-compiler",
+      "cpu-override",
+      "no-kvm",
+      "internet",
+      "files",
+      "pause-resume",
+      "filesystem-cache",
+      "process-memory-restore",
+      "offline-network",
+      "context-cleanup",
+      "global-location-preserved"
+    ]
+  },
+  "flame": {
+    "status": "passed",
+    "host": "orchard-flame-22",
+    "kernel": "6.17.0-1016-gcp",
+    "architecture": "x86_64",
+    "python": "3.12.9 | packaged by Anaconda, Inc. | (main, Feb  6 2025, 18:56:27) [GCC 11.2.0]",
+    "sdk": "0.1.1",
+    "distribution": "candidate-local-http",
+    "first_setup_seconds": 180.76505415095016,
+    "engine": {
+      "path": "tools/runtime-builds/ddce0481feaa52f4b77bf6bf45437cac48eac318d1082692fdc3c9679d9ac641",
+      "sha256": {
+        "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+        "gvisor-bin/checkpointgofer": "e348e5c0b4d7ef349389e8b6870c797a2e4ff36f526cd959d3633541ceb62318",
+        "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+        "gvisor-bin/gvisor_sentry": "264a35d136846e8bb7767dbdaf5ea7e714fa720308314a8a655114f14f2d0ea5",
+        "gvisor-bin/runsc-metric-server": "f11730bdbb09cbfe329e14b83580034e14da00b9d979b62bbfe426dad6d8e93a",
+        "runsc": "7a58d2faa27d0d355dc0b03613ac5cf8ae0d347bb3eff060b384150d502688aa"
+      }
+    },
+    "compiler_downloaded_or_run": false,
+    "ready_seconds": 1.4384999631438404,
+    "lifecycle_seconds": 14.78632826404646,
+    "checks": [
+      "first-install",
+      "exact-engine-hashes",
+      "no-compiler",
+      "cpu-override",
+      "no-kvm",
+      "internet",
+      "files",
+      "pause-resume",
+      "filesystem-cache",
+      "process-memory-restore",
+      "offline-network",
+      "context-cleanup",
+      "global-location-preserved"
+    ]
+  },
+  "desktop": {
+    "status": "passed",
+    "tests": 2,
+    "seconds": 145.018567354884
+  }
+}

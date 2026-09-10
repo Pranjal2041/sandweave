@@ -310,7 +310,7 @@ def test_vr_validation_requires_graphics_helpers(runtime_files):
 
 
 def test_no_source_selects_bootstrap_with_destination_only(tmp_path, monkeypatch):
-    from sandweave import bootstrap
+    from sandweave import bootstrap, releases
     calls = []
     class Builder:
         def __init__(self, directory):
@@ -320,6 +320,8 @@ def test_no_source_selects_bootstrap_with_destination_only(tmp_path, monkeypatch
             return tmp_path / 'assets/built'
     monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
     monkeypatch.setattr(bootstrap, 'Builder', Builder)
+    monkeypatch.setattr(releases, 'check_host', lambda *a: {})
+    monkeypatch.setattr(releases, 'install', lambda *a: None)
     assert onboarding.install_runtime('coding', tmp_path, sources=(), yes=True) == tmp_path / 'assets/built'
     assert calls == [tmp_path, ('coding', Template('coding').resolve()['name'], None)]
 

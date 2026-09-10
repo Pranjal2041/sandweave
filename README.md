@@ -16,7 +16,7 @@ template, provide a setup script, or write your own template.
 
 ## Install
 
-Inside a Python 3.11+ environment on a Linux x86-64 worker:
+Inside a Python 3.11+ environment on a Linux x86-64 worker (kernel 5.6 or newer):
 
 ```bash
 uv pip install sandweave
@@ -26,8 +26,10 @@ You can also use `pip install sandweave`.
 
 Creating a local sandbox installs its template on first use. Sandweave reuses
 your configured storage directory, or creates `.sandweave` in the current
-directory if you have not chosen one. The first installation may download and
-build dependencies, so it needs internet access and can take a while.
+directory if you have not chosen one. Setup checks your machine and downloads a
+compatible prebuilt runtime from GitHub Releases. If no matching binary is
+available, it builds from source. The first installation also downloads the
+selected template's software, so it needs internet access.
 
 To choose storage and prepare a template ahead of time:
 

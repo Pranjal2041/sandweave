@@ -6,33 +6,35 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Create Linux sandboxes, run code, control desktops and VR games, and distribute work across your own machines.">
+        <meta name="description" content="Linux sandboxes for agent training and evaluation. Python, CLI, and cluster documentation.">
       
       
       
-        <link rel="canonical" href="https://pranjal2041.github.io/sandweave/">
+        <link rel="canonical" href="https://pranjal2041.github.io/sandweave/images/">
       
       
+        <link rel="prev" href="../commands/">
       
-        <link rel="next" href="installation/">
+      
+        <link rel="next" href="../files/">
       
       
         
       
       
-      <link rel="icon" href="assets/mark.svg">
+      <link rel="icon" href="../assets/mark.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>Introduction - Sandweave</title>
+        <title>Docker images - Sandweave</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -45,9 +47,9 @@
       
     
     
-      <link rel="stylesheet" href="assets/styles.css">
+      <link rel="stylesheet" href="../assets/styles.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -75,7 +77,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#sandboxes-for-your-agents" class="md-skip">
+        <a href="#docker-images" class="md-skip">
           Skip to content
         </a>
       
@@ -91,9 +93,9 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Sandweave" class="md-header__button md-logo" aria-label="Sandweave" data-md-component="logo">
+    <a href=".." title="Sandweave" class="md-header__button md-logo" aria-label="Sandweave" data-md-component="logo">
       
-  <img src="assets/mark.svg" alt="logo">
+  <img src="../assets/mark.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -110,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Introduction
+              Docker images
             
           </span>
         </div>
@@ -228,9 +230,9 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Sandweave" class="md-nav__button md-logo" aria-label="Sandweave" data-md-component="logo">
+    <a href=".." title="Sandweave" class="md-nav__button md-logo" aria-label="Sandweave" data-md-component="logo">
       
-  <img src="assets/mark.svg" alt="logo">
+  <img src="../assets/mark.svg" alt="logo">
 
     </a>
     Sandweave
@@ -254,8 +256,6 @@
       
   
   
-    
-  
   
   
     
@@ -268,11 +268,13 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
         
           
           <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="">
@@ -293,7 +295,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -308,37 +310,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Introduction
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -354,70 +329,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#run-your-first-command" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run your first command
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-do-you-want-to-run" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What do you want to run?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#three-things-to-know" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Three things to know
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-tasks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common tasks
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -430,7 +341,7 @@
   
   
     <li class="md-nav__item">
-      <a href="installation/" class="md-nav__link">
+      <a href="../installation/" class="md-nav__link">
         
   
   
@@ -458,7 +369,7 @@
   
   
     <li class="md-nav__item">
-      <a href="quickstart/" class="md-nav__link">
+      <a href="../quickstart/" class="md-nav__link">
         
   
   
@@ -490,8 +401,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -502,13 +415,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -529,7 +440,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -547,7 +458,7 @@
   
   
     <li class="md-nav__item">
-      <a href="commands/" class="md-nav__link">
+      <a href="../commands/" class="md-nav__link">
         
   
   
@@ -572,10 +483,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="images/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker images
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -591,6 +529,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#combine-an-image-with-a-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Combine an image with a template
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image defaults
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reuse-and-reproducibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reuse and reproducibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-and-pools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI and pools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported images
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -603,7 +616,7 @@
   
   
     <li class="md-nav__item">
-      <a href="files/" class="md-nav__link">
+      <a href="../files/" class="md-nav__link">
         
   
   
@@ -631,7 +644,7 @@
   
   
     <li class="md-nav__item">
-      <a href="resources/" class="md-nav__link">
+      <a href="../resources/" class="md-nav__link">
         
   
   
@@ -659,7 +672,7 @@
   
   
     <li class="md-nav__item">
-      <a href="networking/" class="md-nav__link">
+      <a href="../networking/" class="md-nav__link">
         
   
   
@@ -687,7 +700,7 @@
   
   
     <li class="md-nav__item">
-      <a href="lifecycle/" class="md-nav__link">
+      <a href="../lifecycle/" class="md-nav__link">
         
   
   
@@ -715,7 +728,7 @@
   
   
     <li class="md-nav__item">
-      <a href="snapshots/" class="md-nav__link">
+      <a href="../snapshots/" class="md-nav__link">
         
   
   
@@ -743,7 +756,7 @@
   
   
     <li class="md-nav__item">
-      <a href="async/" class="md-nav__link">
+      <a href="../async/" class="md-nav__link">
         
   
   
@@ -832,7 +845,7 @@
   
   
     <li class="md-nav__item">
-      <a href="desktop/" class="md-nav__link">
+      <a href="../desktop/" class="md-nav__link">
         
   
   
@@ -860,7 +873,7 @@
   
   
     <li class="md-nav__item">
-      <a href="vr/" class="md-nav__link">
+      <a href="../vr/" class="md-nav__link">
         
   
   
@@ -888,7 +901,7 @@
   
   
     <li class="md-nav__item">
-      <a href="templates/" class="md-nav__link">
+      <a href="../templates/" class="md-nav__link">
         
   
   
@@ -977,7 +990,7 @@
   
   
     <li class="md-nav__item">
-      <a href="clusters/" class="md-nav__link">
+      <a href="../clusters/" class="md-nav__link">
         
   
   
@@ -1005,7 +1018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="pools/" class="md-nav__link">
+      <a href="../pools/" class="md-nav__link">
         
   
   
@@ -1033,7 +1046,7 @@
   
   
     <li class="md-nav__item">
-      <a href="jobs/" class="md-nav__link">
+      <a href="../jobs/" class="md-nav__link">
         
   
   
@@ -1061,7 +1074,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dashboard/" class="md-nav__link">
+      <a href="../dashboard/" class="md-nav__link">
         
   
   
@@ -1150,7 +1163,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python-api/" class="md-nav__link">
+      <a href="../python-api/" class="md-nav__link">
         
   
   
@@ -1178,7 +1191,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/" class="md-nav__link">
+      <a href="../cli/" class="md-nav__link">
         
   
   
@@ -1206,7 +1219,7 @@
   
   
     <li class="md-nav__item">
-      <a href="troubleshooting/" class="md-nav__link">
+      <a href="../troubleshooting/" class="md-nav__link">
         
   
   
@@ -1261,10 +1274,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#run-your-first-command" class="md-nav__link">
+  <a href="#combine-an-image-with-a-template" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run your first command
+        Combine an image with a template
       
     </span>
   </a>
@@ -1272,10 +1285,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-do-you-want-to-run" class="md-nav__link">
+  <a href="#image-defaults" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What do you want to run?
+        Image defaults
       
     </span>
   </a>
@@ -1283,10 +1296,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#three-things-to-know" class="md-nav__link">
+  <a href="#reuse-and-reproducibility" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Three things to know
+        Reuse and reproducibility
       
     </span>
   </a>
@@ -1294,10 +1307,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#common-tasks" class="md-nav__link">
+  <a href="#cli-and-pools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Common tasks
+        CLI and pools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported images
       
     </span>
   </a>
@@ -1321,7 +1345,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/index.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/images.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1329,87 +1353,101 @@
   
 
 
-<div class="sw-eyebrow">Sandweave documentation</div>
-
-<h1 id="sandboxes-for-your-agents">Sandboxes for your agents<a class="headerlink" href="#sandboxes-for-your-agents" title="Permanent link">&para;</a></h1>
-<p class="sw-lead">Run code, control a desktop, or interact with a VR game. Create a sandbox with Python and scale to a pool across your own machines.</p>
-
-<p>Sandweave runs Linux sandboxes without host sudo or KVM. Templates supply the
-software and controls; you choose the resources, setup scripts, and lifetime.</p>
-<div class="sw-actions">
-<p><a class="md-button md-button--primary" href="quickstart/">Start with Python</a>
-<a class="md-button" href="clusters/">Connect a cluster</a></p>
-</div>
-<h2 id="run-your-first-command">Run your first command<a class="headerlink" href="#run-your-first-command" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>sandweave
+<h1 id="docker-images">Docker images<a class="headerlink" href="#docker-images" title="Permanent link">&para;</a></h1>
+<p>Use a Docker or OCI registry image as the sandbox's filesystem:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"image"</span><span class="p">])</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<p>The worker downloads and prepares the image on first use. Later sandboxes reuse
+the prepared image with separate writable filesystems. A Docker daemon is not
+required. Images run through Sandweave's existing gVisor runtime, without KVM
+or host sudo.</p>
+<h2 id="combine-an-image-with-a-template">Combine an image with a template<a class="headerlink" href="#combine-an-image-with-a-template" title="Permanent link">&para;</a></h2>
+<p>An image supplies files and installed software. A template supplies setup,
+services, resources, and controls. A custom template can choose its default image:</p>
+<div class="highlight"><span class="filename">python-env.toml</span><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"docker://python:3.12-slim"</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python -c 'print(2 + 2)'"</span><span class="p">)</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">[setup]</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">script</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"install.sh"</span>
 </code></pre></div>
-<p>This prints <code>4</code>. Sandweave prepares the coding template on first use, then
-terminates the sandbox when the <code>with</code> block ends. The worker needs Linux
-x86-64 and Python 3.11+. See <a href="installation/">installation</a> for host requirements.</p>
-<h2 id="what-do-you-want-to-run">What do you want to run?<a class="headerlink" href="#what-do-you-want-to-run" title="Permanent link">&para;</a></h2>
-<div class="sw-links">
-<p><a href="commands/"><strong>Code and evaluation →</strong><span>Run programs, read their output, and give each task an independent sandbox.</span></a></p>
-<p><a href="desktop/"><strong>Desktop agents →</strong><span>Start GNOME, take screenshots, and send mouse and keyboard actions.</span></a></p>
-<p><a href="vr/"><strong>VR games →</strong><span>Read paired eye images, send controller inputs, and record both views.</span></a></p>
-<p><a href="clusters/"><strong>Distributed workloads →</strong><span>Connect workers, keep sandboxes ready, and follow activity in the dashboard.</span></a></p>
-</div>
-<h2 id="three-things-to-know">Three things to know<a class="headerlink" href="#three-things-to-know" title="Permanent link">&para;</a></h2>
-<p><strong>A template is a recipe.</strong> It defines installed software, startup services, and
-controls. Extend a built-in template or provide your own setup script.</p>
-<p><strong>A sandbox is a running environment.</strong> Run commands and interact with its files
-and controls. <a href="snapshots/">Save a cache</a> when you want to reuse installed software.</p>
-<p><strong>A cluster connects workers.</strong> Weave assigns sandboxes to machines with available
-resources. The same <code>Sandbox(...)</code> API works locally or with a cluster address.</p>
-<h2 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Task</th>
-<th>Start here</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Give a sandbox more CPU or memory</td>
-<td><a href="resources/">Resources</a></td>
-</tr>
-<tr>
-<td>Turn off its internet access</td>
-<td><a href="networking/">Networking</a></td>
-</tr>
-<tr>
-<td>Keep it running after Python exits</td>
-<td><a href="lifecycle/">Lifetime and cleanup</a></td>
-</tr>
-<tr>
-<td>Reuse installed packages</td>
-<td><a href="snapshots/">Caches and snapshots</a></td>
-</tr>
-<tr>
-<td>Keep several sandboxes ready</td>
-<td><a href="pools/">Pools and evaluation</a></td>
-</tr>
-<tr>
-<td>Find a Python method or CLI command</td>
-<td><a href="python-api/">Python API</a> · <a href="cli/">CLI</a></td>
-</tr>
-</tbody>
-</table>
+<div class="highlight"><span class="filename">install.sh</span><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="ch">#!/bin/sh</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">set</span><span class="w"> </span>-eu
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>pytest
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"./python-env.toml"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"pytest --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Override the base and keep the template's setup and services.</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"./python-env.toml"</span><span class="p">,</span> <span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.13-slim"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+</code></pre></div>
+<p>Setup scripts and services must support the selected image. For example, a
+script using <code>apt-get</code> needs a base that provides it. Selecting the <code>gnome</code>
+template with a different image does not install GNOME into that image; its
+desktop software and startup programs must already be present.</p>
+<h2 id="image-defaults">Image defaults<a class="headerlink" href="#image-defaults" title="Permanent link">&para;</a></h2>
+<p>Commands inherit the image's <code>ENV</code>, <code>USER</code>, and <code>WORKDIR</code>. Template settings
+override image settings; constructor <code>env=</code> overrides the template environment.
+Per-command <code>cwd</code>, <code>env</code>, and <code>user</code> apply only to that command. An image without
+a working directory uses <code>/</code>. Existing templates without an image retain their
+usual <code>/workspace</code> default.</p>
+<p>Sandweave starts its command service instead of the image's <code>ENTRYPOINT</code> and
+<code>CMD</code>. Declare applications under <a href="../templates/#start-a-service-on-every-cold-boot">template services</a>
+to start them on each cold boot. The original entrypoint and command are retained
+in <code>env.spec["image"]["settings"]</code>.</p>
+<p>Images do not need Python. Sandweave keeps its own control runtime in a private
+directory without replacing the image's Python or libraries. If an image has
+no shell, use literal arguments:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">argv</span><span class="o">=</span><span class="p">[</span><span class="s2">"/app/program"</span><span class="p">,</span> <span class="s2">"--version"</span><span class="p">])</span>
+</code></pre></div>
+<h2 id="reuse-and-reproducibility">Reuse and reproducibility<a class="headerlink" href="#reuse-and-reproducibility" title="Permanent link">&para;</a></h2>
+<p>A tag is resolved when first used in the selected Sandweave storage directory.
+Subsequent launches reuse that resolution without contacting the registry.
+Pass <code>refresh=True</code> to resolve the tag again:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">,</span> <span class="n">refresh</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"image"</span><span class="p">][</span><span class="s2">"digest"</span><span class="p">])</span>
+</code></pre></div>
+<p>For an exact base across machines, pass a digest reference such as
+<code>docker://registry.example.org/team/image@sha256:&lt;digest&gt;</code>.
+<code>env.info["image"]["digest"]</code> reports the selected Linux image manifest digest.
+Caches and snapshots retain that image; restoring them does not resolve its tag
+again. <code>cache_key=</code> also caches completed template setup.</p>
+<p>Image downloads and preparation require worker network access on first use.
+<code>network="offline"</code> disables the guest's internet access; it does not disable
+worker-side downloads. Blobs and prepared images stay under <code>images</code> in the
+selected Sandweave storage directory. They are not automatically evicted.</p>
+<h2 id="cli-and-pools">CLI and pools<a class="headerlink" href="#cli-and-pools" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--image<span class="w"> </span>docker://python:3.12-slim<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pool</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+</code></pre></div>
+<p><code>target=</code> places image-backed sandboxes on a cluster in the same way as other
+sandboxes. Each worker prepares an image when it first needs it. Pool baselines
+and snapshot transfers carry the prepared filesystem.</p>
+<h2 id="supported-images">Supported images<a class="headerlink" href="#supported-images" title="Permanent link">&para;</a></h2>
+<p>The initial implementation supports public registries over HTTPS, Docker v2
+and OCI manifests, and Linux x86-64 images. Gzip, Zstandard, and uncompressed
+layers are supported. Other CPU architectures, Windows images, private registry
+authentication, and sparse tar entries are not supported.</p>
+<p>Image support does not implement the Docker API. Evaluation harnesses that call
+Docker directly still need a Sandweave adapter. Applications also remain subject
+to <a href="https://gvisor.dev/docs/user_guide/compatibility/">gVisor's Linux compatibility</a>;
+an image cannot enable unsupported kernel features or privileged device access.</p>
 
 
 
 
 
 
-
-  
-  
 
 
 
@@ -1440,15 +1478,31 @@ resources. The same <code>Sandbox(...)</code> API works locally or with a cluste
       
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
+          
+          <a href="../commands/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Run commands">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Run commands
+              </div>
+            </div>
+          </a>
+        
         
           
-          <a href="installation/" class="md-footer__link md-footer__link--next" aria-label="Next: Installation">
+          <a href="../files/" class="md-footer__link md-footer__link--next" aria-label="Next: Files and setup">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Installation
+                Files and setup
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1505,10 +1559,10 @@ resources. The same <code>Sandbox(...)</code> API works locally or with a cluste
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "content.action.edit", "toc.follow"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "content.action.edit", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

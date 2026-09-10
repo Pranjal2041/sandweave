@@ -486,6 +486,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../files/" class="md-nav__link">
         
   
@@ -1494,6 +1522,11 @@
 <td><code>"coding"</code></td>
 </tr>
 <tr>
+<td><code>image</code></td>
+<td><code>docker://</code> base image; can accompany a template.</td>
+<td>Template image, if set</td>
+</tr>
+<tr>
 <td><code>setup</code></td>
 <td>Client-side path to a guest setup script.</td>
 <td>None</td>
@@ -1515,7 +1548,7 @@
 </tr>
 <tr>
 <td><code>refresh</code></td>
-<td>Force fresh preparation for a <code>cache_key</code>.</td>
+<td>Resolve an image tag again and rebuild named setup caches.</td>
 <td><code>False</code></td>
 </tr>
 <tr>
@@ -1591,13 +1624,14 @@
 </tbody>
 </table>
 <p><code>cache</code> and <code>snapshot</code> are alternative sources. A saved source cannot be combined
-with <code>template</code>, <code>setup</code>, or <code>cache_key</code>. A restore retains its saved runtime.</p>
+with <code>template</code>, <code>image</code>, <code>setup</code>, or <code>cache_key</code>. A restore retains its saved runtime and image.</p>
 <h3 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">process</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="s2">"python -u /workspace/main.py"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
 </code></pre></div>
 <p>Both accept <code>cwd</code>, <code>env</code>, <code>user</code>, <code>timeout</code>, <code>shell</code>, <code>binary</code>,
-<code>max_output_bytes</code>, and <code>pty</code>. Their default <code>cwd</code> is <code>/workspace</code>. Use <code>argv</code>
+<code>max_output_bytes</code>, and <code>pty</code>. Their default <code>cwd</code> is the template's <code>workdir</code>,
+the image's working directory, or <code>/workspace</code> for existing templates. Use <code>argv</code>
 instead of a command string for literal arguments. <code>check</code> is a <code>run</code> option;
 use <code>process.wait(check=True)</code> for an <code>exec</code> process.</p>
 <p><code>run</code> returns <code>stdout</code>, <code>stderr</code>, and <code>returncode</code>. <code>exec</code> returns a <code>Process</code>

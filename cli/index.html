@@ -486,6 +486,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../files/" class="md-nav__link">
         
   
@@ -1403,6 +1431,7 @@ Use <code>sandweave --help</code> or add <code>--help</code> to a subcommand for
 and offers interactive repairs. <code>--check</code> only runs checks.</p>
 <h2 id="run-one-command">Run one command<a class="headerlink" href="#run-one-command" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--template<span class="w"> </span>coding<span class="w"> </span>--<span class="w"> </span><span class="s2">"python -c 'print(2 + 2)'"</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--image<span class="w"> </span>docker://python:3.12-slim<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
 </code></pre></div>
 <p>This creates a sandbox, runs the command, and terminates the sandbox. Output and
 exit status pass through to your terminal. Supply one quoted command string

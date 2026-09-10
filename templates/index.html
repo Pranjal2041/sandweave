@@ -486,6 +486,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../files/" class="md-nav__link">
         
   
@@ -1329,6 +1357,9 @@
 <p>A template supplies installed software, startup services, and controls. Resource
 overrides such as <code>cpu=4</code> or <code>memory="8GiB"</code> belong on <code>Sandbox(...)</code>; they do
 not require another template.</p>
+<p>Custom templates can also set an <code>image</code> as their default filesystem base.
+Passing <code>Sandbox(template=..., image=...)</code> overrides that base and retains the
+template's setup and services. See <a href="../images/">Docker images</a>.</p>
 <h2 id="built-in-templates">Built-in templates<a class="headerlink" href="#built-in-templates" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

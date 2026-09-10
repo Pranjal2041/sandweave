@@ -36,3 +36,9 @@ Native engine sources are currently bundled into the installed package from
 the qualified lab scripts. Their workspace and runtime inputs are isolated from
 existing lab environments. The wheel must operate without the source checkout;
 prepared runtime binaries and images remain external, configured artifacts.
+
+## Proposed distributed management
+
+The [Weave proposal](weave-design.md) adds a third responsibility for managing
+sandboxes across workers. It is under discussion; the structure and API above
+remain the current contract.

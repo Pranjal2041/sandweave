@@ -20,6 +20,8 @@ import gvisor_gpu
 import external_mounts
 import gvisor_mps
 import signal
+import tempfile
+import build_artifacts
 
 started = phase = time.perf_counter()
 started_at = time.time()
@@ -52,6 +54,7 @@ parser.add_argument('--docker-data', action='store_true')
 parser.add_argument('--docker-archive', type=Path, help='previously exported Docker state archive')
 parser.add_argument('--base-image', type=Path, help='guest EROFS image below this runtime workspace')
 parser.add_argument('--mounts', type=Path, help='validated external mount JSON; sources are worker paths')
+parser.add_argument('--build-output', type=Path, help='receive installer artifacts into a new host directory')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
 runtime_choice = parser.add_mutually_exclusive_group()
@@ -74,6 +77,12 @@ parser.add_argument('--forward', type=int, action='append', default=[],
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
+if args.build_output:
+    if args.detach or args.restore or args.docker_data:
+        parser.error('--build-output requires a fresh foreground build')
+    args.build_output = args.build_output.resolve()
+    if args.build_output.exists():
+        parser.error('build output directory already exists')
 os.environ['SANDWEAVE_PYTHON'] = sys.executable
 registry_file = lab / 'sandweave-assets.json'
 asset_registry = json.loads(registry_file.read_text()) if registry_file.is_file() else {}
@@ -431,7 +440,8 @@ try:
         snapshot_store.write_json(logs / 'restore-timings.json', timings)
         if mps is not None and (mps_failed.is_set() or not mps.healthy()):
             raise RuntimeError('MPS service failed before runtime startup')
-        guest = subprocess.Popen(command, cwd=lab, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        guest = subprocess.Popen(command, cwd=lab, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE if args.build_output else subprocess.STDOUT,
                                  start_new_session=True)
         children.append(guest)
         record_children()
@@ -453,12 +463,52 @@ try:
 
         if mps_failed.is_set():
             cpu_broker.terminate_trees([guest.pid])
-        for line in guest.stdout:
-            output.write(line)
-            output.flush()
-            sys.stdout.buffer.write(line)
-            sys.stdout.buffer.flush()
-        result = guest.wait()
+        if args.build_output:
+            # Binary artifacts and logs use separate pipes. Only this host
+            # process opens destination files; the guest never sees that path.
+            log_errors = []
+            def copy_build_log():
+                try:
+                    while chunk := guest.stderr.read1(65536):
+                        output.write(chunk)
+                        output.flush()
+                        sys.stdout.buffer.write(chunk)
+                        sys.stdout.buffer.flush()
+                except Exception as error:
+                    log_errors.append(error)
+                    # Do not leave the guest blocked on a full stderr pipe if
+                    # the host can no longer persist its log.
+                    if guest.poll() is None:
+                        guest.terminate()
+            logger = threading.Thread(target=copy_build_log, daemon=True)
+            logger.start()
+            try:
+                with tempfile.TemporaryDirectory(prefix='.build-output-', dir=args.build_output.parent) as temporary:
+                    build_artifacts.receive(guest.stdout, temporary)
+                    result = guest.wait()
+                    logger.join()
+                    if log_errors:
+                        raise log_errors[0]
+                    if result == 0:
+                        build_artifacts.extract_helpers(Path(temporary) / 'helpers.tar', temporary)
+                        (Path(temporary) / 'helpers.tar').unlink()
+                        Path(temporary).rename(args.build_output)
+            finally:
+                if guest.poll() is None:
+                    guest.terminate()
+                    try:
+                        guest.wait(5)
+                    except subprocess.TimeoutExpired:
+                        guest.kill()
+                        guest.wait()
+                logger.join(5)
+        else:
+            for line in guest.stdout:
+                output.write(line)
+                output.flush()
+                sys.stdout.buffer.write(line)
+                sys.stdout.buffer.flush()
+            result = guest.wait()
     (logs / 'exit-code.txt').write_text(str(result) + '\n')
     raise SystemExit(result)
 finally:

@@ -21,7 +21,10 @@ The command builds only committed files. It runs the host tests, checks the
 wheel and source distribution, rebuilds the wheel from the source distribution,
 and tests the installed wheel in disposable coding sandboxes. These tests
 exercise first-use setup, commands, failures, timeouts, files, pause/resume,
-async calls and cleanup. They need internet access and space for a fresh runtime.
+async calls and cleanup. The installed build-transfer path is also checked
+with private, inherited-group and default-ACL directories where the host
+supports those layouts, including interrupted and unsuccessful builds.
+These checks need internet access and space for a fresh runtime.
 
 After checks pass, it pushes the current branch and version tag, creates a
 draft GitHub release, uploads to PyPI, verifies the published file hashes,

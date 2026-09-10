@@ -251,7 +251,7 @@ done
 
     def _build(self, root, recipe, *, base=None, engine=None):
         from .onboarding import validate_assets
-        for name in ('tools', 'scripts', 'input', 'output', 'build-tmp', 'images/fixtures', 'runs', 'snapshots'):
+        for name in ('tools', 'scripts', 'input', 'build-tmp', 'images/fixtures', 'runs', 'snapshots'):
             (root / name).mkdir(parents=True, exist_ok=True)
         for source in workspace.engine_files():
             shutil.copy2(source, root / 'scripts' / source.name)
@@ -305,8 +305,7 @@ done
             shutil.copy2(build_input('xvnc-fast-io.c'), root / 'input/xvnc-fast-io.c')
         if profile.startswith(('vr/', 'games/')):
             self.vr_inputs(root, profile)
-        mounts = [{'source': str(root / 'input'), 'destination': '/sandweave-input', 'read_only': True},
-                  {'source': str(root / 'output'), 'destination': '/sandweave-output', 'read_only': False}]
+        mounts = [{'source': str(root / 'input'), 'destination': '/sandweave-input', 'read_only': True}]
         workspace.atomic_json(root / 'mounts.json', mounts)
         # Socket paths stay short. Large downloads, compiler output and rootfs
         # exports are all in selected storage, not this node-local directory.
@@ -317,6 +316,7 @@ done
                        '--cpu-policy', 'shared', '--guest-cpus', str(max(1, min(8, len(os.sched_getaffinity(0))))),
                        '--memory-mib', '16384' if profile.startswith(('vr/', 'games/')) else '8192',
                        '--runtime-memory-mib', '1024', '--no-runtime-debug', '--mounts', str(root / 'mounts.json'),
+                       '--build-output', str(root / 'output'),
                        'install-' + uuid.uuid4().hex[:12], '--', '/bin/bash',
                        '/usr/local/bin/engine-install', profile]
             # The fixture builder includes gvisor-guest-*.sh automatically.

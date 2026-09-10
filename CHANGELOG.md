@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.2
+
+- Setup streams guest images and desktop/VR helpers to the host installer,
+  which writes them in the selected storage directory as the host user.
+  Guest ownership no longer needs to map to the destination's host group.
+- Build output is accepted only after both archives pass checksum verification
+  and the guest exits successfully. Interrupted transfers publish no output.
+- Release validation exercises the installed transfer path with private,
+  inherited-group and default-ACL directories where available.
+
 ## 0.2.1
 
 - Storage settings are local to each project. Setup no longer reads the old

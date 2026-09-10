@@ -1,4 +1,5 @@
 scripts/run-gvisor.py
+scripts/build_artifacts.py
 scripts/make-gvisor-bundle.py
 scripts/gvisor-host.sh
 scripts/environment.py

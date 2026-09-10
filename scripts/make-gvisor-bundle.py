@@ -29,6 +29,7 @@ with tarfile.open(bundle / 'fixtures.tar', 'w') as archive:
         (lab / 'tools/bench', 'usr/local/bin/engine-bench'),
         (lab / 'tools/seccomp-trap', 'usr/local/bin/engine-seccomp-trap'),
         (lab / 'tools/gs-base-probe', 'usr/local/bin/engine-gs-base-probe'),
+        (lab / 'scripts/build_artifacts.py', 'usr/local/bin/engine-build-artifacts'),
     ] + [(p, 'usr/local/bin/engine-' + p.stem.removeprefix('gvisor-guest-'))
          for p in sorted((lab / 'scripts').glob('gvisor-guest-*.sh'))]
     for source, dest in fixtures:

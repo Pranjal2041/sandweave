@@ -1,10 +1,12 @@
 #!/bin/bash
 # Runs as guest root under gVisor during setup, never on the host.
 set -euo pipefail
+# Reserve stdout for binary artifacts; all installation output remains a log.
+exec 3>&1 1>&2
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 profile=${1:?missing installation profile}
 test -d /sandweave-input
-test -d /sandweave-output
+mkdir -p /sandweave-output
 umask 022
 mkdir -p /usr/sbin /workspace /etc
 # Package postinst scripts must not start services while creating the image.
@@ -79,18 +81,6 @@ esac
 rm /usr/sbin/policy-rc.d
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-# A regular tar retains guest ownership and xattrs without host chown or mounts.
-# Nothing from the input/output bind mounts is included in the image.
-tar --numeric-owner --xattrs --acls --one-file-system \
-    --exclude=./proc --exclude=./sys --exclude=./dev --exclude=./run --exclude=./tmp \
-    --exclude=./sandweave-input --exclude=./sandweave-output \
-    -cpf /sandweave-output/rootfs.tar -C / .
-python3 - <<'PY'
-import tarfile
-with tarfile.open('/sandweave-output/rootfs.tar', 'a') as archive:
-    for name in ('proc', 'sys', 'dev', 'run', 'tmp'):
-        entry = tarfile.TarInfo('./' + name)
-        entry.type = tarfile.DIRTYPE
-        entry.mode = 0o1777 if name == 'tmp' else 0o755
-        archive.addfile(entry)
-PY
+# The host creates the destination files with its own identity. Guest IDs and
+# permissions are retained only inside rootfs.tar, never applied to host files.
+python3 /usr/local/bin/engine-build-artifacts >&3

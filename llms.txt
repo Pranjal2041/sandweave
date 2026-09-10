@@ -1,0 +1,31 @@
+# Sandweave
+
+> Linux sandboxes for agent training and evaluation. Python and CLI access to code, desktops, VR games, and distributed workers without host sudo or KVM.
+
+## Get started
+- [Introduction](https://pranjal2041.github.io/sandweave/)
+- [Installation](https://pranjal2041.github.io/sandweave/installation/)
+- [Your first sandbox](https://pranjal2041.github.io/sandweave/quickstart/)
+
+## Sandboxes
+- [Commands](https://pranjal2041.github.io/sandweave/commands/)
+- [Files and setup](https://pranjal2041.github.io/sandweave/files/)
+- [Resources](https://pranjal2041.github.io/sandweave/resources/)
+- [Networking](https://pranjal2041.github.io/sandweave/networking/)
+- [Lifetime and cleanup](https://pranjal2041.github.io/sandweave/lifecycle/)
+- [Caches and snapshots](https://pranjal2041.github.io/sandweave/snapshots/)
+- [Async Python](https://pranjal2041.github.io/sandweave/async/)
+
+## Workloads and clusters
+- [Desktop agents](https://pranjal2041.github.io/sandweave/desktop/)
+- [VR games](https://pranjal2041.github.io/sandweave/vr/)
+- [Templates](https://pranjal2041.github.io/sandweave/templates/)
+- [Clusters](https://pranjal2041.github.io/sandweave/clusters/)
+- [Pools and evaluation](https://pranjal2041.github.io/sandweave/pools/)
+- [Jobs](https://pranjal2041.github.io/sandweave/jobs/)
+- [Dashboard](https://pranjal2041.github.io/sandweave/dashboard/)
+
+## Reference
+- [Python API](https://pranjal2041.github.io/sandweave/python-api/)
+- [CLI](https://pranjal2041.github.io/sandweave/cli/)
+- [Troubleshooting](https://pranjal2041.github.io/sandweave/troubleshooting/)

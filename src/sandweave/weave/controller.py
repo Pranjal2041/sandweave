@@ -40,6 +40,7 @@ class Controller:
         self.stopping, self.interval = threading.Event(), interval
         self.thread = None
         self.next_probe = 0
+        self.last_tick, self.last_error = None, None
 
     def start(self):
         if self.thread is None:
@@ -72,7 +73,9 @@ class Controller:
         while not self.stopping.is_set():
             try:
                 self.tick()
-            except Exception:
+                self.last_tick, self.last_error = time.time(), None
+            except Exception as error:
+                self.last_error = str(error)
                 LOG.exception('Reconciliation failed; will retry')
             self.stopping.wait(self.interval)
 
@@ -161,7 +164,8 @@ class Controller:
                 capacity={'slots': slots, 'cpus': len(info['cpus']), 'memory': memory, 'gpu': len(info['gpus'])},
                 cpu_ids=info['cpus'],
                 gpus=info['gpus'], runtimes=info['runtimes'], draining=False, seen=time.time(),
-                instances={info['workspace']: {'endpoint': route, 'external': self._external(info)}},
+                instances={info['workspace']: {'endpoint': route, 'external': self._external(info),
+                                             'telemetry': info.get('telemetry', {})}},
                 external=self._external(info)), event={'message': 'worker registered'})
         return self._public_worker(record)
 
@@ -238,6 +242,7 @@ class Controller:
                     with self.state.transaction():
                         current = self.state.get('worker', identity)
                         current['instances'][workspace]['external'] = self._external(old_info)
+                        current['instances'][workspace]['telemetry'] = old_info.get('telemetry', {})
                         self.state.put('worker', current)
                 except Exception:
                     pass
@@ -247,14 +252,16 @@ class Controller:
                 record = self.state.get('worker', identity)
                 if record['state'] == 'removed':
                     return
+                recovered = record['state'] != 'ready'
                 record.update(state='ready', seen=time.time(), external=self._sum_external(record))
                 record.pop('error', None)
-                self.state.put('worker', record)
+                self.state.put('worker', record, event={'message': 'worker reachable'} if recovered else None)
         except Exception as error:
             with self.state.transaction():
                 record = self.state.get('worker', identity)
                 if record['state'] != 'removed':
-                    self.state.put('worker', {**record, 'state': 'unreachable', 'error': str(error)})
+                    self.state.put('worker', {**record, 'state': 'unreachable', 'error': str(error)},
+                                   event={'message': 'worker unreachable', 'error': str(error)} if record['state'] != 'unreachable' else None)
         finally:
             if connection:
                 connection.close()
@@ -271,7 +278,7 @@ class Controller:
                 raise ResourceUnavailable('worker resource allocation changed; drain and register it separately')
             route = providers.endpoint(ping, connection, record['target'])
             record.setdefault('instances', {})[info['workspace']] = {
-                'endpoint': route, 'external': self._external(info)}
+                'endpoint': route, 'external': self._external(info), 'telemetry': info.get('telemetry', {})}
             if promote or old['workspace'] == info['workspace']:
                 record.update(endpoint=route, inventory=info)
             record['external'] = self._sum_external(record)
@@ -430,8 +437,10 @@ class Controller:
                 state = info['state']
                 if current.get('lease') and state == 'ready':
                     state = 'leased'
+                changed = current['state'] != state
                 current.update(info=info, state=state, released=released)
-                self.state.put('allocation', current)
+                self.state.put('allocation', current,
+                               event={'message': 'sandbox state changed', 'state': state} if changed else None)
         except Exception as error:
             self._uncertain(identity, error)
         finally:
@@ -523,6 +532,8 @@ class Controller:
                 'jobs': [self.job_status(j['id']) for j in self.state.list('job')]}
 
     def dispatch(self, operation, parameters):
+        if operation == 'dashboard_ticket':
+            return self.dashboard.ticket()
         if operation == 'relay_poll':
             return self.relay.poll(**parameters)
         if operation == 'relay_result':

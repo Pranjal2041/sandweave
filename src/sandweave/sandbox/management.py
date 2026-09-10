@@ -17,6 +17,8 @@ class Management:
         self.worker = worker
         self.root = worker.root / 'assignments'
         self.root.mkdir(exist_ok=True, mode=0o700)
+        from .telemetry import Sampler
+        self.sampler = Sampler(worker.root)
 
     def path(self, identity):
         self.worker.path(identity)  # Use the same ID validation as the executor.
@@ -157,7 +159,8 @@ class Management:
         except (ImportError, OSError, RuntimeError, subprocess.SubprocessError):
             pass
         live = []
-        for record in self.worker.list():
+        records = self.worker.list()
+        for record in records:
             if record['state'] in ('terminated', 'stopped') or record.get('cleanup_complete'):
                 continue
             if record['runtime_status']['status'] not in ('running', 'paused', 'starting') and record['state'] not in ('creating', 'preparing'):
@@ -170,7 +173,18 @@ class Management:
         return {'protocol': 1, 'hostname': socket.gethostname(), 'pid': os.getpid(),
                 'scope': process_scope(), 'workspace': str(self.worker.root),
                 'cpus': sorted(os.sched_getaffinity(0)), 'memory': self.worker.memory_budget,
-                'gpus': gpus, 'runtimes': ['gvisor', 'apptainer'], 'live': live}
+                'gpus': gpus, 'runtimes': ['gvisor', 'apptainer'], 'live': live,
+                'telemetry': self.sampler.sample(records, gpus)}
+
+    def logs(self, identity, stream='launcher', size=65536):
+        from .telemetry import tail
+        self.worker.path(identity)
+        if stream not in ('launcher', 'runtime'):
+            raise ValueError('log stream must be launcher or runtime')
+        status = self.worker.runtime.status(identity)
+        if not status.get('logs'):
+            return {'text': '', 'message': 'This runtime does not expose logs.'}
+        return tail(Path(status['logs']) / ('launcher.log' if stream == 'launcher' else 'runsc.log'), size)
 
     def prepare(self, template):
         """Extend this allocation's installation without changing live guests."""

@@ -42,7 +42,9 @@ def cluster(tmp_path_factory):
     assert len(cpus) >= 4
     processes, connections, logs = [], [], []
     bridges = []
-    controller_directory = os.environ.get('SANDWEAVE_WEAVE_CONTROLLER_DIRECTORY') or tmp_path_factory.mktemp('weave-controller')
+    # Parallel pytest runs garbage-collect each other's older temporary roots.
+    # Keep a daemon's state with its explicitly selected integration artifacts.
+    controller_directory = os.environ.get('SANDWEAVE_WEAVE_CONTROLLER_DIRECTORY') or root / 'controller'
     cluster = Cluster.start('weave-live', directory=controller_directory, local_worker=False)
     try:
         for index in range(2):
@@ -64,7 +66,7 @@ def cluster(tmp_path_factory):
                 if child.poll() is not None:
                     raise RuntimeError((worker_home / 'worker.log').read_text()[-5000:])
                 return marker.exists() and json.loads(marker.read_text()).get('pid') == child.pid
-            wait_for(ready)
+            wait_for(ready, timeout=float(os.environ.get('SANDWEAVE_WEAVE_STARTUP_TIMEOUT', '180')))
             info = json.loads(marker.read_text())
             connection = Connection('127.0.0.1', info['port'], info['token'])
             connections.append(connection)
@@ -100,7 +102,12 @@ def cluster(tmp_path_factory):
                         connection.call('terminate', identity=record['id'])
                 connection.call('_shutdown_if_idle')
                 connection.close()
-            for child in processes:
+            for index, child in enumerate(processes):
+                # A preparation failure can occur before the worker publishes
+                # an endpoint. It has not received any sandbox requests, but it
+                # still belongs to this fixture and must not be left behind.
+                if index >= len(connections) and child.poll() is None:
+                    child.terminate()
                 child.wait(timeout=30)
             for log in logs:
                 log.close()

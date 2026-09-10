@@ -532,6 +532,8 @@ class Worker:
             return self.management.prepare(**parameters)
         if operation == 'inventory':
             return self.management.inventory()
+        if operation == 'monitor_logs':
+            return self.management.logs(**parameters)
         if operation == '_debug_threads':
             import sys
             import traceback

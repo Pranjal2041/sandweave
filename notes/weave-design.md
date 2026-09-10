@@ -8,6 +8,8 @@ Implemented: existing-worker registration, atomic reservations, assignment
 generations, direct sandbox access, weighted placement, ready pools, policy
 updates, draining, verified snapshot transfer, durable commands/batches/repeats,
 explicit retries, ownership, events, backups and controller restart recovery.
+The [dashboard](dashboard.md) adds read-only browser monitoring, sampled worker
+measurements, bounded history, log viewing, and Prometheus metrics.
 
 Remaining: automatic machine provisioning and autoscaling, gang admission,
 project quotas and borrowing, preemption, rollout policies, service routing,

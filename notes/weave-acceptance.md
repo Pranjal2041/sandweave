@@ -3,6 +3,9 @@
 Date: 2026-09-09. This covers the initial coordination stage of the
 [design](weave-design.md). The [guide](weave-usage.md) describes the available API.
 
+The [dashboard acceptance record](dashboard-acceptance.md) covers browser
+monitoring, resource measurements, packaged assets, and live local/SSH checks.
+
 ## Explicit connections and outbound workers
 
 Date: 2026-09-10. Added HTTP/HTTPS controller addresses, SSH controller URLs,

@@ -29,7 +29,7 @@ sandweave = "sandweave.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sandweave = ["engine-files.txt", "runtime-release.json", "templates/**/*.toml", "templates/**/*.sh", "sandbox/runtimes/gvisor/_engine/*"]
+sandweave = ["engine-files.txt", "runtime-release.json", "templates/**/*.toml", "templates/**/*.sh", "sandbox/runtimes/gvisor/_engine/*", "weave/web/*.html", "weave/web/*.css", "weave/web/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

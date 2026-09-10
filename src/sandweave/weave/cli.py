@@ -4,6 +4,10 @@ from pathlib import Path
 
 
 def configure(sub):
+    p = sub.add_parser('dashboard', help='Open the cluster monitoring dashboard')
+    p.add_argument('target', nargs='?', default='lab')
+    p.add_argument('--no-open', action='store_true', help='Print the sign-in link without opening a browser')
+    p.add_argument('--token-file'); p.add_argument('--ca-file')
     cluster = sub.add_parser('cluster', help='Manage workers and sandbox capacity').add_subparsers(dest='cluster_operation', required=True)
     p = cluster.add_parser('start', help='Start a durable controller and a local worker')
     p.add_argument('name', nargs='?', default='lab')
@@ -15,6 +19,8 @@ def configure(sub):
     p.add_argument('--gpus', type=int, help='Maximum eligible GPUs for the local worker; 0 disables GPUs')
     p.add_argument('--listen', help='Controller bind address, for example 0.0.0.0:8765')
     p.add_argument('--tls-cert'); p.add_argument('--tls-key'); p.add_argument('--token-file')
+    p.add_argument('--monitor-interval', type=float, help='Seconds between monitoring samples (default: 5)')
+    p.add_argument('--history-hours', type=float, help='Measurement retention in hours (default: 24, maximum: 168)')
     p = cluster.add_parser('connect', help='Save a target for a controller on another machine')
     p.add_argument('name'); p.add_argument('address', nargs='?')
     p.add_argument('--host'); p.add_argument('--directory')
@@ -52,12 +58,31 @@ def configure(sub):
 def main(args):
     from ..cli import output, creation, execute
     from .client import Cluster, cluster_config
+    if args.operation == 'dashboard':
+        import time
+        import socket
+        import webbrowser
+        with Cluster.connect(args.target, token_file=args.token_file, ca_file=args.ca_file) as cluster:
+            url = cluster.dashboard()
+            print(url, flush=True)
+            print('This sign-in link expires in 60 seconds. The browser session lasts 8 hours.', flush=True)
+            if not args.no_open:
+                webbrowser.open(url)
+            if 'url' not in cluster.config and cluster.config['hostname'] != socket.gethostname():
+                print('SSH connection is open. Keep this command running while using the dashboard. Ctrl+C closes it.', flush=True)
+                try:
+                    while True:
+                        time.sleep(1)
+                except KeyboardInterrupt:
+                    pass
+        return 0
     if args.operation == 'cluster':
         action = args.cluster_operation
         if action == 'start':
             cluster = Cluster.start(args.name, directory=args.directory, local_worker=not args.no_worker,
                                     slots=args.slots, memory=args.memory, cpus=args.cpus, gpus=args.gpus,
-                                    listen=args.listen, tls_cert=args.tls_cert, tls_key=args.tls_key, token_file=args.token_file)
+                                    listen=args.listen, tls_cert=args.tls_cert, tls_key=args.tls_key, token_file=args.token_file,
+                                    monitor_interval=args.monitor_interval, history_hours=args.history_hours)
         elif action == 'connect':
             from .client import save_target
             from ..sandbox.targets import _ssh

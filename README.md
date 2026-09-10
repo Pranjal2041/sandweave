@@ -372,6 +372,25 @@ This checkout includes the initial Weave implementation. It uses one controller
 for one trusted account; automatic machine provisioning, controller failover and
 team permissions are later stages of the [design](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-design.md).
 
+### Monitor your cluster
+
+Open the dashboard for a running controller:
+
+```bash
+sandweave dashboard lab
+```
+
+See workers, sandboxes, pools, jobs, snapshots, and events in one place. The
+dashboard updates automatically and includes resource charts, scheduling delays,
+startup timings, and command logs. Select a resource to inspect its state and
+related workloads. CPU, memory, and GPU measurements are shown separately from
+configured capacity and reservations.
+
+The dashboard is served by the controller and uses a read-only browser session.
+It also supports remote HTTP, HTTPS, and SSH cluster targets. No separate frontend
+installation is needed. See the [dashboard guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/dashboard.md)
+for connections, filters, retention, measurement definitions, and Prometheus.
+
 ## Use async calls
 
 ```python

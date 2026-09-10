@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Sandweave · Cluster monitor</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <section id="login" class="login-screen" hidden>
+      <form id="login-form" class="login-card">
+        <div class="brand">
+          <span class="mark" aria-hidden="true">▦</span> sandweave
+        </div>
+        <span class="eyebrow">CLUSTER MONITOR</span>
+        <h1>Your cluster, in view.</h1>
+        <p>
+          Sign in with your controller token, or open a sign-in link with
+          <code>sandweave dashboard lab</code>.
+        </p>
+        <label for="token">Controller token</label>
+        <input
+          id="token"
+          name="token"
+          type="password"
+          autocomplete="off"
+          required
+          spellcheck="false"
+        />
+        <p id="login-error" class="error-text" role="alert"></p>
+        <button class="primary" type="submit">
+          Open dashboard <span aria-hidden="true">→</span>
+        </button>
+        <p class="muted small">
+          Monitoring access only. Your token is exchanged for an eight-hour
+          browser session.
+        </p>
+      </form>
+    </section>
+    <div id="app" class="app" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="#overview"
+          ><span class="mark" aria-hidden="true">▦</span> sandweave</a
+        >
+        <div class="cluster-name">
+          <span class="status-dot"></span>
+          <div>Cluster monitor<small id="cluster-id">Connecting…</small></div>
+        </div>
+        <nav aria-label="Main navigation">
+          <span class="nav-label">CLUSTER</span>
+          <a href="#overview" data-nav="overview"
+            ><span data-icon="overview"></span>Overview</a
+          >
+          <a href="#workers" data-nav="workers"
+            ><span data-icon="workers"></span>Workers
+            <span class="nav-count" id="count-workers"></span
+          ></a>
+          <a href="#gpus" data-nav="gpus"><span data-icon="cpu"></span>GPUs</a>
+          <a href="#sandboxes" data-nav="sandboxes"
+            ><span data-icon="sandboxes"></span>Sandboxes
+            <span class="nav-count" id="count-sandboxes"></span
+          ></a>
+          <span class="nav-label">WORKLOADS</span>
+          <a href="#pools" data-nav="pools"
+            ><span data-icon="pools"></span>Pools</a
+          >
+          <a href="#jobs" data-nav="jobs"><span data-icon="jobs"></span>Jobs</a>
+          <a href="#snapshots" data-nav="snapshots"
+            ><span data-icon="snapshots"></span>Snapshots</a
+          >
+          <span class="nav-label">OBSERVE</span>
+          <a href="#events" data-nav="events"
+            ><span data-icon="events"></span>Events</a
+          >
+          <a href="#logs" data-nav="logs"
+            ><span data-icon="logs"></span>Controller logs</a
+          >
+        </nav>
+        <div class="sidebar-footer">
+          <span class="read-only">Read-only session</span
+          ><button id="logout" class="quiet">
+            Sign out <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      </aside>
+      <div class="workspace">
+        <header class="topbar">
+          <div class="breadcrumb">
+            Workspace <span>/</span> <strong id="crumb">Overview</strong>
+          </div>
+          <div class="connection">
+            <span id="live-dot" class="status-dot"></span
+            ><span id="connection-status" role="status">Connecting</span
+            ><span class="divider"></span
+            ><span id="last-update">Waiting for data</span>
+          </div>
+        </header>
+        <main id="main" tabindex="-1">
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow">SANDWEAVE / MONITORING</span>
+              <h1 id="page-title">Cluster overview</h1>
+              <p id="page-description">
+                Activity and capacity across your workers.
+              </p>
+            </div>
+            <div class="toolbar">
+              <label class="sr-only" for="range">Chart time range</label
+              ><select id="range">
+                <option value="900">Last 15 minutes</option>
+                <option value="3600" selected>Last hour</option>
+                <option value="21600">Last 6 hours</option>
+                <option value="86400">Last 24 hours</option></select
+              ><button id="pause" aria-pressed="false">Pause</button
+              ><button
+                id="refresh"
+                aria-label="Refresh dashboard"
+                title="Refresh dashboard"
+              >
+                ↻
+              </button>
+            </div>
+          </div>
+          <div id="notice" class="notice" role="status" hidden></div>
+          <div id="content">
+            <div class="empty">Loading cluster state…</div>
+          </div>
+          <footer class="page-footer">
+            <span>Sandweave · Cluster monitoring</span
+            ><span id="retention">Measurements update every 5 seconds</span>
+          </footer>
+        </main>
+      </div>
+    </div>
+    <dialog id="detail-dialog" aria-labelledby="detail-title">
+      <div class="drawer-top">
+        <span id="detail-kind" class="eyebrow">RESOURCE DETAILS</span>
+        <label class="sr-only" for="detail-range"
+          >Resource chart time range</label
+        >
+        <select id="detail-range">
+          <option value="900">Last 15 minutes</option>
+          <option value="3600" selected>Last hour</option>
+          <option value="21600">Last 6 hours</option>
+          <option value="86400">Last 24 hours</option>
+        </select>
+        <button id="detail-close" aria-label="Close resource details">✕</button>
+      </div>
+      <div id="detail-content"></div>
+    </dialog>
+    <noscript
+      >This dashboard needs JavaScript. Cluster inspection is also available
+      with <code>sandweave cluster status lab</code>.</noscript
+    >
+  </body>
+</html>

@@ -282,6 +282,10 @@ Durable jobs retain at most 4 MiB of command output by default, configurable up 
 
 ## Inspect and drain
 
+Open the browser dashboard with `sandweave dashboard lab`. It shows cluster
+activity, resource measurements, history, and bounded command/runtime logs.
+See the [dashboard guide](dashboard.md) for remote access and measurement scope.
+
 ```python
 from sandweave import Cluster
 

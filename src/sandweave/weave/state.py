@@ -4,6 +4,8 @@ import fcntl
 import os
 from pathlib import Path
 import sqlite3
+import json
+import struct
 import threading
 import time
 
@@ -23,6 +25,7 @@ class State:
         self.lock = threading.RLock()
         self.db = sqlite3.connect(self.root / 'state.sqlite', isolation_level=None,
                                   check_same_thread=False, timeout=30)
+        self.db.create_function('wire_header_size', 1, lambda prefix: struct.unpack('!Q', prefix)[0], deterministic=True)
         os.chmod(self.root / 'state.sqlite', 0o600)
         # One controller holds the connection for its lifetime. Rollback mode
         # avoids WAL's cross-process shared-memory requirement on shared storage.
@@ -104,6 +107,24 @@ class State:
                 self.db.execute('INSERT INTO events(time,kind,id,data) VALUES (?,?,?,?)',
                                 (now, kind, value['id'], encode(event)))
             return value
+
+    def metadata(self, kind, *, parent=None, limit=None):
+        """Read JSON record metadata without loading binary programs or logs.
+
+        Binary placeholders stay None. This is for monitoring, never execution.
+        """
+        sql = 'SELECT substr(data,9,wire_header_size(substr(data,1,8))) FROM records WHERE kind=?'
+        values = [kind]
+        if parent is not None:
+            sql += ' AND parent=?'
+            values.append(parent)
+        sql += ' ORDER BY created DESC,id'
+        if limit is not None:
+            sql += ' LIMIT ?'
+            values.append(limit)
+        with self.lock:
+            rows = self.db.execute(sql, values).fetchall()
+        return [json.loads(bytes(row[0]))['message'] for row in rows]
 
     def events(self, after=0, limit=100):
         if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 1000:

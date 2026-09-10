@@ -246,7 +246,7 @@ def main(argv=None):
     args = arguments.parse_args(argv)
     try:
         op = args.operation
-        if op in ('cluster', 'job', 'pool'):
+        if op in ('cluster', 'job', 'pool', 'dashboard'):
             from .weave.cli import main as weave_main
             result = weave_main(args)
             if result is not None:

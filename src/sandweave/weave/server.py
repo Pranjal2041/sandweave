@@ -33,6 +33,10 @@ def serve(directory):
         atomic_json(credential_file, {'token': token})
     marker = directory / 'controller.json'
     previous = json.loads(marker.read_text()) if marker.exists() else {}
+    from .dashboard import Dashboard
+    monitoring = directory / 'monitoring.json'
+    dashboard = Dashboard(controller, token, **(json.loads(monitoring.read_text()) if monitoring.exists() else {}))
+    controller.dashboard = dashboard
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
@@ -47,6 +51,8 @@ def serve(directory):
             pass
 
         def do_POST(self):
+            if dashboard.handle(self):
+                return
             if self.path != '/rpc' or not hmac.compare_digest(self.headers.get('X-Sandweave-Token', ''), token):
                 self.close_connection = True
                 self.send_error(403)
@@ -74,6 +80,12 @@ def serve(directory):
             self.end_headers()
             self.wfile.write(payload)
 
+        def do_GET(self):
+            if not dashboard.handle(self):
+                self.send_error(404)
+
+        do_HEAD = do_GET
+
     hostname = settings.get('host', '127.0.0.1')
     server_type = ThreadingHTTPServer
     if ':' in hostname:
@@ -97,6 +109,7 @@ def serve(directory):
         local_server.daemon_threads = True
         threading.Thread(target=local_server.serve_forever, daemon=True).start()
     controller.start()
+    dashboard.monitor.start()
     advertised = socket.gethostname() if hostname in ('0.0.0.0', '::') else hostname
     if ':' in advertised:
         advertised = '[' + advertised + ']'
@@ -112,6 +125,7 @@ def serve(directory):
         if local_server:
             local_server.shutdown()
             local_server.server_close()
+        dashboard.monitor.close()
         controller.close()
         atomic_json(marker, {**json.loads(marker.read_text()), 'status': 'stopped'})
 

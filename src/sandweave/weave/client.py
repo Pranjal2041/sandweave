@@ -207,7 +207,7 @@ class ClusterConnection:
                 raise
         if operation == 'list':
             return [a.get('info') or {'id': a['id'], 'state': a['state']} for a in self._rpc('status')['sandboxes']]
-        if operation.startswith(('pool_', 'job_', 'worker_', 'snapshot_', 'allocation_')) or operation in ('ping', 'status', 'events', 'backup', 'shutdown'):
+        if operation.startswith(('pool_', 'job_', 'worker_', 'snapshot_', 'allocation_')) or operation in ('ping', 'status', 'events', 'backup', 'shutdown', 'dashboard_ticket'):
             return self._rpc(operation, **params)
         identity = params.get('identity')
         if identity is None:
@@ -264,10 +264,17 @@ class Cluster:
 
     @dualclassmethod
     def start(cls, name='lab', *, directory=None, local_worker=True, slots=None, memory=None,
-              listen=None, tls_cert=None, tls_key=None, token_file=None, cpus=None, gpus=None):
+              listen=None, tls_cert=None, tls_key=None, token_file=None, cpus=None, gpus=None,
+              monitor_interval=None, history_hours=None):
         if not isinstance(name, str) or name == 'local' or not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', name):
             raise ValueError('cluster name must use letters, digits, underscores or hyphens; local is reserved')
         from ..sandbox.resources import positive
+        from .monitor import number
+        monitoring = {}
+        if monitor_interval is not None:
+            monitoring['interval'] = number(monitor_interval, 'monitor interval', 1, 300)
+        if history_hours is not None:
+            monitoring['history_hours'] = number(history_hours, 'history hours', 1, 168)
         if cpus is not None:
             positive(cpus, 'cpus', integer=True)
         if gpus is not None and (type(gpus) is not int or gpus < 0):
@@ -319,6 +326,9 @@ class Cluster:
                     if process_alive(previous.get('process')) is not False:
                         raise ResourceUnavailable('controller is alive or its status is uncertain; inspect ' + str(directory / 'controller.log'))
             if not alive:
+                if monitoring:
+                    path = directory / 'monitoring.json'
+                    atomic_json(path, {**(json.loads(path.read_text()) if path.exists() else {}), **monitoring})
                 if listener is not None:
                     atomic_json(directory / 'listener.json', listener)
                 environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) + os.pathsep + os.environ.get('PYTHONPATH', '')}
@@ -338,6 +348,11 @@ class Cluster:
                 stored = directory / 'listener.json'
                 if not stored.exists() or json.loads(stored.read_text()) != listener:
                     raise ValueError('controller is already running with different listener settings; stop it before changing them')
+            if alive and monitoring:
+                path = directory / 'monitoring.json'
+                stored = {'interval': 5, 'history_hours': 24, **(json.loads(path.read_text()) if path.exists() else {})}
+                if any(stored[k] != v for k, v in monitoring.items()):
+                    raise ValueError('controller is already running with different monitoring settings; stop it before changing them')
         result = cls(config, name)
         if local_worker and not result.workers:
             if cpus is not None or gpus is not None:
@@ -359,6 +374,7 @@ class Cluster:
         if 'directory' in self.config:
             info = metadata(self.config)
             result['connection'] = {'address': info.get('address'),
+                'dashboard_url': (info.get('address') or '') + '/dashboard/',
                 'token_file': str(Path(self.config['directory']) / 'credentials.json')}
         return result
 
@@ -386,6 +402,19 @@ class Cluster:
     @dualmethod
     def events(self, *, after=0, limit=100):
         return self.connection.call('events', after=after, limit=limit)
+
+    @dualmethod
+    def dashboard(self):
+        """Return a single-use sign-in URL, valid for 60 seconds.
+
+        For SSH targets, keep this process alive while using its local tunnel.
+        """
+        if 'url' in self.config:
+            base = self.config['url'].rstrip('/')
+        else:
+            base = 'http://127.0.0.1:' + str(self.connection.control.port)
+        ticket = self.connection.call('dashboard_ticket')['ticket']
+        return base + '/dashboard/#ticket=' + ticket
 
     @dualmethod
     def backup(self, destination):

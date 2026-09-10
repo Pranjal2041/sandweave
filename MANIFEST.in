@@ -1,6 +1,7 @@
 include README.md
 include src/sandweave/engine-files.txt
 recursive-include src/sandweave/templates *.toml *.sh
+recursive-include src/sandweave/weave/web *.html *.css *.js
 # setup.py adds the declared engine inputs after these exclusions.
 prune scripts
 prune notes

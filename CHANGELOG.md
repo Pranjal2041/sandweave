@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `sandweave dashboard` opens a read-only cluster dashboard with live resource
+  measurements, retained charts, worker/GPU/workload views, events, and bounded
+  logs. It uses the controller's HTTP, HTTPS, or SSH connection. Authenticated
+  Prometheus metrics are available at `/metrics`.
+
 - Weave adds named clusters over existing local, SSH and Slurm workers.
   `Sandbox(target="lab")` and `Pool(target="lab")` use durable placement,
   weighted scheduling, ready reserves and worker draining.

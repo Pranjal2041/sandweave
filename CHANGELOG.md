@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1
+
+- Storage settings are local to each project. Setup no longer reads the old
+  home-directory location setting, discovers runtimes in parent directories,
+  or imports another installation's runtime and cluster settings when choosing
+  a new directory. Existing installations remain available through an explicit
+  `SANDWEAVE_HOME` or setup selection.
+- Cluster startup prints complete join and dashboard commands. `--transport`
+  selects SSH, HTTP or HTTPS; HTTP(S) join links include authentication.
+  `cluster instructions` prints the commands again. Worker join checks the
+  connection before preparing runtime files. `cluster start --json` retains
+  machine-readable status output.
+
 ## 0.2.0
 
 - `sandweave dashboard` opens a read-only cluster dashboard with live resource

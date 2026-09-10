@@ -86,19 +86,6 @@ def run_probe(command, *, timeout=20):
         return False, str(error)
 
 
-def asset_candidates():
-    """Search known locations only; do not crawl a user's files or their cluster."""
-    candidates = [workspace.home() / 'assets']
-    for start in (Path.cwd(), Path(__file__).resolve().parent):
-        candidates.extend((start, *start.parents))
-    result = []
-    for path in candidates:
-        path = path.resolve()
-        if path not in result and (path / 'tools/debian-trixie.sif').is_file():
-            result.append(path)
-    return result
-
-
 def _inside(root, relative):
     path = (root / relative).resolve()
     if not path.is_relative_to(root.resolve()):
@@ -485,14 +472,6 @@ def smoke_test(template='coding'):
     print(template + ' sandbox check passed; the test sandbox has been released.')
 
 
-def known_sources():
-    try:
-        current = [workspace.assets()]
-    except workspace.ResourceUnavailable:
-        current = []
-    return list(dict.fromkeys([*current, *asset_candidates()]))
-
-
 def install_runtime(template, directory, *, assets=None, sources=(), game_archive=None, yes=False, build=False):
     from .installation import import_runtime, validate_installation, needs_helpers
     from .bootstrap import Builder
@@ -521,12 +500,13 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
                 if selected:
                     raise ValueError('The runtime source is incomplete: ' + str(source) + '\n' + str(error)) from error
             continue
-        print('Installing runtime files from ' + str(source), flush=True)
         if ((source / 'installation.json').is_file() and source.is_relative_to(Path(directory) / 'assets')
                 and not needs_helpers(source, recipe)):
+            print('Using installed runtime: ' + str(source), flush=True)
             return source
         # Copy/space failures belong to the destination. They must not trigger
         # an unrelated source rebuild or a fallback into the home directory.
+        print('Importing runtime from ' + str(source) + ' into ' + str(directory), flush=True)
         return import_runtime(source, directory, recipe)
     profile = workload(recipe)
     from . import releases
@@ -566,11 +546,8 @@ def setup_worker(args, template, interactive):
     explicit = os.environ.get('SANDWEAVE_HOME')
     if selected and explicit and Path(selected).expanduser().resolve() != Path(explicit).expanduser().resolve():
         raise ValueError('--directory conflicts with SANDWEAVE_HOME; update that variable first')
-    # Resolve old sources before temporarily selecting new, possibly empty storage.
-    sources = known_sources()
-    previous = configuration()
     if not selected:
-        default = workspace.home() if explicit or previous.get('assets') else Path.cwd() / '.sandweave'
+        default = workspace.home()
         if interactive and not yes:
             selected = ask_path('Where should Sandweave store its files?', default=default)
         else:
@@ -585,10 +562,10 @@ def setup_worker(args, template, interactive):
             # this process waited for the same storage lock.
             if available(Template(template).resolve(), selected) is not None:
                 return 0
-        return _setup_selected(args, template, interactive, selected, previous, sources)
+        return _setup_selected(args, template, interactive, selected)
 
 
-def _setup_selected(args, template, interactive, selected, previous, sources):
+def _setup_selected(args, template, interactive, selected):
     from .installation import publish, using_directory
     yes = getattr(args, 'yes', False)
     automatic = getattr(args, '_automatic', False)
@@ -600,7 +577,7 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
         raise ValueError('Invalid setup progress file: ' + str(pending))
     preferred = [Path(value).expanduser().resolve() for value in
                  (pending_info.get('assets'), current.get('assets')) if isinstance(value, str) and value]
-    sources = list(dict.fromkeys([*preferred, *sources]))
+    sources = list(dict.fromkeys(preferred))
     print('Sandweave files: ' + str(selected), flush=True)
     print('Setup logs: ' + str(selected / 'logs/setup'), flush=True)
     assets = getattr(args, 'assets', None)
@@ -662,12 +639,14 @@ def _setup_selected(args, template, interactive, selected, previous, sources):
                 os.environ.pop('SANDWEAVE_ASSETS', None)
             else:
                 os.environ['SANDWEAVE_ASSETS'] = previous_assets
-    # Global location changes only after the selected installation completes.
-    publish(selected, installed, previous=previous, template=template,
+    # Only this project remembers its selected storage, after acceptance.
+    publish(selected, installed, template=template,
             source_identity=getattr(args, '_source_identity', None))
     workspace.atomic_json(pending, {'assets': str(installed), 'template': template,
                                     'status': 'installed' if automatic else 'ready'})
     print(('Installation complete. ' if automatic else 'Setup complete. ') + 'Sandweave files: ' + str(selected))
+    if not os.environ.get('SANDWEAVE_HOME') and selected != workspace.default_home().resolve():
+        print('Project setting: ' + str(workspace.default_home() / 'location.json'))
     return 0
 
 
@@ -675,7 +654,7 @@ def main(args):
     interactive = sys.stdin.isatty() and sys.stdout.isatty() and not getattr(args, 'check', False) and not getattr(args, 'json', False)
     setup = args.operation == 'setup'
     yes = getattr(args, 'yes', False)
-    template = args.template or configuration().get('onboarding_template', 'coding')
+    template = args.template or configuration(getattr(args, 'directory', None)).get('onboarding_template', 'coding')
     if setup and not args.template and interactive and not yes:
         template = choose('What do you want to start with? (You can add more later)',
                           [(label, name) for name, label in PROFILES.items()])

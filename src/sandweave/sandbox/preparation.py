@@ -33,11 +33,7 @@ def checking(directory, assets):
 
 
 def directory():
-    from ..onboarding import configuration
-    selected = workspace.home()
-    if os.environ.get('SANDWEAVE_HOME') or configuration(selected).get('assets'):
-        return selected
-    return (Path.cwd() / '.sandweave').resolve()
+    return workspace.home()
 
 
 def source(directory):
@@ -64,8 +60,7 @@ def available(recipe, directory):
     from ..onboarding import configuration, python_packages, validate_assets
     from ..installation import needs_helpers
     directory = Path(directory)
-    # First use still needs to establish storage when a legacy source happens
-    # to be discoverable from the working directory.
+    # First use must publish an installation in this project's storage.
     if not configuration(directory).get('assets'):
         return None
     try:

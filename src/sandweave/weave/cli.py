@@ -1,6 +1,99 @@
 """Cluster, pool and job commands share the Python clients."""
 import json
 from pathlib import Path
+import shlex
+
+
+def start_options(args):
+    """Transport names select listener defaults; explicit listeners still work."""
+    listen = args.listen
+    transport = args.transport
+    if transport == 'ssh':
+        if listen or args.tls_cert or args.tls_key:
+            raise ValueError('--transport ssh uses a loopback listener; omit --listen and TLS options')
+        listen = '127.0.0.1:0'
+    elif transport in ('http', 'https'):
+        if transport == 'http' and (args.tls_cert or args.tls_key):
+            raise ValueError('Use --transport https with TLS certificates')
+        if transport == 'https' and not (args.tls_cert and args.tls_key):
+            raise ValueError('HTTPS needs --tls-cert and --tls-key for a certificate trusted by your workers')
+        listen = listen or '0.0.0.0:8765'
+    if args.advertise:
+        validate_advertise(args.advertise)
+    return listen
+
+
+def validate_advertise(value):
+    import ipaddress
+    from urllib.parse import urlsplit
+    from .transport import address
+    public = address(value)
+    if 'url' not in public or 'token' in public:
+        raise ValueError('--advertise must be an HTTP or HTTPS address without credentials')
+    hostname = urlsplit(public['url']).hostname
+    try:
+        unspecified = ipaddress.ip_address(hostname).is_unspecified
+    except ValueError:
+        unspecified = False
+    if unspecified:
+        raise ValueError('--advertise needs a reachable hostname or IP, not a wildcard bind address')
+    return public['url']
+
+
+def instructions(cluster, *, advertise=None):
+    """Print executable commands using this controller's actual metadata."""
+    import getpass
+    import ipaddress
+    from urllib.parse import urlsplit, quote
+    from .client import metadata
+    from .transport import join_link
+    from ..sandbox.workspace import home, atomic_json
+    if 'directory' not in cluster.config:
+        raise ValueError('Run cluster instructions on the controller machine using its saved name')
+    cluster.connection.call('ping')
+    info = metadata(cluster.config)
+    root = Path(cluster.config['directory'])
+    display_file = root / 'connection-display.json'
+    if advertise:
+        advertise = validate_advertise(advertise)
+        atomic_json(display_file, {'advertise': advertise})
+    elif display_file.exists():
+        advertise = validate_advertise(json.loads(display_file.read_text())['advertise'])
+    hostname = info['hostname']
+    ssh_host = cluster.config.get('ssh_host') or (getpass.getuser() + '@' + hostname)
+    if cluster.config.get('ssh_port'):
+        ssh_host += ':' + str(cluster.config['ssh_port'])
+    ssh = 'ssh://' + ssh_host + quote(str(root), safe='/')
+    url = info['address']
+    parsed = urlsplit(url)
+    try:
+        loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        loopback = parsed.hostname == 'localhost'
+    if advertise:
+        url = advertise
+        loopback = False  # An explicit address may be a reverse proxy or tunnel.
+    print('Cluster ' + str(cluster.name) + ' is running.')
+    print('Controller: ' + hostname)
+    print('State: ' + str(root))
+    print('Sandweave files: ' + str(home()))
+    print('\nOn another machine, copy one join command:')
+    if not loopback:
+        print('\n' + urlsplit(url).scheme.upper() + ':')
+        print('  sandweave cluster join ' + shlex.quote(join_link(url, info['token'])))
+        print('  This link grants cluster access. Share it privately.')
+        if urlsplit(url).scheme == 'http':
+            print('  HTTP is unencrypted; use it on a trusted private network.')
+    print('\nSSH (uses your existing SSH login):')
+    print('  sandweave cluster join ' + shlex.quote(ssh))
+    print('\nResource limits are optional: --cpus 4 --gpus 0 --memory 8GiB')
+    print('Without limits, a worker contributes its available resources.')
+    print('\nOpen the dashboard from the machine with your browser:')
+    print('  sandweave dashboard ' + shlex.quote(ssh if loopback else join_link(url, info['token'])))
+    print('\nAvailable transports: SSH, HTTP, HTTPS. Choose with --transport when starting.')
+    if loopback:
+        print('For HTTP, stop this controller and start it again with --transport http.')
+    print('The worker must be able to reach the printed host. Use --advertise for a different HTTP(S) address.')
 
 
 def configure(sub):
@@ -18,6 +111,10 @@ def configure(sub):
     p.add_argument('--cpus', type=int, help='Maximum eligible CPU cores for the local worker')
     p.add_argument('--gpus', type=int, help='Maximum eligible GPUs for the local worker; 0 disables GPUs')
     p.add_argument('--listen', help='Controller bind address, for example 0.0.0.0:8765')
+    p.add_argument('--transport', choices=('ssh', 'http', 'https'),
+                   help='SSH by default; HTTP/HTTPS listen on port 8765 for remote workers')
+    p.add_argument('--advertise', help='Reachable HTTP(S) address to print instead of the listener address')
+    p.add_argument('--json', action='store_true', help='Print machine-readable cluster status')
     p.add_argument('--tls-cert'); p.add_argument('--tls-key'); p.add_argument('--token-file')
     p.add_argument('--monitor-interval', type=float, help='Seconds between monitoring samples (default: 5)')
     p.add_argument('--history-hours', type=float, help='Measurement retention in hours (default: 24, maximum: 168)')
@@ -25,6 +122,9 @@ def configure(sub):
     p.add_argument('name'); p.add_argument('address', nargs='?')
     p.add_argument('--host'); p.add_argument('--directory')
     p.add_argument('--token-file'); p.add_argument('--ca-file')
+    p = cluster.add_parser('instructions', help='Print complete join and dashboard commands again')
+    p.add_argument('name', nargs='?', default='lab')
+    p.add_argument('--advertise', help='Reachable HTTP(S) address to print')
     for action in ('status', 'workers', 'stop', 'events'):
         p = cluster.add_parser(action); p.add_argument('name', nargs='?', default='lab')
         if action == 'events':
@@ -79,10 +179,15 @@ def main(args):
     if args.operation == 'cluster':
         action = args.cluster_operation
         if action == 'start':
+            listen = start_options(args)
             cluster = Cluster.start(args.name, directory=args.directory, local_worker=not args.no_worker,
                                     slots=args.slots, memory=args.memory, cpus=args.cpus, gpus=args.gpus,
-                                    listen=args.listen, tls_cert=args.tls_cert, tls_key=args.tls_key, token_file=args.token_file,
+                                    listen=listen, tls_cert=args.tls_cert, tls_key=args.tls_key, token_file=args.token_file,
                                     monitor_interval=args.monitor_interval, history_hours=args.history_hours)
+            if args.json and args.advertise:
+                from ..sandbox.workspace import atomic_json
+                atomic_json(Path(cluster.config['directory']) / 'connection-display.json',
+                            {'advertise': validate_advertise(args.advertise)})
         elif action == 'connect':
             from .client import save_target
             from ..sandbox.targets import _ssh
@@ -109,7 +214,9 @@ def main(args):
             cluster = Cluster.connect(args.name, token_file=getattr(args, 'token_file', None),
                                       ca_file=getattr(args, 'ca_file', None))
         try:
-            if action in ('start', 'status'):
+            if action == 'instructions' or (action == 'start' and not args.json):
+                instructions(cluster, advertise=args.advertise)
+            elif action in ('start', 'status'):
                 output(cluster.info)
             elif action == 'workers':
                 output(cluster.workers)
@@ -132,6 +239,16 @@ def main(args):
                 if action == 'join':
                     if target != 'local':
                         raise ValueError('join starts a worker on this machine; use cluster add for remote targets')
+                    # Reject an unreachable controller or bad credential before
+                    # installing runtimes or launching a persistent worker.
+                    cluster.connection.control.timeout = 10
+                    try:
+                        cluster.connection.call('ping')
+                    except Exception as error:
+                        raise ValueError('Could not connect to the controller. Check that the printed host is reachable '
+                                         'and copy a current join command from cluster instructions. ' + str(error)) from error
+                    finally:
+                        cluster.connection.control.timeout = 300
                     from .worker import start
                     output(start(cluster.config, cpus=args.cpus, gpus=args.gpus,
                                  slots=args.slots, memory=args.memory, labels=labels))

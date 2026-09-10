@@ -40,7 +40,7 @@ def destination(path):
     return root
 
 
-def publish(directory, assets, *, previous=None, template=None, source_identity=None):
+def publish(directory, assets, *, template=None, source_identity=None):
     from .onboarding import configuration
     root = destination(directory)
     explicit = os.environ.get('SANDWEAVE_HOME')
@@ -49,17 +49,15 @@ def publish(directory, assets, *, previous=None, template=None, source_identity=
     path = root / 'config.json'
     with workspace.locked(path.with_suffix('.lock')):
         current = configuration(root)
-        old = previous or {}
-        merged = {**old, **current, 'assets': str(Path(assets).resolve())}
-        if 'targets' in old or 'targets' in current:
-            merged['targets'] = {**old.get('targets', {}), **current.get('targets', {})}
+        merged = {**current, 'assets': str(Path(assets).resolve())}
         if template is not None:
             merged['onboarding_template'] = template
         if source_identity is not None:
-            merged['installed_sources'] = {**old.get('installed_sources', {}),
-                **current.get('installed_sources', {}), source_identity: str(Path(assets).resolve())}
+            merged['installed_sources'] = {**current.get('installed_sources', {}),
+                source_identity: str(Path(assets).resolve())}
         workspace.atomic_json(path, merged)
-    if not explicit:
+    if not explicit and (root != workspace.default_home().resolve() or
+                         (workspace.default_home() / 'location.json').exists()):
         location = workspace.default_home() / 'location.json'
         with workspace.locked(location.with_suffix('.lock')):
             workspace.atomic_json(location, {'path': str(root)})

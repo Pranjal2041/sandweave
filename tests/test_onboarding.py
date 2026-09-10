@@ -76,7 +76,6 @@ def test_assets_repair_uses_the_complete_setup_flow(monkeypatch):
 @pytest.fixture
 def setup_boundaries(monkeypatch, tmp_path):
     """Stub external setup work; each test controls the acceptance boundary."""
-    monkeypatch.setattr(onboarding, 'known_sources', lambda: [])
     monkeypatch.setattr(onboarding.workspace, 'tool', lambda name: '/test/' + name)
     monkeypatch.setattr(onboarding, 'run_probe', lambda *a, **k: (True, 'available'))
     monkeypatch.setattr(onboarding, 'install_runtime', lambda *a, **k: tmp_path / 'installed')
@@ -439,7 +438,7 @@ def test_first_use_without_setup_selects_current_directory(first_use, monkeypatc
     monkeypatch.delenv('SANDWEAVE_HOME')
     small_home, project = tmp_path / 'small-home', tmp_path / 'project'
     project.mkdir()
-    monkeypatch.setattr(onboarding.workspace, 'default_home', lambda: small_home)
+    monkeypatch.setattr(Path, 'home', lambda: small_home)
     monkeypatch.chdir(project)
     installed = []
     def install(profile, selected):
@@ -453,8 +452,10 @@ def test_first_use_without_setup_selects_current_directory(first_use, monkeypatc
     other = tmp_path / 'different-working-directory'
     other.mkdir()
     monkeypatch.chdir(other)
-    assert preparation.ensure(Template('coding').resolve()) == result
-    assert len(installed) == 1
+    second = preparation.ensure(Template('coding').resolve())
+    assert second.directory == other / '.sandweave'
+    assert len(installed) == 2
+    assert not small_home.exists()
 
 
 def test_first_use_repairs_missing_python_dependency(first_use, monkeypatch):
@@ -558,3 +559,51 @@ def test_first_use_progress_keeps_stdout_available_for_command_results(first_use
     assert commands[0][-4:] == ['--template', 'gnome', '--directory', str(storage)]
     logs = list((storage / 'logs/setup').glob('first-use-*.log'))
     assert len(logs) == 1 and logs[0].read_text() == output.err
+
+
+def test_new_project_ignores_global_settings_and_parent_runtime(runtime_files, tmp_path, monkeypatch):
+    from sandweave.sandbox import workspace
+    monkeypatch.delenv('SANDWEAVE_HOME', raising=False)
+    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
+    user_home = tmp_path / 'user-home'
+    old = user_home / '.local/share/sandweave'
+    old.mkdir(parents=True)
+    (old / 'location.json').write_text(json.dumps({'path': str(runtime_files)}))
+    (runtime_files / 'config.json').write_text(json.dumps({'assets': str(runtime_files)}))
+    monkeypatch.setattr(Path, 'home', lambda: user_home)
+    project = runtime_files / 'nested/new-project'
+    project.mkdir(parents=True)
+    monkeypatch.chdir(project)
+    assert workspace.home() == project / '.sandweave'
+    assert onboarding.configuration() == {}
+    with pytest.raises(workspace.ResourceUnavailable, match='not configured'):
+        workspace.assets()
+    assert not (project / '.sandweave').exists()  # Inspection does not initialize storage.
+
+
+def test_new_destination_does_not_import_previous_runtime_or_targets(tmp_path, monkeypatch, setup_boundaries):
+    from sandweave.sandbox import workspace
+    monkeypatch.delenv('SANDWEAVE_HOME', raising=False)
+    monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)
+    project = tmp_path / 'project'
+    project.mkdir()
+    monkeypatch.chdir(project)
+    old, new = tmp_path / 'old-storage', tmp_path / 'new-storage'
+    old.mkdir()
+    before = {'assets': '/old-runtime', 'targets': {'old-cluster': {'host': 'old-host'}}}
+    workspace.atomic_json(old / 'config.json', before)
+    workspace.atomic_json(project / '.sandweave/location.json', {'path': str(old)})
+    seen = []
+    def install(template, directory, **kwargs):
+        seen.append((directory, kwargs['sources']))
+        return directory / 'assets/new-runtime'
+    monkeypatch.setattr(onboarding, 'install_runtime', install)
+    monkeypatch.setattr(onboarding, 'inspect', lambda *a, **k: [onboarding.Check('ok', 'Ready', 'pass', 'ready')])
+    monkeypatch.setattr(workspace, 'prepare', lambda: None)
+    monkeypatch.setattr(onboarding, 'smoke_test', lambda *a: None)
+    assert main(['setup', '--directory', str(new), '--yes', '--template', 'coding']) == 0
+    assert seen == [(new, [])]
+    assert 'targets' not in onboarding.configuration(new)
+    assert onboarding.configuration(old) == before
+    assert workspace.home() == new
+    assert json.loads((project / '.sandweave/location.json').read_text()) == {'path': str(new)}

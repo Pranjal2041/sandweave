@@ -151,7 +151,9 @@ def test_tls_authentication_and_certificate_verification(tmp_path, monkeypatch):
     try:
         # A TCP peer that never begins TLS cannot block other clients.
         idle = socket.create_connection(('127.0.0.1', int(url.rsplit(':', 1)[1])))
-        with Cluster.connect(url, token_file=token_file, ca_file=cert) as client:
+        from sandweave.weave.transport import join_link
+        link = join_link(url, credential({'token_file': token_file}))
+        with Cluster.connect(link, ca_file=cert) as client:
             assert client.info['id'] == cluster.info['id']
         idle.close()
         with Cluster.connect(url, token_file=token_file) as client:
@@ -160,6 +162,8 @@ def test_tls_authentication_and_certificate_verification(tmp_path, monkeypatch):
         with Cluster.connect(url, token='incorrect', ca_file=cert) as client:
             with pytest.raises(SandboxError, match='403'):
                 client.info
+        with Cluster.connect(link + 'wrong', token_file=token_file, ca_file=cert) as client:
+            assert client.info['id'] == cluster.info['id']  # Explicit credential wins.
         # Stop/restart retains the listener port, token and TLS settings.
         cluster.stop()
         from sandweave.sandbox.ownership import process_alive
@@ -235,3 +239,69 @@ def test_gpu_cap_intersects_the_existing_slurm_allocation(monkeypatch):
     assert module.eligible_devices() == []
     monkeypatch.delenv('SANDWEAVE_GPU_LIMIT')
     assert module.eligible_devices() == [1, 3]
+
+
+def test_printed_join_commands_authenticate_without_a_saved_target(tmp_path, monkeypatch, capsys):
+    import shlex
+    from sandweave.cli import main
+    from sandweave.weave import worker as agent
+    from sandweave.sandbox import workspace
+    master, client = tmp_path / 'master', tmp_path / 'new-worker'
+    master.mkdir(); client.mkdir()
+    monkeypatch.chdir(master)
+    monkeypatch.delenv('SANDWEAVE_HOME', raising=False)
+    monkeypatch.delenv('SANDWEAVE_TOKEN', raising=False)
+    monkeypatch.delenv('SANDWEAVE_TOKEN_FILE', raising=False)
+    assert main(['cluster', 'start', 'demo', '--no-worker', '--transport', 'http',
+                 '--listen', '0.0.0.0:0', '--directory', str(master / 'state with spaces')]) == 0
+    output = capsys.readouterr().out
+    commands = [shlex.split(line.strip()) for line in output.splitlines()
+                if line.strip().startswith('sandweave cluster join ')]
+    assert len(commands) == 2
+    with Cluster.connect('demo') as owner:
+        expected = owner.info['id']
+        try:
+            monkeypatch.chdir(client)
+            assert workspace.home() == client / '.sandweave'
+            calls = []
+            def start(config, **kwargs):
+                # Exercise authentication against the actual controller. Only
+                # runtime installation/agent launch is replaced in this test.
+                from sandweave.weave.client import ClusterConnection
+                connection = ClusterConnection(config)
+                try:
+                    assert connection.call('status')['id'] == expected
+                finally:
+                    connection.close()
+                calls.append(kwargs)
+                return {'state': 'preparing'}
+            monkeypatch.setattr(agent, 'start', start)
+            for command in commands:
+                assert main(command[1:]) == 0
+            assert len(calls) == 2
+            assert all(call['cpus'] is None and call['gpus'] is None for call in calls)
+            assert not (client / '.sandweave/config.json').exists()
+            assert main(['cluster', 'join', commands[0][-1] + 'wrong']) == 1
+            assert len(calls) == 2  # Bad credentials cannot start installation.
+        finally:
+            owner.stop()
+
+
+def test_join_fragment_never_enters_http_path_and_is_validated():
+    from sandweave.weave.transport import join_link
+    link = join_link('https://master.example/weave', 'private+value/&=')
+    parsed = address(link)
+    assert parsed == {'url': 'https://master.example/weave', 'token': 'private+value/&='}
+    for value in ('http://host#token=', 'http://host#token=a&token=b',
+                  'http://host#token=a&other=b', 'http://host#nonsense', 'ssh://host/state#token=x'):
+        with pytest.raises(ValueError):
+            address(value)
+
+
+def test_transport_errors_do_not_start_a_controller(tmp_path, monkeypatch):
+    from sandweave.cli import main
+    monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
+    monkeypatch.setattr(Cluster, 'start', lambda *a, **k: pytest.fail('invalid options started a controller'))
+    assert main(['cluster', 'start', '--transport', 'https']) == 1
+    assert main(['cluster', 'start', '--transport', 'ssh', '--listen', '0.0.0.0:8765']) == 1
+    assert main(['cluster', 'start', '--advertise', 'http://0.0.0.0:8765']) == 1

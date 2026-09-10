@@ -19,7 +19,7 @@ _path_locks_guard = threading.Lock()
 
 
 def default_home():
-    return Path.home() / '.local/share/sandweave'
+    return Path.cwd() / '.sandweave'
 
 
 def home():
@@ -37,10 +37,6 @@ def home():
 def tool_path():
     """Tools installed by setup are private to Sandweave, without shell edits."""
     directories = [str(home() / 'bin')]
-    # Keep tools from the earlier default installation usable after setup
-    # selects storage elsewhere. Explicit isolated homes do not inherit them.
-    if not os.environ.get('SANDWEAVE_HOME') and home() != default_home().resolve():
-        directories.append(str(default_home() / 'bin'))
     return os.pathsep.join([*directories, os.environ.get('PATH', '')])
 
 
@@ -129,12 +125,6 @@ def assets(*, directory=None, selected=None):
         if not isinstance(installed, dict):
             raise ResourceUnavailable('Installed runtime sources must be an object: ' + str(config_file))
         selected = (installed.get(asset_identity(override)) or override) if override else config.get('assets')
-    if not selected:
-        # The existing lab is usable without copying a private path into the SDK.
-        for parent in (Path.cwd(), *Path.cwd().parents):
-            if (parent / 'images/gvisor-ubuntu-ready-ae303ca.erofs').is_file():
-                selected = str(parent)
-                break
     if not selected:
         raise ResourceUnavailable('runtime files are not configured; run sandweave setup')
     if not isinstance(selected, (str, os.PathLike)) or not str(selected):

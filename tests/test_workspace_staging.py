@@ -24,9 +24,9 @@ def test_setup_keeps_data_with_selected_runtime(isolated_default, tmp_path):
     original = {'targets': {'existing': {'job_id': '123'}}, 'onboarding_template': 'coding'}
     (isolated_default / 'config.json').write_text(json.dumps(original))
     storage = assets / '.sandweave'
-    installation.publish(storage, assets, previous=original)
+    installation.publish(storage, assets)
     assert workspace.home() == storage
-    assert onboarding.configuration() == {**original, 'assets': str(assets)}
+    assert onboarding.configuration() == {'assets': str(assets)}
     assert json.loads((isolated_default / 'config.json').read_text()) == original
     assert json.loads((isolated_default / 'location.json').read_text()) == {'path': str(assets / '.sandweave')}
     assert not (isolated_default / 'workers').exists()
@@ -65,7 +65,6 @@ def test_failed_storage_selection_cannot_fall_back_to_home(isolated_default, mon
     def unavailable(*args, **kwargs):
         raise PermissionError('selected data directory is read-only')
 
-    monkeypatch.setattr(onboarding, 'known_sources', lambda: [])
     monkeypatch.setattr(installation, 'destination', unavailable)
     monkeypatch.setattr(workspace, 'prepare', lambda: pytest.fail('staging continued in home'))
     assert main(['setup', '--yes', '--template', 'coding']) == 1

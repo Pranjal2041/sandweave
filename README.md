@@ -24,12 +24,16 @@ uv pip install sandweave
 
 You can also use `pip install sandweave`.
 
-Creating a local sandbox installs its template on first use. Sandweave reuses
-your configured storage directory, or creates `.sandweave` in the current
-directory if you have not chosen one. Setup checks your machine and downloads a
+Creating a local sandbox installs its template on first use. Each project uses
+its own `.sandweave` directory unless you choose another storage path. Setup checks your machine and downloads a
 compatible prebuilt runtime from GitHub Releases. If no matching binary is
 available, it builds from source. The first installation also downloads the
 selected template's software, so it needs internet access.
+
+Storage settings belong to the project where you run Sandweave. A different
+project starts with its own installation. Setup does not search your home or
+parent directories for runtimes. To share an installation explicitly, set
+`SANDWEAVE_HOME` to its storage directory.
 
 To choose storage and prepare a template ahead of time:
 
@@ -311,8 +315,24 @@ Start a controller with a local worker:
 
 ```bash
 sandweave cluster start lab
-sandweave cluster status lab
 ```
+
+Startup prints complete commands for joining a worker and opening the dashboard.
+Copy the printed join command onto another machine. The default uses SSH and
+your existing SSH login; the command already contains the controller's hostname,
+username and state path. You do not need to create a saved connection first.
+
+To accept HTTP connections on a private network instead:
+
+```bash
+sandweave cluster start lab --transport http
+```
+
+This prints HTTP and SSH join commands. The HTTP link includes the credential,
+so keep it private. Workers must be able to reach the printed host. Startup also
+prints the dashboard command; `sandweave cluster instructions lab` shows these
+commands again. See the [connection guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-usage.md#add-workers)
+for HTTPS, custom addresses and resource limits.
 
 Use its name as the target. The controller assigns sandboxes to workers and
 maintains the pool's ready reserve:
@@ -330,9 +350,8 @@ Add an existing SSH worker with
 `sandweave cluster add lab --target ssh://worker-two`. Each worker needs
 Sandweave installed. You can also register existing Slurm allocations.
 
-`lab` is a saved connection name. For a controller on another machine, use its
-address. For example, after setting `SANDWEAVE_TOKEN_FILE` to your copy of the
-controller's credential file:
+`lab` is a connection name saved in this project's storage. From another machine,
+use the complete link printed by the controller. The same link works in Python:
 
 ```python
 from sandweave import Sandbox
@@ -341,11 +360,9 @@ with Sandbox(target="https://master.example:8765") as env:
     print(env.run("python --version").stdout)
 ```
 
-A worker can join that controller and contribute part of its allocation:
-
-```bash
-sandweave cluster join https://master.example:8765 --cpus 8 --gpus 1
-```
+In that example, replace the address with the printed link, including its
+credential fragment for HTTP(S), or supply `SANDWEAVE_TOKEN_FILE` separately.
+Append `--cpus 8 --gpus 1` to a printed join command to contribute part of an allocation.
 
 Omit the limits to contribute all CPUs and GPUs available to that worker
 process. Workers initiate their connections; clients need only reach the

@@ -43,9 +43,15 @@ def metadata(config):
     path = str(Path(config['directory']) / 'controller.json')
     if config['hostname'] == socket.gethostname():
         return json.loads(Path(path).read_text())
-    return json.loads(_ssh(config.get('ssh_host', config['hostname']),
-        [config.get('python', 'python3'), '-c', 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())', path],
-        port=config.get('ssh_port')))
+    host = config.get('ssh_host', config['hostname'])
+    try:
+        return json.loads(_ssh(host,
+            [config.get('python', 'python3'), '-c', 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())', path],
+            port=config.get('ssh_port')))
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or '').strip()[-2000:]
+        raise ResourceUnavailable('Could not read controller connection through SSH to ' + host +
+                                  ': ' + (detail or 'SSH exited with status ' + str(error.returncode))) from error
 
 
 def save_target(name, config):
@@ -258,6 +264,8 @@ class Cluster:
             raise ResourceUnavailable('cluster is not configured: ' + str(name))
         config = {**config, **{k: str(Path(v).expanduser().resolve()) for k, v in
                              dict(token_file=token_file, ca_file=ca_file).items() if v is not None}}
+        if token_file is not None:
+            config.pop('token', None)
         if token is not None:
             config['token'] = token
         return cls(config, name if isinstance(name, str) else None)
@@ -331,7 +339,8 @@ class Cluster:
                     atomic_json(path, {**(json.loads(path.read_text()) if path.exists() else {}), **monitoring})
                 if listener is not None:
                     atomic_json(directory / 'listener.json', listener)
-                environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) + os.pathsep + os.environ.get('PYTHONPATH', '')}
+                environment = {**os.environ, 'SANDWEAVE_HOME': str(home()),
+                               'PYTHONPATH': str(Path(__file__).resolve().parents[2]) + os.pathsep + os.environ.get('PYTHONPATH', '')}
                 with (directory / 'controller.log').open('ab') as log:
                     child = subprocess.Popen([sys.executable, '-m', 'sandweave.weave.server', '--directory', str(directory)],
                         env=environment, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)

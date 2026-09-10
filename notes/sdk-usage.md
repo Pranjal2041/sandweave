@@ -9,7 +9,7 @@ services and controls; a sandbox is one running instance. Start with the
 `Sandbox()` and `Sandbox(template="gnome")` prepare missing local dependencies
 on first use. The CLI's `create` and `run` commands use the same path. Templates
 that extend a built-in template install that parent's dependencies too. First
-use keeps your selected storage directory; without a saved choice it uses
+use keeps this project's selected storage directory; without a saved choice it uses
 `.sandweave` in the current directory. `sandweave setup` is available to choose
 storage and install a template before creating a sandbox.
 
@@ -26,7 +26,7 @@ sandweave run --template coding -- "python -c 'print(2 + 2)'"
 ```
 
 Setup asks what you want to start with and where to store Sandweave's files.
-The storage directory can be empty. It reuses an existing runtime, downloads a
+The storage directory can be empty. It reuses a runtime already installed there, downloads a
 compatible release, or builds from upstream inputs, then installs the selected workload's Python
 packages, and checks a disposable sandbox of that template. Selecting VR
 therefore starts the game for the check. Setup releases its test sandbox;
@@ -86,7 +86,7 @@ Unix utilities. Sandweave supplies private download and package-extraction
 adapters when `curl`, `rpm2cpio` or `cpio` is missing. Python package installation
 uses the active interpreter, including uv environments without pip.
 
-Setup can discover a runtime in this checkout or import one you provide:
+Setup imports a runtime from another installation only when you explicitly provide it:
 
 ```bash
 sandweave setup --assets /path/to/existing-runtime --directory /path/to/new-storage --yes
@@ -108,8 +108,10 @@ You can choose another empty directory. Setup prints the destination before
 installing anything. It must be writable and belong to you.
 
 After the sandbox check succeeds, setup saves the configuration and a small
-`~/.local/share/sandweave/location.json` pointer so commands work from other
-directories. A failed check leaves the previous saved configuration intact.
+`.sandweave/location.json` pointer in the current project if you chose storage
+elsewhere. It prints that setting's path. It does not write a global home-directory
+setting, search parent directories, or copy settings from the previously selected
+installation. A failed check leaves the previous saved configuration intact.
 Completed runtime inputs are recorded for retry. Failed build work and logs
 stay in the printed destination for diagnosis; setup does not automatically
 evict them.
@@ -123,10 +125,11 @@ after interruption retries installation. Existing runtime workers keep their
 files. Reuse checks required files without rehashing entire images; installation
 and initial worker staging still verify file contents.
 
-Set `SANDWEAVE_HOME` to use a different data directory. This explicit setting
-takes precedence, including during setup. Setup preserves files in the earlier
-`~/.local/share/sandweave` default; it does not move or delete existing sandboxes or
-snapshots. To access them, set `SANDWEAVE_HOME` to that directory.
+Set `SANDWEAVE_HOME` to explicitly share a data directory between projects. This
+setting takes precedence, including during setup. Starting with 0.2.1, the old
+`~/.local/share/sandweave/location.json` setting is ignored. Existing installations
+and snapshots are preserved. To use one, set `SANDWEAVE_HOME` to its actual storage
+directory, or select that directory in setup from the project that should use it.
 
 Durable snapshots belong on durable storage. Active runtime working directories
 are separate and node-local. Staging uses hardlinks on the same filesystem;

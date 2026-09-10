@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - `sandweave dashboard` opens a read-only cluster dashboard with live resource
   measurements, retained charts, worker/GPU/workload views, events, and bounded

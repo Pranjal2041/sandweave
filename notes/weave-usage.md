@@ -5,8 +5,8 @@ sandboxes, maintains pools and tracks submitted jobs. Clients and workers can
 connect through HTTP, HTTPS or SSH. Remote clients can send sandbox operations
 through the controller, so they do not need an inbound route to each worker.
 
-This API is available in the source checkout. Install it with
-`uv pip install -e .` before trying these examples; it is not in PyPI 0.1.2.
+Weave is included in Sandweave 0.2.0 and newer. Upgrade an existing installation
+with `uv pip install --upgrade sandweave` before trying these examples.
 
 ## Start a cluster
 

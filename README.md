@@ -368,7 +368,7 @@ Retries are opt-in. Pools support weights, priorities, worker labels and
 draining. See the [Weave guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-usage.md) for batch jobs, remote
 controllers and lifecycle details.
 
-This checkout includes the initial Weave implementation. It uses one controller
+Sandweave includes the initial Weave implementation. It uses one controller
 for one trusted account; automatic machine provisioning, controller failover and
 team permissions are later stages of the [design](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-design.md).
 

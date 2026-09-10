@@ -29,6 +29,16 @@ def candidate_release(source, directory):
         yield
         return
     original = releases.PIN.read_bytes()
+    def write_pin(data):
+        # uv may hardlink installed files to its cache or another environment.
+        # Replace this test installation's directory entry, never those bytes.
+        fd, name = tempfile.mkstemp(prefix='.release-pin-', dir=releases.PIN.parent)
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(data)
+            os.replace(name, releases.PIN)
+        finally:
+            Path(name).unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix='release-server-', dir=directory) as temporary:
         web = Path(temporary)
         manifest = json.loads((source / 'manifest.json').read_text())
@@ -44,11 +54,11 @@ def candidate_release(source, directory):
         data = json.dumps(manifest).encode()
         (web / 'manifest.json').write_bytes(data)
         try:
-            releases.PIN.write_text(json.dumps({'schema_version': 1, 'manifest': {
-                'url': base + 'manifest.json', 'sha256': hashlib.sha256(data).hexdigest()}}))
+            write_pin(json.dumps({'schema_version': 1, 'manifest': {
+                'url': base + 'manifest.json', 'sha256': hashlib.sha256(data).hexdigest()}}).encode())
             yield
         finally:
-            releases.PIN.write_bytes(original)
+            write_pin(original)
             server.shutdown()
             server.server_close()
             thread.join()
@@ -67,11 +77,16 @@ def acceptance(args, report):
     before = pointer.read_bytes() if pointer.exists() else None
     report.update(host=platform.node(), kernel=platform.release(), architecture=platform.machine(),
                   python=sys.version, sdk=__import__('importlib.metadata', fromlist=['version']).version('sandweave'),
-                  distribution='candidate-local-http' if args.release else 'published-github')
+                  distribution='candidate-local-http' if args.release else 'published-github',
+                  installation='automatic-first-use' if args.automatic else 'cli-setup')
     started = time.monotonic()
     with candidate_release(args.release, args.directory):
-        subprocess.run([str(Path(sys.executable).parent / 'sandweave'), 'setup', '--yes', '--template', 'coding',
-                        '--directory', str(args.directory)], check=True)
+        if args.automatic:
+            with Sandbox() as initial:
+                assert initial.run("python -c 'print(2 + 2)'").stdout == '4\n'
+        else:
+            subprocess.run([str(Path(sys.executable).parent / 'sandweave'), 'setup', '--yes', '--template', 'coding',
+                            '--directory', str(args.directory)], check=True)
     report['first_setup_seconds'] = time.monotonic() - started
     assert (pointer.read_bytes() if pointer.exists() else None) == before, 'Explicit storage changed global location'
     root = workspace.assets()
@@ -132,6 +147,7 @@ if __name__ == '__main__':
     parser.add_argument('--directory', required=True, type=lambda x: Path(x).resolve())
     parser.add_argument('--release', type=lambda x: Path(x).resolve())
     parser.add_argument('--report', required=True, type=Path)
+    parser.add_argument('--automatic', action='store_true', help='install through Sandbox() instead of setup')
     args = parser.parse_args()
     report = {'status': 'failed'}
     try:

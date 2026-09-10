@@ -101,5 +101,171 @@
     "status": "passed",
     "tests": 2,
     "seconds": 145.018567354884
+  },
+  "published": {
+    "babel": {
+      "status": "passed",
+      "host": "babel-p9-16",
+      "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+      "architecture": "x86_64",
+      "python": "3.13.0 | packaged by conda-forge | (main, Nov 27 2024, 19:18:50) [GCC 13.3.0]",
+      "sdk": "0.1.1",
+      "distribution": "published-github",
+      "first_setup_seconds": 57.70369607792236,
+      "engine": {
+        "path": "tools/runtime-builds/ddce0481feaa52f4b77bf6bf45437cac48eac318d1082692fdc3c9679d9ac641",
+        "sha256": {
+          "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+          "gvisor-bin/checkpointgofer": "e348e5c0b4d7ef349389e8b6870c797a2e4ff36f526cd959d3633541ceb62318",
+          "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+          "gvisor-bin/gvisor_sentry": "264a35d136846e8bb7767dbdaf5ea7e714fa720308314a8a655114f14f2d0ea5",
+          "gvisor-bin/runsc-metric-server": "f11730bdbb09cbfe329e14b83580034e14da00b9d979b62bbfe426dad6d8e93a",
+          "runsc": "7a58d2faa27d0d355dc0b03613ac5cf8ae0d347bb3eff060b384150d502688aa"
+        }
+      },
+      "compiler_downloaded_or_run": false,
+      "ready_seconds": 0.6566267688758671,
+      "lifecycle_seconds": 7.9008852848783135,
+      "checks": [
+        "first-install",
+        "exact-engine-hashes",
+        "no-compiler",
+        "cpu-override",
+        "no-kvm",
+        "internet",
+        "files",
+        "pause-resume",
+        "filesystem-cache",
+        "process-memory-restore",
+        "offline-network",
+        "context-cleanup",
+        "global-location-preserved"
+      ]
+    },
+    "flame": {
+      "status": "passed",
+      "host": "orchard-flame-22",
+      "kernel": "6.17.0-1016-gcp",
+      "architecture": "x86_64",
+      "python": "3.12.9 | packaged by Anaconda, Inc. | (main, Feb  6 2025, 18:56:27) [GCC 11.2.0]",
+      "sdk": "0.1.1",
+      "distribution": "published-github",
+      "first_setup_seconds": 183.4349937690422,
+      "engine": {
+        "path": "tools/runtime-builds/ddce0481feaa52f4b77bf6bf45437cac48eac318d1082692fdc3c9679d9ac641",
+        "sha256": {
+          "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+          "gvisor-bin/checkpointgofer": "e348e5c0b4d7ef349389e8b6870c797a2e4ff36f526cd959d3633541ceb62318",
+          "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+          "gvisor-bin/gvisor_sentry": "264a35d136846e8bb7767dbdaf5ea7e714fa720308314a8a655114f14f2d0ea5",
+          "gvisor-bin/runsc-metric-server": "f11730bdbb09cbfe329e14b83580034e14da00b9d979b62bbfe426dad6d8e93a",
+          "runsc": "7a58d2faa27d0d355dc0b03613ac5cf8ae0d347bb3eff060b384150d502688aa"
+        }
+      },
+      "compiler_downloaded_or_run": false,
+      "ready_seconds": 1.5536570008844137,
+      "lifecycle_seconds": 15.824554922990501,
+      "checks": [
+        "first-install",
+        "exact-engine-hashes",
+        "no-compiler",
+        "cpu-override",
+        "no-kvm",
+        "internet",
+        "files",
+        "pause-resume",
+        "filesystem-cache",
+        "process-memory-restore",
+        "offline-network",
+        "context-cleanup",
+        "global-location-preserved"
+      ]
+    },
+    "pypi_first_use": {
+      "status": "passed",
+      "host": "babel-p9-16",
+      "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+      "architecture": "x86_64",
+      "python": "3.13.0 | packaged by conda-forge | (main, Nov 27 2024, 19:18:50) [GCC 13.3.0]",
+      "sdk": "0.1.1",
+      "distribution": "published-github",
+      "installation": "automatic-first-use",
+      "first_setup_seconds": 56.96564118308015,
+      "engine": {
+        "path": "tools/runtime-builds/ddce0481feaa52f4b77bf6bf45437cac48eac318d1082692fdc3c9679d9ac641",
+        "sha256": {
+          "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+          "gvisor-bin/checkpointgofer": "e348e5c0b4d7ef349389e8b6870c797a2e4ff36f526cd959d3633541ceb62318",
+          "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+          "gvisor-bin/gvisor_sentry": "264a35d136846e8bb7767dbdaf5ea7e714fa720308314a8a655114f14f2d0ea5",
+          "gvisor-bin/runsc-metric-server": "f11730bdbb09cbfe329e14b83580034e14da00b9d979b62bbfe426dad6d8e93a",
+          "runsc": "7a58d2faa27d0d355dc0b03613ac5cf8ae0d347bb3eff060b384150d502688aa"
+        }
+      },
+      "compiler_downloaded_or_run": false,
+      "ready_seconds": 0.6639939481392503,
+      "lifecycle_seconds": 8.469873285852373,
+      "checks": [
+        "first-install",
+        "exact-engine-hashes",
+        "no-compiler",
+        "cpu-override",
+        "no-kvm",
+        "internet",
+        "files",
+        "pause-resume",
+        "filesystem-cache",
+        "process-memory-restore",
+        "offline-network",
+        "context-cleanup",
+        "global-location-preserved"
+      ]
+    }
+  },
+  "publication": {
+    "github": "https://github.com/Pranjal2041/sandweave/releases/tag/runtime-v2026.09.09.1",
+    "repository_visibility": "public",
+    "pypi": "https://pypi.org/project/sandweave/0.1.1/",
+    "sdk_source_commit": "2e5323a",
+    "files": [
+      {
+        "filename": "sandweave-0.1.1-py3-none-any.whl",
+        "digests": {
+          "blake2b_256": "a51f082b03c055f09c054a208aaf32401a6c10e4f4b76e2f04d73be27b527d03",
+          "md5": "98be8aed027388f4070363cc200529a6",
+          "sha256": "ee0eefb85afc045f2ceff4ba05aa41c791bb5ae8c3bed4e7f64c2c7c4c1f5807"
+        },
+        "size": 306376,
+        "upload_time_iso_8601": "2026-09-10T00:22:08.589434Z"
+      },
+      {
+        "filename": "sandweave-0.1.1.tar.gz",
+        "digests": {
+          "blake2b_256": "acc632626e8bc28def4e54f970aa623e49dae6d9a2c7042762f1eb85f8d4261f",
+          "md5": "5cf27c34cd58eca0a16ad04b0833b99c",
+          "sha256": "6ffe385e97796c6400430abf57517a21ba9742fd318a15c257dbab2dbe658866"
+        },
+        "size": 292153,
+        "upload_time_iso_8601": "2026-09-10T00:22:07.301972Z"
+      }
+    ]
+  },
+  "checks": {
+    "host_suite": {
+      "passed": 143,
+      "skipped": 1,
+      "deselected": 65
+    },
+    "final_release_tests": {
+      "passed": 18
+    },
+    "sdist_wheel_contents_identical": true,
+    "runtime_repack_identical": true,
+    "public_file_hashes_match": true,
+    "readme_inspected_on": [
+      "GitHub",
+      "PyPI"
+    ],
+    "acceptance_pin_preserves_hardlinks": true
   }
 }

@@ -53,6 +53,15 @@ installed. They include upstream template downloads and the setup sandbox check,
 but exclude downloading the engine across the public internet. They are
 individual observations, not a cross-machine performance guarantee.
 
+After publication, fresh installations used the unmodified SDK pin and anonymous
+GitHub downloads. Code setup took 57.7 seconds on Babel and 183.4 seconds on Flame;
+the full lifecycle checks below passed on both. A further fresh environment
+installed `sandweave==0.1.1` from public PyPI and used `Sandbox()` without setup.
+Automatic installation and its first command completed in 57.0 seconds, followed
+by the same lifecycle checks. Published wheel and source-archive hashes matched
+the checked local files. The rendered README was inspected on GitHub and PyPI.
+Machine-readable results are in [runtime-release-acceptance.json](runtime-release-acceptance.json).
+
 Both runs checked CPU overrides, absence of `/dev/kvm`, commands, files, internet
 access, offline networking, pause/resume, independent filesystem-cache restore,
 and a memory snapshot of a running Python process. The restored process retained
@@ -114,6 +123,9 @@ python /path/to/checkout/scripts/accept-runtime-release.py \
 HTTP manifest. It preserves the archive bytes and restores the original pin.
 After publication, omit `--release` to test the shipped GitHub URLs without
 modifying the installation. Use a new storage directory for that check too.
+Add `--automatic` to exercise first-use installation through `Sandbox()` instead
+of the CLI. The candidate test replaces its own pin atomically, preserving
+other installations or package caches that share hardlinks with the test wheel.
 
 Copy the generated `runtime-release.json` into `src/sandweave`, build and check
 the Python distributions, and commit the source and evidence. Publish the engine

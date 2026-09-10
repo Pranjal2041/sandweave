@@ -2,7 +2,7 @@
   <h1>Sandweave</h1>
   <p>Fast, modular sandboxes for AI agents.</p>
   <a href="https://pypi.org/project/sandweave/"><img src="https://img.shields.io/pypi/v/sandweave?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI version"></a>
-  <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md"><img src="https://img.shields.io/badge/Docs-Read-2563EB?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read the docs"></a>
+  <a href="https://pranjal2041.github.io/sandweave/"><img src="https://img.shields.io/badge/Docs-Read-0F766E?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read the docs"></a>
   <a href="#install"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11 and newer"></a>
 </div>
 
@@ -48,7 +48,7 @@ are installed when you first use them.
 Setup shows live progress, elapsed time and the latest build output. Downloads
 show byte progress when the server provides a size. Full logs are saved in
 `logs/setup` inside your selected directory.
-See [installation details](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#install-and-configure).
+See [installation details](https://pranjal2041.github.io/sandweave/installation/).
 
 To check your installation or fix a problem:
 

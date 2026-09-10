@@ -14,7 +14,7 @@ dependencies = ["questionary>=2,<3", "rich>=14,<15"]
 [project.urls]
 Homepage = "https://pypi.org/project/sandweave/"
 Repository = "https://github.com/Pranjal2041/sandweave"
-Documentation = "https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md"
+Documentation = "https://pranjal2041.github.io/sandweave/"
 Issues = "https://github.com/Pranjal2041/sandweave/issues"
 
 [project.optional-dependencies]

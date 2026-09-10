@@ -1,5 +1,9 @@
 # Using Sandweave
 
+For installation, tutorials, and the Python and CLI reference, see the
+[Sandweave documentation](https://pranjal2041.github.io/sandweave/).
+This page retains the detailed SDK behavior notes.
+
 The Python SDK and CLI use the same lifecycle. A template defines setup,
 services and controls; a sandbox is one running instance. Start with the
 [README examples](../README.md#agreed-public-api-contract-v1).

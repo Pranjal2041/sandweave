@@ -24,6 +24,7 @@ __pycache__/
 .sandweave/
 /build/
 /dist/
+/site/
 /src/*.egg-info/
 /examples/pointmass/build/
 /examples/pointmass/*.egg-info/

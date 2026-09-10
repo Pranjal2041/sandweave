@@ -3,6 +3,40 @@
 Install development dependencies with `uv pip install -e '.[test,vr]'`.
 Run host tests with `pytest -m 'not integration and not gpu'`.
 
+## Documentation
+
+Public guides live in `docs/`; navigation and site settings are in `mkdocs.yml`.
+The site uses Material for MkDocs with pinned build dependencies. To preview:
+
+```bash
+uvx --with-requirements docs/requirements.txt mkdocs serve
+```
+
+Build and check internal links and Python example syntax:
+
+```bash
+uvx --with-requirements docs/requirements.txt mkdocs build --strict
+python scripts/check-docs.py
+```
+
+Add `--browser` to the check command in an environment with Playwright and
+Chromium installed. It checks search, navigation, code copying, theme switching,
+installation tabs, and mobile navigation. Screenshots and the receipt are saved
+under `runs/docs-acceptance/`. No sandbox or cluster is launched.
+Pass `--url https://pranjal2041.github.io/sandweave/` with `--browser` to
+exercise the published site instead of the local build.
+
+After committing and pushing the reviewed source to `main`, publish it with:
+
+```bash
+uvx --with-requirements docs/requirements.txt mkdocs gh-deploy --strict
+```
+
+This updates the generated `gh-pages` branch. GitHub Pages serves
+`https://pranjal2041.github.io/sandweave/` from that branch. Generated site files
+stay out of the source branch. Documentation publication does not require a
+new runtime build or SDK release.
+
 ## Release an SDK version
 
 Update `project.version` in `pyproject.toml` and add its changes to

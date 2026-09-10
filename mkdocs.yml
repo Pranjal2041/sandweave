@@ -1,0 +1,114 @@
+site_name: Sandweave
+site_description: Linux sandboxes for agent training and evaluation. Python, CLI, and cluster documentation.
+site_url: https://pranjal2041.github.io/sandweave/
+repo_url: https://github.com/Pranjal2041/sandweave
+repo_name: Pranjal2041/sandweave
+edit_uri: edit/main/docs/
+copyright: Sandweave · Documentation
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  logo: assets/mark.svg
+  favicon: assets/mark.svg
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - content.action.edit
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - assets/styles.css
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Pranjal2041/sandweave
+      name: Sandweave on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/sandweave/
+      name: Sandweave on PyPI
+
+exclude_docs: |
+  requirements.txt
+  overrides/
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+
+nav:
+  - Get started:
+      - Introduction: index.md
+      - Installation: installation.md
+      - Your first sandbox: quickstart.md
+  - Sandboxes:
+      - Run commands: commands.md
+      - Files and setup: files.md
+      - CPU, memory and GPUs: resources.md
+      - Networking: networking.md
+      - Lifetime and cleanup: lifecycle.md
+      - Caches and snapshots: snapshots.md
+      - Async Python: async.md
+  - Workloads:
+      - Desktop agents: desktop.md
+      - VR games: vr.md
+      - Templates: templates.md
+  - Weave:
+      - Connect a cluster: clusters.md
+      - Pools and evaluation: pools.md
+      - Jobs: jobs.md
+      - Dashboard: dashboard.md
+  - Reference:
+      - Python API: python-api.md
+      - CLI: cli.md
+      - Troubleshooting: troubleshooting.md

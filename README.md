@@ -305,6 +305,51 @@ the used sandbox and replaces it from the baseline. The callback runs in your
 Python process, and results preserve input order. Use `cache=baseline` for a
 prepared environment or `targets=[...]` to distribute tasks across workers.
 
+## Manage workers with Weave
+
+Start a controller with a local worker:
+
+```bash
+sandweave cluster start lab
+sandweave cluster status lab
+```
+
+Use its name as the target. The controller assigns sandboxes to workers and
+maintains the pool's ready reserve:
+
+```python
+from sandweave import Pool
+
+with Pool(target="lab", size=8, warm=2) as pool:
+    with pool.acquire() as env:
+        print(env.run("python --version").stdout)
+    pool.update(size=16, warm=4)
+```
+
+Add an existing SSH worker with
+`sandweave cluster add lab --target ssh://worker-two`. Each worker needs
+Sandweave installed. You can also register existing Slurm allocations. Commands,
+desktop observations and files use the assigned worker directly.
+
+Submit a command that can outlive your Python process:
+
+```python
+from sandweave import Job
+
+job = Job.submit("python -c 'print(2 + 2)'", target="lab", detached=True)
+print(job.id)  # Reconnect with Job.connect(job_id, target="lab").
+print(job.result().stdout)
+```
+
+Jobs retain their inputs, attempts and results across controller restarts.
+Retries are opt-in. Pools support weights, priorities, worker labels and
+draining. See the [Weave guide](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-usage.md) for batch jobs, remote
+controllers and lifecycle details.
+
+This checkout includes the initial Weave implementation. It uses one controller
+for one trusted account; automatic machine provisioning, controller failover and
+team permissions are later stages of the [design](https://github.com/Pranjal2041/sandweave/blob/main/notes/weave-design.md).
+
 ## Use async calls
 
 ```python

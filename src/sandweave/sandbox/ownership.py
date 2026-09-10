@@ -128,8 +128,7 @@ class Owners:
 class ClientOwner:
     def __init__(self, connection):
         self.id = uuid.uuid4().hex
-        self.connection = Connection(connection.host, connection.port, connection.token,
-                                     timeout=2, unix_path=connection.unix_path)
+        self.connection = connection.clone(timeout=2)
         self.pid = os.getpid()
         self.expired = False
         try:

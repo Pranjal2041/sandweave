@@ -90,7 +90,7 @@ class Runtime:
             binds += ['--bind', mount['source'] + ':' + mount['destination'] + (':ro' if mount['read_only'] else ':rw')]
         gpu_device = None
         if resources['gpu']:
-            selected = self.gvisor.gpu(resources['gpu'])
+            selected = self.gvisor.gpu(resources['gpu'], device_uuid=spec.get('_gpu_uuid'))
             import gvisor_gpu
             gpu_device = gvisor_gpu.device_identity(selected)
             for device in gvisor_gpu.allocated_device(selected):

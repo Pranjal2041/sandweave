@@ -1,8 +1,19 @@
-# Weave: proposed sandbox management
+# Weave: sandbox management
 
-Status: proposal for discussion, not an implemented API. The existing public
-contract remains in force. [Research and engineering details](weave-research.md)
-support the choices below.
+Status: the initial coordination stage is implemented. The [usage guide](weave-usage.md)
+describes the available API; the broader design below remains the roadmap.
+[Research and engineering details](weave-research.md) support these choices.
+
+Implemented: existing-worker registration, atomic reservations, assignment
+generations, direct sandbox access, weighted placement, ready pools, policy
+updates, draining, verified snapshot transfer, durable commands/batches/repeats,
+explicit retries, ownership, events, backups and controller restart recovery.
+
+Remaining: automatic machine provisioning and autoscaling, gang admission,
+project quotas and borrowing, preemption, rollout policies, service routing,
+team permissions, secret distribution, garbage collection, controller failover
+and large-cluster performance qualification. Existing `Slurm.acquire` can still
+request an allocation explicitly; Weave does not yet scale machine providers.
 
 **Templates define environments. Sandbox code runs one environment. Weave keeps
 the requested environments available across workers.** A controller records what
@@ -49,7 +60,7 @@ with Pool(template="coding", target="lab", size=128, warm=16, weight=2) as pool:
 `lab` is a configured cluster target. `size` remains the total sandbox ceiling;
 `warm` is the desired idle, ready reserve within that ceiling. Quotas and available
 machines may prevent either target from being met; status explains why. `weight`
-is a proposed pool scheduling option, separate from a sandbox's CPU weight.
+is a pool scheduling option, separate from a sandbox's CPU weight.
 
 A **Pool** manages capacity. A **Job** manages submitted work: a command, immutable
 program and inputs, and a completion/retry policy. Jobs can run once, as batches,
@@ -148,8 +159,11 @@ and result commits cannot.
 Reconcile changed objects through indexed work queues. Maintain incremental
 resource accounting instead of scanning every sandbox for every placement.
 
-Start with one controller and a durable local SQLite database. This mode has no
-automatic controller-host failover, and the database must not live on NFS.
+Start with one controller and durable SQLite storage. This mode has no
+automatic controller-host failover. The implementation uses rollback journaling
+and an exclusive controller lock; local storage and one NFS4 deployment have
+passed restart checks. Prefer durable local storage; other filesystem/locking
+configurations need deployment qualification.
 High availability uses replicated controller processes and an independently
 available PostgreSQL deployment, with fenced scheduling leadership and atomic
 reservations. Artifact storage remains separate from metadata storage.
@@ -170,4 +184,5 @@ acquisition target, not a cold-start or cross-network guarantee.
    and authorization for the initial deployment are required from the first step.
 
 The [acceptance scenarios](weave-research.md#acceptance-before-release) define
-what must be demonstrated. This proposal introduces no runtime behavior changes.
+the broader system's release requirements. [Implementation acceptance](weave-acceptance.md)
+records the checks for the initial coordination stage.

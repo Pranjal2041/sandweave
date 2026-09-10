@@ -35,6 +35,10 @@ class Worker:
         self.owners = Owners(self.root)
         from .admission import budget
         self.memory_budget = budget()
+        from .management import Management
+        self.management = Management(self)
+        from .artifacts import Artifacts
+        self.artifacts = Artifacts(self)
         threading.Thread(target=self.expire, name='sandweave-cleanup', daemon=True).start()
 
     def expire(self):
@@ -520,6 +524,14 @@ class Worker:
         raise ValueError('unknown pool operation')
 
     def dispatch(self, operation, parameters):
+        if operation.startswith('artifact_'):
+            return self.artifacts.dispatch(operation, parameters)
+        if operation == 'managed_apply':
+            return self.management.apply(**parameters)
+        if operation == 'managed_prepare':
+            return self.management.prepare(**parameters)
+        if operation == 'inventory':
+            return self.management.inventory()
         if operation == '_debug_threads':
             import sys
             import traceback
@@ -545,7 +557,8 @@ class Worker:
         allowed.update(('owner_register', 'owner_heartbeat'))
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
-                    'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget}
+                    'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget,
+                    'port': self.endpoint.port, 'weave_protocol': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
@@ -590,7 +603,9 @@ def serve(metadata_path):
             pass
 
         def do_POST(self):
-            if not hmac.compare_digest(self.headers.get('X-Sandweave-Token', ''), token):
+            credential = self.headers.get('X-Sandweave-Token', '')
+            administrator = hmac.compare_digest(credential, token)
+            if not administrator and not credential.startswith('sw1.'):
                 self.send_error(403)
                 return
             try:
@@ -601,6 +616,10 @@ def serve(metadata_path):
                 if len(body) != length:
                     raise ValueError('incomplete request')
                 request = decode(body)
+                if not administrator and not worker.management.authorize(
+                        credential, request['op'], request.get('params', {})):
+                    self.send_error(403)
+                    return
                 result = {'result': worker.dispatch(request['op'], request.get('params', {}))}
             except Exception as error:
                 result = {'error': {'kind': type(error).__name__, 'message': str(error),

@@ -16,6 +16,60 @@ from .targets import connect
 from ..templates.resolve import Template, setup_step
 
 
+def definition(*, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
+               cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
+               env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
+               keep_on_error=False, refresh=False, experimental_gpu_live=False):
+    """Resolve a complete portable definition without starting an environment."""
+    if sum(x is not None for x in (cache, snapshot)) > 1:
+        raise ValueError('cache and snapshot are alternative sources')
+    reference = cache if cache is not None else snapshot
+    if reference is not None and any(x is not None for x in (template, setup, cache_key)):
+        raise ValueError('a saved source cannot be combined with a new recipe')
+    if refresh and cache_key is None:
+        raise ValueError('refresh requires cache_key')
+    if type(detached) is not bool:
+        raise ValueError('detached must be a bool')
+    if ttl is not None:
+        positive(ttl, 'ttl')
+    positive(startup_timeout, 'startup_timeout')
+    saved = None
+    if reference is not None:
+        connection = connect(target)
+        try:
+            saved = connection.call('snapshot_spec', reference=str(reference))
+        finally:
+            connection.close()
+    if saved:
+        reference = saved['reference']
+        recipe = copy.deepcopy(saved['spec']['template'])
+        defaults = saved['spec']['resources']
+        defaults = {'cpu': CPU(**defaults['cpu']), 'memory': Memory(**defaults['memory']),
+                    'gpu': GPU(**defaults['gpu']) if defaults['gpu'] else False,
+                    'network': Network(**defaults['network'])}
+        if env is None:
+            env = saved['spec']['env']
+        if mounts is None:
+            mounts = saved['spec']['mounts']
+        runtime = saved['spec']['runtime']
+    else:
+        recipe = Template(template or 'coding').resolve()
+        defaults = recipe['resources']
+    if setup:
+        recipe['setup_steps'].append(setup_step(setup))
+    selected_memory = memory if memory is not None else defaults.get('memory', '1GiB')
+    if not isinstance(selected_memory, Memory):
+        selected_memory = Memory(selected_memory, defaults.get('runtime_memory', '512MiB'))
+    resources = normalize(cpu=cpu if cpu is not None else defaults.get('cpu', 1), memory=selected_memory,
+                          gpu=gpu if gpu is not None else defaults.get('gpu', False),
+                          network=network if network is not None else defaults.get('network', 'internet'))
+    spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
+            'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
+            'ttl': ttl, 'detached': detached, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
+            'experimental_gpu_live': experimental_gpu_live}
+    return dict(spec=spec, reference=reference, cache_key=cache_key, refresh=refresh)
+
+
 class Sandbox:
     def __init__(self, *, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
@@ -34,51 +88,9 @@ class Sandbox:
                     cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False):
-        if sum(x is not None for x in (cache, snapshot)) > 1:
-            raise ValueError('cache and snapshot are alternative sources')
-        reference = cache if cache is not None else snapshot
-        if reference is not None and any(x is not None for x in (template, setup, cache_key)):
-            raise ValueError('a saved source cannot be combined with a new recipe')
-        if refresh and cache_key is None:
-            raise ValueError('refresh requires cache_key')
-        if type(detached) is not bool:
-            raise ValueError('detached must be a bool')
-        if ttl is not None:
-            positive(ttl, 'ttl')
-        positive(startup_timeout, 'startup_timeout')
-        if reference is not None:
-            self._connection = connect(target)
-            saved = self._connection.call('snapshot_spec', reference=str(reference))
-        else:
-            saved = None
-        if saved:
-            reference = saved['reference']
-            recipe = saved['spec']['template']
-            defaults = saved['spec']['resources']
-            defaults = {'cpu': CPU(**defaults['cpu']), 'memory': Memory(**defaults['memory']),
-                        'gpu': GPU(**defaults['gpu']) if defaults['gpu'] else False,
-                        'network': Network(**defaults['network'])}
-            if env is None:
-                env = saved['spec']['env']
-            if mounts is None:
-                mounts = saved['spec']['mounts']
-            runtime = saved['spec']['runtime']
-        else:
-            recipe = Template(template or 'coding').resolve()
-            defaults = recipe['resources']
-        if setup:
-            recipe['setup_steps'].append(setup_step(setup))
-        selected_memory = memory if memory is not None else defaults.get('memory', '1GiB')
-        if not isinstance(selected_memory, Memory):
-            selected_memory = Memory(selected_memory, defaults.get('runtime_memory', '512MiB'))
-        resources = normalize(cpu=cpu if cpu is not None else defaults.get('cpu', 1),
-                              memory=selected_memory,
-                              gpu=gpu if gpu is not None else defaults.get('gpu', False),
-                              network=network if network is not None else defaults.get('network', 'internet'))
-        spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
-                'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
-                'ttl': ttl, 'detached': detached, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
-                'experimental_gpu_live': experimental_gpu_live}
+        options = dict(locals()); options.pop('self')
+        request = definition(**options)
+        spec, recipe, reference = request['spec'], request['spec']['template'], request['reference']
         self.id = ('vr-sw-' if 'vr' in recipe['capabilities'] else 'sw-') + uuid.uuid4().hex
         self._owned, self._closed, self._terminated = True, False, False
         self._target = target

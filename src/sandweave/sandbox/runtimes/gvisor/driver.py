@@ -37,7 +37,7 @@ class Runtime:
         self.manager = self.engine.EnvironmentManager(self.root)
         self.connections = {}
 
-    def gpu(self, requested):
+    def gpu(self, requested, *, device_uuid=None):
         if requested is None:
             return None
         gpu_module = importlib.import_module('gvisor_gpu')
@@ -48,6 +48,8 @@ class Runtime:
         for index in allocation:
             gpu_module.allocated_device(index)
             identity = gpu_module.device_identity(index)
+            if device_uuid and identity['uuid'] != device_uuid:
+                continue
             model = subprocess.check_output(['nvidia-smi', '-i', identity['uuid'], '--query-gpu=name',
                                              '--format=csv,noheader'], text=True).strip()
             if not requested.get('model') or requested['model'].lower() in model.lower():
@@ -101,7 +103,7 @@ class Runtime:
             options.append('--nftables')
         if runtime.get('cgroup'):
             options += ['--cgroup', runtime['cgroup']]
-        gpu = self.gpu(resources['gpu'])
+        gpu = self.gpu(resources['gpu'], device_uuid=spec.get('_gpu_uuid'))
         if gpu is not None:
             if {'desktop', 'vr', 'gamepad'} & spec['template']['capabilities'].keys():
                 library = self.root / 'tools/gpu/driver/lib'

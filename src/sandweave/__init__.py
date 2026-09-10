@@ -13,7 +13,7 @@ try:
     __version__ = version('sandweave')
 except PackageNotFoundError:
     __version__ = '0+unknown'
-__all__ = ['Sandbox', 'Pool', 'Template', 'SnapshotRef', 'CPU', 'GPU', 'Memory',
+__all__ = ['Sandbox', 'Pool', 'Cluster', 'Job', 'Template', 'SnapshotRef', 'CPU', 'GPU', 'Memory',
            'Network', 'Mount', 'Slurm', 'SandboxError', 'CacheMiss', 'CacheConflict',
            'IncompatibleSnapshot', 'UnsupportedFeature', 'ResourceUnavailable',
            'CommandError', 'CommandTimeout', 'OperationUnknown', 'SetupError', 'OutputLimitExceeded']
@@ -22,7 +22,9 @@ __all__ = ['Sandbox', 'Pool', 'Template', 'SnapshotRef', 'CPU', 'GPU', 'Memory',
 def __getattr__(name):
     modules = {
         'Sandbox': ('.sandbox.sandbox', 'Sandbox'),
-        'Pool': ('.sandbox.pool', 'Pool'),
+        'Pool': ('.weave.pool', 'Pool'),
+        'Cluster': ('.weave.client', 'Cluster'),
+        'Job': ('.weave.jobs', 'Job'),
         'Template': ('.templates', 'Template'),
         'SnapshotRef': ('.sandbox.snapshots', 'SnapshotRef'),
         'Slurm': ('.sandbox.targets', 'Slurm'),

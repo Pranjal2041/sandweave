@@ -1,8 +1,8 @@
 # Repository structure
 
-**A template is the definition. A sandbox is a running instance.**
+**Templates define environments. Sandbox code runs one. Weave manages many.**
 
-The user approved this two-pillar structure. The [agreed API](../README.md#agreed-public-api-contract-v1)
+The [agreed API](../README.md#agreed-public-api-contract-v1)
 remains the public contract; [implementation progress](sdk-implementation-progress.md)
 records current acceptance.
 
@@ -18,6 +18,14 @@ src/sandweave/
 │   ├── pool.py
 │   ├── runtimes/
 │   └── targets.py
+├── weave/                 # Placement, durable pools and submitted jobs
+│   ├── client.py
+│   ├── controller.py
+│   ├── scheduler.py
+│   ├── state.py
+│   ├── pool.py
+│   ├── jobs.py
+│   └── providers/
 └── templates/             # Definition, preparation, startup and controls
     ├── coding/
     ├── gnome/
@@ -37,8 +45,10 @@ the qualified lab scripts. Their workspace and runtime inputs are isolated from
 existing lab environments. The wheel must operate without the source checkout;
 prepared runtime binaries and images remain external, configured artifacts.
 
-## Proposed distributed management
+## Distributed management
 
-The [Weave proposal](weave-design.md) adds a third responsibility for managing
-sandboxes across workers. It is under discussion; the structure and API above
-remain the current contract.
+Weave records requested work and assigns it to existing workers. The scheduler
+plans placements; the controller commits them; workers execute them. Commands
+and observations go directly to workers. Local pools retain their existing
+implementation, while the public `Pool` import selects durable coordination for
+a cluster target. See the [guide](weave-usage.md) and [design](weave-design.md).

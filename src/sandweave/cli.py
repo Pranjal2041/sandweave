@@ -213,6 +213,12 @@ def parser():
     pools = sub.add_parser('pool').add_subparsers(dest='pool_operation', required=True)
     p = pools.add_parser('create'); creation_options(p)
     p.add_argument('--size', type=int, default=1); p.add_argument('--warm', type=int, default=0)
+    p.add_argument('--weight', type=float, default=1); p.add_argument('--priority', type=int, default=0)
+    p.add_argument('--placement', choices=('spread', 'pack'), default='spread')
+    p = pools.add_parser('update'); p.add_argument('name'); p.add_argument('--target', required=True)
+    p.add_argument('--size', type=int); p.add_argument('--warm', type=int)
+    p.add_argument('--weight', type=float); p.add_argument('--priority', type=int)
+    p.add_argument('--placement', choices=('spread', 'pack'))
     for action in ('status', 'close', 'exec'):
         p = pools.add_parser(action); p.add_argument('name'); p.add_argument('--target')
         if action == 'exec':
@@ -230,6 +236,8 @@ def parser():
     p.add_argument('--walltime', default='1h'); p.add_argument('--queue-timeout', type=float)
     for action in ('status', 'close'):
         p = slurm.add_parser(action); p.add_argument('job_id')
+    from .weave.cli import configure
+    configure(sub)
     return root
 
 
@@ -238,6 +246,15 @@ def main(argv=None):
     args = arguments.parse_args(argv)
     try:
         op = args.operation
+        if op in ('cluster', 'job', 'pool'):
+            from .weave.cli import main as weave_main
+            result = weave_main(args)
+            if result is not None:
+                return result
+            if op == 'pool' and (args.pool_operation == 'update' or
+                    getattr(args, 'weight', 1) != 1 or getattr(args, 'priority', 0) != 0 or
+                    getattr(args, 'placement', 'spread') != 'spread'):
+                raise ValueError('pool scheduling options require a cluster target')
         if op == 'setup':
             if bool(args.id) != bool(args.script):
                 raise ValueError('guest setup requires both ID and SCRIPT; use plain sandweave setup for this worker')

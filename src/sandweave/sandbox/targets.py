@@ -148,6 +148,10 @@ def local_connection(*, template=None):
 def connect(target=None, *, template=None):
     if target in (None, 'local'):
         return local_connection(template=template)
+    from ..weave.client import ClusterConnection, cluster_config
+    cluster = cluster_config(target)
+    if cluster is not None:
+        return ClusterConnection(cluster)
     if isinstance(target, (Slurm, Endpoint)):
         return target.connection()
     if isinstance(target, str) and target.startswith('ssh://'):

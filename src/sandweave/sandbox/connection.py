@@ -1,6 +1,7 @@
 """Persistent per-thread control connections with explicit uncertain outcomes."""
 import http.client
 import socket
+import select
 import threading
 
 from . import errors
@@ -25,8 +26,28 @@ class Connection:
         self.local = threading.local()
         self.connections, self.lock = [], threading.Lock()
 
+    def clone(self, *, timeout=None):
+        return Connection(self.host, self.port, self.token,
+                          timeout=self.timeout if timeout is None else timeout, unix_path=self.unix_path)
+
     def call(self, operation, **parameters):
         connection = getattr(self.local, 'connection', None)
+        if connection is not None and connection.sock is not None:
+            # A peer may close an idle keep-alive socket between calls. Detect
+            # EOF before sending any bytes; reconnecting here cannot duplicate
+            # a mutation. Failures after sending still have uncertain outcomes.
+            try:
+                readable = select.select([connection.sock], [], [], 0)[0]
+                stale = bool(readable) and connection.sock.recv(1, socket.MSG_PEEK) == b''
+            except OSError:
+                stale = True
+            if stale:
+                connection.close()
+                with self.lock:
+                    if connection in self.connections:
+                        self.connections.remove(connection)
+                connection = None
+                self.local.connection = None
         if connection is None:
             connection = UnixHTTPConnection(self.unix_path, self.timeout) if self.unix_path else http.client.HTTPConnection(
                 self.host, self.port, timeout=self.timeout)
@@ -48,6 +69,9 @@ class Connection:
             result = decode(response.read(length))
         except (OSError, http.client.HTTPException) as error:
             connection.close()
+            with self.lock:
+                if connection in self.connections:
+                    self.connections.remove(connection)
             self.local.connection = None
             raise errors.OperationUnknown(f'{operation}: transport failed; delivery outcome unknown: {error}',
                                           operation_id=parameters.get('operation_id') or parameters.get('identity')) from error

@@ -19,13 +19,13 @@ from ...timings import measure
 AGENT_PORT = 23799
 
 
-def agent_source():
+def agent_source(*, image=False):
     from ... import wire, guest_agent
     wire_source = Path(wire.__file__).read_text()
     source = Path(guest_agent.__file__).read_text()
     return ("import sys, types\nm=types.ModuleType('sandweave_wire')\n"
             f"exec({wire_source!r}, m.__dict__)\nsys.modules['sandweave_wire']=m\n" + source +
-            "\nmain(sys.argv[1], sys.argv[2])\n")
+            f"\nmain(sys.argv[1], sys.argv[2], image={image!r})\n")
 
 
 class Runtime:
@@ -132,7 +132,9 @@ class Runtime:
         path = self.root / 'sandboxes' / (identity + '.mounts.json')
         atomic_json(path, spec.get('mounts', []))
         options += ['--mounts', str(path)]
-        if snapshot is None and spec['template'].get('base_snapshot'):
+        if snapshot is None and spec.get('image'):
+            options += ['--base-image', spec['image']['base_image']]
+        if snapshot is None and not spec.get('image') and spec['template'].get('base_snapshot'):
             from ...workspace import assets
             from ...snapshots import Store
             base = assets()
@@ -154,7 +156,9 @@ class Runtime:
                 snapshot = Store(self).materialize({'id': 'snap-' + source['snapshot_id'],
                                                    'workspace': str(base), 'location': str(path)})
         init = spec['template'].get('runtime_options', {}).get('init', 'agent')
-        command = ['python3', '-u', '-c', agent_source(), str(AGENT_PORT), token]
+        agent_command = [spec.get('image', {}).get('agent', 'python3'), '-I', '-S', '-u',
+                         '-c', agent_source(image=bool(spec.get('image'))), str(AGENT_PORT), token]
+        command = agent_command
         if init in ('systemd', 'docker'):
             command = spec['template']['runtime_options'].get('init_command', ['/sbin/init'])
             if not isinstance(command, list) or not command or any(
@@ -181,9 +185,9 @@ class Runtime:
                                    timeout=remaining())
                 cold = True
         with measure('runtime_agent_seconds'):
-            return self._start_agent(identity, token, init, cold, deadline, remaining)
+            return self._start_agent(identity, token, init, cold, deadline, remaining, agent_command)
 
-    def _start_agent(self, identity, token, init, cold, deadline, remaining):
+    def _start_agent(self, identity, token, init, cold, deadline, remaining, agent_command):
         if init in ('systemd', 'docker') and cold:
             while True:
                 try:
@@ -196,7 +200,7 @@ class Runtime:
                     time.sleep(.1)
             self.manager._run([*self.manager._command(identity), 'exec', identity,
                                'systemd-run', '--unit=sandweave-agent', '--collect',
-                               'python3', '-u', '-c', agent_source(), str(AGENT_PORT), token], timeout=30)
+                               *agent_command], timeout=30)
         port = self.manager.status(identity)['ports'][str(AGENT_PORT)]
         client = Connection('127.0.0.1', port, token, timeout=min(1, remaining()))
         while True:

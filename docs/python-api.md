@@ -20,11 +20,12 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | Argument | Meaning | Default |
 | --- | --- | --- |
 | `template` | Built-in name, TOML file, or `Template`. | `"coding"` |
+| `image` | `docker://` base image; can accompany a template. | Template image, if set |
 | `setup` | Client-side path to a guest setup script. | None |
 | `cache` | Saved filesystem cache name or reference. | None |
 | `snapshot` | Saved snapshot reference. | None |
 | `cache_key` | Reuse matching prepared recipe state. | None |
-| `refresh` | Force fresh preparation for a `cache_key`. | `False` |
+| `refresh` | Resolve an image tag again and rebuild named setup caches. | `False` |
 | `cpu` | Virtual CPU count or `CPU(...)`. | Template default |
 | `memory` | Guest size or `Memory(...)`. | Template default |
 | `gpu` | Boolean, model name, or `GPU(...)`. | Template default |
@@ -41,7 +42,7 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `experimental_gpu_live` | Opt into qualified experimental CUDA memory restore. | `False` |
 
 `cache` and `snapshot` are alternative sources. A saved source cannot be combined
-with `template`, `setup`, or `cache_key`. A restore retains its saved runtime.
+with `template`, `image`, `setup`, or `cache_key`. A restore retains its saved runtime and image.
 
 ### Commands
 
@@ -51,7 +52,8 @@ process = env.exec("python -u /workspace/main.py", timeout=60)
 ```
 
 Both accept `cwd`, `env`, `user`, `timeout`, `shell`, `binary`,
-`max_output_bytes`, and `pty`. Their default `cwd` is `/workspace`. Use `argv`
+`max_output_bytes`, and `pty`. Their default `cwd` is the template's `workdir`,
+the image's working directory, or `/workspace` for existing templates. Use `argv`
 instead of a command string for literal arguments. `check` is a `run` option;
 use `process.wait(check=True)` for an `exec` process.
 

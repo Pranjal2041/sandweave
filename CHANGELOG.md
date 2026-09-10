@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.4
+
+- Add `Sandbox(image="docker://...")` and CLI `--image` for public Linux x86-64
+  registry images. Custom templates can define an image; an explicit constructor
+  image overrides that base while retaining setup, services, and controls.
+- Preserve image environment, user, and working directory. A private static
+  control runtime supports images without Python or a shell. ENTRYPOINT and CMD
+  remain metadata; templates define startup services.
+- Cache prepared filesystems by image digest. Image bases travel with snapshots
+  and pool baselines. Report the image digest in `env.info` and preparation time
+  in `env.timings`. Add an image guide to the documentation site.
+- Wait for worker file preparation across slow storage and client interruption.
+  Start CPU monitoring after controller acknowledgment, and read runsc state
+  under its lock to avoid observing incomplete startup records.
+
 ## 0.2.3
 
 - New clusters accept direct HTTP and SSH connections by default. Startup prints

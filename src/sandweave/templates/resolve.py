@@ -96,6 +96,10 @@ def resolve(source='coding', _seen=()):
                 'capabilities': {}, 'setup_steps': [], 'runtime_options': {},
                 'user': 'root', 'command_shell': '/bin/sh'}
     result = merge(base, config)
+    result['_user_explicit'] = 'user' in config or base.get('_user_explicit', False)
+    if 'image' in result:
+        from .images import validate
+        validate(result['image'])
     result['name'] = config.get('name', identity)
     if setup:
         if not isinstance(setup, dict) or 'script' not in setup:

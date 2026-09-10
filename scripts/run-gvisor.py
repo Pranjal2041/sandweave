@@ -287,7 +287,7 @@ for guest_port in dict.fromkeys((80, 8080, 8000, 5901, 22, *args.forward)):
     reservation.bind(('127.0.0.1', 0))
     reservations.append(reservation)
     ports[str(guest_port)] = reservation.getsockname()[1]
-(logs / 'ports.json').write_text(json.dumps(ports, indent=2) + '\n')
+snapshot_store.write_json(logs / 'ports.json', ports)
 host_interfaces = json.loads(subprocess.check_output(runtime_tools.command(lab, local, 'ip', '-j', 'address'), text=True))
 policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.2',
           'dns': '10.0.2.3', 'forwarded_tcp_ports': list(map(int, ports)),

@@ -29,4 +29,6 @@ def summarize(record):
         'cpu': resources['cpu'], 'memory': resources['memory'],
         'gpus': gpus,
         'vnc': vnc,
+        **({'image': {key: spec['image'][key] for key in ('reference', 'digest', 'platform')}}
+           if spec.get('image') else {}),
     })

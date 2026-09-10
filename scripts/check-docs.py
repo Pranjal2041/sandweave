@@ -112,6 +112,11 @@ def check_browser(site, output, url=None):
                 page.locator('.md-sidebar--primary').get_by_role('link', name='Networking', exact=True).click()
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Networking¶?$'))
                 assert page.url.endswith('/networking/')
+                page.locator('.md-sidebar--primary').get_by_role('link', name='Docker images', exact=True).click()
+                expect(page.locator('h1')).to_have_text(re.compile(r'^Docker images¶?$'))
+                page.get_by_role('button', name='Copy to clipboard').first.click()
+                assert 'Sandbox(image="docker://python:3.12-slim")' in page.evaluate('navigator.clipboard.readText()')
+                page.screenshot(path=str(output / 'images-desktop.png'), full_page=True, animations='disabled')
                 page.locator('.md-sidebar--primary').get_by_role('link', name='Connect a cluster', exact=True).click()
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Connect a cluster¶?$'))
                 page.screenshot(path=str(output / 'clusters-desktop.png'), full_page=True, animations='disabled')
@@ -131,6 +136,10 @@ def check_browser(site, output, url=None):
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Lifetime and cleanup¶?$'))
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'lifecycle-mobile.png'), full_page=True, animations='disabled')
+                page.goto(url + 'images/')
+                expect(page.locator('h1')).to_have_text(re.compile(r'^Docker images¶?$'))
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.screenshot(path=str(output / 'images-mobile.png'), full_page=True, animations='disabled')
                 assert not errors, errors
                 assert not failed, failed
                 context.close()

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import grp
 import pty as terminal
 import re
 import select
@@ -24,6 +25,26 @@ try:
     from sandweave.sandbox.wire import decode, encode, MAX_BODY
 except ImportError:
     from sandweave_wire import decode, encode, MAX_BODY
+
+
+def user_account(user):
+    """Resolve OCI USER values, including numeric IDs absent from /etc/passwd."""
+    name, separator, group = str(user).partition(':')
+    try:
+        account = pwd.getpwuid(int(name)) if name.isdigit() else pwd.getpwnam(name)
+        uid, gid, home, login = account.pw_uid, account.pw_gid, account.pw_dir, account.pw_name
+    except KeyError:
+        if not name.isdigit() and name != 'root':
+            raise ValueError('guest user does not exist: ' + name) from None
+        uid, gid, home, login = int(name) if name.isdigit() else 0, 0, '/', name
+    if separator:
+        if not group:
+            raise ValueError('guest group must not be empty')
+        gid = int(group) if group.isdigit() else grp.getgrnam(group).gr_gid
+    if not 0 <= uid < 2**32 - 1 or not 0 <= gid < 2**32 - 1:
+        raise ValueError('guest user and group IDs must be valid Linux IDs')
+    groups = [] if separator else os.getgrouplist(login, gid)
+    return uid, gid, home, login, groups
 
 
 class Agent:
@@ -80,7 +101,7 @@ class Agent:
                 raise ValueError('terminal rows/cols must be integers in 1..1000')
         request = {'argv': argv, 'cwd': cwd, 'env': env or {}, 'user': user, 'timeout': timeout,
                    'max_output_bytes': max_output_bytes, 'pty': pty}
-        account = pwd.getpwuid(int(user)) if str(user).isdigit() else pwd.getpwnam(user)
+        uid, gid, home, login, groups = user_account(user)
         directory = self.directory(identity)
         with self.lock:
             if directory.exists():
@@ -89,12 +110,11 @@ class Agent:
                 return self.status(identity)
             directory.mkdir()
             (directory / 'request.json').write_text(json.dumps(request))
-            child_env = {**os.environ, 'HOME': account.pw_dir, 'USER': account.pw_name,
-                         'LOGNAME': account.pw_name, **(env or {})}
+            child_env = {**os.environ, 'HOME': home, 'USER': login,
+                         'LOGNAME': login, **(env or {})}
             kwargs = {}
-            if os.geteuid() == 0 and (account.pw_uid != os.geteuid() or account.pw_gid != os.getegid()):
-                kwargs = {'user': account.pw_uid, 'group': account.pw_gid,
-                          'extra_groups': os.getgrouplist(account.pw_name, account.pw_gid)}
+            if os.geteuid() == 0:
+                kwargs = {'user': uid, 'group': gid, 'extra_groups': groups}
             stdout, stderr = (directory / 'stdout').open('wb'), (directory / 'stderr').open('wb')
             master = slave = None
             try:
@@ -105,7 +125,7 @@ class Agent:
                     child_env.setdefault('TERM', 'xterm-256color')
                     # Acquire the controlling terminal after exec into a fresh
                     # interpreter, avoiding preexec_fn in this threaded agent.
-                    launch = [sys.executable, '-c', 'import fcntl,termios,os,sys; '
+                    launch = [sys.executable, '-I', '-S', '-c', 'import fcntl,termios,os,sys; '
                               'fcntl.ioctl(0,termios.TIOCSCTTY,0); '
                               'os.execvpe(sys.argv[1],sys.argv[1:],os.environ)', *argv]
                 process = subprocess.Popen(launch, cwd=cwd, env=child_env, stdin=slave if pty else subprocess.PIPE,
@@ -328,12 +348,13 @@ class Agent:
         return getattr(self, operation)(**parameters)
 
 
-def main(port, token):
-    Path('/workspace').mkdir(mode=0o777, exist_ok=True)
-    Path('/workspace').chmod(0o777)
-    if not Path('/usr/local/bin/python').exists():
-        Path('/usr/local/bin/python').symlink_to('/usr/bin/python3')
-    agent = Agent()
+def main(port, token, image=False):
+    if not image:
+        Path('/workspace').mkdir(mode=0o777, exist_ok=True)
+        Path('/workspace').chmod(0o777)
+        if not Path('/usr/local/bin/python').exists():
+            Path('/usr/local/bin/python').symlink_to('/usr/bin/python3')
+    agent = Agent('/.sandweave-runtime/processes' if image else '/var/lib/sandweave/processes')
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'

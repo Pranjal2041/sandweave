@@ -227,8 +227,10 @@ done
     def erofs(self, root, source, output):
         output.parent.mkdir(parents=True, exist_ok=True)
         temporary = output.with_name('.' + output.name + '-' + uuid.uuid4().hex)
-        command = ['env', 'LD_LIBRARY_PATH=/lab/tools/helpers/usr/lib/x86_64-linux-gnu',
-                   '/lab/tools/helpers/usr/bin/mkfs.erofs', '--tar=f', '-E', 'noinline_data',
+        helpers = next((name for name in ('helpers', 'erofs') if
+                        (root / 'tools' / name / 'usr/bin/mkfs.erofs').is_file()), 'helpers')
+        command = ['env', 'LD_LIBRARY_PATH=/lab/tools/' + helpers + '/usr/lib/x86_64-linux-gnu',
+                   '/lab/tools/' + helpers + '/usr/bin/mkfs.erofs', '--tar=f', '-E', 'noinline_data',
                    '/lab/' + str(temporary.relative_to(root)), '/lab/' + str(source.relative_to(root))]
         try:
             self.run(self.container(root, root / 'tools/debian-trixie.sif', *command), label='Create guest image')

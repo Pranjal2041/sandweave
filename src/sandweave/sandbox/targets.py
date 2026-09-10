@@ -125,22 +125,40 @@ def local_connection(*, template=None):
                 if b'sandweave.sandbox.worker' in command and str(metadata).encode() in command:
                     raise ResourceUnavailable('existing worker is alive but unreachable; inspect ' + str(directory / 'worker.log'))
                 metadata.unlink()
-        with (directory / 'worker.log').open('ab') as log:
-            environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) +
-                           os.pathsep + os.environ.get('PYTHONPATH', '')}
-            environment.update(SANDWEAVE_HOME=str(installation.directory),
-                               SANDWEAVE_ASSETS=str(installation.assets))
-            child = subprocess.Popen([sys.executable, '-m', 'sandweave.sandbox.worker',
-                                      '--metadata', str(metadata)], stdin=subprocess.DEVNULL,
-                                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                     env=environment)
-        deadline = time.monotonic() + 180
-        while not metadata.exists():
-            if child.poll() is not None:
-                raise ResourceUnavailable('worker failed to start: ' + (directory / 'worker.log').read_text()[-5000:])
-            if time.monotonic() >= deadline:
-                raise TimeoutError('worker preparation is still running; inspect ' + str(directory / 'worker.log'))
-            time.sleep(.05)
+        from .ownership import process_alive, process_scope, process_state
+        from ..setup_progress import Stage
+        launcher = directory / 'launcher.json'
+        saved = json.loads(launcher.read_text()) if launcher.is_file() else None
+        child = None
+        alive = process_alive(saved) if saved else False
+        if alive is None:
+            raise ResourceUnavailable('cannot establish the preparing worker process identity; inspect ' + str(launcher))
+        if not alive:
+            with (directory / 'worker.log').open('ab') as log:
+                environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) +
+                               os.pathsep + os.environ.get('PYTHONPATH', '')}
+                environment.update(SANDWEAVE_HOME=str(installation.directory),
+                                   SANDWEAVE_ASSETS=str(installation.assets))
+                child = subprocess.Popen([sys.executable, '-m', 'sandweave.sandbox.worker',
+                                          '--metadata', str(metadata)], stdin=subprocess.DEVNULL,
+                                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                                         env=environment)
+            try:
+                _, started = process_state(child.pid)
+            except FileNotFoundError:
+                raise ResourceUnavailable('worker exited during preparation; inspect ' + str(directory / 'worker.log')) from None
+            saved = {'pid': child.pid, 'started': started, 'scope': process_scope()}
+            atomic_json(launcher, saved)
+        # Preparing immutable files can outlast a sandbox startup deadline on
+        # network storage. Wait for this same worker, retaining its identity
+        # across client interruption so retry cannot launch a duplicate.
+        with Stage('Preparing worker files', detail='Checking and staging runtime files',
+                   log=directory / 'worker.log') as progress:
+            while not metadata.exists():
+                if (child is not None and child.poll() is not None) or process_alive(saved) is False:
+                    raise ResourceUnavailable('worker failed to start: ' + (directory / 'worker.log').read_text()[-5000:])
+                progress.update()
+                time.sleep(.1)
         info = json.loads(metadata.read_text())
         connection = Connection('127.0.0.1', info['port'], info['token'])
         connection.call('ping')

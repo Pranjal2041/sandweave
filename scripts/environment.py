@@ -1,6 +1,7 @@
 """Python lifecycle API for the standalone no-KVM lab."""
 import ctypes
 import errno
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,19 @@ import environment_control as control
 import runtime_store
 import snapshot_store
 import fast_io
+
+
+def runtime_state(path):
+    """Read runsc's state under its lock; a busy writer is still starting."""
+    try:
+        with path.with_suffix('.lock').open('rb') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return None
+            return json.loads(path.read_text())
+    except FileNotFoundError:
+        return None
 
 
 class EnvironmentManager:
@@ -64,10 +78,7 @@ class EnvironmentManager:
         result = {'name': name, 'status': 'starting' if launcher else 'stopped',
                   'launcher': launcher, 'logs': str(self._logs(name))}
         path = self.local / 'gvisor/state' / f'{name}_sandbox:{name}.state'
-        try:
-            state = json.loads(path.read_text())
-        except FileNotFoundError:
-            state = None
+        state = runtime_state(path)
         if state and state.get('sandbox', {}).get('pid'):
             pid = state['sandbox']['pid']
             info = cpu_broker.process_table([pid]).get(pid)

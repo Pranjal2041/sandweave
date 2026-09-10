@@ -12,7 +12,8 @@ on your own workers without host sudo or KVM.
 
 A template defines the installed software, startup services and controls.
 A sandbox is a running instance of that template. You can use a built-in
-template, provide a setup script, or write your own template.
+template, provide a setup script, or write your own template. You can also use
+a Docker image as its filesystem base.
 
 ## Install
 
@@ -132,6 +133,24 @@ with Sandbox() as env:
 `terminate`. Here, `train.py` is your local script; `wait(check=True)` checks its
 exit status. File access also includes `write_text`, `read_text`, `download` and
 streaming through `env.files.open(...)`.
+
+## Use a Docker image
+
+```python
+from sandweave import Sandbox
+
+with Sandbox(image="docker://python:3.12-slim") as env:
+    print(env.run("python --version").stdout)
+```
+
+Images are downloaded and prepared once, then reused for independent sandboxes.
+A custom template can define `image = "docker://python:3.12-slim"` alongside its
+setup and services. Passing both `template=` and `image=` overrides the template's
+base while retaining its recipe. No Docker daemon is needed.
+
+Commands inherit the image's environment, user, and working directory. Sandweave
+starts its command service; the image's `ENTRYPOINT` and `CMD` do not run
+automatically. See [image defaults, caching, and supported images](https://pranjal2041.github.io/sandweave/images/).
 
 ## Set up a desktop
 

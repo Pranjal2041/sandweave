@@ -278,9 +278,12 @@ def dispatch(controller, operation, params):
 
 def _new_member(controller, pool, *, builder=False):
     request = copy.deepcopy(pool['request'])
-    request['spec'].update(detached=True, ttl=None, name=None)
     if not builder:
+        # The builder resolves image metadata and its private control runtime.
+        # Members must inherit that prepared definition with the filesystem.
+        request['spec'] = copy.deepcopy(pool.get('baseline_spec', request['spec']))
         request.update(reference=pool['baseline'], cache_key=None, refresh=False)
+    request['spec'].update(detached=True, ttl=None, name=None)
     identity = ('vr-sw-' if 'vr' in request['spec']['template']['capabilities'] else 'sw-') + uuid.uuid4().hex
     with controller.state.transaction():
         pool = resolve(controller, pool['id'])
@@ -304,12 +307,13 @@ def _capture(controller, pool_id, builder_id):
             if verification.get('status') != 'passed':
                 raise ResourceUnavailable('pool baseline verification failed: ' + str(verification.get('error')))
             from .artifacts import register
-            register(controller, saved['id'], record['endpoint'])
+            prepared = register(controller, saved['id'], record['endpoint'])['spec']
         finally:
             connection.close()
         with controller.state.transaction():
             pool = resolve(controller, pool_id)
-            controller.state.put('pool', {**pool, 'baseline': saved['id'], 'state': 'ready'})
+            controller.state.put('pool', {**pool, 'baseline': saved['id'],
+                                         'baseline_spec': prepared, 'state': 'ready'})
             controller.allocation_cancel(builder_id)
     except Exception as error:
         with controller.state.transaction():

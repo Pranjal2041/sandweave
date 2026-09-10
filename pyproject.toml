@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sandweave"
-version = "0.2.3"
+version = "0.2.4"
 description = "Fast, modular sandboxes for AI agents"
 readme = "README.md"
 license-files = ["LICENSES/*"]
 requires-python = ">=3.11"
-dependencies = ["questionary>=2,<3", "rich>=14,<15"]
+dependencies = ["questionary>=2,<3", "rich>=14,<15", "zstandard>=0.23,<1"]
 
 [project.urls]
 Homepage = "https://pypi.org/project/sandweave/"

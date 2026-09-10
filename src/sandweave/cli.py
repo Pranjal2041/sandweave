@@ -30,6 +30,7 @@ def output(value):
 
 def creation_options(parser):
     parser.add_argument('--template')
+    parser.add_argument('--image', help='Docker/OCI base image, for example docker://python:3.12-slim')
     parser.add_argument('--setup')
     parser.add_argument('--cache')
     parser.add_argument('--snapshot')
@@ -56,7 +57,7 @@ def command_options(parser):
     parser.add_argument('--argv', action='store_true', help='execute literal arguments without a guest shell')
     parser.add_argument('--timeout', type=float)
     parser.add_argument('--max-output-bytes', type=int)
-    parser.add_argument('--cwd', default='/workspace')
+    parser.add_argument('--cwd')
     parser.add_argument('--user')
     parser.add_argument('--shell')
     parser.add_argument('--no-stdin', action='store_true')
@@ -65,7 +66,7 @@ def command_options(parser):
 
 
 def creation(args):
-    keys = ('template', 'setup', 'cache', 'snapshot', 'cache_key', 'refresh', 'runtime',
+    keys = ('template', 'image', 'setup', 'cache', 'snapshot', 'cache_key', 'refresh', 'runtime',
             'target', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
             'keep_on_error', 'experimental_gpu_live')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}

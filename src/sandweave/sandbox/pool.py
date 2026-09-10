@@ -57,7 +57,7 @@ class Pool:
                     source = builder.snapshot(state='filesystem')
                 # Startup services and controls survive in the saved recipe.
                 self.options = {k: v for k, v in self.options.items()
-                                if k not in ('template', 'setup', 'cache_key', 'refresh')}
+                                if k not in ('template', 'image', 'setup', 'cache_key', 'refresh')}
                 self.options['cache'] = source.id
             self.started = True
             self._refill()

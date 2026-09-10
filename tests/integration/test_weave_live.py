@@ -148,6 +148,35 @@ def test_pool_keeps_pristine_state_and_async_contract(cluster):
     assert pool.info['state'] == 'closed'
 
 
+def test_docker_image_transfer_pool_and_job(cluster):
+    with Sandbox(target='weave-live', image='docker://busybox:1.37.0', startup_timeout=900) as source:
+        source.files.write_text('/saved', 'image state')
+        saved = source.snapshot(state='filesystem')
+        worker = next(a['worker'] for a in cluster.info['sandboxes'] if a['id'] == source.id)
+        digest = source.info['image']['digest']
+        cluster.drain(worker)
+        try:
+            with Sandbox(target='weave-live', snapshot=saved, startup_timeout=900) as restored:
+                assert restored.files.read_text('/saved') == 'image state'
+                assert restored.info['image']['digest'] == digest
+                destination = next(a['worker'] for a in cluster.info['sandboxes'] if a['id'] == restored.id)
+                assert destination != worker
+                assert restored.run('echo transferred').stdout == 'transferred\n'
+        finally:
+            cluster.resume(worker)
+    with Pool(target='weave-live', image='docker://busybox:1.37.0',
+              size=2, warm=1, startup_timeout=900) as pool:
+        with pool.acquire() as env:
+            assert env.run('echo pooled').stdout == 'pooled\n'
+            assert env.info['image']['digest'] == digest
+        job = pool.submit('cat /workspace/message; echo error >&2; exit 7', files={'message': b'uploaded\n'})
+        try:
+            result = job.result(timeout=120)
+            assert (result.stdout, result.stderr, result.returncode) == ('uploaded\n', 'error\n', 7)
+        finally:
+            job.close()
+
+
 def test_durable_job_survives_controller_crash_and_preserves_stderr(cluster, tmp_path):
     import signal
     from sandweave.sandbox.ownership import process_alive

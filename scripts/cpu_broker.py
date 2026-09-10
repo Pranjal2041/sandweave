@@ -283,10 +283,26 @@ def register(local, name, cpus, weight, quota):
                                'weight': weight, 'quota': quota, 'state_path': str(local / 'gvisor/state' / f'{name}_sandbox:{name}.state'), 'control_path': str(local / 'gvisor/state' / ('runsc-' + name + '.sock'))}))
     temp.replace(path)
     with (directory / 'broker.log').open('ab') as output:
-        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--directory', str(directory),
+        child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--directory', str(directory),
                           '--cpus', ','.join(map(str, sorted(cpus)))], stdin=subprocess.DEVNULL,
                          stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
-    return path
+    # The launcher's watchdog must not start before the broker acknowledges
+    # this registration. A cold Python start on network storage can take more
+    # than the watchdog's heartbeat interval.
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            report = json.loads((directory / 'status.json').read_text())
+            if path.name in report.get('jobs', {}) and time.time() - report['time'] <= 3:
+                return path
+        except (OSError, ValueError):
+            pass
+        code = child.poll()
+        # Exit zero may mean another broker already owns this CPU pool.
+        if code not in (None, 0) or time.monotonic() >= deadline:
+            path.unlink(missing_ok=True)
+            raise RuntimeError('CPU controller did not acknowledge registration; see ' + str(directory / 'broker.log'))
+        time.sleep(.05)
 
 
 if __name__ == '__main__':

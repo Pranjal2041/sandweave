@@ -180,6 +180,48 @@ def test_pool_claims_are_exclusive_and_release_discards_state(lab):
     assert all(a['id'] not in ids for a in ready)
 
 
+def test_pool_members_inherit_the_prepared_image_definition(lab, monkeypatch):
+    snapshots = {}
+    original = Executor.call
+    def call(self, operation, **params):
+        if operation == 'capture':
+            saved = copy.deepcopy(self.read(params['identity'])['spec'])
+            saved['image'].update(digest='sha256:' + 'a'*64, agent='/private/python',
+                                  base_image='images/prepared.erofs')
+            saved['template'].update(user='123:456', workdir='/app')
+            saved['env']['FROM_IMAGE'] = 'preserved'
+            identity = 'snap-' + uuid.uuid4().hex
+            snapshots[identity] = saved
+            return {'id': identity}
+        if operation == 'snapshot_spec':
+            return {'reference': params['reference'], 'spec': snapshots[params['reference']]}
+        if operation == 'snapshot_info':
+            return {'id': params['reference']}
+        if operation == 'snapshot_verify':
+            return {'status': 'passed'}
+        return original(self, operation, **params)
+    monkeypatch.setattr(Executor, 'call', call)
+    identity = 'pool-image'
+    recipe = definition(image='docker://busybox', detached=True, ttl=123)
+    pool_call(lab.controller, 'pool_create', dict(identity=identity, name=None, request=recipe,
+        size=1, warm=1, weight=1, priority=0, labels={}, placement='spread', owner=None))
+    until(lab, lambda: lab.controller.pool_status(identity)['ready'] == 1)
+    member = next(a for a in lab.controller.state.list('allocation', parent=identity)
+                  if a.get('role') == 'member')
+    prepared = member['spec']
+    assert prepared['image']['agent'] == '/private/python'
+    assert prepared['image']['base_image'] == 'images/prepared.erofs'
+    assert prepared['env']['FROM_IMAGE'] == 'preserved'
+    assert prepared['template']['user'] == '123:456'
+    assert prepared['template']['workdir'] == '/app'
+    assert prepared['ttl'] is None
+    lease = uuid.uuid4().hex
+    pool_call(lab.controller, 'pool_checkout', dict(identity=identity, lease_id=lease, owner=None))
+    until(lab, lambda: lab.controller.state.get('lease', lease)['state'] == 'ready')
+    worker = lab.executors[member['endpoint']['port']]
+    assert worker.read(member['id'])['spec']['ttl'] == 123
+
+
 def test_controller_restart_preserves_pool_and_active_lease(lab):
     pool = make_pool(lab.controller)
     lease_id = uuid.uuid4().hex

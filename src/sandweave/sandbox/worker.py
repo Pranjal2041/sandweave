@@ -118,6 +118,12 @@ class Worker:
         reason = self.owners.reason(owner)
         if reason:
             raise SandboxError('sandbox owner is no longer active: ' + reason, sandbox_id=identity)
+        image_seconds = 0
+        if spec.get('image') and reference is None:
+            from ..templates.images import configure
+            spec, image_seconds = configure(spec, self.root, refresh=refresh)
+            if image_seconds >= spec['startup_timeout']:
+                raise TimeoutError('image preparation exceeded startup_timeout; downloaded files are retained for retry')
         if cache_key is not None:
             from ..templates.resolve import fingerprint
             from .workspace import locked
@@ -137,8 +143,8 @@ class Worker:
                                      'controls': descriptors(spec['template']),
                                      'runtime': (self.root / 'tools/gvisor-socket/runtime.json').read_text()})
                 if not refresh and previous and previous['fingerprint'] == stamp:
-                    return self._create(spec, identity, operation_id=operation_id, reference=previous['id'], owner=owner)
-                result = self._create(spec, identity, operation_id=operation_id, owner=owner)
+                    return self._create(spec, identity, operation_id=operation_id, reference=previous['id'], owner=owner, image_seconds=image_seconds)
+                result = self._create(spec, identity, operation_id=operation_id, owner=owner, image_seconds=image_seconds)
                 try:
                     saved = self.capture(identity, state='filesystem')
                     self.store.publish(cache_key, saved, (previous or {}).get('id'),
@@ -148,9 +154,9 @@ class Worker:
                         self.terminate(identity)
                     raise
                 return result
-        return self._create(spec, identity, operation_id=operation_id, reference=reference, owner=owner)
+        return self._create(spec, identity, operation_id=operation_id, reference=reference, owner=owner, image_seconds=image_seconds)
 
-    def _create(self, spec, identity, *, operation_id=None, reference=None, owner=None):
+    def _create(self, spec, identity, *, operation_id=None, reference=None, owner=None, image_seconds=0):
         started = time.monotonic()
         with self.lock(identity), collect() as timings:
             if self.path(identity).exists():
@@ -176,9 +182,11 @@ class Worker:
                     raise SandboxError('worker is shutting down')
                 record['admission'] = admit(self, spec)
                 self.write(record)
+            if spec.get('image'):
+                timings['image_prepare_seconds'] = image_seconds
             timings['admission_seconds'] = time.monotonic() - started
             try:
-                self.deadlines[identity] = started + spec['startup_timeout']
+                self.deadlines[identity] = started + spec['startup_timeout'] - image_seconds
                 self.remaining(identity)
                 with measure('snapshot_seconds'):
                     saved = self.store.resolve(reference) if reference else None
@@ -285,7 +293,7 @@ class Worker:
             raise SandboxError('sandbox is not running: ' + record['state'], sandbox_id=identity)
         return self.runtime.agent(identity, record['agent'])
 
-    def command_start(self, identity, process_id, command=None, argv=None, cwd='/workspace',
+    def command_start(self, identity, process_id, command=None, argv=None, cwd=None,
                       env=None, user=None, timeout=None, shell=None, max_output_bytes=None, pty=False):
         spec = self.read(identity)['spec']
         if (command is None) == (argv is None):
@@ -296,9 +304,10 @@ class Worker:
             argv = [shell or spec['template'].get('command_shell', '/bin/sh'), '-c', command]
         elif shell is not None:
             raise ValueError('shell cannot be combined with argv')
-        return self.agent(identity).call('spawn', identity=process_id, argv=argv, cwd=cwd,
+        return self.agent(identity).call('spawn', identity=process_id, argv=argv,
+                                         cwd=cwd if cwd is not None else spec['template'].get('workdir', '/workspace'),
                                          env={**spec.get('env', {}), **(env or {})},
-                                         user=user or spec['template'].get('user', 'root'), timeout=timeout,
+                                         user=user if user is not None else spec['template'].get('user', 'root'), timeout=timeout,
                                          max_output_bytes=max_output_bytes if max_output_bytes is not None else
                                          spec['template'].get('runtime_options', {}).get('max_output_bytes', 64*1024**2), pty=pty)
 
@@ -430,7 +439,7 @@ class Worker:
                                command=command if isinstance(command, str) else None,
                                argv=command if isinstance(command, list) else None,
                                user=service.get('user'), env=service.get('env'),
-                               cwd=service.get('cwd', '/workspace'))
+                               cwd=service.get('cwd'))
             self.process_stdin(identity, process, close=True)
             ready = service.get('ready', {}).get('exec')
             if ready:
@@ -442,6 +451,7 @@ class Worker:
                     result = context.run(argv=ready if isinstance(ready, list) else None,
                                          command=ready if isinstance(ready, str) else None,
                                          user=service.get('user', spec['template']['user']),
+                                         cwd=service.get('cwd'), env=service.get('env'),
                                          timeout=5, check=False)
                     if result['returncode'] == 0:
                         break

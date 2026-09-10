@@ -4,6 +4,10 @@ A template supplies installed software, startup services, and controls. Resource
 overrides such as `cpu=4` or `memory="8GiB"` belong on `Sandbox(...)`; they do
 not require another template.
 
+Custom templates can also set an `image` as their default filesystem base.
+Passing `Sandbox(template=..., image=...)` overrides that base and retains the
+template's setup and services. See [Docker images](images.md).
+
 ## Built-in templates
 
 | Name | Includes |

@@ -16,7 +16,7 @@ from .targets import connect
 from ..templates.resolve import Template, setup_step
 
 
-def definition(*, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
+def definition(*, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
                keep_on_error=False, refresh=False, experimental_gpu_live=False):
@@ -24,10 +24,8 @@ def definition(*, template=None, setup=None, cache=None, snapshot=None, cache_ke
     if sum(x is not None for x in (cache, snapshot)) > 1:
         raise ValueError('cache and snapshot are alternative sources')
     reference = cache if cache is not None else snapshot
-    if reference is not None and any(x is not None for x in (template, setup, cache_key)):
+    if reference is not None and any(x is not None for x in (template, image, setup, cache_key)):
         raise ValueError('a saved source cannot be combined with a new recipe')
-    if refresh and cache_key is None:
-        raise ValueError('refresh requires cache_key')
     if type(detached) is not bool:
         raise ValueError('detached must be a bool')
     if ttl is not None:
@@ -53,8 +51,17 @@ def definition(*, template=None, setup=None, cache=None, snapshot=None, cache_ke
             mounts = saved['spec']['mounts']
         runtime = saved['spec']['runtime']
     else:
-        recipe = Template(template or 'coding').resolve()
+        recipe = Template(template if template is not None else ({} if image else 'coding')).resolve()
         defaults = recipe['resources']
+    selected_image = image if image is not None else recipe.get('image')
+    if refresh and cache_key is None and selected_image is None:
+        raise ValueError('refresh requires cache_key or image')
+    if selected_image is not None:
+        from ..templates.images import validate
+        validate(selected_image)
+        if runtime != 'gvisor':
+            raise UnsupportedFeature('Docker images currently require runtime="gvisor"')
+        recipe['image'] = selected_image
     if setup:
         recipe['setup_steps'].append(setup_step(setup))
     selected_memory = memory if memory is not None else defaults.get('memory', '1GiB')
@@ -67,11 +74,15 @@ def definition(*, template=None, setup=None, cache=None, snapshot=None, cache_ke
             'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
             'ttl': ttl, 'detached': detached, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
             'experimental_gpu_live': experimental_gpu_live}
+    if saved and saved['spec'].get('image'):
+        spec['image'] = copy.deepcopy(saved['spec']['image'])
+    elif selected_image is not None:
+        spec['image'] = {'reference': selected_image}
     return dict(spec=spec, reference=reference, cache_key=cache_key, refresh=refresh)
 
 
 class Sandbox:
-    def __init__(self, *, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
+    def __init__(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False):
@@ -84,7 +95,7 @@ class Sandbox:
                 self._connection.close()
             raise
 
-    def _initialize(self, *, template=None, setup=None, cache=None, snapshot=None, cache_key=None,
+    def _initialize(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                     cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False):
@@ -100,6 +111,9 @@ class Sandbox:
         # Select the worker after installing the recipe's dependencies. A
         # saved recipe needs the same check when restored on another worker.
         self._connection = connect(target, template=recipe)
+        initial = self._connection
+        self._connection = initial.clone(timeout=startup_timeout + 60)
+        initial.close()
         from .ownership import client_owner
         owner = None if detached else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
@@ -207,7 +221,7 @@ class Sandbox:
         return self._info
 
     @dualmethod
-    def exec(self, command=None, *, argv=None, cwd='/workspace', env=None, user=None,
+    def exec(self, command=None, *, argv=None, cwd=None, env=None, user=None,
              timeout=None, shell=None, binary=False, max_output_bytes=None, pty=False):
         identity = uuid.uuid4().hex
         self._call('command_start', process_id=identity, command=command, argv=argv,
@@ -226,7 +240,7 @@ class Sandbox:
             raise
 
     @dualmethod
-    def run(self, command=None, *, argv=None, cwd='/workspace', env=None, user=None,
+    def run(self, command=None, *, argv=None, cwd=None, env=None, user=None,
             timeout=None, shell=None, check=False, binary=False, max_output_bytes=None, pty=False):
         """Return output and exit status; check=True raises on a nonzero exit."""
         process = self.exec(command, argv=argv, cwd=cwd, env=env, user=user,

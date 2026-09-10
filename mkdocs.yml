@@ -93,6 +93,7 @@ nav:
       - Your first sandbox: quickstart.md
   - Sandboxes:
       - Run commands: commands.md
+      - Docker images: images.md
       - Files and setup: files.md
       - CPU, memory and GPUs: resources.md
       - Networking: networking.md

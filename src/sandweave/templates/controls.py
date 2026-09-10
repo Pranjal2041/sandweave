@@ -51,7 +51,7 @@ class Context:
         self.worker.command_start(self.id, process, command=command, argv=argv, **options)
         return Process(self, process)
 
-    def run(self, command=None, *, argv=None, user='root', env=None, cwd='/workspace', timeout=60, check=True):
+    def run(self, command=None, *, argv=None, user='root', env=None, cwd=None, timeout=60, check=True):
         timeout = self.worker.remaining(self.id, timeout)
         process = uuid.uuid4().hex
         self.worker.command_start(self.id, process, command=command, argv=argv, user=user,

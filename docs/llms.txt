@@ -9,6 +9,7 @@
 
 ## Sandboxes
 - [Commands](https://pranjal2041.github.io/sandweave/commands/)
+- [Docker images](https://pranjal2041.github.io/sandweave/images/)
 - [Files and setup](https://pranjal2041.github.io/sandweave/files/)
 - [Resources](https://pranjal2041.github.io/sandweave/resources/)
 - [Networking](https://pranjal2041.github.io/sandweave/networking/)

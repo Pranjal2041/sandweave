@@ -394,6 +394,9 @@ class Controller:
             if request.get('reference'):
                 from .artifacts import ensure
                 ensure(self, request['reference'], connection, route)
+            initial = connection
+            connection = self.connection(route, timeout=request['spec']['startup_timeout'] + 60)
+            initial.close()
             response = connection.call('managed_apply', identity=identity, cluster=self.id,
                 generation=record['generation'], action='create', **request,
                 process=self._owner_process(record.get('owner')))

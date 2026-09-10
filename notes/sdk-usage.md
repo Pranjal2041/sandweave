@@ -477,3 +477,25 @@ Additional scripts reproduce the application and placement checks:
 `sdk-multiworker-acceptance.py` and `sdk-installed-acceptance.py` in `scripts/`.
 Each exposes its allocation/output options through `--help`. The installed-wheel
 check expects the separately installed point-mass example package.
+
+## Docker image bases
+
+`Sandbox(image="docker://python:3.12-slim")` uses a registry image as its
+filesystem. A TOML template can set `image` too; a constructor `image=` overrides
+that default while retaining the template's setup, services, and controls.
+Images and templates must have compatible software requirements. A saved cache
+or snapshot already specifies its image and cannot be combined with `image=`.
+
+Commands inherit image ENV, USER and WORKDIR. Explicit template settings take
+precedence, followed by constructor environment overrides and per-command
+options. The command service is a private static CPython installation; the
+application's Python and libraries are preserved. Images without shells require
+`argv=`. Docker ENTRYPOINT and CMD are retained as metadata and do not run
+implicitly. Use template services for applications that start at boot.
+
+Tags resolve on first use, with prepared files cached by manifest digest and
+importer version. `refresh=True` resolves a tag again. Snapshot restores use the
+saved filesystem without pulling tags. Image preparation time is reported as
+`env.timings["image_prepare_seconds"]`, separately from `ready_seconds`.
+`env.info["image"]` reports the reference, selected manifest digest, and platform.
+See the [image guide](../docs/images.md) for registry support and examples.

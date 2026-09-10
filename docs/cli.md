@@ -18,6 +18,7 @@ and offers interactive repairs. `--check` only runs checks.
 
 ```bash
 sandweave run --template coding -- "python -c 'print(2 + 2)'"
+sandweave run --image docker://python:3.12-slim -- "python --version"
 ```
 
 This creates a sandbox, runs the command, and terminates the sandbox. Output and

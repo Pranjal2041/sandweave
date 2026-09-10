@@ -207,6 +207,9 @@ def test_sdk_detached_defaults_and_borrowed_contexts(monkeypatch):
     infos = {}
 
     class Connection:
+        def clone(self, *, timeout=None):
+            return self
+
         def call(self, operation, **params):
             calls.append((operation, params))
             if operation == 'snapshot_spec':

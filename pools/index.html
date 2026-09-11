@@ -1009,6 +1009,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#reuse-images-across-workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reuse images across workers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reconnect-to-a-named-pool" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1296,6 +1307,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#reuse-images-across-workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reuse images across workers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reconnect-to-a-named-pool" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1385,12 +1407,40 @@ builder and pool so the controller can resolve the saved baseline.</p>
 <code>priority</code> orders placement requests. <code>spread</code> distributes work across workers;
 <code>pack</code> prefers workers already in use. These settings do not preempt an active
 episode. They are separate from a sandbox's CPU scheduling weight.</p>
+<h2 id="reuse-images-across-workers">Reuse images across workers<a class="headerlink" href="#reuse-images-across-workers" title="Permanent link">&para;</a></h2>
+<p>These options require Sandweave 0.2.7 or newer on the client, controller and workers.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="s2">"coding"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">warm</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>          <span class="n">shared_cache</span><span class="o">=</span><span class="s2">"/shared/sandweave"</span><span class="p">,</span> <span class="n">affinity</span><span class="o">=</span><span class="s2">"machine"</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">results</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">evaluate</span><span class="p">,</span> <span class="n">programs</span><span class="p">))</span>
+</code></pre></div>
+<p><code>shared_cache</code> is an absolute directory on the workers. Sandweave creates it if
+needed. Workers must have read and write access using the same account. A shared
+filesystem lets them reuse one baseline and its image files without sending the
+payload through the controller. With node-local storage, workers on each node
+reuse that node's copy; Weave transfers the baseline once per cache. The path
+does not change worker state directories or share writable sandbox files.</p>
+<p>Local pools, including pools with explicit <code>targets</code>, also accept <code>shared_cache</code>.
+Closing a pool keeps the cache for reuse. Creating separate pools still creates
+separate baselines unless they use the same saved <code>cache</code> or <code>snapshot</code>.
+Workers may link or copy cached files into their runtime workspace; this setting
+does not guarantee zero disk copies across filesystems.</p>
+<p>For cluster pools, <code>affinity="machine"</code> prefers workers on the same machine as
+the pool's initial placement. <code>affinity="worker"</code> prefers the same worker.
+Both spill over when resources, labels, or worker availability require it.
+<code>placement</code> controls spreading or packing within the preferred location.
+The default <code>affinity=None</code> preserves the usual placement behavior.</p>
+<p>A machine is a running Linux kernel, identified by its boot ID. Separate workers
+and PID namespaces can belong to it. If that ID is unavailable or masked,
+Sandweave does not infer shared hardware from matching hostnames. Worker listings
+include <code>machine</code>; <code>pool.info</code> includes <code>affinity</code> and <code>shared_cache</code>.
+Use <code>pool.update(affinity="worker")</code> to change future placement. The cache path
+is fixed when the pool is created.</p>
 <h2 id="reconnect-to-a-named-pool">Reconnect to a named pool<a class="headerlink" href="#reconnect-to-a-named-pool" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pool</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">with</span> <span class="n">Pool</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"coding"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pool</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="k">with</span> <span class="n">Pool</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"coding"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>Connecting borrows a handle. Closing that borrowed handle leaves the pool
 running. Use <code>pool.terminate()</code> to end a cluster pool. A context that creates a

@@ -1815,8 +1815,12 @@ HTTP link already includes authentication. See <a href="../clusters/">clusters</
 </code></pre></div>
 <p>Use <code>pool.start()</code> or a context manager to start it. <code>pool.acquire()</code> leases an
 environment; <code>pool.map(callback, items)</code> maps work over independent environments.
-Cluster pools also accept <code>weight</code>, <code>priority</code>, and <code>placement</code>, and support
-<code>update(...)</code>. <code>Pool.connect(name, target=...)</code> borrows a named cluster pool.
+Pools accept <code>shared_cache</code>, an absolute image/snapshot cache directory on the
+workers. Cluster pools also accept <code>weight</code>, <code>priority</code>, <code>labels</code>, <code>placement</code>,
+and <code>affinity</code> (<code>"worker"</code>, <code>"machine"</code>, or <code>None</code>), and support <code>update(...)</code>.
+Affinity prefers a location and allows spillover. The cache path is fixed at
+creation; the other placement settings can be updated for future assignments.
+<code>Pool.connect(name, target=...)</code> borrows a named cluster pool.
 See <a href="../pools/">pools and evaluation</a> for ownership and cleanup.</p>
 <h2 id="job">Job<a class="headerlink" href="#job" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">job</span> <span class="o">=</span> <span class="n">Job</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="s2">"python -c 'print(42)'"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">detached</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>

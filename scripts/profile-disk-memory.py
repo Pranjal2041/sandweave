@@ -52,6 +52,7 @@ def inside(args):
                       for p in ancestors},
         'size_mib': args.size_mib, 'hot_mib': args.hot_mib,
         'operations': args.operations, 'repeats': args.repeats, 'anonymous': args.anonymous,
+        'stream_only': args.stream_only,
         'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
     }
     (directory / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
@@ -72,6 +73,8 @@ def inside(args):
                str(args.size_mib), str(args.hot_mib), str(args.operations), str(args.repeats)]
     if args.anonymous:
         command.append('--anonymous')
+    elif args.stream_only:
+        command.append('--stream-only')
     try:
         with (directory / 'stderr.log').open('w') as errors, (directory / 'results.jsonl').open('w') as output:
             child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors, text=True)
@@ -100,6 +103,9 @@ def main():
     parser.add_argument('--scratch', type=Path)
     parser.add_argument('--inside')
     parser.add_argument('--anonymous', action='store_true')
+    parser.add_argument('--stream-only', action='store_true', help='measure sequential prefetch variants')
+    parser.add_argument('--cases', nargs='+', choices=('ram', 'resident', 'overflow'),
+                        default=['ram', 'resident', 'overflow'])
     parser.add_argument('--limit-mib', type=int)
     parser.add_argument('--size-mib', type=int, default=20480)
     parser.add_argument('--hot-mib', type=int, default=2048)
@@ -114,6 +120,8 @@ def main():
         parser.error('scratch and output must be absolute paths')
     if not 0 < args.hot_mib < args.size_mib or args.operations < 100 or args.repeats < 1:
         parser.error('invalid workload sizes')
+    if args.stream_only and args.cases != ['overflow']:
+        parser.error('--stream-only requires --cases overflow')
     args.output.mkdir(parents=True, exist_ok=False)
     args.scratch.mkdir(parents=True, exist_ok=False)
     script = Path(__file__).resolve()
@@ -132,6 +140,8 @@ def main():
     cases = [('ram', args.size_mib + 4096), ('resident', args.size_mib + 4096),
              ('overflow', args.size_mib // 5)]
     for label, limit in cases:
+        if label not in args.cases:
+            continue
         directory = args.scratch / label
         directory.mkdir()
         command = ['srun', '--jobid=' + args.job, '--overlap', '--exact', '--nodes=1',
@@ -142,6 +152,8 @@ def main():
                    '--operations', str(args.operations), '--repeats', str(args.repeats)]
         if label == 'ram':
             command.append('--anonymous')
+        elif args.stream_only:
+            command.append('--stream-only')
         print(json.dumps({'case': label, 'command': command}), flush=True)
         try:
             subprocess.run(command, check=True, timeout=1900)

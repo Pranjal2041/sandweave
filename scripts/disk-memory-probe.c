@@ -71,14 +71,33 @@ static int compare_u64(const void *a, const void *b) {
     uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b;
     return (x > y) - (x < y);
 }
+static uint64_t scan_prefetch(int release) {
+    const size_t chunk = 4 * MIB, ahead = 32 * MIB;
+    uint64_t sum = 0;
+    check(readahead(backing_fd, 0, ahead), "initial readahead");
+    for (size_t off = 0; off < length; off += chunk) {
+        if (off + ahead < length)
+            check(readahead(backing_fd, off + ahead, chunk), "readahead");
+        size_t bytes = length - off < chunk ? length - off : chunk;
+        sum += scan_read(mapping + off / 8, bytes);
+        if (release) {
+            check(madvise(mapping + off / 8, bytes, MADV_DONTNEED), "release consumed mapping");
+            int error = posix_fadvise(backing_fd, off, bytes, POSIX_FADV_DONTNEED);
+            if (error) { errno = error; fail("release consumed cache"); }
+        }
+    }
+    sink = sum;
+    return sum;
+}
 static void phase(const char *name, unsigned repeat, uint64_t operations,
                   size_t hot_bytes, int kind) {
     /* kind 0 scans every byte; 1 dependent reads; 2 99%-hot dependent reads;
      * 3 dependent reads and dirty writes. Latencies include dependency math.
      * Writes change a separate word so all cases use identical read addresses.
      */
-    uint64_t *latencies = kind ? malloc(operations * sizeof(uint64_t)) : NULL;
-    if (kind && !latencies) fail("latencies");
+    int random = kind > 0 && kind < 4;
+    uint64_t *latencies = random ? malloc(operations * sizeof(uint64_t)) : NULL;
+    if (random && !latencies) fail("latencies");
     uint64_t cached_start = resident();
     printf("{\"event\":\"start\",\"phase\":\"%s\",\"repeat\":%u}\n", name, repeat);
     fflush(stdout);
@@ -88,6 +107,8 @@ static void phase(const char *name, unsigned repeat, uint64_t operations,
     uint64_t start = nanos(), checksum = 0;
     if (!kind) {
         checksum = scan_read(mapping, length);
+    } else if (kind >= 4) {
+        checksum = scan_prefetch(kind == 5);
     } else {
         size_t pages = length / PAGE, hot_pages = hot_bytes / PAGE;
         uint64_t state = 42 + (uint64_t)repeat * 1000003 + (uint64_t)kind * 7000001, previous = 0;
@@ -120,7 +141,7 @@ static void phase(const char *name, unsigned repeat, uint64_t operations,
         write_bytes = io_bytes("write_bytes:") - wb;
     }
     uint64_t p50 = 0, p95 = 0, p99 = 0;
-    if (kind) {
+    if (random) {
         qsort(latencies, operations, sizeof(*latencies), compare_u64);
         p50 = latencies[operations / 2];
         p95 = latencies[operations * 95 / 100];
@@ -134,7 +155,7 @@ static void phase(const char *name, unsigned repeat, uint64_t operations,
            "\"major_faults\":%ld,\"minor_faults\":%ld,"
            "\"cached_start_bytes\":%" PRIu64 ",\"cached_end_bytes\":%" PRIu64 ","
            "\"flush_seconds\":%.9f,\"checksum\":%" PRIu64 "}\n",
-           name, repeat, elapsed / 1e9, operations, kind ? 0 : length,
+           name, repeat, elapsed / 1e9, operations, random ? 0 : length,
            operations ? (double)elapsed / operations : 0, p50, p95, p99,
            read_bytes, write_bytes, after.ru_majflt - before.ru_majflt,
            after.ru_minflt - before.ru_minflt, cached_start, resident(),
@@ -144,11 +165,12 @@ static void phase(const char *name, unsigned repeat, uint64_t operations,
 }
 int main(int argc, char **argv) {
     if (argc != 6 && argc != 7) {
-        fprintf(stderr, "usage: probe NEW_FILE SIZE_MIB HOT_MIB OPERATIONS REPEATS [--anonymous]\n");
+        fprintf(stderr, "usage: probe NEW_FILE SIZE_MIB HOT_MIB OPERATIONS REPEATS [--anonymous|--stream-only]\n");
         return 2;
     }
     int anonymous = argc == 7 && !strcmp(argv[6], "--anonymous");
-    if (argc == 7 && !anonymous) { fprintf(stderr, "unknown option\n"); return 2; }
+    int stream_only = argc == 7 && !strcmp(argv[6], "--stream-only");
+    if (argc == 7 && !anonymous && !stream_only) { fprintf(stderr, "unknown option\n"); return 2; }
     length = strtoull(argv[2], NULL, 10) * MIB;
     size_t hot = strtoull(argv[3], NULL, 10) * MIB;
     uint64_t operations = strtoull(argv[4], NULL, 10);
@@ -205,6 +227,11 @@ int main(int argc, char **argv) {
     check(madvise(mapping, length, MADV_NORMAL), "normal advice");
     prefault(length);
     for (unsigned i = 0; i < repeats; i++) phase("sequential", i, 0, hot, 0);
+    if (stream_only) {
+        for (unsigned i = 0; i < repeats; i++) phase("sequential_prefetch", i, 0, hot, 4);
+        for (unsigned i = 0; i < repeats; i++) phase("sequential_prefetch_release", i, 0, hot, 5);
+        goto done;
+    }
     check(madvise(mapping, length, MADV_RANDOM), "random advice");
     for (unsigned i = 0; i < repeats; i++) phase("random_read", i, operations, hot, 1);
     check(madvise(mapping, hot, MADV_NORMAL), "hot warmup advice");
@@ -212,6 +239,7 @@ int main(int argc, char **argv) {
     check(madvise(mapping, length, MADV_RANDOM), "random advice");
     for (unsigned i = 0; i < repeats; i++) phase("hot_99_percent", i, operations, hot, 2);
     for (unsigned i = 0; i < repeats; i++) phase("random_write", i, operations, hot, 3);
+done:
     check(munmap(mapping, length), "munmap");
     if (!anonymous) check(close(backing_fd), "close backing file");
     puts("{\"event\":\"complete\"}");

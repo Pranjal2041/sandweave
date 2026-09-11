@@ -1,0 +1,1517 @@
+{
+  "disk-memory-profile-20260911": {
+    "manifest": {
+      "build": [
+        "gcc",
+        "-O3",
+        "-march=native",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/data/user_data/pranjala/general-vm/scripts/disk-memory-probe.c",
+        "-o",
+        "/scratch/pranjala/sandweave-disk-memory-profile-20260911/probe"
+      ],
+      "source_sha256": "b4b6883fb8dd0c7a0f4ece963bb9bbe398acc381a8b0a31f0602328f5fa6f371",
+      "runner_sha256": "9aec28f9638f820ae963148471f9dc78afcc4e9ee60597c43c8e778666228a7c",
+      "job": "10387176",
+      "scratch": "/scratch/pranjala/sandweave-disk-memory-profile-20260911",
+      "storage": "{\n   \"filesystems\": [\n      {\n         \"target\": \"/scratch\",\n         \"source\": \"/dev/nvme1n1p2\",\n         \"fstype\": \"xfs\",\n         \"options\": \"rw,relatime,attr2,inode64,logbufs=8,logbsize=32k,sunit=256,swidth=256,noquota\"\n      }\n   ]\n}\n"
+    },
+    "cases": {
+      "overflow": {
+        "metadata": {
+          "hostname": "babel-p9-16",
+          "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+          "affinity": [
+            5,
+            6
+          ],
+          "uid": 2710891,
+          "memory_group": "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_56/user",
+          "limit_bytes": 4294967296,
+          "ancestors": {
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_56/user/task_0": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_56/user": {
+              "memory.max": "4294967296",
+              "memory.high": "4294967296",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_56": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00": {
+              "memory.max": "343597383680",
+              "memory.high": "343597383680",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            }
+          },
+          "size_mib": 20480,
+          "hot_mib": 2048,
+          "operations": 200000,
+          "repeats": 3,
+          "anonymous": false,
+          "started_utc": "2026-09-11T15:59:03Z"
+        },
+        "receipt": {
+          "events": {
+            "low": "0",
+            "high": "0",
+            "max": "113322",
+            "oom": "0",
+            "oom_kill": "0",
+            "oom_group_kill": "0"
+          },
+          "peak_bytes": "4294967296"
+        },
+        "prepared": {
+          "event": "prepared",
+          "seconds": 17.058247,
+          "bytes": 21474836480,
+          "allocated_bytes": 29936836608,
+          "cached_bytes": 0
+        },
+        "samples": 1876,
+        "phases": {
+          "cold_sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "cold_sequential",
+                "repeat": 0,
+                "seconds": 14.599867942,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81922,
+                "minor_faults": 245759,
+                "cached_start_bytes": 0,
+                "cached_end_bytes": 4189097984,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 14.599867942,
+            "min_seconds": 14.599867942,
+            "max_seconds": 14.599867942,
+            "median_gib_per_second": 1.3698754043154893
+          },
+          "hot_99_percent": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 0,
+                "seconds": 0.205505097,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 1027.525,
+                "latency_p50_ns": 230,
+                "latency_p95_ns": 331,
+                "latency_p99_ns": 460,
+                "read_bytes": 7266304,
+                "write_bytes": 0,
+                "major_faults": 1774,
+                "minor_faults": 1,
+                "cached_start_bytes": 4188147712,
+                "cached_end_bytes": 4188073984,
+                "flush_seconds": 0.0,
+                "checksum": 7285630911017026760
+              },
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 1,
+                "seconds": 0.198382388,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 991.912,
+                "latency_p50_ns": 230,
+                "latency_p95_ns": 330,
+                "latency_p99_ns": 470,
+                "read_bytes": 7335936,
+                "write_bytes": 0,
+                "major_faults": 1791,
+                "minor_faults": 0,
+                "cached_start_bytes": 4188073984,
+                "cached_end_bytes": 4188069888,
+                "flush_seconds": 0.0,
+                "checksum": 9074132277271853708
+              },
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 2,
+                "seconds": 0.185515632,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 927.578,
+                "latency_p50_ns": 220,
+                "latency_p95_ns": 330,
+                "latency_p99_ns": 470,
+                "read_bytes": 7356416,
+                "write_bytes": 0,
+                "major_faults": 1796,
+                "minor_faults": 0,
+                "cached_start_bytes": 4188069888,
+                "cached_end_bytes": 4188098560,
+                "flush_seconds": 0.0,
+                "checksum": 6559644319789102924
+              }
+            ],
+            "median_seconds": 0.198382388,
+            "min_seconds": 0.185515632,
+            "max_seconds": 0.205505097,
+            "median_us_per_operation": 0.99191194,
+            "median_us_per_operation_including_flush": 0.99191194,
+            "slowdown_vs_ram": 5.228340309992203
+          },
+          "random_read": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 0,
+                "seconds": 13.181666497,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 65908.332,
+                "latency_p50_ns": 73951,
+                "latency_p95_ns": 88631,
+                "latency_p99_ns": 167163,
+                "read_bytes": 658673664,
+                "write_bytes": 0,
+                "major_faults": 160809,
+                "minor_faults": 7,
+                "cached_start_bytes": 4188975104,
+                "cached_end_bytes": 4187607040,
+                "flush_seconds": 0.0,
+                "checksum": 1490411141975493285
+              },
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 1,
+                "seconds": 12.80616973,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 64030.849,
+                "latency_p50_ns": 73461,
+                "latency_p95_ns": 87502,
+                "latency_p99_ns": 89852,
+                "read_bytes": 660205568,
+                "write_bytes": 0,
+                "major_faults": 161183,
+                "minor_faults": 4,
+                "cached_start_bytes": 4187607040,
+                "cached_end_bytes": 4187893760,
+                "flush_seconds": 0.0,
+                "checksum": 11773743281971845224
+              },
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 2,
+                "seconds": 12.961634764,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 64808.174,
+                "latency_p50_ns": 73541,
+                "latency_p95_ns": 87552,
+                "latency_p99_ns": 90401,
+                "read_bytes": 665055232,
+                "write_bytes": 0,
+                "major_faults": 162367,
+                "minor_faults": 0,
+                "cached_start_bytes": 4187893760,
+                "cached_end_bytes": 4188049408,
+                "flush_seconds": 0.0,
+                "checksum": 12386640437621326257
+              }
+            ],
+            "median_seconds": 12.961634764,
+            "min_seconds": 12.80616973,
+            "max_seconds": 13.181666497,
+            "median_us_per_operation": 64.80817382,
+            "median_us_per_operation_including_flush": 64.80817382,
+            "slowdown_vs_ram": 259.8124303445736
+          },
+          "random_write": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 0,
+                "seconds": 15.494824725,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 77474.124,
+                "latency_p50_ns": 76101,
+                "latency_p95_ns": 156593,
+                "latency_p99_ns": 385857,
+                "read_bytes": 659611648,
+                "write_bytes": 813993984,
+                "major_faults": 161038,
+                "minor_faults": 198732,
+                "cached_start_bytes": 4188098560,
+                "cached_end_bytes": 4188119040,
+                "flush_seconds": 0.240903565,
+                "checksum": 8852259919771805400
+              },
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 1,
+                "seconds": 13.562202166,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 67811.011,
+                "latency_p50_ns": 76011,
+                "latency_p95_ns": 90971,
+                "latency_p99_ns": 199134,
+                "read_bytes": 658989056,
+                "write_bytes": 813592576,
+                "major_faults": 160886,
+                "minor_faults": 198632,
+                "cached_start_bytes": 4188119040,
+                "cached_end_bytes": 4187779072,
+                "flush_seconds": 0.171260802,
+                "checksum": 12772658572365051691
+              },
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 2,
+                "seconds": 14.369825714,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 71849.129,
+                "latency_p50_ns": 75981,
+                "latency_p95_ns": 90841,
+                "latency_p99_ns": 168403,
+                "read_bytes": 662536192,
+                "write_bytes": 812752896,
+                "major_faults": 161752,
+                "minor_faults": 198426,
+                "cached_start_bytes": 4187779072,
+                "cached_end_bytes": 3585277952,
+                "flush_seconds": 0.067881481,
+                "checksum": 12645438829069543343
+              }
+            ],
+            "median_seconds": 14.369825714,
+            "min_seconds": 13.562202166,
+            "max_seconds": 15.494824725,
+            "median_us_per_operation": 71.84912857,
+            "median_us_per_operation_including_flush": 72.18853597500001,
+            "slowdown_vs_ram": 295.3663915299813
+          },
+          "sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 0,
+                "seconds": 15.0460028,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81922,
+                "minor_faults": 245759,
+                "cached_start_bytes": 3875295232,
+                "cached_end_bytes": 4190167040,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 1,
+                "seconds": 16.574732534,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81922,
+                "minor_faults": 245759,
+                "cached_start_bytes": 4190167040,
+                "cached_end_bytes": 4189777920,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 2,
+                "seconds": 16.660528434,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81921,
+                "minor_faults": 245759,
+                "cached_start_bytes": 4189777920,
+                "cached_end_bytes": 4190023680,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 16.574732534,
+            "min_seconds": 15.0460028,
+            "max_seconds": 16.660528434,
+            "median_gib_per_second": 1.2066559722139527,
+            "slowdown_vs_ram": 34.88833917684381
+          }
+        },
+        "evidence_sha256": {
+          "metadata.json": "5ff10f49e4bdc6083d39f92deb0467a7e98df110ace32b904034fe163d5ca5f4",
+          "complete.json": "707735f2c78a3d491150c2c8a8e3d8ebf0c5d85bcdab707a52b6cdf4f5ebf937",
+          "memory.jsonl": "42d5a3dfdc0252d8d46f355f4114303937c47ab6ecc80fd0021451ac4c8289f4",
+          "results.jsonl": "4348c0ffb2b6acfcd75505911c757d10039e1c381cd5529d6ad3cc03be48bff5",
+          "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ram": {
+        "metadata": {
+          "hostname": "babel-p9-16",
+          "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+          "affinity": [
+            5,
+            6
+          ],
+          "uid": 2710891,
+          "memory_group": "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_54/user",
+          "limit_bytes": 25769803776,
+          "ancestors": {
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_54/user/task_0": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_54/user": {
+              "memory.max": "25769803776",
+              "memory.high": "25769803776",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_54": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00": {
+              "memory.max": "343597383680",
+              "memory.high": "343597383680",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            }
+          },
+          "size_mib": 20480,
+          "hot_mib": 2048,
+          "operations": 200000,
+          "repeats": 3,
+          "anonymous": true,
+          "started_utc": "2026-09-11T15:58:08Z"
+        },
+        "receipt": {
+          "events": {
+            "low": "0",
+            "high": "0",
+            "max": "0",
+            "oom": "0",
+            "oom_kill": "0",
+            "oom_group_kill": "0"
+          },
+          "peak_bytes": "21532200960"
+        },
+        "prepared": {
+          "event": "prepared",
+          "seconds": 10.99069,
+          "bytes": 21474836480,
+          "allocated_bytes": 0,
+          "cached_bytes": 21474836480
+        },
+        "samples": 152,
+        "phases": {
+          "first_sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "first_sequential",
+                "repeat": 0,
+                "seconds": 0.474639709,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 0.474639709,
+            "min_seconds": 0.474639709,
+            "max_seconds": 0.474639709,
+            "median_gib_per_second": 42.137224553203154,
+            "slowdown_vs_ram": 1.0
+          },
+          "hot_99_percent": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 0,
+                "seconds": 0.036157131,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 180.786,
+                "latency_p50_ns": 140,
+                "latency_p95_ns": 260,
+                "latency_p99_ns": 360,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 7285630911017026760
+              },
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 1,
+                "seconds": 0.038058676,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 190.293,
+                "latency_p50_ns": 140,
+                "latency_p95_ns": 270,
+                "latency_p99_ns": 370,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 9074132277271853708
+              },
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 2,
+                "seconds": 0.037943664,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 189.718,
+                "latency_p50_ns": 140,
+                "latency_p95_ns": 261,
+                "latency_p99_ns": 360,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 6559644319789102924
+              }
+            ],
+            "median_seconds": 0.037943664,
+            "min_seconds": 0.036157131,
+            "max_seconds": 0.038058676,
+            "median_us_per_operation": 0.18971832000000002,
+            "median_us_per_operation_including_flush": 0.18971832000000002,
+            "slowdown_vs_ram": 1.0
+          },
+          "random_read": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 0,
+                "seconds": 0.049888432,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 249.442,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 340,
+                "latency_p99_ns": 400,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 1490411141975493285
+              },
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 1,
+                "seconds": 0.050085266,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 250.426,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 340,
+                "latency_p99_ns": 400,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 11773743281971845224
+              },
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 2,
+                "seconds": 0.048355725,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 241.779,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 330,
+                "latency_p99_ns": 400,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 12386640437621326257
+              }
+            ],
+            "median_seconds": 0.049888432,
+            "min_seconds": 0.048355725,
+            "max_seconds": 0.050085266,
+            "median_us_per_operation": 0.24944216,
+            "median_us_per_operation_including_flush": 0.24944216,
+            "slowdown_vs_ram": 1.0
+          },
+          "random_write": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 0,
+                "seconds": 0.048650849,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 243.254,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 330,
+                "latency_p99_ns": 400,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 8852259919771805400
+              },
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 1,
+                "seconds": 0.048427426,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 242.137,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 330,
+                "latency_p99_ns": 400,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 12772658572365051691
+              },
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 2,
+                "seconds": 0.0486679,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 243.339,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 330,
+                "latency_p99_ns": 400,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 12645438829069543343
+              }
+            ],
+            "median_seconds": 0.048650849,
+            "min_seconds": 0.048427426,
+            "max_seconds": 0.0486679,
+            "median_us_per_operation": 0.243254245,
+            "median_us_per_operation_including_flush": 0.243254245,
+            "slowdown_vs_ram": 1.0
+          },
+          "sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 0,
+                "seconds": 0.474705381,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 1,
+                "seconds": 0.475079437,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 2,
+                "seconds": 0.476727307,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 0.475079437,
+            "min_seconds": 0.474705381,
+            "max_seconds": 0.476727307,
+            "median_gib_per_second": 42.0982228283646,
+            "slowdown_vs_ram": 1.0
+          }
+        },
+        "evidence_sha256": {
+          "metadata.json": "c76551b198bace50b1291f35b0f53a7610c83fe4d8674830258fe194973527cc",
+          "complete.json": "a84a5ae286f26567273af4ae53fc45f16b234cbeb95a5ef7d895c49f0af5b1c5",
+          "memory.jsonl": "4b072967e964b1dec57147bb623b9e81f5ccc1472c6760ef11bc96d1f2b68fd1",
+          "results.jsonl": "1ca794ab7d27bbd093be9df85a49de71c6f18aa9d1c5f7b8fc40d0a044735baa",
+          "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "resident": {
+        "metadata": {
+          "hostname": "babel-p9-16",
+          "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+          "affinity": [
+            5,
+            6
+          ],
+          "uid": 2710891,
+          "memory_group": "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_55/user",
+          "limit_bytes": 25769803776,
+          "ancestors": {
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_55/user/task_0": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_55/user": {
+              "memory.max": "25769803776",
+              "memory.high": "25769803776",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_55": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00": {
+              "memory.max": "343597383680",
+              "memory.high": "343597383680",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            }
+          },
+          "size_mib": 20480,
+          "hot_mib": 2048,
+          "operations": 200000,
+          "repeats": 3,
+          "anonymous": false,
+          "started_utc": "2026-09-11T15:58:24Z"
+        },
+        "receipt": {
+          "events": {
+            "low": "0",
+            "high": "0",
+            "max": "0",
+            "oom": "0",
+            "oom_kill": "0",
+            "oom_group_kill": "0"
+          },
+          "peak_bytes": "21581807616"
+        },
+        "prepared": {
+          "event": "prepared",
+          "seconds": 16.559342,
+          "bytes": 21474836480,
+          "allocated_bytes": 29936836608,
+          "cached_bytes": 0
+        },
+        "samples": 311,
+        "phases": {
+          "cold_sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "cold_sequential",
+                "repeat": 0,
+                "seconds": 8.112462324,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81921,
+                "minor_faults": 245759,
+                "cached_start_bytes": 0,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 8.112462324,
+            "min_seconds": 8.112462324,
+            "max_seconds": 8.112462324,
+            "median_gib_per_second": 2.465342728413268
+          },
+          "hot_99_percent": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 0,
+                "seconds": 0.037116528,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 185.583,
+                "latency_p50_ns": 150,
+                "latency_p95_ns": 260,
+                "latency_p99_ns": 360,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 7285630911017026760
+              },
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 1,
+                "seconds": 0.038686418,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 193.432,
+                "latency_p50_ns": 150,
+                "latency_p95_ns": 270,
+                "latency_p99_ns": 369,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 9074132277271853708
+              },
+              {
+                "event": "result",
+                "phase": "hot_99_percent",
+                "repeat": 2,
+                "seconds": 0.039114965,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 195.575,
+                "latency_p50_ns": 150,
+                "latency_p95_ns": 270,
+                "latency_p99_ns": 370,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 6559644319789102924
+              }
+            ],
+            "median_seconds": 0.038686418,
+            "min_seconds": 0.037116528,
+            "max_seconds": 0.039114965,
+            "median_us_per_operation": 0.19343209,
+            "median_us_per_operation_including_flush": 0.19343209,
+            "slowdown_vs_ram": 1.0195751786121656
+          },
+          "random_read": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 0,
+                "seconds": 0.052572611,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 262.863,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 360,
+                "latency_p99_ns": 930,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 2444,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 1490411141975493285
+              },
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 1,
+                "seconds": 0.051217036,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 256.085,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 360,
+                "latency_p99_ns": 830,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 2360,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 11773743281971845224
+              },
+              {
+                "event": "result",
+                "phase": "random_read",
+                "repeat": 2,
+                "seconds": 0.051131795,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 255.659,
+                "latency_p50_ns": 240,
+                "latency_p95_ns": 350,
+                "latency_p99_ns": 840,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 2270,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 12386640437621326257
+              }
+            ],
+            "median_seconds": 0.051217036,
+            "min_seconds": 0.051131795,
+            "max_seconds": 0.052572611,
+            "median_us_per_operation": 0.25608518,
+            "median_us_per_operation_including_flush": 0.25608518,
+            "slowdown_vs_ram": 1.0266315044738226
+          },
+          "random_write": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 0,
+                "seconds": 0.460939009,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 2304.695,
+                "latency_p50_ns": 2230,
+                "latency_p95_ns": 2469,
+                "latency_p99_ns": 2640,
+                "read_bytes": 0,
+                "write_bytes": 804024320,
+                "major_faults": 0,
+                "minor_faults": 196295,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.636657032,
+                "checksum": 8852259919771805400
+              },
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 1,
+                "seconds": 0.461145503,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 2305.728,
+                "latency_p50_ns": 2220,
+                "latency_p95_ns": 2451,
+                "latency_p99_ns": 2640,
+                "read_bytes": 0,
+                "write_bytes": 803487744,
+                "major_faults": 0,
+                "minor_faults": 196164,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.636662393,
+                "checksum": 12772658572365051691
+              },
+              {
+                "event": "result",
+                "phase": "random_write",
+                "repeat": 2,
+                "seconds": 0.462059309,
+                "operations": 200000,
+                "bytes_scanned": 0,
+                "ns_per_operation": 2310.297,
+                "latency_p50_ns": 2230,
+                "latency_p95_ns": 2461,
+                "latency_p99_ns": 2640,
+                "read_bytes": 0,
+                "write_bytes": 803549184,
+                "major_faults": 0,
+                "minor_faults": 196179,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.636675372,
+                "checksum": 12645438829069543343
+              }
+            ],
+            "median_seconds": 0.461145503,
+            "min_seconds": 0.460939009,
+            "max_seconds": 0.462059309,
+            "median_us_per_operation": 2.305727515,
+            "median_us_per_operation_including_flush": 5.48903948,
+            "slowdown_vs_ram": 9.478673290984089
+          },
+          "sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 0,
+                "seconds": 0.459620045,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 1,
+                "seconds": 0.5227711,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 65536,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 2,
+                "seconds": 0.464222228,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 0,
+                "write_bytes": 0,
+                "major_faults": 0,
+                "minor_faults": 0,
+                "cached_start_bytes": 21474836480,
+                "cached_end_bytes": 21474836480,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 0.464222228,
+            "min_seconds": 0.459620045,
+            "max_seconds": 0.5227711,
+            "median_gib_per_second": 43.08281420768159,
+            "slowdown_vs_ram": 0.9771465398111938
+          }
+        },
+        "evidence_sha256": {
+          "metadata.json": "88b862abfce14b4706ca3ff61cdaf887ab0b89a41d13b0fede90bfe3f05e07ee",
+          "complete.json": "ed50fdb0eefba6d8d21f23a601415382ecd480d61f3fbae7029dbefdb04a5098",
+          "memory.jsonl": "e23dac23bc6e45019da7077ce9b83cabef0c04648c74aac5d5ccc11d3aac80a9",
+          "results.jsonl": "daf5e7193be7b38e06858fdecf400343754029ccfb3bac245e469f1997ee81a7",
+          "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  },
+  "disk-memory-prefetch-20260911": {
+    "manifest": {
+      "build": [
+        "gcc",
+        "-O3",
+        "-march=native",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/data/user_data/pranjala/general-vm/scripts/disk-memory-probe.c",
+        "-o",
+        "/scratch/pranjala/sandweave-disk-memory-prefetch-20260911/probe"
+      ],
+      "source_sha256": "a79adcaffbc64ce9de41e9cff75b0a6864d83442c09b94602aeec74768429afd",
+      "runner_sha256": "9315f127243e4eab0f33c43cdaa1b8fce1002c20a5b911731bb33695d4d0de35",
+      "job": "10387176",
+      "scratch": "/scratch/pranjala/sandweave-disk-memory-prefetch-20260911",
+      "storage": "{\n   \"filesystems\": [\n      {\n         \"target\": \"/scratch\",\n         \"source\": \"/dev/nvme1n1p2\",\n         \"fstype\": \"xfs\",\n         \"options\": \"rw,relatime,attr2,inode64,logbufs=8,logbsize=32k,sunit=256,swidth=256,noquota\"\n      }\n   ]\n}\n"
+    },
+    "cases": {
+      "overflow": {
+        "metadata": {
+          "hostname": "babel-p9-16",
+          "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+          "affinity": [
+            5,
+            6
+          ],
+          "uid": 2710891,
+          "memory_group": "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_57/user",
+          "limit_bytes": 4294967296,
+          "ancestors": {
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_57/user/task_0": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_57/user": {
+              "memory.max": "4294967296",
+              "memory.high": "4294967296",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00/step_57": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope/s435M25VSE1P00": {
+              "memory.max": "343597383680",
+              "memory.high": "343597383680",
+              "memory.swap.max": "0"
+            },
+            "/sys/fs/cgroup/system.slice/slurmstepd.scope": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            },
+            "/sys/fs/cgroup/system.slice": {
+              "memory.max": "max",
+              "memory.high": "max",
+              "memory.swap.max": "max"
+            }
+          },
+          "size_mib": 20480,
+          "hot_mib": 2048,
+          "operations": 200000,
+          "repeats": 3,
+          "anonymous": false,
+          "stream_only": true,
+          "started_utc": "2026-09-11T16:02:45Z"
+        },
+        "receipt": {
+          "events": {
+            "low": "0",
+            "high": "0",
+            "max": "166254",
+            "oom": "0",
+            "oom_kill": "0",
+            "oom_group_kill": "0"
+          },
+          "peak_bytes": "4294967296"
+        },
+        "prepared": {
+          "event": "prepared",
+          "seconds": 16.801073,
+          "bytes": 21474836480,
+          "allocated_bytes": 29936836608,
+          "cached_bytes": 0
+        },
+        "samples": 1816,
+        "phases": {
+          "cold_sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "cold_sequential",
+                "repeat": 0,
+                "seconds": 11.922193957,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81921,
+                "minor_faults": 245759,
+                "cached_start_bytes": 0,
+                "cached_end_bytes": 4190203904,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 11.922193957,
+            "min_seconds": 11.922193957,
+            "max_seconds": 11.922193957,
+            "median_gib_per_second": 1.6775435856969259
+          },
+          "sequential": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 0,
+                "seconds": 15.057487067,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81921,
+                "minor_faults": 245775,
+                "cached_start_bytes": 4190076928,
+                "cached_end_bytes": 4189388800,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 1,
+                "seconds": 15.068651681,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81921,
+                "minor_faults": 245759,
+                "cached_start_bytes": 4189388800,
+                "cached_end_bytes": 4189462528,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential",
+                "repeat": 2,
+                "seconds": 15.070705559,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 81921,
+                "minor_faults": 245759,
+                "cached_start_bytes": 4189462528,
+                "cached_end_bytes": 4190035968,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 15.068651681,
+            "min_seconds": 15.057487067,
+            "max_seconds": 15.070705559,
+            "median_gib_per_second": 1.3272587636502287
+          },
+          "sequential_prefetch": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "sequential_prefetch",
+                "repeat": 0,
+                "seconds": 17.675640812,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21600395264,
+                "write_bytes": 0,
+                "major_faults": 67319,
+                "minor_faults": 260781,
+                "cached_start_bytes": 4190035968,
+                "cached_end_bytes": 4189368320,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential_prefetch",
+                "repeat": 1,
+                "seconds": 17.404729017,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21568065536,
+                "write_bytes": 0,
+                "major_faults": 67121,
+                "minor_faults": 260863,
+                "cached_start_bytes": 4189368320,
+                "cached_end_bytes": 4190011392,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential_prefetch",
+                "repeat": 2,
+                "seconds": 17.563459325,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21595869184,
+                "write_bytes": 0,
+                "major_faults": 66873,
+                "minor_faults": 260807,
+                "cached_start_bytes": 4190011392,
+                "cached_end_bytes": 4189433856,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 17.563459325,
+            "min_seconds": 17.404729017,
+            "max_seconds": 17.675640812,
+            "median_gib_per_second": 1.138727834301515
+          },
+          "sequential_prefetch_release": {
+            "trials": [
+              {
+                "event": "result",
+                "phase": "sequential_prefetch_release",
+                "repeat": 0,
+                "seconds": 11.088896891,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 17300082688,
+                "write_bytes": 0,
+                "major_faults": 52507,
+                "minor_faults": 211747,
+                "cached_start_bytes": 4189433856,
+                "cached_end_bytes": 0,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential_prefetch_release",
+                "repeat": 1,
+                "seconds": 12.214777861,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 66585,
+                "minor_faults": 261096,
+                "cached_start_bytes": 0,
+                "cached_end_bytes": 0,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              },
+              {
+                "event": "result",
+                "phase": "sequential_prefetch_release",
+                "repeat": 2,
+                "seconds": 12.210038204,
+                "operations": 0,
+                "bytes_scanned": 21474836480,
+                "ns_per_operation": 0.0,
+                "latency_p50_ns": 0,
+                "latency_p95_ns": 0,
+                "latency_p99_ns": 0,
+                "read_bytes": 21474836480,
+                "write_bytes": 0,
+                "major_faults": 66585,
+                "minor_faults": 261096,
+                "cached_start_bytes": 0,
+                "cached_end_bytes": 0,
+                "flush_seconds": 0.0,
+                "checksum": 14814169102814889273
+              }
+            ],
+            "median_seconds": 12.210038204,
+            "min_seconds": 11.088896891,
+            "max_seconds": 12.214777861,
+            "median_gib_per_second": 1.637996512856775
+          }
+        },
+        "evidence_sha256": {
+          "metadata.json": "efca2e516965d5627ffaa65cbe46bd3926f537ceaf4cd87feb4c79eb60c7cfba",
+          "complete.json": "fbd4ca51c566985f388489483627ab03a20678e39dac2305321ad6ef46963358",
+          "memory.jsonl": "a938bca1a772252332c91e0751f1ed6cd9ef0d91a7eb4511279e7a88e11b964f",
+          "results.jsonl": "e4ef8b1d46c2503754e6fb77b5bcfa78fcced813467a9ade468426633fd55302",
+          "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  }
+}

@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 
-from . import Sandbox, SandboxError, CommandTimeout, CPU, Memory, Network, Mount, Slurm
+from . import Sandbox, SandboxError, CommandTimeout, CPU, Memory, Network, ProxyPolicy, Mount, Slurm
 from .sandbox.snapshots import SnapshotRef
 from .sandbox.targets import connect
 from .sandbox.workspace import home, atomic_json, locked
@@ -48,7 +48,9 @@ def creation_options(parser):
     parser.add_argument('--mount', action='append', default=[], help='JSON Mount object; repeat for multiple mounts')
     parser.add_argument('--gpu', help='auto, none, or an allocated model name')
     parser.add_argument('--network', choices=('internet', 'offline'))
-    parser.add_argument('--proxy-file', help='JSON list of proxy URLs; one is selected for each sandbox')
+    parser.add_argument('--proxy-file', help='private JSON proxy URLs: a list or a mapping from regions to lists')
+    parser.add_argument('--proxy-policy', choices=('random', 'round_robin', 'same_proxy', 'same_region'))
+    parser.add_argument('--proxy-region', help='restrict the proxy policy to this supplied region label')
     parser.add_argument('--name')
     parser.add_argument('--ttl', type=float)
     parser.add_argument('--startup-timeout', type=float)
@@ -85,7 +87,11 @@ def creation(args):
     if getattr(args, 'mount', None):
         options['mounts'] = [Mount(**json.loads(value)) for value in args.mount]
     if getattr(args, 'proxy_file', None):
-        options['network'] = Network(mode=args.network or 'internet', proxy=json.loads(Path(args.proxy_file).read_text()))
+        policy = (ProxyPolicy(args.proxy_policy or 'random', region=args.proxy_region)
+                  if args.proxy_policy or args.proxy_region else None)
+        options['network'] = Network(mode=args.network or 'internet', proxy=json.loads(Path(args.proxy_file).read_text()), policy=policy)
+    elif getattr(args, 'proxy_policy', None) or getattr(args, 'proxy_region', None):
+        raise ValueError('--proxy-policy and --proxy-region require --proxy-file')
     return options
 
 

@@ -12,6 +12,7 @@ from ..sandbox.errors import ResourceUnavailable, OperationUnknown, UnsupportedF
 from ..sandbox.ownership import client_owner
 from ..sandbox.resources import positive
 from ..sandbox.artifacts import cache_path
+from ..sandbox import proxy
 from . import scheduler
 
 
@@ -71,6 +72,8 @@ class ManagedPool(LocalPool):
                 if requested and requested - set(self.connection.call('ping').get('pool_options', ())):
                     raise UnsupportedFeature('shared_cache and affinity require Sandweave 0.2.7 or newer on the controller')
                 request = definition(target=self.target, **self.options)
+                if proxy.requires_policy(request['spec']['resources']['network']) and not self.connection.call('ping').get('proxy_policy'):
+                    raise UnsupportedFeature('pool proxy policies require Sandweave 0.2.10 or newer on the controller')
                 owner = None if self.options.get('detached') else client_owner(self.connection)
                 self.connection.call('pool_create', identity=self.id, name=self.name, request=request,
                                      owner=owner, **self.policy)
@@ -254,6 +257,15 @@ def dispatch(controller, operation, params):
         policy.update(affinity=params.get('affinity'), shared_cache=cache_path(params.get('shared_cache')))
         validate(**policy)
         controller._owner_process(params.get('owner'))
+        request = params['request']
+        if proxy.requires_policy(request['spec']['resources']['network']):
+            # Validate before any builder/member is created, including direct RPC callers.
+            network = request['spec']['resources']['network']
+            proxy.candidates(network['proxy'], proxy.ProxyPolicy(**(network.get('policy') or {})))
+            if request.get('reference'):
+                from .artifacts import resolve as resolve_artifact
+                if resolve_artifact(controller, request['reference'])['info']['state'] == 'memory':
+                    raise ValueError('pool proxy policies require a filesystem cache; memory snapshots retain their assigned proxy')
         with state.transaction():
             existing = state.get('pool', identity, required=False)
             if existing is None:
@@ -355,6 +367,12 @@ def _new_member(controller, pool, *, builder=False):
         pool = resolve(controller, pool['id'])
         if pool['desired'] != 'running' or pool['state'] == 'failed':
             return
+        network = pool['request']['spec']['resources']['network']
+        if proxy.requires_policy(network):
+            request['spec']['resources']['network'] = copy.deepcopy(network)
+            assignment, updated = proxy.select(network, pool.get('proxy_state', {}), advance=not builder)
+            request['spec']['_proxy_assignment'] = assignment
+            pool = controller.state.put('pool', {**pool, 'proxy_state': updated})
         controller.create(identity, **request, owner=None, operation_id=uuid.uuid4().hex)
         record = controller.state.get('allocation', identity)
         controller.state.put('allocation', {**record, 'parent': pool['id'], 'role': 'builder' if builder else 'member', 'ack': True})

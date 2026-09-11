@@ -183,7 +183,8 @@ class Runtime:
             command = ['/usr/local/bin/engine-docker', 'init']
         with measure('runtime_launch_seconds'):
             from . import proxy
-            selected_proxy, proxy_options = proxy.bind(self.root, identity, spec['resources']['network'], snapshot)
+            selected_proxy, proxy_options = proxy.bind(self.root, identity, spec['resources']['network'], snapshot,
+                                                       spec.get('_proxy_assignment'))
             options += proxy_options
             if spec['resources']['memory'].get('disk') is not None:
                 from .engine import disk_runtime

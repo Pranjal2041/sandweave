@@ -555,6 +555,29 @@ lifetime. Compatible tools receive proxy settings; direct egress is blocked.
 See [proxy networking](https://pranjal2041.github.io/sandweave/networking/#use-a-proxy)
 for credentials, pools, browser configuration and setup behavior.
 
+Group proxy URLs by region to control their distribution:
+
+```python
+from sandweave import Network, Pool, ProxyPolicy
+
+# Each value is your list of authenticated proxy URLs for that region.
+proxies = {"uk": uk_proxies, "us": us_proxies}
+
+with Pool(size=8, network=Network(
+    proxy=proxies, policy=ProxyPolicy("same_region")
+)) as pool:
+    with pool.acquire() as env:
+        print(env.info["network"])
+```
+
+`same_region` selects one supplied region for the pool, then cycles through its
+proxies. `same_proxy` shares one selected proxy; `round_robin` cycles through all
+eligible proxies. To restrict any policy to a region, use
+`ProxyPolicy("random", region="uk")`. The same `Network` object works with a
+standalone `Sandbox`, where it selects one eligible proxy. See
+[proxy policies](https://pranjal2041.github.io/sandweave/networking/#proxy-policies)
+for assignment, retries and snapshots.
+
 ## Choose a worker
 
 Sandboxes run locally by default. To use an existing Slurm job:

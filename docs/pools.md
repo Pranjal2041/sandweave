@@ -43,6 +43,14 @@ with Pool(target="lab", size=8, warm=2) as pool:
 `target="lab"` uses [Weave](clusters.md) to place work across registered workers.
 A printed cluster address works too. A local pool needs no controller setup.
 
+## Distribute proxies
+
+To distribute proxies across a pool, pass
+`network=Network(proxy=proxies, policy=ProxyPolicy("same_region"))`.
+The pool chooses a region once and cycles through its proxies across workers.
+See [proxy policies](networking.md#proxy-policies) for the catalog format,
+other distributions and standalone sandbox behavior.
+
 ## Prepare a baseline
 
 ```python

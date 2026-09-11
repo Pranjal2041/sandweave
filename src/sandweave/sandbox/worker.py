@@ -575,7 +575,7 @@ class Worker:
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
                     'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget,
-                    'port': self.endpoint.port, 'weave_protocol': 1}
+                    'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')

@@ -51,7 +51,7 @@ def test_proxy_hosts_preserve_unrelated_aliases():
 
 def test_proxy_binding_is_private_and_preserved_on_live_restore(tmp_path, monkeypatch):
     from sandweave.sandbox.runtimes.gvisor import proxy as runtime
-    monkeypatch.setattr(runtime.secrets, 'randbelow', lambda _: 1)
+    monkeypatch.setattr(proxy.secrets, 'randbelow', lambda _: 1)
     monkeypatch.setattr(socket, 'getaddrinfo', lambda *a, **kw: [(2, 1, 6, '', ('8.8.8.8', 8080))])
     network = normalize(network=Network(proxy=['http://1.1.1.1:8080', 'http://a:private@proxy.example:8080']))['network']
     selected, options = bind(tmp_path, 'first', network, None)
@@ -63,7 +63,7 @@ def test_proxy_binding_is_private_and_preserved_on_live_restore(tmp_path, monkey
     (snapshot / 'snapshot-manifest.json').write_text('{"kind":"live"}')
     (snapshot / 'launch-settings.json').write_text(json.dumps({'settings': {
         'proxy_index': 1, 'proxy_endpoints': ['8.8.8.8:8080']}}))
-    monkeypatch.setattr(runtime.secrets, 'randbelow', lambda _: pytest.fail('live restore must preserve its proxy'))
+    monkeypatch.setattr(proxy.secrets, 'randbelow', lambda _: pytest.fail('live restore must preserve its proxy'))
     monkeypatch.setattr(socket, 'getaddrinfo', lambda *a, **kw: pytest.fail('live binding is already pinned'))
     restored, restored_options = bind(tmp_path, 'restored', network, snapshot)
     assert restored == selected and options == restored_options

@@ -10,6 +10,9 @@ Its backing directory is independent of installation storage and caches.
 
 For `Network(proxy=...)`, see [proxy networking](https://pranjal2041.github.io/sandweave/networking/#use-a-proxy).
 The [QUEST-RL assessment](quest-proxy-assessment.md) records measured source and search access.
+`Network(policy=ProxyPolicy(...), proxy=...)` adds region constraints and pool
+distribution. See [proxy policies](https://pranjal2041.github.io/sandweave/networking/#proxy-policies)
+for the agreed API, assignment persistence and filesystem-baseline requirement.
 
 The Python SDK and CLI use the same lifecycle. A template defines setup,
 services and controls; a sandbox is one running instance. Start with the

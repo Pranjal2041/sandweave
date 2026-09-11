@@ -1,7 +1,85 @@
 """Proxy values and command environment; endpoint enforcement lives outside guests."""
 import copy
+from dataclasses import dataclass
 import ipaddress
+import secrets
 from urllib.parse import urlsplit
+
+
+@dataclass(frozen=True)
+class ProxyPolicy:
+    """Select eligible proxies and distribute assignments within one pool."""
+    distribution: str = 'random'
+    region: str | None = None
+
+    def __post_init__(self):
+        if self.distribution not in ('random', 'round_robin', 'same_proxy', 'same_region'):
+            raise ValueError('proxy distribution must be random, round_robin, same_proxy or same_region')
+        if self.region is not None and (not isinstance(self.region, str) or not self.region.strip()):
+            raise ValueError('proxy region must be a nonempty label')
+
+
+def catalog(value):
+    """Copy input lists; sort region labels so indices survive wire encoding."""
+    if not isinstance(value, dict):
+        return values(value)
+    if not value or any(not isinstance(k, str) or not k.strip() for k in value):
+        raise ValueError('proxy regions must be nonempty labels with nonempty URL lists')
+    return {region: values(value[region]) for region in sorted(value)}
+
+
+def entries(value):
+    value = catalog(value)
+    if isinstance(value, dict):
+        return [(region, url) for region, urls in value.items() for url in urls]
+    return [(None, url) for url in value]
+
+
+def candidates(value, policy):
+    available = entries(value)
+    if (policy.region is not None or policy.distribution == 'same_region') and not isinstance(value, dict):
+        raise ValueError('region policies require proxy URLs grouped by region')
+    indices = [i for i, (region, _) in enumerate(available) if policy.region is None or region == policy.region]
+    if not indices:
+        raise ValueError('the requested proxy region has no supplied proxies')
+    return available, indices
+
+
+def select(network, state=None, *, advance=True):
+    """Return an index and new state; the caller owns locking and persistence.
+
+    No state means one standalone sandbox. Builders can establish a shared
+    selection without consuming a member's rotation position.
+    """
+    policy = ProxyPolicy(**(network.get('policy') or {}))
+    available, indices = candidates(network['proxy'], policy)
+    standalone = state is None
+    updated = dict(state or {})
+    if policy.distribution == 'same_region':
+        regions = sorted({available[i][0] for i in indices})
+        if 'region' not in updated:
+            updated['region'] = regions[secrets.randbelow(len(regions))]
+        indices = [i for i in indices if available[i][0] == updated['region']]
+    if not indices:
+        raise ValueError('saved proxy region no longer has eligible proxies')
+    if policy.distribution == 'same_proxy' and not standalone:
+        if 'index' not in updated:
+            updated['index'] = indices[secrets.randbelow(len(indices))]
+        index = updated['index']
+    elif policy.distribution in ('round_robin', 'same_region') and not standalone:
+        cursor = updated.get('cursor', 0)
+        index = indices[cursor % len(indices)]
+        if advance:
+            updated['cursor'] = cursor + 1
+    else:
+        index = indices[secrets.randbelow(len(indices))]
+    if index not in indices:
+        raise ValueError('saved proxy selection no longer matches the policy')
+    return {'index': index}, updated
+
+
+def requires_policy(network):
+    return bool(network.get('policy')) or isinstance(network.get('proxy'), dict)
 
 
 def parse(value):
@@ -44,7 +122,9 @@ def public_resources(resources):
     result = copy.deepcopy(resources)
     network = result.get('network', {})
     if network.get('proxy') is not None:
-        network['proxy'] = [public(url) for url in values(network['proxy'])]
+        value = catalog(network['proxy'])
+        network['proxy'] = ({region: [public(url) for url in urls] for region, urls in value.items()}
+                            if isinstance(value, dict) else [public(url) for url in value])
     return result
 
 

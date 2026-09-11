@@ -1,5 +1,5 @@
 """Sandweave's public API. Importing it never starts a worker or probes hardware."""
-from .sandbox.resources import CPU, GPU, Memory, Network
+from .sandbox.resources import CPU, GPU, Memory, Network, ProxyPolicy
 from .sandbox.mounts import Mount
 from .sandbox.errors import (
     SandboxError, CacheMiss, CacheConflict, IncompatibleSnapshot,
@@ -14,7 +14,7 @@ try:
 except PackageNotFoundError:
     __version__ = '0+unknown'
 __all__ = ['Sandbox', 'Pool', 'Cluster', 'Job', 'Template', 'SnapshotRef', 'CPU', 'GPU', 'Memory',
-           'Network', 'Mount', 'Slurm', 'SandboxError', 'CacheMiss', 'CacheConflict',
+           'Network', 'ProxyPolicy', 'Mount', 'Slurm', 'SandboxError', 'CacheMiss', 'CacheConflict',
            'IncompatibleSnapshot', 'UnsupportedFeature', 'ResourceUnavailable',
            'CommandError', 'CommandTimeout', 'OperationUnknown', 'SetupError', 'OutputLimitExceeded']
 

@@ -61,8 +61,8 @@ with Sandbox(network=Network(proxy=proxies)) as env:
 ```
 
 Keep this file private. You can also pass one URL directly to `Network(proxy=...)`.
-Each sandbox randomly selects one supplied proxy and keeps it for its lifetime.
-Selection happens separately for each pool sandbox. Random selection can reuse
+By default, each sandbox randomly selects one supplied proxy and keeps it for its
+lifetime. Selection happens separately for each pool sandbox. Random selection can reuse
 an address; pass a specific URL when you need an exact assignment. Ten static
 proxy addresses provide at most ten distinct exits.
 
@@ -105,6 +105,84 @@ mode. Private sandbox records and snapshots can contain the supplied credentials
 
 The [QUEST-RL measurements](https://github.com/Pranjal2041/sandweave/blob/main/notes/quest-proxy-assessment.md)
 compare the same research requests directly and through ten proxies.
+
+## Proxy policies
+
+`ProxyPolicy` controls which proxies are eligible and how a pool distributes
+them. The policy is configuration; each pool maintains its own assignment state.
+
+```python
+import json
+from sandweave import Network, Pool, ProxyPolicy, Sandbox
+
+with open("proxies.json") as file:
+    proxies = json.load(file)
+
+network = Network(proxy=proxies, policy=ProxyPolicy("same_region"))
+
+with Pool(size=8, warm=2, network=network) as pool:
+    with pool.acquire() as env:
+        print(env.info["network"])
+```
+
+For region policies, group URLs by the region labels you supply:
+
+```json
+{
+  "uk": ["http://USER:PASS@UK_HOST_1:PORT", "http://USER:PASS@UK_HOST_2:PORT"],
+  "us": ["http://USER:PASS@US_HOST_1:PORT", "http://USER:PASS@US_HOST_2:PORT"]
+}
+```
+
+Labels are matched exactly. Sandweave uses this supplied metadata; it does not
+infer location from the URL. Other policies also accept a flat URL list or one URL.
+
+| `distribution` | Behavior within one pool |
+| --- | --- |
+| `random` (default) | Each new sandbox independently selects a random eligible proxy. |
+| `round_robin` | Successive sandbox assignments cycle through eligible proxies. |
+| `same_proxy` | Select one proxy once and use it for every sandbox. |
+| `same_region` | Select one supplied region uniformly, then cycle through that region's proxies. |
+
+Restrict any policy to a specific region inside the policy itself:
+
+```python
+network = Network(proxy=proxies, policy=ProxyPolicy("random", region="uk"))
+
+with Sandbox(network=network) as env:
+    print(env.run("curl -s https://api.ipify.org").stdout)
+```
+
+A standalone sandbox selects one eligible proxy and keeps it. With `same_region`,
+it first selects a region, then a proxy in that region. Sharing a `Network`
+object between independent sandboxes does not create a shared rotation counter.
+
+Pools coordinate assignments across all their workers. Region labels are sorted
+before flattening a grouped catalog; URL order within each region is preserved.
+Rotation follows sandbox creation order. Warm sandboxes can become ready and be
+leased in a different order. Preparing the baseline does not consume a position
+in the member rotation, but uses the same region/proxy constraint.
+
+Each sandbox keeps its proxy across requests, pause and resume. Retrying the same
+assignment keeps that proxy; a replacement sandbox receives a new assignment.
+Cluster pools save their chosen region or proxy and rotation position with their
+assignments, preserving them through controller restarts and `Pool.connect()`.
+Local pools keep this state in their owning Python process. Each pool has an
+independent selection, even when several pools use the same `Network` object.
+
+An assignment never silently switches to another proxy, region or direct internet.
+`same_proxy` selects the same endpoint; whether the provider changes that endpoint's
+exit IP is controlled by the provider. `env.info["network"]` includes the supplied
+region and explicit policy when present, along with the credential-free endpoint.
+
+Pool proxy policies use filesystem baselines, including the baseline a pool
+prepares automatically. A memory snapshot already captures a particular proxy;
+restore it with `Sandbox(snapshot=...)` to retain that binding. Explicit proxy
+policies on a pool reject memory baselines rather than changing captured network
+state. Filesystem caches can be reused with another policy or region.
+
+Proxy policies require Sandweave 0.2.10 or newer on the client, controller and
+participating workers. Older processes that would ignore a policy are rejected.
 
 ## Cluster connections
 

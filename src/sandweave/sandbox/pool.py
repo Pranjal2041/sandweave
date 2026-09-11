@@ -3,6 +3,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import asyncio
+import copy
 import inspect
 import threading
 
@@ -33,6 +34,7 @@ class Pool:
         self.condition = threading.Condition()
         self.idle, self.active, self.all = deque(), set(), set()
         self.pending, self.cursor = 0, 0
+        self.proxy_network, self.proxy_state = None, {}
         self.started, self.closed, self.failure = False, False, None
         self.executor = ThreadPoolExecutor(max_workers=size, thread_name_prefix='sandweave-refill')
 
@@ -50,6 +52,8 @@ class Pool:
                 return self
             # Pin cache aliases once. Recipe preparation is performed once and
             # discarded before creating the independent episode environments.
+            from .sandbox import definition
+            from .proxy import requires_policy
             source = self.options.get('cache') or self.options.get('snapshot')
             if source is not None:
                 connection = connect(self.targets[0])
@@ -58,6 +62,14 @@ class Pool:
                         connection.call('artifact_cached', reference=str(source), shared_cache=self.shared_cache)
                     saved = connection.call('snapshot_spec', reference=str(source))
                     source = saved['reference']
+                    from .resources import normalize
+                    network = self.options.get('network')
+                    if network is None:
+                        network = saved['spec']['resources']['network']
+                    network = normalize(network=network)['network']
+                    self.proxy_network = network if requires_policy(network) else None
+                    if self.proxy_network and connection.call('snapshot_info', reference=source)['state'] == 'memory':
+                        raise ValueError('pool proxy policies require a filesystem cache; memory snapshots retain their assigned proxy')
                     if self.shared_cache is not None:
                         self.source_connection = connection.clone()
                         self.source_template = saved['spec']['template']
@@ -66,7 +78,10 @@ class Pool:
                 self.options.pop('snapshot', None)
                 self.options['cache'] = source
             else:
-                with Sandbox(target=self.targets[0], **self.options) as builder:
+                request = definition(target=self.targets[0], **self.options)
+                network = request['spec']['resources']['network']
+                self.proxy_network = network if requires_policy(network) else None
+                with self._launch_definition(request, self.targets[0], builder=True) as builder:
                     source = builder.snapshot(state='filesystem')
                     if self.shared_cache is not None:
                         self.source_connection = builder._connection.clone()
@@ -136,7 +151,20 @@ class Pool:
                     destination.close()
             finally:
                 source.close()
-        return Sandbox(target=target, **self.options)
+        if self.proxy_network is None:
+            return Sandbox(target=target, **self.options)
+        from .sandbox import definition
+        request = definition(target=target, **{**self.options, 'network': self.proxy_network})
+        return self._launch_definition(request, target)
+
+    def _launch_definition(self, request, target, *, builder=False):
+        if self.proxy_network is not None:
+            from .proxy import select
+            with self.condition:
+                assignment, self.proxy_state = select(self.proxy_network, self.proxy_state, advance=not builder)
+            request = copy.deepcopy(request)
+            request['spec']['_proxy_assignment'] = assignment
+        return Sandbox._from_definition(request, target)
 
     def acquire(self):
         cancelled = threading.Event()

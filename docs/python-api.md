@@ -115,6 +115,11 @@ These values can be passed to `Sandbox` and pool creation. See
 `Network(proxy=...)` accepts a proxy URL or a list of URLs. See
 [proxy networking](networking.md#use-a-proxy) for selection, setup and application support.
 
+`ProxyPolicy(distribution="random", region=None)` supports `random`, `round_robin`,
+`same_proxy` and `same_region`. Pass it as `Network(proxy=proxies, policy=...)`.
+`proxies` also accepts a mapping from region labels to URL lists. See
+[proxy policies](networking.md#proxy-policies) for standalone and pool semantics.
+
 ## Cluster
 
 | Member | Purpose |

@@ -110,7 +110,24 @@ class Sandbox:
                     refresh=False, experimental_gpu_live=False):
         options = dict(locals()); options.pop('self')
         request = definition(**options)
+        self._launch(request, target)
+
+    @classmethod
+    def _from_definition(cls, request, target):
+        """Launch an internally assigned pool member without changing the public constructor."""
+        self = cls.__new__(cls)
+        self._connection = None
+        try:
+            self._launch(request, target)
+            return self
+        except BaseException:
+            if self._connection is not None:
+                self._connection.close()
+            raise
+
+    def _launch(self, request, target):
         spec, recipe, reference = request['spec'], request['spec']['template'], request['reference']
+        startup_timeout = spec['startup_timeout']
         self.id = ('vr-sw-' if 'vr' in recipe['capabilities'] else 'sw-') + uuid.uuid4().hex
         self._owned, self._closed, self._terminated = True, False, False
         self._target = target
@@ -123,10 +140,13 @@ class Sandbox:
         initial = self._connection
         self._connection = initial.clone(timeout=startup_timeout + 60)
         initial.close()
+        from .proxy import requires_policy
+        if requires_policy(spec['resources']['network']) and not self._connection.call('ping').get('proxy_policy'):
+            raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on the worker and controller')
         from .ownership import client_owner
-        owner = None if detached else client_owner(self._connection)
+        owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
-                                          reference=reference, cache_key=cache_key, refresh=refresh, owner=owner)
+                                          reference=reference, cache_key=request['cache_key'], refresh=request['refresh'], owner=owner)
         self.files = Files(self)
         self._controls = {}
 

@@ -10,7 +10,7 @@ import uuid
 
 from . import PROTOCOL, providers, scheduler
 from .state import State
-from ..sandbox.errors import OperationUnknown, ResourceUnavailable, OwnerExpired
+from ..sandbox.errors import OperationUnknown, ResourceUnavailable, OwnerExpired, UnsupportedFeature
 from ..sandbox.ownership import Owners, GRACE_SECONDS
 from ..sandbox.resources import positive, memory_bytes
 from ..sandbox.wire import encode
@@ -416,6 +416,9 @@ class Controller:
                     return
                 record = self.state.put('allocation', {**record, 'endpoint': route, 'state': 'starting'})
             request = record['request']
+            from ..sandbox.proxy import requires_policy
+            if requires_policy(request['spec']['resources']['network']) and not connection.call('ping').get('proxy_policy'):
+                raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on every participating worker')
             if request.get('reference'):
                 from .artifacts import ensure
                 pool = self.state.get('pool', record['parent'], required=False) if record.get('parent') else None
@@ -593,7 +596,7 @@ class Controller:
             return self.relay.result(**parameters)
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
-                    'pool_options': ['shared_cache', 'affinity']}
+                    'pool_options': ['shared_cache', 'affinity'], 'proxy_policy': 1}
         if operation == 'events':
             return self.state.events(**parameters)
         if operation == 'backup':

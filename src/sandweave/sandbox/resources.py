@@ -4,6 +4,7 @@ from decimal import Decimal
 import math
 import re
 from pathlib import PurePosixPath
+from .proxy import ProxyPolicy
 
 
 def positive(value, name, *, integer=False):
@@ -91,20 +92,30 @@ class GPU:
 class Network:
     mode: str = 'internet'
     allow_cidrs: tuple[str, ...] = ()
-    proxy: str | tuple[str, ...] | None = field(default=None, repr=False)
+    proxy: str | tuple[str, ...] | dict[str, tuple[str, ...]] | None = field(default=None, repr=False)
+    policy: ProxyPolicy | None = None
 
     def __post_init__(self):
         import ipaddress
         if self.mode not in ('internet', 'offline', 'proxy'):
             raise ValueError('network mode must be internet, offline or proxy')
         if self.proxy is not None:
-            from .proxy import values
+            from .proxy import catalog, candidates
             if self.mode == 'offline' or self.allow_cidrs:
                 raise ValueError('proxy networking cannot be combined with offline mode or allow_cidrs')
-            object.__setattr__(self, 'proxy', values(self.proxy))
+            policy = self.policy
+            if isinstance(policy, dict):
+                policy = ProxyPolicy(**policy)
+            if policy is not None and not isinstance(policy, ProxyPolicy):
+                raise ValueError('policy must be a ProxyPolicy object')
+            object.__setattr__(self, 'policy', policy)
+            object.__setattr__(self, 'proxy', catalog(self.proxy))
+            candidates(self.proxy, policy or ProxyPolicy())
             object.__setattr__(self, 'mode', 'proxy')
         elif self.mode == 'proxy':
             raise ValueError('proxy mode requires a proxy URL')
+        elif self.policy is not None:
+            raise ValueError('a proxy policy requires proxy URLs')
         object.__setattr__(self, 'allow_cidrs', tuple(self.allow_cidrs))
         for cidr in self.allow_cidrs:
             if ipaddress.ip_network(cidr).version != 4:

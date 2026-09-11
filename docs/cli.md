@@ -42,6 +42,17 @@ sandweave run --proxy-file ./proxies.json -- "curl -s https://api.ipify.org"
 This also works with `create` and `pool create`. See
 [proxy networking](networking.md#use-a-proxy) for the file format and routing behavior.
 
+For a region-grouped proxy file, distribute one region's proxies across a pool:
+
+```bash
+sandweave pool create --name research --size 8 --proxy-file ./proxies.json --proxy-policy same_region
+```
+
+`--proxy-policy` accepts `random`, `round_robin`, `same_proxy`, or `same_region`.
+Add `--proxy-region uk` to restrict that policy to the supplied `uk` group.
+These options also work with standalone `create` and `run`, which select one
+eligible proxy. See [proxy policies](networking.md#proxy-policies).
+
 ## Create a persistent desktop
 
 ```bash

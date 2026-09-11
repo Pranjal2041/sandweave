@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.10
+
+- Add `ProxyPolicy(distribution="random", region=None)` to `Network`, with
+  random, round-robin, shared-proxy and shared-region assignment. Proxy catalogs
+  accept URL lists or mappings from region labels to URL lists.
+- Coordinate explicit pool policies across workers. Save each assignment and
+  the pool's selection/cursor together, preserving them through retries and
+  controller restarts. Standalone sandboxes select one eligible proxy.
+- Add `--proxy-policy` and `--proxy-region`, and show region/policy details in
+  `env.info["network"]`. Require policy support on participating processes.
+- Preserve standalone memory-snapshot bindings and filesystem-cache overrides.
+  Explicit pool policies use filesystem baselines; baseline preparation does
+  not consume a member's rotation position.
+
 ## 0.2.9
 
 - Add `Network(proxy=...)` for one proxy URL or a list. Each sandbox selects

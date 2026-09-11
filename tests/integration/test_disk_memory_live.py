@@ -55,6 +55,29 @@ def wait_file(env, path, expected=None):
     raise TimeoutError(path)
 
 
+@pytest.mark.skipif(not os.environ.get('SANDWEAVE_DISK_OLD_RUNTIME'),
+                    reason='explicit pre-disk-memory engine required')
+def test_engine_upgrade_preserves_running_sandbox():
+    root = Path(os.environ['SANDWEAVE_DISK_PATH'])
+    with Sandbox(memory='256MiB') as existing:
+        before = existing.status()['runtime_status']['sentry']
+        old_engine = os.readlink(f'/proc/{before["pid"]}/exe')
+        assert os.environ['SANDWEAVE_DISK_OLD_RUNTIME'] in old_engine
+        existing.files.write_text('/workspace/preserved', 'still running')
+        with Sandbox(memory=Memory('256MiB', disk='1792MiB', disk_path=str(root))) as paged:
+            new_pid = paged.status()['runtime_status']['sentry']['pid']
+            assert os.readlink(f'/proc/{new_pid}/exe') != old_engine
+            assert paged.run("python -c 'import mmap; a=mmap.mmap(-1, 1280*1024**2); "
+                             "a[::4096]=b\"x\"*(len(a)//4096); "
+                             "assert a[::4096] == b\"x\"*(len(a)//4096)'",
+                             timeout=180).returncode == 0
+            directory = Path(paged.info['disk_memory']['directory'])
+        assert not directory.exists()
+        assert existing.status()['runtime_status']['sentry'] == before
+        assert existing.files.read_text('/workspace/preserved') == 'still running'
+        assert existing.run('echo alive').stdout == 'alive\n'
+
+
 def telemetry(env):
     memory = env.status()['runtime_status']['disk_memory']
     group = Path(memory['cgroup'])

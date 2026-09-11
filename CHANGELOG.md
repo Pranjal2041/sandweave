@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Redistribute CPU time left unused by partially active sandboxes. Account for
+  runnable threads and unthrottled consumption when allocating weighted shares;
+  preserve explicit quotas and reclaim shares when demand increases.
+
 ## 0.2.5
 
 - Make concurrent snapshot imports idempotent after publication. Compare replica

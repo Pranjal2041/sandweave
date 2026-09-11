@@ -14,6 +14,11 @@ This is a sampled userspace policy, not kernel `cpu.weight`/`cpu.max`. Guest exe
 
 Twenty-second measurements after reducing discovery overhead: equal weights, 4/4 workers: 1.007:1 host CPU; 4/16: 0.901:1; weights 3:1 with 4/16: 2.823:1. One-CPU quotas: 0.9925 and 0.997 CPU. An active environment beside an idle one used 3.901 of four eligible CPUs. Evidence: `runs/gvisor-cpu-broker-optimized.log`, `runs/gvisor-cpu-idle.log`.
 
+Those historical tests did not cover a partially active peer leaving its share
+unused. The controller now includes measured demand in allocation, with separate
+regressions for intermittent peers, demand increases and quota preservation.
+See [CPU demand sharing](cpu-demand-sharing.md) for the algorithm and acceptance.
+
 ## Memory
 
 `--memory-mib 8192` enforces an allocator budget for guest pages, including anonymous RAM and writable tmpfs/overlay filesystem data. Restored page ownership is charged before pages load. Reclaimed pages return to the budget. An allocation over budget fails with ENOMEM; an anonymous-memory fault kills the allocating guest process, while the sandbox continues. Live 128 MiB tmpfs and anonymous-allocation tests verify rejection and recovery.

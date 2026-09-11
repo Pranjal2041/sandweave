@@ -30,6 +30,26 @@ gVisor enforces weights and quotas through a sampled userspace controller.
 These settings share the worker's eligible CPUs; they do not reserve dedicated
 physical cores or grant more CPUs than the host allocation supplies.
 
+A busy sandbox can borrow CPU time left unused by other sandboxes, including
+peers that are still doing some work. For example, on a four-CPU worker, if one
+equally weighted sandbox uses one CPU, another can use the remaining three.
+Weights determine shares when there is enough runnable work to compete for
+them. Explicit quotas still limit consumption when spare capacity is available.
+
+`vcpus` controls the guest's reported CPU count and gVisor's execution concurrency
+per address space. Separate guest processes can together use more host CPUs
+than this count. It is neither a sandbox-wide CPU-time ceiling nor a request to
+resize an application's thread pool automatically. Use `quota` for a CPU-time
+ceiling.
+
+The controller samples CPU time and runnable threads. Demand estimates use
+unthrottled observation windows of about 100 ms; scheduling normally updates
+every 20 ms. It preserves observations across its own pauses and distinguishes
+brief wakeups from threads that keep waiting for CPU. Changes in demand take
+time to observe, and short overshoot is possible. Runtime and transport CPU
+are counted, but only guest execution is
+throttled. These are not hard host cgroup limits.
+
 ## Guest and runtime memory
 
 ```python

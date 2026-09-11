@@ -19,6 +19,9 @@ import socket
 
 TICK = .02
 BURST = .10
+DEMAND_WINDOW = .10
+RUNNABLE_WINDOW = .04
+ACCOUNTING_BURST = 2 / os.sysconf('SC_CLK_TCK')
 
 
 def process_table(pids=None):
@@ -30,7 +33,8 @@ def process_table(pids=None):
             fields = text[text.rfind(')') + 2:].split()
             result[int(path.parent.name)] = {
                 'state': fields[0], 'parent': int(fields[1]), 'group': int(fields[2]),
-                'start': int(fields[19]), 'cpu': sum(map(int, fields[11:15])) / os.sysconf('SC_CLK_TCK')}
+                'start': int(fields[19]), 'threads': int(fields[17]),
+                'cpu': sum(map(int, fields[11:15])) / os.sysconf('SC_CLK_TCK')}
         except (OSError, ValueError):
             pass
     return result
@@ -55,21 +59,62 @@ def discover_trees(roots):
     return process_table(found)
 
 
-def allocate_rates(active, capacity):
-    """Weighted water filling: redistribute capacity unused by capped jobs."""
+def runnable_threads(table, members):
+    """Find running AND CPU-waiting threads, including sleeping leaders' peers.
+
+    Sample only registered trees. If a process changes while being inspected,
+    return unknown rather than treating unreadable work as idle.
+    """
+    runnable = set()
+    for pid in members:
+        info = table.get(pid)
+        if info is None:
+            return None
+        if info['threads'] == 1:
+            if info['state'] == 'R':
+                runnable.add(pid)
+            continue
+        try:
+            paths = list(Path(f'/proc/{pid}/task').glob('*/stat'))
+            if len(paths) != info['threads']:
+                return None
+            for path in paths:
+                stat = path.read_text()
+                if stat[stat.rfind(')') + 2:].split()[0] == 'R':
+                    runnable.add(int(path.parent.name))
+        except (OSError, ValueError, IndexError):
+            return None
+    return runnable
+
+
+def _fill_rates(active, capacity, caps, rates):
     remaining = list(active)
-    rates = {}
     while remaining:
         weights = sum(j.config['weight'] for j in remaining)
-        capped = [j for j in remaining if j.config.get('quota') is not None
-                  and j.config['quota'] < capacity*j.config['weight']/weights]
+        capped = [j for j in remaining if caps[j] is not None
+                  and caps[j] - rates[j] < capacity*j.config['weight']/weights]
         if not capped:
-            rates.update({j: capacity*j.config['weight']/weights for j in remaining})
+            for job in remaining:
+                rates[job] += capacity*job.config['weight']/weights
             break
         for job in capped:
-            rates[job] = job.config['quota']
-            capacity -= rates[job]
+            capacity -= caps[job] - rates[job]
+            rates[job] = caps[job]
             remaining.remove(job)
+
+
+def allocate_rates(active, capacity):
+    """Share by weight, lending unconsumed shares without relaxing quotas."""
+    rates = dict.fromkeys(active, 0.)
+    quotas = {j: j.config.get('quota') for j in active}
+    caps = {j: min(c for c in (j.demand, quotas[j]) if c is not None)
+            if j.demand is not None or quotas[j] is not None else None for j in active}
+    _fill_rates(active, capacity, caps, rates)
+    # Demand is an observation, not a hard ceiling. If everyone appears to
+    # need less than capacity, keep the remainder available for new work.
+    spare = max(0., capacity - sum(rates.values()))
+    if spare:
+        _fill_rates(active, spare, quotas, rates)
     return rates
 
 
@@ -133,6 +178,45 @@ class Job:
         self.stops = 0
         self.ready = False
         self.members = {config['root']}
+        self.demand = None
+        self.demand_elapsed = 0.
+        self.demand_cpu = 0.
+        self.demand_sample = None
+        self.observed_demand = None
+        self.runnable_since = {}
+        self.previous_threads = set()
+        self.pending_threads = 0
+        self.rate = 0.
+
+    def update_demand(self, table, delta, now):
+        if self.demand_sample is None:
+            self.demand_sample = now
+            return
+        elapsed = now - self.demand_sample
+        self.demand_sample = now
+        # Keep the unthrottled observations across pauses. Discarding them
+        # makes intermittent peers perpetually unknown. A paused peer gets
+        # its ordinary weighted entitlement so new demand can wake it again.
+        if self.paused:
+            self.demand = None
+            return
+        self.demand_cpu += delta
+        self.demand_elapsed += elapsed
+        runnable = {p for p in self.members if p in table and table[p]['state'] == 'R'}
+        self.runnable_since = {p: self.runnable_since.get(p, now) for p in runnable}
+        pending = sum(now - since >= RUNNABLE_WINDOW for since in self.runnable_since.values())
+        if self.demand_elapsed >= DEMAND_WINDOW:
+            threads = runnable_threads(table, self.members)
+            # Sustained runnable work protects CPU-starved peers, without
+            # mistaking a brief wakeup for an entire core of demand. Check
+            # non-leader threads less often to bound the inspection cost.
+            self.observed_demand = None if threads is None else self.demand_cpu / self.demand_elapsed
+            self.pending_threads = len((threads & self.previous_threads) - self.members) if threads is not None else 0
+            self.previous_threads = threads if threads is not None else set()
+            self.demand_elapsed = 0.
+            self.demand_cpu = 0.
+        self.demand = None if self.observed_demand is None else max(
+            self.observed_demand, pending + self.pending_threads)
 
     def update(self, table, now):
         root = self.config['root']
@@ -156,6 +240,7 @@ class Job:
         self.previous = max(cpu, self.previous or 0)
         self.total += delta
         self.credit -= delta
+        self.update_demand(table, delta, now)
         if delta > .001 or any(table[p]['state'] == 'R' for p in members - {root} if p in table):
             self.active_until = now + .10
         return True
@@ -170,6 +255,12 @@ class Job:
         if paused:
             self.stops += 1
         self.paused = paused
+
+    def refill(self, rate, elapsed):
+        # /proc CPU counters advance in whole clock ticks. Small shares
+        # need enough saved credit to absorb a tick, including across idle
+        # gaps between intermittent bursts. Never erase outstanding debt.
+        self.credit = min(max(rate*BURST, ACCOUNTING_BURST), self.credit + rate*elapsed)
 
     def close(self, table):
         try:
@@ -238,14 +329,20 @@ def run(directory, cpus):
                     break
                 active = [j for key,j in jobs.items() if j.ready and not (directory / (key + '.suspend')).exists() and (j.paused or j.active_until > now)]
                 rates = allocate_rates(active, len(cpus))
+                total_weight = sum(j.config['weight'] for j in jobs.values())
                 for key, job in list(jobs.items()):
                     try:
                         if job not in active:
-                            job.credit = 0
+                            idle_rate = len(cpus)*job.config['weight']/total_weight
+                            if job.config.get('quota') is not None:
+                                idle_rate = min(idle_rate, job.config['quota'])
+                            job.refill(idle_rate, elapsed)
+                            job.rate = 0
                             job.set_paused(False, table)
                             continue
                         rate = rates[job]
-                        job.credit = min(rate*BURST, job.credit + rate*elapsed)
+                        job.rate = rate
+                        job.refill(rate, elapsed)
                         job.set_paused(job.credit < 0, table)
                     except (OSError, ConnectionError, RuntimeError, ValueError, KeyError) as error:
                         # A sandbox can exit between accounting and this RPC.
@@ -257,7 +354,8 @@ def run(directory, cpus):
                 if now-last_report > .25:
                     report = {'pid': os.getpid(), 'time': time.time(), 'tick_seconds': TICK,
                               'cpus': cpus, 'jobs': {key: {'cpu_seconds': j.total, 'credit': j.credit,
-                                      'paused': j.paused, 'stops': j.stops} for key,j in jobs.items()}}
+                                      'paused': j.paused, 'stops': j.stops,
+                                      'demand_cpus': j.demand, 'rate_cpus': j.rate} for key,j in jobs.items()}}
                     temp = directory / 'status.tmp'
                     temp.write_text(json.dumps(report))
                     temp.replace(directory / 'status.json')

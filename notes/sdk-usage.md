@@ -216,6 +216,14 @@ number of eligible host CPUs in the affinity mask. Native memory enforcement
 uses one sampled RSS limit equal to the sum of both configured budgets.
 See [resource limits](#limits-that-matter).
 
+CPU shares account for demand: a busy gVisor sandbox can borrow unused time
+from a partially active peer as well as an idle one. Runnable threads protect
+the share of work waiting for CPU, and a throttled interval is not counted as
+evidence of low demand. Explicit quotas remain ceilings. The controller samples
+these changes; it does not provide instantaneous kernel scheduling guarantees.
+See the [CPU guide](../docs/resources.md#cpu-sharing) for timing and the
+distinction between virtual CPU counts and aggregate host CPU time.
+
 `gpus=[]` means no GPU is selected, including after the runtime stops.
 The runtime's launch record supplies device identity, independently of a model
 filter such as `gpu="L40S"`. A GPU remains selected while the sandbox is paused.

@@ -1496,9 +1496,18 @@ machine. Such URLs are labelled local.</p>
 <p>Active leases finish normally. <code>cluster.resume(worker_id)</code> allows new placement.
 <code>cluster.remove_worker(worker_id)</code> unregisters a drained worker after reservations
 are released; it does not cancel the machine's allocation.</p>
+<p>If a worker is unreachable, its reservations remain charged. A lost connection
+does not establish that its sandboxes stopped. Once you have independently
+confirmed that its allocation ended, release those records with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">cluster</span><span class="o">.</span><span class="n">remove_worker</span><span class="p">(</span><span class="n">worker_id</span><span class="p">,</span> <span class="n">lost</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p>The CLI equivalent is <code>sandweave cluster remove lab WORKER_ID --lost</code>. This does
+not kill remote processes. The removed worker workspace cannot rejoin that
+controller; a replacement needs a new workspace. Pending claims receive the
+failure instead of keeping a route to that worker.</p>
 <h2 id="controller-lifetime">Controller lifetime<a class="headerlink" href="#controller-lifetime" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>stop<span class="w"> </span>lab
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>stop<span class="w"> </span>lab
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
 </code></pre></div>
 <p>Stopping the controller retains its state directory. Restarting resumes
 coordination; worker sandboxes retain their lifetime rules. Long outages can

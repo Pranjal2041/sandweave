@@ -1403,6 +1403,13 @@ is a separate guard for the processes implementing the sandbox. Both count
 toward cluster admission. Neither is the host machine's total memory.</p>
 <p>A string such as <code>memory="8GiB"</code> overrides guest memory and retains the template's
 runtime budget. Sizes can also be supplied as integer byte counts.</p>
+<p>A 32 GiB worker fits three sandboxes configured with 8 GiB guest memory and
+512 MiB runtime memory. With 256 MiB for each budget, it fits up to 64, subject
+to its slot limit and other reservations. Slots do not grant additional memory.</p>
+<p>Worker budgets are capped at visible cgroup hard limits, including narrower job
+steps and ancestor limits. An environment variable cannot raise that ceiling.
+If several workers or unrelated processes share a memory allocation, their
+budgets still need to fit within that shared allocation.</p>
 <h2 id="use-a-gpu">Use a GPU<a class="headerlink" href="#use-a-gpu" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>

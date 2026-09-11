@@ -124,6 +124,39 @@ class Owners:
             self._write({**self._read(identity), 'expires_at': time.time() + GRACE_SECONDS})
             return {'heartbeat_seconds': HEARTBEAT_SECONDS, 'grace_seconds': GRACE_SECONDS}
 
+    def register_managed(self, identity, process):
+        """Give new assignments a live worker lease for this cluster client.
+
+        The client can remain alive at its controller while holding no worker
+        resources. Its next assignment needs a fresh lease if the previous
+        worker lease expired. Old sandbox records retain the expired lease.
+        """
+        with self.lock:
+            path = self.root / 'managed' / self._path(identity).name
+            if path.exists():
+                lease = json.loads(path.read_text())['lease']
+            else:
+                # Preserve existing 0.2.5 assignments when first introducing
+                # the mapping; their still-live lease must keep renewing.
+                lease = identity if self._path(identity).exists() else None
+            if lease is not None:
+                if self._read(lease)['process'] != process:
+                    raise ValueError('owner ID is already in use')
+                if self.reason(lease):
+                    lease = None
+            lease = lease or uuid.uuid4().hex
+            self.register(lease, process)
+            path.parent.mkdir(exist_ok=True)
+            atomic_json(path, {'lease': lease})
+            return lease
+
+    def heartbeat_managed(self, identity):
+        """Keep the existing logical owner RPC and one heartbeat per worker."""
+        with self.lock:
+            path = self.root / 'managed' / self._path(identity).name
+            lease = json.loads(path.read_text())['lease'] if path.exists() else identity
+            return self.heartbeat(lease)
+
 
 class ClientOwner:
     def __init__(self, connection):

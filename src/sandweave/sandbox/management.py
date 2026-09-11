@@ -75,14 +75,22 @@ class Management:
                          intent=stamp, canonical_intent=canonical,
                          token=previous['token'] if previous else secrets.token_hex(32),
                          owner=owner if action in ('claim', 'create') else (previous or {}).get('owner'))
+            worker_owner = None
+            if owner and action in ('create', 'claim'):
+                if previous and generation == previous['generation']:
+                    # Recover this exact lease on a retry, including legacy
+                    # journals. Expired attempts must never acquire a new one.
+                    worker_owner = previous.get('worker_owner', owner)
+                    self.worker.owner_register(worker_owner, process)
+                else:
+                    worker_owner = self.worker.owners.register_managed(owner, process)
+            value['worker_owner'] = worker_owner if action != 'terminate' else (previous or {}).get('worker_owner')
             # Persist a cancellation even if launch has not reached the worker.
             # A delayed create then fails its generation/tombstone check.
             self.write(value)
             if action == 'create':
                 if spec is None:
                     raise ValueError('creation requires a sandbox definition')
-                if owner:
-                    self.worker.owner_register(owner, process)
                 if self.worker.path(identity).exists():
                     record = self.worker.read(identity)
                     if record.get('operation_id') != operation_id:
@@ -95,15 +103,13 @@ class Management:
                                                sandbox_id=identity, operation_id=operation_id)
                 else:
                     result = self.worker.create(spec, identity, operation_id=operation_id,
-                        reference=reference, cache_key=cache_key, refresh=refresh, owner=owner)
+                        reference=reference, cache_key=cache_key, refresh=refresh, owner=worker_owner)
             elif action == 'claim':
                 result = self.worker.describe(identity)
                 if result['state'] != 'ready':
                     raise OperationUnknown('pool member is no longer ready', sandbox_id=identity)
-                if owner:
-                    self.worker.owner_register(owner, process)
                 record = self.worker.read(identity)
-                record['owner'] = owner
+                record['owner'] = worker_owner
                 record['spec']['detached'] = owner is None
                 if spec is not None:
                     record['spec']['ttl'] = spec.get('ttl')

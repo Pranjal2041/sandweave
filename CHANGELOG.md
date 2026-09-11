@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Allow a live cluster client to acquire new sandboxes after its last worker
+  lease expires during an idle period. Keep expired assignments fenced and
+  preserve automatic cleanup when the client exits.
 - Redistribute CPU time left unused by partially active sandboxes. Account for
   runnable threads and unthrottled consumption when allocating weighted shares;
   preserve explicit quotas and reclaim shares when demand increases.

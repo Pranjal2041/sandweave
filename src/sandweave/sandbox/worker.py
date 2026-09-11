@@ -88,7 +88,7 @@ class Worker:
         return self.owners.register(identity, process)
 
     def owner_heartbeat(self, identity):
-        return self.owners.heartbeat(identity)
+        return self.owners.heartbeat_managed(identity)
 
     def lock(self, identity):
         with self.guard:

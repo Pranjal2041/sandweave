@@ -24,6 +24,53 @@ receive their own owner; the detached flag does not invalidate preparation
 caches. Forked Python clients register new owners for environments they create.
 Closing or dropping a handle does not end the process's ownership.
 
+## Cluster clients returning after an idle period
+
+Version 0.2.5 reused the controller's process-owner ID as the worker lease ID.
+After the client released its last sandbox on a worker, there was no worker
+route to renew. The worker lease expired after 30 seconds, although the client
+was still renewing its controller owner. A subsequent create or pool claim
+reused that expired ID and failed with `owner_heartbeat_expired`.
+Worker-local PID checks hid this defect in same-host tests.
+
+Workers now persist a mapping from the client's logical owner ID to its current
+worker lease. New assignments share that lease while it is active. If it has
+expired, a new assignment receives a fresh lease. Existing sandbox records keep
+their original lease, so their decided expiry and cleanup are unchanged.
+Assignment retries also retain their original lease; they cannot renew an
+expired attempt by obtaining a different lease.
+
+Clients still send the same logical owner ID, with one heartbeat per worker.
+The worker resolves it to the current lease. No client API or wire change is
+required. A still-live legacy lease is adopted when the mapping is first
+created, preserving renewal for pre-existing assignments. An expired legacy
+lease remains expired. The mapping survives worker restart, and its update is
+serialized with lease registration and heartbeats.
+
+The regression cases are in `tests/test_idle_owner.py` and
+`tests/integration/test_idle_owner_live.py`. Live tests use disposable workers
+and real HTTP/relay requests, withholding the test client's local process
+identity to exercise remote lease semantics. The actual 30-second grace period
+is retained. They check reacquisition after 40 idle seconds, concurrent new
+leases, renewal beyond another grace period, and cleanup after client SIGKILL.
+
+On 2026-09-11 UTC, the same live idle-pool case failed against unmodified 0.2.5
+source (`8de4113`) with `owner_heartbeat_expired`, in 75.30 seconds. With the fix,
+all three live cases passed in 317.48 seconds: `warm=0`, `warm=1`, and client
+SIGKILL. Both idle cases acquired two sandboxes concurrently after 40 seconds
+without a lease, then ran commands successfully after another 35 seconds.
+Inspection confirmed that each pair shared a new worker lease, while the
+previous lease retained its final expiry. The crash case ended with the
+worker recording `owner_heartbeat_expired` and the sandbox terminated.
+
+The unit suite passed 290 tests, with four skips and 101 integration cases
+deselected. It includes six new regressions covering the controller/pool
+sequence, create and claim retries, legacy records, concurrent registration,
+restart persistence and isolation between different owners. Both disposable
+clusters stopped, their workers exited, and all acquired guests were
+terminated. Existing user clusters and the client's harness were untouched.
+Reports without credentials are retained under ignored `runs/idle-owner-20260911/`.
+
 ## Validation
 
 - The host suite passed **102 tests**, with one optional test skipped and 60

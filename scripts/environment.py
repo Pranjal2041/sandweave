@@ -18,6 +18,7 @@ import environment_control as control
 import runtime_store
 import snapshot_store
 import fast_io
+import disk_memory
 
 
 def runtime_state(path):
@@ -96,7 +97,8 @@ class EnvironmentManager:
                               gpu=bool(settings.get('gpu')))
         if not bundle.exists() and launcher is None:
             result['status'] = 'missing'
-        for filename, key in [('ports.json', 'ports'), ('stopped.json', 'last_stop')]:
+        for filename, key in [('ports.json', 'ports'), ('stopped.json', 'last_stop'),
+                              ('disk-memory.json', 'disk_memory')]:
             try:
                 result[key] = json.loads((self._logs(name) / filename).read_text())
             except FileNotFoundError:
@@ -243,6 +245,7 @@ class EnvironmentManager:
             if state['status'] == 'missing':
                 raise ValueError('unknown environment: ' + name)
             if state['status'] == 'stopped':
+                disk_memory.cleanup(self._logs(name))
                 return state
             if state['status'] not in ('running', 'paused') and not discard:
                 raise ValueError('environment is still starting; wait for readiness or explicitly discard it')
@@ -283,6 +286,7 @@ class EnvironmentManager:
             control.resume_cpu(self.local, name)
             record = {'requested_at': time.time(), 'discarded': discard, 'saved': saved, 'complete': True}
             snapshot_store.write_json(self._logs(name) / 'stopped.json', record)
+            disk_memory.cleanup(self._logs(name))
             return self.status(name)
 
     @staticmethod

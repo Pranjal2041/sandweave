@@ -191,8 +191,12 @@ class Worker:
                 with measure('snapshot_seconds'):
                     saved = self.store.resolve(reference) if reference else None
                     if saved and saved['state'] == 'memory':
+                        from .resources import restore_resources
                         for key in ('runtime', 'resources', 'env', 'mounts'):
-                            if spec[key] != saved['spec'][key]:
+                            before, after = saved['spec'][key], spec[key]
+                            if key == 'resources':
+                                before, after = restore_resources(before), restore_resources(after)
+                            if before != after:
                                 raise IncompatibleSnapshot('memory restore cannot change ' + key)
                     snapshot = self.store.materialize(saved) if saved else None
                 self.remaining(identity)

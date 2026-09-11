@@ -22,6 +22,7 @@ import gvisor_mps
 import signal
 import tempfile
 import build_artifacts
+import disk_memory
 
 started = phase = time.perf_counter()
 started_at = time.time()
@@ -45,6 +46,10 @@ parser.add_argument('--allow-cidr', action='append', default=[], help='explicit 
 parser.add_argument('--guest-cpus', type=int, default=4, help='guest execution parallelism, independent of the shared host CPU pool')
 parser.add_argument('--memory-mib', type=int, default=8192, help='guest page budget including anonymous memory and writable filesystem data; excludes runtime overhead')
 parser.add_argument('--runtime-memory-mib', type=int, default=1024, help='separate sampled Go-runtime memory guard; permits transient overshoot')
+parser.add_argument('--ram-mib', type=int, help='resident guest RAM allowance when using disk memory')
+parser.add_argument('--disk-path', help='independent parent directory for private disk-backed memory')
+parser.add_argument('--no-disk-memory', action='store_true', help='clear a saved disk-memory binding on restore')
+parser.add_argument('--disk-memory-inner', type=Path, help=argparse.SUPPRESS)
 parser.add_argument('--host-nice', type=int, default=0, help='experimental host per-thread nice value (0..19), not a whole-environment CPU weight')
 parser.add_argument('--cpu-policy', choices=['shared', 'weighted', 'quota'], default='weighted')
 parser.add_argument('--cpu-weight', type=int, default=100)
@@ -118,6 +123,8 @@ if args.restore and (args.restore / 'launch-settings.json').is_file():
         if not any(x == option or x.startswith(option + '=') for x in sys.argv[1:]):
             setattr(args, key, value)
 filesystem_restore = bool(snapshot_manifest and snapshot_manifest.get('kind') == 'filesystem')
+if args.no_disk_memory:
+    args.ram_mib = args.disk_path = None
 if args.filesystem_runtime_current and not args.detach and not filesystem_restore:
     parser.error('--filesystem-runtime-current requires a filesystem snapshot')
 if args.runtime_build and args.restore:
@@ -137,6 +144,12 @@ if args.restore and not args.detach and not filesystem_restore and args.gpu is n
     parser.error('a live CPU snapshot cannot acquire a new GPU; use a filesystem snapshot')
 if args.runtime_memory_mib < 32:
     parser.error('runtime-memory-mib must be at least 32')
+if (args.ram_mib is None) != (args.disk_path is None):
+    parser.error('disk memory requires both --ram-mib and --disk-path')
+if args.ram_mib is not None and not 64 <= args.ram_mib < args.memory_mib:
+    parser.error('disk memory requires 64 <= ram-mib < memory-mib')
+if args.disk_path and args.experimental_gpu_sm_chunks is not None:
+    parser.error('disk memory cannot enclose a shared CUDA MPS controller')
 if args.guest_cpus < 1 or args.memory_mib < 64 or not 0 <= args.host_nice <= 19:
     parser.error('guest-cpus must be positive, memory-mib at least 64, and host-nice in 0..19')
 if args.cpu_weight <= 0 or (args.cpu_policy == 'quota' and (args.cpu_quota is None or args.cpu_quota <= 0)):
@@ -157,6 +170,12 @@ if args.detach:
     (logs / 'launcher-pid.txt').write_text(str(child.pid) + '\n')
     print(f'Starting {args.name}, launcher PID {child.pid}; logs: {logs}; ports: {logs / "ports.json"}', flush=True)
     raise SystemExit(0)
+if args.disk_path:
+    if args.disk_memory_inner is None:
+        raise SystemExit(disk_memory.supervise(args, lab, local))
+    disk_memory.enter(args, lab / 'runs/gvisor' / args.name)
+elif args.disk_memory_inner is not None:
+    parser.error('disk memory inner launch requires disk-path')
 mark('snapshot_metadata_seconds')
 docker_archive = (args.docker_archive or local / 'gvisor/docker-state.tar').resolve()
 if args.docker_archive and not args.docker_data:
@@ -188,6 +207,8 @@ runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 launch_settings = {'settings': settings, 'runtime': runtime}
+if args.disk_path:
+    settings.update(ram_mib=args.ram_mib, disk_path=args.disk_path)
 mounts = external_mounts.normalize(json.loads(args.mounts.read_text()) if args.mounts else
                                    (saved_settings or {}).get('external_mounts', []))
 mount_file = bundle / 'external-mounts.json'
@@ -359,6 +380,9 @@ try:
     if args.cpu_policy != 'shared':
         registration = cpu_broker.register(local, args.name, selected_cpus, args.cpu_weight,
                                              args.cpu_quota if args.cpu_policy == 'quota' else None)
+        if args.disk_memory_inner is not None:
+            # The real registration now keeps the external broker alive.
+            registration.with_name('job-' + args.name + '-memory-supervisor.json').unlink(missing_ok=True)
         def watch_broker():
             while not watch_done.wait(1):
                 status = registration.parent / 'status.json'
@@ -412,6 +436,9 @@ try:
             command += mps.flags()
     if mounts:
         command[1:1] = ['--mounts', str(mount_file)]
+    if args.disk_path:
+        command[1:1] = ['--disk-memory', str(args.disk_memory_inner)]
+        command += ['--app-memory-directory=/disk-memory']
     if args.restore and not filesystem_restore:
         checkpoint = snapshot_store.restore_path(local, args.restore, snapshot_manifest)
         timings['snapshot_storage'] = str(checkpoint)
@@ -427,7 +454,7 @@ try:
     if args.docker_data:
         if not args.restore:
             command += ['--pass-fd=3:3']
-            wrapper_end = 1 + (2 if args.gpu is not None else 0) + (2 if mounts else 0)
+            wrapper_end = 1 + (2 if args.gpu is not None else 0) + (2 if mounts else 0) + (2 if args.disk_path else 0)
             command[wrapper_end:wrapper_end] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
     command += [f'--bundle=/local/gvisor/bundles/{args.name}', args.name]
     (logs / 'launch.json').write_text(json.dumps(command, indent=2) + '\n')

@@ -1,0 +1,114 @@
+{
+  "runtime": {
+    "path": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
+    "sha256": {
+      "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+      "gvisor-bin/checkpointgofer": "84999faa7d31ebf54d33f454500470caf0f7dd5019d51fda8c31fff57dda3d40",
+      "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+      "gvisor-bin/gvisor_sentry": "fc9f8b4aee622dd92a7013200912a43d36634a5c42a30c69b70061fe602ee799",
+      "gvisor-bin/runsc-metric-server": "cb068c1801259b69bdee2d2dbafeb591134cf451f98b9d7ccb5e37d7b44a6cc5",
+      "runsc": "ff13f662e8da5b3107891bb7442f031bd4bc82691bfcc7de83c95175773b6fe8"
+    }
+  },
+  "engine_commit": "dd5239ad8db0753e8af7da0ea915df71c5357f7c",
+  "engine_patch_sha256": "96b21636e0fc8d5fb0884f136ac7939041c378d1b7ba86466e5497497aa05ec8",
+  "tests": {
+    "paging_restore": {
+      "concurrent": [
+        {
+          "id": "sw-bf331ec4a49d4d2090cefb91699068d2",
+          "memory": {
+            "guest": "256MiB",
+            "runtime": "512MiB",
+            "disk": "1792MiB",
+            "disk_path": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces"
+          },
+          "disk_memory": {
+            "directory": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/sandweave-memory-ctwbgj7r",
+            "host_limit_bytes": 805306368
+          },
+          "cgroup": {
+            "memory.current": "797614080\n",
+            "memory.peak": "805310464\n",
+            "memory.max": "805306368\n",
+            "memory.events": "low 0\nhigh 0\nmax 8538\noom 0\noom_kill 0\noom_group_kill 0\n",
+            "memory.stat": "anon 81817600\nfile 695533568\nkernel 11268096\nkernel_stack 770048\npagetables 4567040\nsec_pagetables 0\npercpu 390192\nsock 0\nvmalloc 12288\nshmem 430080\nzswap 0\nzswapped 0\nfile_mapped 686202880\nfile_dirty 7520256\nfile_writeback 0\nswapcached 0\nanon_thp 29360128\nfile_thp 0\nshmem_thp 0\ninactive_anon 262144\nactive_anon 90980352\ninactive_file 386125824\nactive_file 308977664\nunevictable 0\nslab_reclaimable 3891672\nslab_unreclaimable 1270680\nslab 5162352\nworkingset_refault_anon 0\nworkingset_refault_file 366861\nworkingset_activate_anon 0\nworkingset_activate_file 2861\nworkingset_restore_anon 0\nworkingset_restore_file 2861\nworkingset_nodereclaim 0\npgscan 749859\npgsteal 566381\npgscan_kswapd 0\npgscan_direct 749859\npgscan_khugepaged 0\npgsteal_kswapd 0\npgsteal_direct 566381\npgsteal_khugepaged 0\npgfault 496564\npgmajfault 674\npgrefill 25624\npgactivate 6819\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 39\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n",
+            "memory.swap.current": "0\n"
+          }
+        },
+        {
+          "id": "sw-e64da75d5d6d47e98fe05d81854c45a4",
+          "memory": {
+            "guest": "256MiB",
+            "runtime": "512MiB",
+            "disk": "1792MiB",
+            "disk_path": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces"
+          },
+          "disk_memory": {
+            "directory": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/sandweave-memory-lwjzyilo",
+            "host_limit_bytes": 805306368
+          },
+          "cgroup": {
+            "memory.current": "794726400\n",
+            "memory.peak": "805310464\n",
+            "memory.max": "805306368\n",
+            "memory.events": "low 0\nhigh 0\nmax 8908\noom 0\noom_kill 0\noom_group_kill 0\n",
+            "memory.stat": "anon 79884288\nfile 693882880\nkernel 11165696\nkernel_stack 786432\npagetables 4423680\nsec_pagetables 0\npercpu 390192\nsock 4096\nvmalloc 12288\nshmem 430080\nzswap 0\nzswapped 0\nfile_mapped 682770432\nfile_dirty 12513280\nfile_writeback 0\nswapcached 0\nanon_thp 23068672\nfile_thp 0\nshmem_thp 0\ninactive_anon 89817088\nactive_anon 286720\ninactive_file 124416000\nactive_file 569036800\nunevictable 0\nslab_reclaimable 3904008\nslab_unreclaimable 1282472\nslab 5186480\nworkingset_refault_anon 0\nworkingset_refault_file 369780\nworkingset_activate_anon 0\nworkingset_activate_file 5892\nworkingset_restore_anon 0\nworkingset_restore_file 5892\nworkingset_nodereclaim 0\npgscan 736889\npgsteal 570963\npgscan_kswapd 0\npgscan_direct 736889\npgscan_khugepaged 0\npgsteal_kswapd 0\npgsteal_direct 570963\npgsteal_khugepaged 0\npgfault 458814\npgmajfault 412\npgrefill 11544\npgactivate 4259\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 38\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n",
+            "memory.swap.current": "0\n"
+          }
+        }
+      ],
+      "snapshot": "snap-aa6440de80d7471787d5810107816247",
+      "restored": {
+        "id": "sw-93a1eeaf2b2b47f1a14e885e0edf0471",
+        "memory": {
+          "guest": "256MiB",
+          "runtime": "512MiB",
+          "disk": "1792MiB",
+          "disk_path": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/restores"
+        },
+        "disk_memory": {
+          "directory": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/restores/sandweave-memory-q6wmavd2",
+          "host_limit_bytes": 805306368
+        },
+        "cgroup": {
+          "memory.current": "802525184\n",
+          "memory.peak": "805310464\n",
+          "memory.max": "805306368\n",
+          "memory.events": "low 0\nhigh 0\nmax 8613\noom 0\noom_kill 0\noom_group_kill 0\n",
+          "memory.stat": "anon 97890304\nfile 682512384\nkernel 17362944\nkernel_stack 2981888\npagetables 7213056\nsec_pagetables 0\npercpu 390192\nsock 4096\nvmalloc 12288\nshmem 421888\nzswap 0\nzswapped 0\nfile_mapped 672043008\nfile_dirty 8142848\nfile_writeback 0\nswapcached 0\nanon_thp 44040192\nfile_thp 0\nshmem_thp 0\ninactive_anon 2949120\nactive_anon 100089856\ninactive_file 248078336\nactive_file 434012160\nunevictable 0\nslab_reclaimable 3897416\nslab_unreclaimable 2507288\nslab 6404704\nworkingset_refault_anon 0\nworkingset_refault_file 370200\nworkingset_activate_anon 0\nworkingset_activate_file 2102\nworkingset_restore_anon 0\nworkingset_restore_file 2102\nworkingset_nodereclaim 0\npgscan 1119243\npgsteal 573061\npgscan_kswapd 0\npgscan_direct 1119243\npgscan_khugepaged 0\npgsteal_kswapd 0\npgsteal_direct 573061\npgsteal_khugepaged 0\npgfault 446118\npgmajfault 2366\npgrefill 27567\npgactivate 112333\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 46\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n",
+          "memory.swap.current": "0\n"
+        }
+      },
+      "passed": true,
+      "directories_released": [
+        "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/sandweave-memory-ctwbgj7r",
+        "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/sandweave-memory-lwjzyilo",
+        "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/restores/sandweave-memory-q6wmavd2"
+      ]
+    },
+    "large": {
+      "memory": {
+        "guest": "4GiB",
+        "runtime": "512MiB",
+        "disk": "16GiB",
+        "disk_path": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/large"
+      },
+      "disk_memory": {
+        "directory": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/large/sandweave-memory-3gxh7shg",
+        "host_limit_bytes": 4831838208
+      },
+      "cgroup": {
+        "memory.peak": "4831842304\n",
+        "memory.max": "4831838208\n",
+        "memory.events": "low 0\nhigh 0\nmax 25866\noom 0\noom_kill 0\noom_group_kill 0\n",
+        "memory.stat": "anon 78868480\nfile 22446080\nkernel 14090240\nkernel_stack 688128\npagetables 1294336\nsec_pagetables 0\npercpu 378576\nsock 4096\nvmalloc 12288\nshmem 286720\nzswap 0\nzswapped 0\nfile_mapped 4759552\nfile_dirty 6488064\nfile_writeback 0\nswapcached 0\nanon_thp 25165824\nfile_thp 0\nshmem_thp 0\ninactive_anon 86315008\nactive_anon 155648\ninactive_file 794624\nactive_file 21364736\nunevictable 0\nslab_reclaimable 10271104\nslab_unreclaimable 1149240\nslab 11420344\nworkingset_refault_anon 0\nworkingset_refault_file 4457654\nworkingset_activate_anon 0\nworkingset_activate_file 4521\nworkingset_restore_anon 0\nworkingset_restore_file 4521\nworkingset_nodereclaim 6383\npgscan 12820344\npgsteal 8322371\npgscan_kswapd 0\npgscan_direct 12820344\npgscan_khugepaged 0\npgsteal_kswapd 0\npgsteal_direct 8322371\npgsteal_khugepaged 0\npgfault 5151772\npgmajfault 389\npgrefill 122841\npgactivate 68751\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 39\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    "owner_crash": {
+      "id": "sw-2bff5b26cbc9463aab16ea055a6c7ae4",
+      "directory": "/scratch/pranjala/sandweave-memory-sdk-final-20260911/memory with spaces/sandweave-memory-im0a8ha5",
+      "released": true
+    }
+  }
+}

@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal
 import math
 import re
+from pathlib import PurePosixPath
 
 
 def positive(value, name, *, integer=False):
@@ -47,12 +48,23 @@ class CPU:
 class Memory:
     guest: str | int = '1GiB'
     runtime: str | int = '512MiB'
+    disk: str | int | None = None
+    disk_path: str | None = None
 
     def __post_init__(self):
         if memory_bytes(self.guest) < 64 * 1024**2:
             raise ValueError('guest memory must be at least 64MiB')
         if memory_bytes(self.runtime) < 32 * 1024**2:
             raise ValueError('runtime memory must be at least 32MiB')
+        if (self.disk is None) != (self.disk_path is None):
+            raise ValueError('disk memory requires both disk and disk_path')
+        if self.disk is not None:
+            if memory_bytes(self.disk) < 64 * 1024**2:
+                raise ValueError('disk memory must be at least 64MiB')
+            if (not isinstance(self.disk_path, str) or not self.disk_path.startswith('/')
+                    or any(c in self.disk_path for c in ('\0', '\n', '\r', ':', ','))
+                    or '..' in PurePosixPath(self.disk_path).parts):
+                raise ValueError('disk_path must be an absolute worker directory without .., colons or commas')
 
 
 @dataclass(frozen=True)
@@ -102,6 +114,14 @@ def normalize(cpu=1, memory='1GiB', gpu=False, network='internet'):
     elif gpu is not False and gpu is not None and not isinstance(gpu, GPU):
         raise ValueError('gpu must be a bool, model string or GPU')
     network = network if isinstance(network, Network) else Network(network)
-    return {'cpu': asdict(cpu), 'memory': asdict(memory),
+    return {'cpu': asdict(cpu), 'memory': {k: v for k, v in asdict(memory).items() if v is not None},
             'gpu': asdict(gpu) if isinstance(gpu, GPU) else None,
             'network': asdict(network)}
+
+
+def restore_resources(resources):
+    """Disk location is a worker binding, not part of captured guest state."""
+    import copy
+    result = copy.deepcopy(resources)
+    result['memory'].pop('disk_path', None)
+    return result

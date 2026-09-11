@@ -89,11 +89,19 @@ class Runtime:
                                           'sandweave setup --template ' + required)
         resources = spec['resources']
         cpu, memory = resources['cpu'], resources['memory']
+        total = memory_bytes(memory['guest'])
+        if memory.get('disk') is not None:
+            total += memory_bytes(memory['disk'])
         options = ['--guest-cpus', str(cpu['vcpus']), '--cpu-weight', str(cpu['weight']),
-                   '--memory-mib', str((memory_bytes(memory['guest']) + 1024**2-1)//1024**2),
+                   '--memory-mib', str((total + 1024**2-1)//1024**2),
                    '--runtime-memory-mib', str((memory_bytes(memory['runtime']) + 1024**2-1)//1024**2),
                    '--guest-gs', '--no-runtime-debug', '--forward', str(AGENT_PORT),
                    '--network-policy', resources['network']['mode']]
+        if memory.get('disk') is not None:
+            options += ['--ram-mib', str((memory_bytes(memory['guest']) + 1024**2-1)//1024**2),
+                        '--disk-path', memory['disk_path']]
+        else:
+            options += ['--no-disk-memory']
         for cidr in resources['network']['allow_cidrs']:
             options += ['--allow-cidr', cidr]
         if cpu['quota'] is not None:
@@ -174,6 +182,9 @@ class Runtime:
             options += ['--docker-data', '--docker-archive', str(self.root / relative)]
             command = ['/usr/local/bin/engine-docker', 'init']
         with measure('runtime_launch_seconds'):
+            if spec['resources']['memory'].get('disk') is not None:
+                from .engine import disk_runtime
+                options += disk_runtime(self.root, snapshot)
             if snapshot:
                 manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
                 self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.8
+
+- Add `Memory(disk="16GiB", disk_path="/scratch/my-memory")`. Each sandbox gets
+  private disk backing in a random subdirectory of the explicitly selected path.
+  The guest sees its RAM allowance plus disk memory; Weave reserves RAM and
+  runtime overhead. Kernel memory limits use delegated cgroups or dedicated
+  Slurm steps, preserving the worker's CPU selection.
+- Preserve disk-backed memory through live snapshots. Restores create fresh
+  backing files and can use another disk directory. Termination, failed startup
+  and owner-process crashes release the backing storage.
+- Add CLI `--disk-memory` and `--disk-path`, template memory settings, and
+  backing-directory information in `env.info`. Obtain a compatible engine on
+  first use when an existing installation predates disk memory.
+- Publish the corresponding runtime binaries and document host requirements.
+
 ## 0.2.7
 
 - Add `Pool(shared_cache="/shared/path")` for an explicit immutable baseline and

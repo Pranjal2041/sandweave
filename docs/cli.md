@@ -25,6 +25,14 @@ This creates a sandbox, runs the command, and terminates the sandbox. Output and
 exit status pass through to your terminal. Supply one quoted command string
 after `--`; the guest shell interprets it.
 
+Add disk-backed memory with its own directory on the worker:
+
+```bash
+sandweave run --memory 4GiB --disk-memory 16GiB --disk-path /scratch/my-memory -- "free -h"
+```
+
+See [disk-backed memory](resources.md#disk-backed-memory) for host requirements.
+
 ## Create a persistent desktop
 
 ```bash

@@ -27,6 +27,8 @@ def summarize(record):
         'template': spec['template']['name'], 'runtime': spec['runtime'],
         'worker': {'hostname': hostname},
         'cpu': resources['cpu'], 'memory': resources['memory'],
+        **({'disk_memory': {key: runtime['disk_memory'].get(key)
+                           for key in ('directory', 'host_limit_bytes')}} if runtime.get('disk_memory') else {}),
         'gpus': gpus,
         'vnc': vnc,
         **({'image': {key: spec['image'][key] for key in ('reference', 'digest', 'platform')}}

@@ -86,7 +86,11 @@ def cgroup_limit(proc=Path('/proc')):
 
 
 def reservation(spec):
-    return sum(memory_bytes(value) for value in spec['resources']['memory'].values())
+    memory = spec['resources']['memory']
+    if memory.get('disk') is not None:
+        return sum(((memory_bytes(memory[key]) + 1024**2 - 1) // 1024**2) * 1024**2
+                   for key in ('guest', 'runtime'))
+    return memory_bytes(memory['guest']) + memory_bytes(memory['runtime'])
 
 
 def admit(worker, spec):

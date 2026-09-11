@@ -3,7 +3,12 @@ set -euo pipefail
 lab_root=$(cd "$(dirname "$0")/.." && pwd -P)
 lab_local=$(cat "$lab_root/runs/local-path.txt")
 gpu_binds=()
-while [[ "${1:-}" == --gpu || "${1:-}" == --mounts ]]; do
+while [[ "${1:-}" == --gpu || "${1:-}" == --mounts || "${1:-}" == --disk-memory ]]; do
+  if [[ "$1" == --disk-memory ]]; then
+    gpu_binds+=(--bind "$2:/disk-memory")
+    shift 2
+    continue
+  fi
   if [[ "$1" == --mounts ]]; then
     # A failed parser must abort, not launch with a partial mount list.
     mount_args=$(mktemp "$lab_root/runs/.mount-args.XXXXXX")

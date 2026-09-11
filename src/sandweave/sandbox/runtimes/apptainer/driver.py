@@ -45,6 +45,8 @@ class Runtime:
 
     def create(self, identity, spec, *, snapshot=None, token=None):
         resources = spec['resources']
+        if resources['memory'].get('disk') is not None:
+            raise UnsupportedFeature('disk-backed guest memory requires the gVisor runtime')
         if spec['template']['capabilities'] or spec['template']['runtime_options'].get('init', 'agent') != 'agent':
             raise UnsupportedFeature('this native adapter provides command templates; desktop/systemd controls require gVisor')
         if resources['cpu']['weight'] != 100 or resources['cpu']['quota'] is not None:

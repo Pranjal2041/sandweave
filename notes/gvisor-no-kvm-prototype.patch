@@ -2202,7 +2202,7 @@ index 0000000..2a17c11
 +	f.DecRef(replacement)
 +}
 diff --git a/pkg/sentry/pgalloc/pgalloc.go b/pkg/sentry/pgalloc/pgalloc.go
-index 6c2eae3..fe6b15f 100644
+index 6c2eae3..1328575 100644
 --- a/pkg/sentry/pgalloc/pgalloc.go
 +++ b/pkg/sentry/pgalloc/pgalloc.go
 @@ -170,10 +170,14 @@ type MemoryFile struct {
@@ -2256,7 +2256,22 @@ index 6c2eae3..fe6b15f 100644
  	switch opts.DelayedEviction {
  	case DelayedEvictionDefault:
  		opts.DelayedEviction = DelayedEvictionEnabled
-@@ -842,6 +857,26 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
+@@ -669,6 +684,14 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange,
+ 
+ 	var dsts safemem.BlockSeq
+ 	if alloc.willCommit {
++		if f.opts.DiskBackedFile && f.opts.LimitBytes != 0 {
++			// Reserve blocks before any mapped access. Otherwise an exhausted
++			// filesystem can SIGBUS the Sentry instead of failing allocation.
++			if err := f.commitFile(fr); err != nil {
++				f.DecRef(fr)
++				return memmap.FileRange{}, err
++			}
++		}
+ 		needHugeTouch := false
+ 		if alloc.recycled {
+ 			// We will need writable page table entries in our address space to
+@@ -842,6 +865,26 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
  		}
  	}
  
@@ -2283,7 +2298,7 @@ index 6c2eae3..fe6b15f 100644
  	// No suitable waste pages or we can't use them.
  retryFree:
  	// Try to allocate free pages from existing chunks.
-@@ -886,6 +921,9 @@ retryFree:
+@@ -886,6 +929,9 @@ retryFree:
  		knownCommitted: false,
  		commitSeq:      f.commitSeq,
  	})
@@ -2293,7 +2308,7 @@ index 6c2eae3..fe6b15f 100644
  	return
  }
  
-@@ -1365,6 +1403,9 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
+@@ -1365,6 +1411,9 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
  					usage.MemoryAccounting.Dec(malen, ma.kind, ma.memCgID)
  				}
  			}
@@ -4931,7 +4946,7 @@ index 479bfc0..854bb07 100644
          "network.go",
          "nvproxy.go",
 diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
-index ae644c4..844b663 100644
+index ae644c4..66922b4 100644
 --- a/runsc/boot/controller.go
 +++ b/runsc/boot/controller.go
 @@ -276,6 +276,10 @@ func (c *controller) stop() {
@@ -4945,16 +4960,17 @@ index ae644c4..844b663 100644
  	// startChan is used to signal when the root container process should
  	// be started.
  	startChan chan struct{}
-@@ -626,7 +630,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
+@@ -626,7 +630,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
  	}
  
  	// Create the main MemoryFile.
 -	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
-+	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP, cm.l.root.conf.AppMemoryLimit)
++	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP, cm.l.root.conf.AppMemoryLimit, cm.l.restoreMemoryFile)
++	cm.l.restoreMemoryFile = nil // ownership transferred, including failure cleanup
  	if err != nil {
  		return fmt.Errorf("creating memory file: %v", err)
  	}
-@@ -898,6 +902,23 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
+@@ -898,6 +903,23 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
  	return nil
  }
  
@@ -4979,10 +4995,30 @@ index ae644c4..844b663 100644
  func (cm *containerManager) Pause(_, _ *struct{}) error {
  	cm.l.k.Pause()
 diff --git a/runsc/boot/loader.go b/runsc/boot/loader.go
-index d78a960..31f824d 100644
+index d78a960..ed3cc23 100644
 --- a/runsc/boot/loader.go
 +++ b/runsc/boot/loader.go
-@@ -576,8 +576,10 @@ func shouldEnableClockMonotonicRaw(spec *specs.Spec, conf *config.Config) bool {
+@@ -359,6 +359,9 @@ type Loader struct {
+ 
+ 	// hostinetNetSNMPFile is the pre-opened /proc/net/snmp file for hostinet restore.
+ 	hostinetNetSNMPFile *os.File
++
++	// restoreMemoryFile is a distinct empty disk file for a restoring kernel.
++	restoreMemoryFile *os.File
+ }
+ 
+ // execID uniquely identifies a sentry process that is executed in a container.
+@@ -410,6 +413,9 @@ type Args struct {
+ 	Spec *specs.Spec
+ 	// Conf is the system configuration.
+ 	Conf *config.Config
++	// AppMemoryFile optionally backs guest memory on disk. New takes ownership.
++	AppMemoryFile        *os.File
++	AppRestoreMemoryFile *os.File
+ 	// ControllerFD is the FD to the URPC controller. The Loader takes ownership
+ 	// of this FD and may close it at any time.
+ 	ControllerFD int
+@@ -576,8 +582,10 @@ func shouldEnableClockMonotonicRaw(spec *specs.Spec, conf *config.Config) bool {
  // New initializes a new kernel loader configured by spec.
  // New also handles setting up a kernel for restoring a container.
  func New(args Args) (*Loader, error) {
@@ -4993,38 +5029,70 @@ index d78a960..31f824d 100644
  		stopProfilingRuntime()
  		metric.StopProfilingMetrics()
  	}
-@@ -745,7 +747,7 @@ func New(args Args) (*Loader, error) {
+@@ -622,6 +630,7 @@ func New(args Args) (*Loader, error) {
+ 
+ 	eid := execID{cid: args.ID}
+ 	l := &Loader{
++		restoreMemoryFile:     args.AppRestoreMemoryFile,
+ 		sandboxID:             args.ID,
+ 		processes:             map[execID]*execProcess{eid: {}},
+ 		sharedMounts:          make(map[string]*vfs.Mount),
+@@ -745,7 +754,7 @@ func New(args Args) (*Loader, error) {
  	}
  
  	// Create memory file.
 -	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP)
-+	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP, args.Conf.AppMemoryLimit)
++	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostTHP, args.Conf.AppMemoryLimit, args.AppMemoryFile)
  	if err != nil {
  		return nil, fmt.Errorf("creating memory file: %w", err)
  	}
-@@ -1103,7 +1105,7 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
+@@ -1026,6 +1035,10 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
+ // been closed. For that reason, this should NOT be called in a defer, because
+ // a panic in a control server rpc would then hang forever.
+ func (l *Loader) Destroy() {
++	if l.restoreMemoryFile != nil {
++		l.restoreMemoryFile.Close()
++		l.restoreMemoryFile = nil
++	}
+ 	if l.stopSignalForwarding != nil {
+ 		l.stopSignalForwarding()
+ 	}
+@@ -1103,19 +1116,36 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
  	})
  }
  
 -func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {
-+func createMemoryFile(appHugePages bool, hostTHP HostTHP, limit uint64) (*pgalloc.MemoryFile, error) {
++func createMemoryFile(appHugePages bool, hostTHP HostTHP, limit uint64, memfile *os.File) (*pgalloc.MemoryFile, error) {
  	const memfileName = "runsc-memory"
- 	memfd, err := memutil.CreateMemFD(memfileName, 0)
- 	if err != nil {
-@@ -1112,10 +1114,19 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile,
- 	memfile := os.NewFile(uintptr(memfd), memfileName)
+-	memfd, err := memutil.CreateMemFD(memfileName, 0)
+-	if err != nil {
+-		return nil, fmt.Errorf("error creating memfd: %w", err)
++	diskBacked := memfile != nil
++	if memfile == nil {
++		memfd, err := memutil.CreateMemFD(memfileName, 0)
++		if err != nil {
++			return nil, fmt.Errorf("error creating memfd: %w", err)
++		}
++		memfile = os.NewFile(uintptr(memfd), memfileName)
+ 	}
+-	memfile := os.NewFile(uintptr(memfd), memfileName)
  
  	mfopts := pgalloc.MemoryFileOpts{
-+		LimitBytes: limit,
++		LimitBytes:     limit,
++		DiskBackedFile: diskBacked,
  		// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
  		// there are memory cgroups specified, because at this point we're already
  		// in a mount namespace in which the relevant cgroupfs is not visible.
  	}
 +	if limit != 0 {
-+		if hostTHP.ShmemEnabled == "force" {
++		if !diskBacked && hostTHP.ShmemEnabled == "force" {
 +			return nil, fmt.Errorf("memory limit requires host to honor MADV_NOHUGEPAGE")
 +		}
 +		// Prevent khugepaged from populating uncharged adjacent small pages.
++		appHugePages = false
++		mfopts.AdviseNoHugepage = true
++	}
++	if diskBacked {
 +		appHugePages = false
 +		mfopts.AdviseNoHugepage = true
 +	}
@@ -5168,6 +5236,99 @@ index f320cd9..846b332 100644
  		HostSettings:           info.nvidiaHostSettings,
  		UseDevGofer:            true,
  	})
+diff --git a/runsc/cmd/sentry/sentrycmd/boot.go b/runsc/cmd/sentry/sentrycmd/boot.go
+index 3e711fc..ec10b76 100644
+--- a/runsc/cmd/sentry/sentrycmd/boot.go
++++ b/runsc/cmd/sentry/sentrycmd/boot.go
+@@ -90,7 +90,9 @@ type Boot struct {
+ 	bundleDir string
+ 
+ 	// specFD is the file descriptor that the spec will be read from.
+-	specFD int
++	specFD             int
++	appMemoryFD        int
++	appRestoreMemoryFD int
+ 
+ 	// controllerFD is the file descriptor of a stream socket for the
+ 	// control server that is donated to this process.
+@@ -275,6 +277,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
+ 
+ 	// Open FDs that are donated to the sandbox.
+ 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
++	f.IntVar(&b.appMemoryFD, "app-memory-fd", -1, "optional private disk-backed guest memory file")
++	f.IntVar(&b.appRestoreMemoryFD, "app-restore-memory-fd", -1, "optional private disk-backed restore memory file")
+ 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
+ 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
+ 	f.IntVar(&b.pinRingFD, "pin-ring-fd", -1, "FD of a disabled io_uring in which the sentry pins its expensive-to-release files")
+@@ -661,33 +665,43 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
+ 		timer.Reached("RDMA snapshot loaded")
+ 	}
+ 
++	var appMemoryFile *os.File
++	var appRestoreMemoryFile *os.File
++	if b.appMemoryFD >= 0 {
++		appMemoryFile = os.NewFile(uintptr(b.appMemoryFD), "disk-backed memory")
++	}
++	if b.appRestoreMemoryFD >= 0 {
++		appRestoreMemoryFile = os.NewFile(uintptr(b.appRestoreMemoryFD), "disk-backed restore memory")
++	}
+ 	// Create the loader.
+ 	bootArgs := boot.Args{
+-		ID:                  f.Arg(0),
+-		Spec:                spec,
+-		Conf:                conf,
+-		ControllerFD:        b.controllerFD,
+-		Device:              fd.New(b.deviceFD),
+-		PinRingFD:           b.pinRingFD,
+-		GoferFDs:            b.ioFDs.GetArray(),
+-		DevGoferFD:          b.devIoFD,
+-		StdioFDs:            b.stdioFDs.GetArray(),
+-		PassFDs:             b.passFDs.GetArray(),
+-		ExecFD:              b.execFD,
+-		GoferFilestoreFDs:   b.goferFilestoreFDs.GetArray(),
+-		GoferMountConfs:     b.goferMountConfs.GetArray(),
+-		NumCPU:              b.cpuNum,
+-		CPUQuota:            b.cpuQuota,
+-		CPUPeriod:           b.cpuPeriod,
+-		TotalMem:            b.totalMem,
+-		TotalHostMem:        b.totalHostMem,
+-		UserLogFD:           b.userLogFD,
+-		RDMASysfs:           rdmaSnap,
+-		ProductName:         b.productName,
+-		PodInitConfigFD:     b.podInitConfigFD,
+-		SinkFDs:             b.sinkFDs.GetArray(),
+-		ProfileOpts:         profile.MakeOpts(&b.profileFDs, conf.ProfileGCInterval),
+-		NvidiaDriverVersion: nvidiaDriverVersion,
++		ID:                   f.Arg(0),
++		Spec:                 spec,
++		Conf:                 conf,
++		AppMemoryFile:        appMemoryFile,
++		AppRestoreMemoryFile: appRestoreMemoryFile,
++		ControllerFD:         b.controllerFD,
++		Device:               fd.New(b.deviceFD),
++		PinRingFD:            b.pinRingFD,
++		GoferFDs:             b.ioFDs.GetArray(),
++		DevGoferFD:           b.devIoFD,
++		StdioFDs:             b.stdioFDs.GetArray(),
++		PassFDs:              b.passFDs.GetArray(),
++		ExecFD:               b.execFD,
++		GoferFilestoreFDs:    b.goferFilestoreFDs.GetArray(),
++		GoferMountConfs:      b.goferMountConfs.GetArray(),
++		NumCPU:               b.cpuNum,
++		CPUQuota:             b.cpuQuota,
++		CPUPeriod:            b.cpuPeriod,
++		TotalMem:             b.totalMem,
++		TotalHostMem:         b.totalHostMem,
++		UserLogFD:            b.userLogFD,
++		RDMASysfs:            rdmaSnap,
++		ProductName:          b.productName,
++		PodInitConfigFD:      b.podInitConfigFD,
++		SinkFDs:              b.sinkFDs.GetArray(),
++		ProfileOpts:          profile.MakeOpts(&b.profileFDs, conf.ProfileGCInterval),
++		NvidiaDriverVersion:  nvidiaDriverVersion,
+ 		NvidiaHostSettings: &nvconf.HostSettings{
+ 			ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
+ 			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
 diff --git a/runsc/cmd/tar.go b/runsc/cmd/tar.go
 index 640d01f..094d8b4 100644
 --- a/runsc/cmd/tar.go
@@ -5225,7 +5386,7 @@ index 640d01f..094d8b4 100644
  	}
  	return subcommands.ExitSuccess
 diff --git a/runsc/config/config.go b/runsc/config/config.go
-index 0fbf027..539a151 100644
+index 0fbf027..4e4b974 100644
 --- a/runsc/config/config.go
 +++ b/runsc/config/config.go
 @@ -124,6 +124,10 @@ type Config struct {
@@ -5239,13 +5400,17 @@ index 0fbf027..539a151 100644
  	// GoferNetworkNamespace controls the network namespace used by gofer
  	// processes. The default is the shared empty "null" network namespace.
  	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
-@@ -321,6 +325,18 @@ type Config struct {
+@@ -321,6 +325,22 @@ type Config struct {
  	// Don't configure cgroups.
  	IgnoreCgroups bool `flag:"ignore-cgroups"`
  
 +	// AppMemoryLimit limits the sandbox page allocator independently of host
 +	// cgroups. It does not include the Sentry heap or host file cache.
 +	AppMemoryLimit uint64 `flag:"app-memory-limit"`
++
++	// AppMemoryDirectory selects an unlinked regular file for guest pages.
++	// The caller must enforce a separate resident-memory cgroup limit.
++	AppMemoryDirectory string `flag:"app-memory-directory"`
 +
 +	// RuntimeMemoryLimit adds a sampled fail-stop guard for the Sentry Go
 +	// runtime, independently of application pages. Zero disables the guard.
@@ -5258,7 +5423,7 @@ index 0fbf027..539a151 100644
  	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
  	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
  
-@@ -381,6 +397,10 @@ type Config struct {
+@@ -381,6 +401,10 @@ type Config struct {
  	// unsupported driver version.
  	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
  
@@ -5269,7 +5434,7 @@ index 0fbf027..539a151 100644
  	// TPUProxy enables support for TPUs.
  	TPUProxy bool `flag:"tpuproxy"`
  
-@@ -493,6 +513,18 @@ type Config struct {
+@@ -493,6 +517,18 @@ type Config struct {
  // Config.Override does not validate, so callers must call Validate once they
  // are done overriding.
  func (c *Config) Validate() error {
@@ -5288,7 +5453,7 @@ index 0fbf027..539a151 100644
  	if c.Overlay && c.Overlay2.Enabled() {
  		// Deprecated flag was used together with flag that replaced it.
  		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
-@@ -539,6 +571,9 @@ func (c *Config) Validate() error {
+@@ -539,6 +575,9 @@ func (c *Config) Validate() error {
  	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
  		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
  	}
@@ -5298,7 +5463,7 @@ index 0fbf027..539a151 100644
  	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
  	if err != nil {
  		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: %w", c.NVProxyAllowedDriverCapabilities, err)
-@@ -1649,3 +1684,28 @@ func (xd *XDP) Set(input string) error {
+@@ -1649,3 +1688,28 @@ func (xd *XDP) Set(input string) error {
  	}
  	return nil
  }
@@ -5358,20 +5523,21 @@ index 710cb07..3e73af3 100644
 +	}
 +}
 diff --git a/runsc/config/flags.go b/runsc/config/flags.go
-index f4852a7..1b74a49 100644
+index f4852a7..06c3d4b 100644
 --- a/runsc/config/flags.go
 +++ b/runsc/config/flags.go
-@@ -148,6 +148,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -148,6 +148,10 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
  
  	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
 +	flagSet.Uint64("runtime-memory-limit", 0, "Sentry Go runtime memory guard in bytes: soft GC target plus sampled termination after failed reclaim; zero disables.")
 +	flagSet.Uint64("app-memory-limit", 0, "Maximum bytes in the sandbox page allocator, excluding runtime heap and host file cache; zero disables.")
++	flagSet.String("app-memory-directory", "", "Directory for private disk-backed guest memory; requires an independently enforced resident-memory limit.")
 +	flagSet.Int("application-cpus", 0, "Application execution parallelism, independent of CPU affinity; zero autodetects.")
  	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
  	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
  	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
-@@ -156,6 +159,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -156,6 +160,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("TESTONLY-nftables", false, "TEST ONLY; Enables nftables support in the sentry.")
  
  	// Flags that control sandbox runtime behavior: network related.
@@ -5379,7 +5545,7 @@ index f4852a7..1b74a49 100644
  	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
  	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
  	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-@@ -184,6 +188,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -184,6 +189,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
  	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
  	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
@@ -5652,14 +5818,46 @@ index 0000000..02a983d
 +	}
 +}
 diff --git a/runsc/sandbox/sandbox.go b/runsc/sandbox/sandbox.go
-index bcc7287..872ddc8 100644
+index bcc7287..5b8850d 100644
 --- a/runsc/sandbox/sandbox.go
 +++ b/runsc/sandbox/sandbox.go
-@@ -1383,6 +1383,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
+@@ -1023,6 +1023,31 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
+ 	donations.DonateAndClose("io-fds", args.IOFiles...)
+ 	donations.DonateAndClose("dev-io-fd", args.DevIOFile)
+ 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
++	if conf.AppMemoryDirectory != "" {
++		memoryFD, err := unix.Open(conf.AppMemoryDirectory, unix.O_TMPFILE|unix.O_RDWR|unix.O_CLOEXEC, 0600)
++		if err != nil {
++			return fmt.Errorf("creating disk-backed memory: %w", err)
++		}
++		memoryFile := os.NewFile(uintptr(memoryFD), "disk-backed memory")
++		// No pathname survives startup or a killed runtime. The kernel releases
++		// storage when the last mapping/descriptor disappears.
++		var fs unix.Statfs_t
++		if err := unix.Fstatfs(int(memoryFile.Fd()), &fs); err != nil {
++			memoryFile.Close()
++			return err
++		}
++		if fs.Type == unix.TMPFS_MAGIC || fs.Type == unix.RAMFS_MAGIC || fs.Type == unix.HUGETLBFS_MAGIC {
++			memoryFile.Close()
++			return fmt.Errorf("disk-backed memory requires a disk filesystem, not a RAM filesystem")
++		}
++		donations.DonateAndClose("app-memory-fd", memoryFile)
++		// Restore creates its kernel before releasing the initial boot kernel.
++		restoreFD, err := unix.Open(conf.AppMemoryDirectory, unix.O_TMPFILE|unix.O_RDWR|unix.O_CLOEXEC, 0600)
++		if err != nil {
++			return fmt.Errorf("creating restore memory: %w", err)
++		}
++		donations.DonateAndClose("app-restore-memory-fd", os.NewFile(uintptr(restoreFD), "restore memory"))
++	}
+ 	donations.DonateAndClose("mounts-fd", args.MountsFile)
+ 	donations.Donate("start-sync-fd", startSyncFile)
+ 	donations.DonateAndClose("pin-ring-fd", args.PinRingFile)
+@@ -1383,6 +1408,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
  			mem = memLimit
  		}
  	}
-+	if conf.AppMemoryLimit != 0 && conf.AppMemoryLimit < mem {
++	if conf.AppMemoryLimit != 0 && (conf.AppMemoryLimit < mem || conf.AppMemoryDirectory != "") {
 +		mem = conf.AppMemoryLimit
 +	}
 +	if conf.ApplicationCPUs > 0 {
@@ -5668,7 +5866,7 @@ index bcc7287..872ddc8 100644
  	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
  
  	if args.Attached {
-@@ -2570,18 +2576,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
+@@ -2570,18 +2601,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
  // TarRootfsUpperLayer serializes the rootfs upper layer of a given
  // container to a tar file. When the rootfs is not an overlayfs, it
  // returns an error. It writes the tar file to outFD.

@@ -4,8 +4,9 @@ Measured on 2026-09-11 on `babel-p9-16`. A 20 GiB file mapping ran successfully
 inside a separate 4 GiB memory cgroup with swap disabled. Performance depended
 strongly on access locality: 99% of accesses to a warmed 2 GiB region cost about
 5.2 times the RAM baseline; random access across the whole mapping cost about
-260 times the baseline. These are native Linux paging measurements. Sandweave
-does not yet expose disk-backed guest memory or a separate resident-memory cap.
+260 times the baseline. These are native Linux paging measurements made before
+SDK integration. The subsequent [implementation and acceptance](disk-memory-support.md)
+expose disk backing with an independent storage path and a kernel RAM cap.
 
 ## Measured results
 

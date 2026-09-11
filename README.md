@@ -525,6 +525,22 @@ supports commands and filesystem caches, with fewer isolation and resource
 controls than gVisor, the default runtime. See
 [resource and runtime limits](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#limits-that-matter).
 
+Add disk-backed memory with an explicit directory on the worker:
+
+```python
+with Sandbox(memory=Memory(guest="4GiB", disk="16GiB",
+                           disk_path="/scratch/my-memory")) as env:
+    print(env.info["memory"])
+```
+
+Applications see 20 GiB. Linux pages colder data to disk within a host RAM cap
+of 4 GiB plus the runtime allowance. Every sandbox gets a private random
+subdirectory; termination releases its backing storage. This directory is
+independent of installation storage and caches. Disk memory requires gVisor,
+a supported disk filesystem, and a delegated memory cgroup or a Slurm allocation
+with enforced step memory limits. See [disk-backed memory](https://pranjal2041.github.io/sandweave/resources/#disk-backed-memory)
+for storage requirements and performance measurements.
+
 ## Choose a worker
 
 Sandboxes run locally by default. To use an existing Slurm job:

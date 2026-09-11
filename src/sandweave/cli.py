@@ -43,6 +43,8 @@ def creation_options(parser):
     parser.add_argument('--cpu-quota', type=float)
     parser.add_argument('--memory')
     parser.add_argument('--runtime-memory')
+    parser.add_argument('--disk-memory', help='additional disk-backed guest memory, such as 16GiB')
+    parser.add_argument('--disk-path', help='independent worker directory for disk-backed memory')
     parser.add_argument('--mount', action='append', default=[], help='JSON Mount object; repeat for multiple mounts')
     parser.add_argument('--gpu', help='auto, none, or an allocated model name')
     parser.add_argument('--network', choices=('internet', 'offline'))
@@ -76,8 +78,9 @@ def creation(args):
         options['cpu'] = CPU(args.cpu if args.cpu is not None else 1,
                              args.cpu_weight if args.cpu_weight is not None else 100,
                              args.cpu_quota)
-    if getattr(args, 'runtime_memory', None):
-        options['memory'] = Memory(args.memory or '1GiB', args.runtime_memory)
+    if any(getattr(args, key, None) for key in ('runtime_memory', 'disk_memory', 'disk_path')):
+        options['memory'] = Memory(args.memory or '1GiB', args.runtime_memory or '512MiB',
+                                   getattr(args, 'disk_memory', None), getattr(args, 'disk_path', None))
     if getattr(args, 'mount', None):
         options['mounts'] = [Mount(**json.loads(value)) for value in args.mount]
     return options

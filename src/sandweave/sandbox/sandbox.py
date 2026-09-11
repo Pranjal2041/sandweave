@@ -65,11 +65,18 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
     if setup:
         recipe['setup_steps'].append(setup_step(setup))
     selected_memory = memory if memory is not None else defaults.get('memory', '1GiB')
+    if isinstance(selected_memory, dict):
+        selected_memory = Memory(**selected_memory)
     if not isinstance(selected_memory, Memory):
         selected_memory = Memory(selected_memory, defaults.get('runtime_memory', '512MiB'))
     resources = normalize(cpu=cpu if cpu is not None else defaults.get('cpu', 1), memory=selected_memory,
                           gpu=gpu if gpu is not None else defaults.get('gpu', False),
                           network=network if network is not None else defaults.get('network', 'internet'))
+    if resources['memory'].get('disk') is not None:
+        if runtime != 'gvisor':
+            raise UnsupportedFeature('disk-backed guest memory requires runtime="gvisor"')
+        if resources['gpu'] and resources['gpu'].get('sm_chunks') is not None:
+            raise UnsupportedFeature('disk memory cannot enclose a shared CUDA MPS controller')
     spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
             'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
             'ttl': ttl, 'detached': detached, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,

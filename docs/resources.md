@@ -75,6 +75,75 @@ steps and ancestor limits. An environment variable cannot raise that ceiling.
 If several workers or unrelated processes share a memory allocation, their
 budgets still need to fit within that shared allocation.
 
+## Disk-backed memory
+
+```python
+from sandweave import Memory, Sandbox
+
+memory = Memory(
+    guest="4GiB",
+    disk="16GiB",
+    disk_path="/scratch/my-memory",
+)
+with Sandbox(memory=memory) as env:
+    print(env.run("free -h").stdout)
+    print(env.info["disk_memory"])
+```
+
+Applications see 20 GiB of guest memory and allocate it normally. They need no
+special calls or awareness of a second memory tier. Linux caches the backing
+file in RAM and reclaims its pages to disk under pressure. There is no timer
+for borrowing memory, and the guest does not show this storage as Linux swap.
+
+`guest` is the RAM allowance; `disk` adds to the guest's total page budget.
+`runtime` defaults to 512 MiB and retains its separate guard. The kernel caps the sandbox's host memory
+at `guest + runtime`, including runtime processes and file cache. The exact
+portion resident as guest pages depends on runtime overhead. Weave reserves
+that RAM amount, rather than `guest + disk + runtime`.
+Worker control processes and launch supervision remain outside the sandbox cap;
+leave capacity for those and other host processes when setting worker budgets.
+
+`disk_path` is required and names an absolute directory **on the worker**.
+Sandweave creates it if needed, then creates a private random subdirectory per
+sandbox. It does not derive this path from `SANDWEAVE_HOME`, a cache, or `/tmp`.
+`env.info["disk_memory"]` reports the actual directory and host limit in bytes.
+The backing files have no filenames and are not mounted into the guest.
+Their storage is released when the runtime exits, including a killed runtime.
+Normal cleanup also removes the empty private directory.
+
+The backing file covers the entire guest page budget, including pages cached
+in RAM. Allow space for **20 GiB**, plus filesystem overhead, in this example.
+Storage grows as pages are populated. This space is separate from disk space
+used by images, checkpoints and caches. A full filesystem can cause allocation
+failures, just as reaching the guest memory budget can.
+
+This mode requires:
+
+- gVisor and a disk filesystem supporting unnamed temporary files and allocation/
+  hole punching, such as local ext4 or XFS. RAM filesystems cannot provide overflow.
+- A delegated cgroup-v2 memory controller, or a Slurm allocation whose steps
+  enforce memory limits. Sandweave creates a separate capped step automatically
+  on Slurm and preserves the worker's CPU pool. It does not enable host swap,
+  use sudo, or change existing allocations.
+
+Hosts without either memory-control path cannot enforce this mode. Ordinary
+RAM-only sandboxes retain their existing requirements. Native Apptainer and
+shared CUDA MPS partitions do not support disk memory.
+Disk memory extends guest CPU memory, not GPU VRAM; pinned memory still needs RAM.
+
+The same `memory=Memory(...)` argument works with pools. Each sandbox gets its
+own backing file, even when pools share image caches. All eligible workers must
+provide the selected path and memory-control support.
+
+Memory snapshots preserve guest contents. Restores create fresh backing files;
+to restore on another disk, pass the same `Memory(...)` sizes with a different
+`disk_path`. Filesystem caches retain files but restart application processes.
+
+Disk paging is workload-dependent. On the measured scratch NVMe, a workload
+with 99% of accesses in a warmed 2 GiB region averaged about 5.2 times the RAM
+baseline; random access across 20 GiB cost about 260 times as much. See the
+[profiling report](https://github.com/Pranjal2041/sandweave/blob/main/notes/disk-memory-profiling.md).
+
 ## Use a GPU
 
 ```python

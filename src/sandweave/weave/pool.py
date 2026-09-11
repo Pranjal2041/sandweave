@@ -11,6 +11,7 @@ from ..sandbox.asyncio import dualmethod, dualclassmethod
 from ..sandbox.errors import ResourceUnavailable, OperationUnknown
 from ..sandbox.ownership import client_owner
 from ..sandbox.resources import positive
+from ..sandbox.artifacts import cache_path
 from . import scheduler
 
 
@@ -28,13 +29,16 @@ class Pool(LocalPool):
 
 class ManagedPool(LocalPool):
     def __init__(self, *, target, size=1, warm=0, weight=1, priority=0, labels=None,
-                 placement='spread', wait_timeout=300, **options):
+                 placement='spread', shared_cache=None, affinity=None, wait_timeout=300, **options):
         from .client import ClusterConnection, cluster_config
-        validate(size=size, warm=warm, weight=weight, priority=priority, labels=labels or {}, placement=placement)
+        shared_cache = cache_path(shared_cache)
+        validate(size=size, warm=warm, weight=weight, priority=priority, labels=labels or {},
+                 placement=placement, affinity=affinity, shared_cache=shared_cache)
         if wait_timeout is not None:
             positive(wait_timeout, 'wait_timeout')
         self.size, self.warm, self.target = size, warm, target
-        self.policy = dict(size=size, warm=warm, weight=weight, priority=priority, labels=labels or {}, placement=placement)
+        self.policy = dict(size=size, warm=warm, weight=weight, priority=priority, labels=labels or {},
+                           placement=placement, affinity=affinity, shared_cache=shared_cache)
         self.id = 'pool-' + uuid.uuid4().hex
         self.name = options.pop('name', None)
         self.options = options
@@ -199,7 +203,7 @@ class ManagedPool(LocalPool):
         await asyncio.to_thread(self.__exit__, *args)
 
 
-def validate(*, size, warm, weight, priority, labels, placement):
+def validate(*, size, warm, weight, priority, labels, placement, affinity=None, shared_cache=None):
     positive(size, 'size', integer=True)
     if type(warm) is not int or not 0 <= warm <= size:
         raise ValueError('warm must be in 0..size')
@@ -210,6 +214,9 @@ def validate(*, size, warm, weight, priority, labels, placement):
         raise ValueError('labels must map strings to strings')
     if placement not in ('spread', 'pack'):
         raise ValueError('placement must be spread or pack')
+    if affinity not in (None, 'worker', 'machine'):
+        raise ValueError('affinity must be worker, machine or None')
+    cache_path(shared_cache)
 
 
 def resolve(controller, identity):
@@ -227,7 +234,7 @@ def status(controller, identity):
     allocations = controller.state.list('allocation', parent=pool['id'])
     live = [a for a in allocations if not a.get('released')]
     return {**{k: pool.get(k) for k in ('id', 'name', 'state', 'size', 'warm', 'weight', 'priority',
-                                       'labels', 'placement', 'error', 'baseline')},
+                                       'labels', 'placement', 'affinity', 'shared_cache', 'error', 'baseline')},
             'ready': sum(a['state'] == 'ready' and not a.get('lease') and a.get('role') != 'builder' and a['desired'] == 'running' for a in live),
             'active': sum(bool(a.get('lease')) for a in live),
             'pending': sum(a['state'] in ('pending', 'reserved', 'starting', 'unknown') for a in live),
@@ -241,6 +248,7 @@ def dispatch(controller, operation, params):
     identity = params['identity']
     if operation == 'pool_create':
         policy = {k: params[k] for k in ('size', 'warm', 'weight', 'priority', 'labels', 'placement')}
+        policy.update(affinity=params.get('affinity'), shared_cache=cache_path(params.get('shared_cache')))
         validate(**policy)
         controller._owner_process(params.get('owner'))
         with state.transaction():
@@ -251,7 +259,8 @@ def dispatch(controller, operation, params):
                 state.put('pool', dict(id=identity, state='preparing', desired='running',
                     name=params.get('name'), owner=params.get('owner'), request=params['request'],
                     baseline=params['request'].get('reference'), failures=0, **policy), event={'message': 'pool requested'})
-            elif existing['request'] != params['request'] or existing.get('owner') != params.get('owner'):
+            elif (existing['request'] != params['request'] or existing.get('owner') != params.get('owner') or
+                    existing.get('shared_cache') != policy['shared_cache']):
                 raise FileExistsError('pool ID is already in use')
         return status(controller, identity)
     pool = resolve(controller, identity)
@@ -259,13 +268,13 @@ def dispatch(controller, operation, params):
     if operation == 'pool_status':
         return status(controller, identity)
     if operation == 'pool_update':
-        allowed = {'size', 'warm', 'weight', 'priority', 'labels', 'placement'}
+        allowed = {'size', 'warm', 'weight', 'priority', 'labels', 'placement', 'affinity'}
         if params.keys() - allowed - {'identity'}:
-            raise ValueError('pool updates support size, warm, weight, priority, labels and placement')
+            raise ValueError('pool updates support size, warm, weight, priority, labels, placement and affinity')
         with state.transaction():
             pool = resolve(controller, identity)
             pool.update({k: v for k, v in params.items() if k in allowed})
-            validate(**{k: pool[k] for k in allowed})
+            validate(**{k: pool.get(k) for k in allowed})
             state.put('pool', pool, event={'message': 'pool policy updated'})
         return status(controller, identity)
     if operation == 'pool_close':

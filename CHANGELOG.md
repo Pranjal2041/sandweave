@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.7
+
+- Add `Pool(shared_cache="/shared/path")` for an explicit immutable baseline and
+  image cache. Workers sharing storage reuse its files; transfers to node-local
+  caches are coordinated across workers. Writable sandbox state remains separate.
+- Reuse verified runtime materialization while file identities remain unchanged,
+  avoiding repeated full-image reads from shared storage on later leases.
+- Add cluster pool `affinity="machine"` and `affinity="worker"`. Prefer the pool's
+  initial location, spill over when needed, and retain preferences across idle
+  periods and controller restarts. Machine identity uses the Linux boot ID.
+- Include `shared_cache` and `affinity` in pool information and `machine` in worker
+  listings. Allow updates to affinity for future assignments.
+
 ## 0.2.6
 
 - Allow a live cluster client to acquire new sandboxes after its last worker

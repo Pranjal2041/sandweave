@@ -1,6 +1,7 @@
 """Snapshot discovery and transfer through existing authenticated worker RPCs."""
 from . import providers
 from ..sandbox.errors import CacheMiss, CacheConflict, OperationUnknown, ResourceUnavailable
+from ..sandbox.transfers import transfer
 
 
 def register(controller, reference, endpoint, key=None, *, expected=None, compare=False):
@@ -39,11 +40,15 @@ def resolve(controller, reference):
     raise CacheMiss('cluster has no saved revision or cache: ' + reference)
 
 
-def ensure(controller, reference, destination, endpoint):
+def ensure(controller, reference, destination, endpoint, shared_cache=None):
     record = resolve(controller, reference)
     try:
-        destination.call('snapshot_info', reference=record['id'])
-        return record['id']
+        if shared_cache is None:
+            destination.call('snapshot_info', reference=record['id'])
+            return record['id']
+        if destination.call('artifact_cached', reference=record['id'], shared_cache=shared_cache)['ready']:
+            register(controller, record['id'], endpoint)
+            return record['id']
     except (CacheMiss, FileNotFoundError):
         pass
     errors = []
@@ -51,22 +56,8 @@ def ensure(controller, reference, destination, endpoint):
         source = None
         try:
             source = controller.connection(location)
-            metadata = source.call('artifact_metadata', reference=record['id'])
-            try:
-                destination.call('artifact_import', metadata=metadata)
-            except FileNotFoundError:
-                manifest = source.call('artifact_manifest', reference=record['id'])
-                missing = destination.call('artifact_begin', manifest=manifest)
-                for path in missing:
-                    size = manifest['files'][path]['size']
-                    for offset in range(0, size, 1024**2):
-                        data = source.call('artifact_read', reference=record['id'], path=path,
-                                           offset=offset, size=min(1024**2, size-offset))
-                        if not data:
-                            raise OSError('artifact source returned an incomplete file: ' + path)
-                        destination.call('artifact_write', reference=record['id'], path=path,
-                                         offset=offset, data=data)
-                destination.call('artifact_finish', reference=record['id'])
+            transfer(source, destination, record['id'], shared_cache=shared_cache,
+                     lock_root=controller.state.root / 'transfers')
             register(controller, record['id'], endpoint)
             return record['id']
         except Exception as error:

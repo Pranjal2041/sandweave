@@ -120,6 +120,13 @@ def check_browser(site, output, url=None):
                 page.locator('.md-sidebar--primary').get_by_role('link', name='Connect a cluster', exact=True).click()
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Connect a cluster¶?$'))
                 page.screenshot(path=str(output / 'clusters-desktop.png'), full_page=True, animations='disabled')
+                page.goto(url + 'pools/#reuse-images-across-workers')
+                section = page.locator('#reuse-images-across-workers')
+                example = section.locator('xpath=following-sibling::div[1]')
+                example.get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'shared_cache="/shared/sandweave"' in copied and 'affinity="machine"' in copied
+                page.screenshot(path=str(output / 'pools-desktop.png'), animations='disabled')
                 page.goto(url + 'installation/')
                 page.get_by_text('pip', exact=True).click()
                 expect(page.locator('.tabbed-block:visible')).to_contain_text('python -m pip install sandweave')
@@ -140,6 +147,9 @@ def check_browser(site, output, url=None):
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Docker images¶?$'))
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'images-mobile.png'), full_page=True, animations='disabled')
+                page.goto(url + 'pools/#reuse-images-across-workers')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.screenshot(path=str(output / 'pools-mobile.png'), animations='disabled')
                 assert not errors, errors
                 assert not failed, failed
                 context.close()

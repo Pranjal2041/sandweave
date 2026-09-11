@@ -13,7 +13,7 @@ import time
 from .asyncio import dualmethod
 from .errors import CacheConflict, CacheMiss, IncompatibleSnapshot
 from .wire import encode, decode
-from .workspace import home, locked, atomic_json, _immutable
+from .workspace import home, locked, atomic_json, _immutable, file_signature
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,7 @@ class SnapshotRef:
 class Store:
     def __init__(self, runtime):
         self.runtime = runtime
+        self.materialized = {}
         self.root = home() / 'store'
         for directory in ('revisions', 'names', 'locks'):
             (self.root / directory).mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -146,7 +147,25 @@ class Store:
             manifest = snapshot_store.inspect(workspace, source)
         destination = self.runtime.root / 'snapshots' / record['id']
         with locked(destination.parent / ('.' + record['id'] + '.import.lock')):
-            for info in ([manifest['base_image']] if native else [manifest['base_image'], manifest['runtime']]):
+            dependencies = [manifest['base_image']] if native else [manifest['base_image'], manifest['runtime']]
+            def signatures():
+                paths = [destination / name for name in [*manifest['files'], 'snapshot-manifest.json']]
+                for info in dependencies:
+                    relative = Path(info['path'])
+                    if relative.is_absolute() or '..' in relative.parts:
+                        raise IncompatibleSnapshot('snapshot dependency escapes its workspace')
+                    for root in (workspace / relative, self.runtime.root / relative):
+                        paths.extend(sorted(root.rglob('*')) if root.is_dir() else [root])
+                return {str(p): file_signature(p) for p in paths if not p.is_dir()}
+            try:
+                # Immutable copies already checked by this worker need only
+                # file-identity checks. Rehashing a shared image on every lease
+                # would read its entire payload over NFS again each time.
+                if self.materialized.get(record['id']) == signatures():
+                    return destination
+            except FileNotFoundError:
+                pass
+            for info in dependencies:
                 relative = Path(info['path'])
                 if relative.is_absolute() or '..' in relative.parts:
                     raise IncompatibleSnapshot('snapshot dependency escapes its workspace')
@@ -167,4 +186,6 @@ class Store:
                 raise IncompatibleSnapshot('imported native snapshot integrity verification failed')
         else:
             snapshot_store.inspect(self.runtime.root, destination)
+        with locked(destination.parent / ('.' + record['id'] + '.import.lock')):
+            self.materialized[record['id']] = signatures()
         return destination

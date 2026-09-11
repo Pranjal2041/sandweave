@@ -5,18 +5,59 @@ import json
 import os
 from pathlib import Path
 import stat
+import uuid
 
 from .errors import IncompatibleSnapshot
 from .wire import encode, decode
 from .workspace import locked, atomic_json, _immutable
 
 
+def cache_path(value):
+    """Keep worker paths literal; never resolve them against the client's cwd."""
+    if value is None:
+        return None
+    value = os.fspath(value)
+    if not isinstance(value, str) or '\0' in value or not Path(value).is_absolute() or '..' in Path(value).parts:
+        raise ValueError('shared_cache must be an absolute path on the workers')
+    return value
+
+
 class Artifacts:
-    def __init__(self, worker):
+    def __init__(self, worker, *, shared_cache=None):
         self.worker = worker
         self.exports = {}
-        self.root = worker.store.root / 'imports'
-        self.root.mkdir(exist_ok=True, mode=0o700)
+        self.root = (Path(cache_path(shared_cache)) / 'artifacts-v1' if shared_cache is not None
+                     else worker.store.root / 'imports')
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    def cached(self, reference):
+        directory = self.directory(reference)
+        # Paths and hostnames cannot tell whether two workers see the same
+        # storage. A marker created under a filesystem lock can.
+        with locked(self.root / '.identity.lock'):
+            marker = self.root / 'cache.json'
+            if not marker.exists():
+                atomic_json(marker, {'id': uuid.uuid4().hex})
+            identity = json.loads(marker.read_text())['id']
+        with locked(directory.with_suffix('.lock')):
+            ready = (directory / 'complete').exists()
+            if ready:
+                self._attach(reference)
+        return {'cache_id': identity, 'ready': ready, 'id': reference}
+
+    def cache(self, reference):
+        """Publish locally visible immutable files once into the selected cache."""
+        with locked(self.directory(reference).with_suffix('.lock')):
+            if not (self.directory(reference) / 'complete').exists():
+                manifest = self.manifest(reference)
+                for name in self._begin(manifest):
+                    _immutable(self.exports[reference][name], self.directory(reference) / name,
+                               sha256=manifest['files'][name]['sha256'])
+                result = self._finish(reference)
+                atomic_json(self.directory(reference) / 'complete', result)
+            else:
+                self._attach(reference)
+        return self.cached(reference)
 
     def directory(self, reference):
         import re
@@ -201,7 +242,9 @@ class Artifacts:
         with locked(self.directory(reference).with_suffix('.lock')):
             complete = self.directory(reference) / 'complete'
             if complete.exists():
-                return json.loads(complete.read_text())
+                # The bytes may have been published by another worker. Each
+                # worker still needs its own private revision record.
+                return self._attach(reference)
             result = self._finish(reference)
             atomic_json(self.directory(reference) / 'complete', result)
             return result
@@ -221,16 +264,37 @@ class Artifacts:
             for key, value in info.get('xattrs', {}).items():
                 if key not in os.listxattr(path, follow_symlinks=False) or os.getxattr(path, key, follow_symlinks=False).hex() != value:
                     os.setxattr(path, key, bytes.fromhex(value), follow_symlinks=False)
-        saved = copy.deepcopy(manifest['metadata'])
-        saved.update(workspace=str(directory / 'workspace'), location=str(directory / 'snapshot'))
+        saved = self._saved(reference)
         if self.worker.store.verify(saved)['status'] != 'passed':
             raise IncompatibleSnapshot('imported snapshot failed verification')
         return self._publish(saved)
 
+    def _saved(self, reference):
+        directory = self.directory(reference)
+        saved = copy.deepcopy(decode((directory / 'manifest.bin').read_bytes())['metadata'])
+        saved.update(workspace=str(directory / 'workspace'), location=str(directory / 'snapshot'))
+        return saved
+
+    def _attach(self, reference):
+        saved = self._saved(reference)
+        record = self.worker.store.root / 'revisions' / (reference + '.bin')
+        # The normal snapshot-info fast path also trusts an already verified
+        # immutable revision. Do not hash gigabytes again for every lease.
+        if record.exists() and decode(record.read_bytes()) == saved:
+            return {'id': reference}
+        return self.import_shared(saved)
+
     def dispatch(self, operation, parameters):
+        parameters = dict(parameters)
+        shared_cache = parameters.pop('shared_cache', None)
+        if shared_cache is not None:
+            if operation not in ('artifact_cached', 'artifact_cache', 'artifact_begin', 'artifact_write', 'artifact_finish'):
+                raise ValueError('shared_cache is not supported for this artifact operation')
+            return Artifacts(self.worker, shared_cache=shared_cache).dispatch(operation, parameters)
         operation = operation.removeprefix('artifact_')
         method = {'metadata': self.metadata, 'import': self.import_shared, 'manifest': self.manifest,
-                  'read': self.read, 'begin': self.begin, 'write': self.write, 'finish': self.finish}.get(operation)
+                  'read': self.read, 'begin': self.begin, 'write': self.write, 'finish': self.finish,
+                  'cached': self.cached, 'cache': self.cache}.get(operation)
         if method is None:
             raise ValueError('unknown artifact operation')
         return method(**parameters)

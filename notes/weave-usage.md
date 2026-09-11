@@ -5,6 +5,13 @@ sandboxes, maintains pools and tracks submitted jobs. Clients and workers can
 connect through HTTP, HTTPS or SSH. Remote clients can send sandbox operations
 through the controller, so they do not need an inbound route to each worker.
 
+Pool image transfer and placement options are documented in the
+[shared cache guide](../docs/pools.md#reuse-images-across-workers).
+`shared_cache="/shared/sandweave"` stores immutable baselines and dependencies
+under an explicit worker path. `affinity="machine"` prefers workers sharing a
+Linux boot ID; `affinity="worker"` prefers one worker. Both allow spillover.
+These options require Sandweave 0.2.7 or newer on the client, controller and workers.
+
 These connection examples use Sandweave 0.2.3 or newer. Upgrade an existing installation
 with `uv pip install --upgrade sandweave` before trying these examples.
 

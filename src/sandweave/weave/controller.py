@@ -162,6 +162,7 @@ class Controller:
                     if {g['uuid'] for g in other.get('gpus', [])} & {g['uuid'] for g in info['gpus']}:
                         raise ValueError('worker GPU allocation overlaps registered worker ' + other['id'])
             record = self.state.put('worker', dict(id=identity, state='ready', target=target,
+                machine=scheduler.machine(info),
                 name=name or info['hostname'], endpoint=route, labels=labels or {}, inventory=info,
                 capacity={'slots': slots, 'cpus': len(info['cpus']), 'memory': memory, 'gpu': len(info['gpus'])},
                 cpu_ids=info['cpus'],
@@ -186,7 +187,7 @@ class Controller:
     @staticmethod
     def _public_worker(record):
         return {k: record.get(k) for k in ('id', 'name', 'state', 'labels', 'capacity', 'external',
-                                         'cpu_ids', 'gpus', 'draining', 'seen', 'error')}
+                                         'cpu_ids', 'gpus', 'machine', 'draining', 'seen', 'error')}
 
     def worker_list(self):
         return [self._public_worker(w) for w in self.state.list('worker')]
@@ -303,6 +304,7 @@ class Controller:
             if promote or old['workspace'] == info['workspace']:
                 record.update(endpoint=route, inventory=info)
             record['external'] = self._sum_external(record)
+            record['machine'] = scheduler.machine(info)
             self.state.put('worker', record)
             for allocation in self.state.list('allocation', worker=identity):
                 if (allocation.get('endpoint', {}).get('workspace') == info['workspace'] and
@@ -416,7 +418,8 @@ class Controller:
             request = record['request']
             if request.get('reference'):
                 from .artifacts import ensure
-                ensure(self, request['reference'], connection, route)
+                pool = self.state.get('pool', record['parent'], required=False) if record.get('parent') else None
+                ensure(self, request['reference'], connection, route, (pool or {}).get('shared_cache'))
             initial = connection
             connection = self.connection(route, timeout=request['spec']['startup_timeout'] + 60)
             initial.close()

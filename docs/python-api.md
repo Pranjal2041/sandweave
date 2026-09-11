@@ -139,8 +139,12 @@ pool = Pool(target="lab", template="coding", size=8, warm=2)
 
 Use `pool.start()` or a context manager to start it. `pool.acquire()` leases an
 environment; `pool.map(callback, items)` maps work over independent environments.
-Cluster pools also accept `weight`, `priority`, and `placement`, and support
-`update(...)`. `Pool.connect(name, target=...)` borrows a named cluster pool.
+Pools accept `shared_cache`, an absolute image/snapshot cache directory on the
+workers. Cluster pools also accept `weight`, `priority`, `labels`, `placement`,
+and `affinity` (`"worker"`, `"machine"`, or `None`), and support `update(...)`.
+Affinity prefers a location and allows spillover. The cache path is fixed at
+creation; the other placement settings can be updated for future assignments.
+`Pool.connect(name, target=...)` borrows a named cluster pool.
 See [pools and evaluation](pools.md) for ownership and cleanup.
 
 ## Job

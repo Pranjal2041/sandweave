@@ -361,6 +361,19 @@ with Pool(target="lab", size=8, warm=2) as pool:
     pool.update(size=16, warm=4)
 ```
 
+Reuse image files across workers and prefer placement on the same machine:
+
+```python
+with Pool(target="lab", size=8, warm=2,
+          shared_cache="/shared/sandweave", affinity="machine") as pool:
+    with pool.acquire() as env:
+        print(env.run("python --version").stdout)
+```
+
+`shared_cache` is a directory on the workers; each sandbox keeps independent
+writable state. `affinity="worker"` prefers the same worker instead. Affinity
+falls back when capacity is unavailable. See [shared caches and placement](https://pranjal2041.github.io/sandweave/pools/#reuse-images-across-workers).
+
 Add an existing SSH worker with
 `sandweave cluster add lab --target ssh://worker-two`. Each worker needs
 Sandweave installed. You can also register existing Slurm allocations.

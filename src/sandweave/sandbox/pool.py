@@ -10,10 +10,17 @@ from .asyncio import dualmethod
 from .sandbox import Sandbox
 from .snapshots import SnapshotRef
 from .targets import connect
+from .artifacts import cache_path
+from .transfers import transfer
 
 
 class Pool:
-    def __init__(self, *, size=1, warm=0, targets=None, **sandbox_options):
+    def __init__(self, *, size=1, warm=0, targets=None, shared_cache=None, affinity=None, **sandbox_options):
+        if affinity is not None:
+            raise ValueError('pool affinity requires a cluster target')
+        self.shared_cache = cache_path(shared_cache)
+        self.source_connection = None
+        self.source_template = None
         if type(size) is not int or size < 1 or type(warm) is not int or not 0 <= warm <= size:
             raise ValueError('pool size must be positive and warm must be in 0..size')
         self.size, self.warm = size, warm
@@ -47,7 +54,13 @@ class Pool:
             if source is not None:
                 connection = connect(self.targets[0])
                 try:
-                    source = connection.call('snapshot_spec', reference=str(source))['reference']
+                    if self.shared_cache is not None and str(source).startswith('snap-'):
+                        connection.call('artifact_cached', reference=str(source), shared_cache=self.shared_cache)
+                    saved = connection.call('snapshot_spec', reference=str(source))
+                    source = saved['reference']
+                    if self.shared_cache is not None:
+                        self.source_connection = connection.clone()
+                        self.source_template = saved['spec']['template']
                 finally:
                     connection.close()
                 self.options.pop('snapshot', None)
@@ -55,6 +68,9 @@ class Pool:
             else:
                 with Sandbox(target=self.targets[0], **self.options) as builder:
                     source = builder.snapshot(state='filesystem')
+                    if self.shared_cache is not None:
+                        self.source_connection = builder._connection.clone()
+                        self.source_template = builder._info['spec']['template']
                 # Startup services and controls survive in the saved recipe.
                 self.options = {k: v for k, v in self.options.items()
                                 if k not in ('template', 'image', 'setup', 'cache_key', 'refresh')}
@@ -90,7 +106,7 @@ class Pool:
 
     def _prepare(self, target):
         try:
-            env = Sandbox(target=target, **self.options)
+            env = self._sandbox(target)
         except BaseException as error:
             with self.condition:
                 self.failure = error
@@ -108,6 +124,19 @@ class Pool:
             env.terminate()
         finally:
             env.close()
+
+    def _sandbox(self, target):
+        if self.shared_cache is not None:
+            source = self.source_connection.clone()
+            try:
+                destination = connect(target, template=self.source_template)
+                try:
+                    transfer(source, destination, str(self.options['cache']), shared_cache=self.shared_cache)
+                finally:
+                    destination.close()
+            finally:
+                source.close()
+        return Sandbox(target=target, **self.options)
 
     def acquire(self):
         cancelled = threading.Event()
@@ -138,7 +167,7 @@ class Pool:
                 self.condition.wait(.1)
         if create:
             try:
-                env = Sandbox(target=target, **self.options)
+                env = self._sandbox(target)
             except BaseException:
                 with self.condition:
                     self.pending -= 1
@@ -259,6 +288,8 @@ class Pool:
                 self._release(env)
             except Exception as error:
                 errors.append(error)
+        if self.source_connection is not None:
+            self.source_connection.close()
         if errors:
             raise ExceptionGroup('pool cleanup failed', errors)
 

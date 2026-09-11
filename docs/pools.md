@@ -71,6 +71,40 @@ Cluster pool `weight` controls its share of available capacity under contention.
 `pack` prefers workers already in use. These settings do not preempt an active
 episode. They are separate from a sandbox's CPU scheduling weight.
 
+## Reuse images across workers
+
+```python
+with Pool(target="lab", template="coding", size=32, warm=8,
+          shared_cache="/shared/sandweave", affinity="machine") as pool:
+    results = list(pool.map(evaluate, programs))
+```
+
+`shared_cache` is an absolute directory on the workers. Sandweave creates it if
+needed. Workers must have read and write access using the same account. A shared
+filesystem lets them reuse one baseline and its image files without sending the
+payload through the controller. With node-local storage, workers on each node
+reuse that node's copy; Weave transfers the baseline once per cache. The path
+does not change worker state directories or share writable sandbox files.
+
+Local pools, including pools with explicit `targets`, also accept `shared_cache`.
+Closing a pool keeps the cache for reuse. Creating separate pools still creates
+separate baselines unless they use the same saved `cache` or `snapshot`.
+Workers may link or copy cached files into their runtime workspace; this setting
+does not guarantee zero disk copies across filesystems.
+
+For cluster pools, `affinity="machine"` prefers workers on the same machine as
+the pool's initial placement. `affinity="worker"` prefers the same worker.
+Both spill over when resources, labels, or worker availability require it.
+`placement` controls spreading or packing within the preferred location.
+The default `affinity=None` preserves the usual placement behavior.
+
+A machine is a running Linux kernel, identified by its boot ID. Separate workers
+and PID namespaces can belong to it. If that ID is unavailable or masked,
+Sandweave does not infer shared hardware from matching hostnames. Worker listings
+include `machine`; `pool.info` includes `affinity` and `shared_cache`.
+Use `pool.update(affinity="worker")` to change future placement. The cache path
+is fixed when the pool is created.
+
 ## Reconnect to a named pool
 
 ```python

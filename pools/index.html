@@ -987,6 +987,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#distribute-proxies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distribute proxies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prepare-a-baseline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1285,6 +1296,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#distribute-proxies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distribute proxies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prepare-a-baseline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1387,6 +1409,12 @@ original error; the controller continues cleanup.</p>
 </code></pre></div>
 <p><code>target="lab"</code> uses <a href="../clusters/">Weave</a> to place work across registered workers.
 A printed cluster address works too. A local pool needs no controller setup.</p>
+<h2 id="distribute-proxies">Distribute proxies<a class="headerlink" href="#distribute-proxies" title="Permanent link">&para;</a></h2>
+<p>To distribute proxies across a pool, pass
+<code>network=Network(proxy=proxies, policy=ProxyPolicy("same_region"))</code>.
+The pool chooses a region once and cycles through its proxies across workers.
+See <a href="../networking/#proxy-policies">proxy policies</a> for the catalog format,
+other distributions and standalone sandbox behavior.</p>
 <h2 id="prepare-a-baseline">Prepare a baseline<a class="headerlink" href="#prepare-a-baseline" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">Sandbox</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>

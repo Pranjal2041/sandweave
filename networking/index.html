@@ -652,6 +652,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#proxy-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proxy policies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cluster-connections" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1285,6 +1296,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#proxy-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proxy policies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cluster-connections" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1375,8 +1397,8 @@ offline mode is enabled.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">[</span><span class="s2">"http://USERNAME:PASSWORD@HOST:PORT"</span><span class="p">]</span>
 </code></pre></div>
 <p>Keep this file private. You can also pass one URL directly to <code>Network(proxy=...)</code>.
-Each sandbox randomly selects one supplied proxy and keeps it for its lifetime.
-Selection happens separately for each pool sandbox. Random selection can reuse
+By default, each sandbox randomly selects one supplied proxy and keeps it for its
+lifetime. Selection happens separately for each pool sandbox. Random selection can reuse
 an address; pass a specific URL when you need an exact assignment. Ten static
 proxy addresses provide at most ten distinct exits.</p>
 <p>Setup scripts, SDK commands and their child processes receive <code>HTTP_PROXY</code>,
@@ -1411,6 +1433,86 @@ Filesystem-cache restores may select another proxy or switch to internet/offline
 mode. Private sandbox records and snapshots can contain the supplied credentials.</p>
 <p>The <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/quest-proxy-assessment.md">QUEST-RL measurements</a>
 compare the same research requests directly and through ten proxies.</p>
+<h2 id="proxy-policies">Proxy policies<a class="headerlink" href="#proxy-policies" title="Permanent link">&para;</a></h2>
+<p><code>ProxyPolicy</code> controls which proxies are eligible and how a pool distributes
+them. The policy is configuration; each pool maintains its own assignment state.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">ProxyPolicy</span><span class="p">,</span> <span class="n">Sandbox</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"proxies.json"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">proxies</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">,</span> <span class="n">policy</span><span class="o">=</span><span class="n">ProxyPolicy</span><span class="p">(</span><span class="s2">"same_region"</span><span class="p">))</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">warm</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"network"</span><span class="p">])</span>
+</code></pre></div>
+<p>For region policies, group URLs by the region labels you supply:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">"uk"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://USER:PASS@UK_HOST_1:PORT"</span><span class="p">,</span><span class="w"> </span><span class="s2">"http://USER:PASS@UK_HOST_2:PORT"</span><span class="p">],</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">"us"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://USER:PASS@US_HOST_1:PORT"</span><span class="p">,</span><span class="w"> </span><span class="s2">"http://USER:PASS@US_HOST_2:PORT"</span><span class="p">]</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="p">}</span>
+</code></pre></div>
+<p>Labels are matched exactly. Sandweave uses this supplied metadata; it does not
+infer location from the URL. Other policies also accept a flat URL list or one URL.</p>
+<table>
+<thead>
+<tr>
+<th><code>distribution</code></th>
+<th>Behavior within one pool</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>random</code> (default)</td>
+<td>Each new sandbox independently selects a random eligible proxy.</td>
+</tr>
+<tr>
+<td><code>round_robin</code></td>
+<td>Successive sandbox assignments cycle through eligible proxies.</td>
+</tr>
+<tr>
+<td><code>same_proxy</code></td>
+<td>Select one proxy once and use it for every sandbox.</td>
+</tr>
+<tr>
+<td><code>same_region</code></td>
+<td>Select one supplied region uniformly, then cycle through that region's proxies.</td>
+</tr>
+</tbody>
+</table>
+<p>Restrict any policy to a specific region inside the policy itself:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">,</span> <span class="n">policy</span><span class="o">=</span><span class="n">ProxyPolicy</span><span class="p">(</span><span class="s2">"random"</span><span class="p">,</span> <span class="n">region</span><span class="o">=</span><span class="s2">"uk"</span><span class="p">))</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"curl -s https://api.ipify.org"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+</code></pre></div>
+<p>A standalone sandbox selects one eligible proxy and keeps it. With <code>same_region</code>,
+it first selects a region, then a proxy in that region. Sharing a <code>Network</code>
+object between independent sandboxes does not create a shared rotation counter.</p>
+<p>Pools coordinate assignments across all their workers. Region labels are sorted
+before flattening a grouped catalog; URL order within each region is preserved.
+Rotation follows sandbox creation order. Warm sandboxes can become ready and be
+leased in a different order. Preparing the baseline does not consume a position
+in the member rotation, but uses the same region/proxy constraint.</p>
+<p>Each sandbox keeps its proxy across requests, pause and resume. Retrying the same
+assignment keeps that proxy; a replacement sandbox receives a new assignment.
+Cluster pools save their chosen region or proxy and rotation position with their
+assignments, preserving them through controller restarts and <code>Pool.connect()</code>.
+Local pools keep this state in their owning Python process. Each pool has an
+independent selection, even when several pools use the same <code>Network</code> object.</p>
+<p>An assignment never silently switches to another proxy, region or direct internet.
+<code>same_proxy</code> selects the same endpoint; whether the provider changes that endpoint's
+exit IP is controlled by the provider. <code>env.info["network"]</code> includes the supplied
+region and explicit policy when present, along with the credential-free endpoint.</p>
+<p>Pool proxy policies use filesystem baselines, including the baseline a pool
+prepares automatically. A memory snapshot already captures a particular proxy;
+restore it with <code>Sandbox(snapshot=...)</code> to retain that binding. Explicit proxy
+policies on a pool reject memory baselines rather than changing captured network
+state. Filesystem caches can be reused with another policy or region.</p>
+<p>Proxy policies require Sandweave 0.2.10 or newer on the client, controller and
+participating workers. Older processes that would ignore a policy are rejected.</p>
 <h2 id="cluster-connections">Cluster connections<a class="headerlink" href="#cluster-connections" title="Permanent link">&para;</a></h2>
 <p>The cluster's HTTP, HTTPS, or SSH address controls how the <strong>client reaches the
 controller</strong>. The sandbox's <code>network</code> option controls its <strong>outgoing traffic</strong>.

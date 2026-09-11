@@ -1440,53 +1440,58 @@ after <code>--</code>; the guest shell interprets it.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--memory<span class="w"> </span>4GiB<span class="w"> </span>--disk-memory<span class="w"> </span>16GiB<span class="w"> </span>--disk-path<span class="w"> </span>/scratch/my-memory<span class="w"> </span>--<span class="w"> </span><span class="s2">"free -h"</span>
 </code></pre></div>
 <p>See <a href="../resources/#disk-backed-memory">disk-backed memory</a> for host requirements.</p>
+<p>Use one proxy from a private JSON list of proxy URLs:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--proxy-file<span class="w"> </span>./proxies.json<span class="w"> </span>--<span class="w"> </span><span class="s2">"curl -s https://api.ipify.org"</span>
+</code></pre></div>
+<p>This also works with <code>create</code> and <code>pool create</code>. See
+<a href="../networking/#use-a-proxy">proxy networking</a> for the file format and routing behavior.</p>
 <h2 id="create-a-persistent-desktop">Create a persistent desktop<a class="headerlink" href="#create-a-persistent-desktop" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--template<span class="w"> </span>gnome<span class="w"> </span>--name<span class="w"> </span>workbench
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>sandweave<span class="w"> </span>info<span class="w"> </span>workbench
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>sandweave<span class="w"> </span>desktop<span class="w"> </span>screenshot<span class="w"> </span>workbench<span class="w"> </span>--output<span class="w"> </span>screen.png
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--template<span class="w"> </span>gnome<span class="w"> </span>--name<span class="w"> </span>workbench
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>sandweave<span class="w"> </span>info<span class="w"> </span>workbench
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>sandweave<span class="w"> </span>desktop<span class="w"> </span>screenshot<span class="w"> </span>workbench<span class="w"> </span>--output<span class="w"> </span>screen.png
 </code></pre></div>
 <p>CLI <code>create</code> uses <code>detached=True</code>. It leaves the sandbox running until its TTL
 expires or you stop or terminate it.</p>
 <h2 id="pause-save-or-terminate">Pause, save, or terminate<a class="headerlink" href="#pause-save-or-terminate" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>sandweave<span class="w"> </span>pause<span class="w"> </span>workbench
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>sandweave<span class="w"> </span>resume<span class="w"> </span>workbench
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>sandweave<span class="w"> </span>cache<span class="w"> </span>save<span class="w"> </span>workbench<span class="w"> </span>my-workbench
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>sandweave<span class="w"> </span>terminate<span class="w"> </span>workbench
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>sandweave<span class="w"> </span>pause<span class="w"> </span>workbench
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>sandweave<span class="w"> </span>resume<span class="w"> </span>workbench
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>sandweave<span class="w"> </span>cache<span class="w"> </span>save<span class="w"> </span>workbench<span class="w"> </span>my-workbench
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>sandweave<span class="w"> </span>terminate<span class="w"> </span>workbench
 </code></pre></div>
 <p>To save a checkpoint before stopping, use <code>sandweave stop workbench</code> instead of
 <code>terminate</code>. Restore a named filesystem cache with:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--cache<span class="w"> </span>my-workbench<span class="w"> </span>--name<span class="w"> </span>restored
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--cache<span class="w"> </span>my-workbench<span class="w"> </span>--name<span class="w"> </span>restored
 </code></pre></div>
 <p>Sandbox IDs also work wherever these examples use a name.</p>
 <h2 id="clusters">Clusters<a class="headerlink" href="#clusters" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>instructions<span class="w"> </span>lab
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>workers<span class="w"> </span>lab
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>status<span class="w"> </span>lab
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>instructions<span class="w"> </span>lab
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>workers<span class="w"> </span>lab
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>status<span class="w"> </span>lab
 </code></pre></div>
 <p>Startup prints the complete worker join commands and dashboard link. Copy a
 printed join command onto each worker. See <a href="../clusters/">connect a cluster</a>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>sandweave<span class="w"> </span>dashboard<span class="w"> </span>lab
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>stop<span class="w"> </span>lab
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>sandweave<span class="w"> </span>dashboard<span class="w"> </span>lab
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>stop<span class="w"> </span>lab
 </code></pre></div>
 <h2 id="cluster-pools">Cluster pools<a class="headerlink" href="#cluster-pools" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>create<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--name<span class="w"> </span>coding<span class="w"> </span>--size<span class="w"> </span><span class="m">16</span><span class="w"> </span>--warm<span class="w"> </span><span class="m">4</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>status<span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>sandweave<span class="w"> </span>pool<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>update<span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--size<span class="w"> </span><span class="m">32</span><span class="w"> </span>--warm<span class="w"> </span><span class="m">8</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>close<span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>create<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--name<span class="w"> </span>coding<span class="w"> </span>--size<span class="w"> </span><span class="m">16</span><span class="w"> </span>--warm<span class="w"> </span><span class="m">4</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>status<span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>sandweave<span class="w"> </span>pool<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>update<span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--size<span class="w"> </span><span class="m">32</span><span class="w"> </span>--warm<span class="w"> </span><span class="m">8</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>sandweave<span class="w"> </span>pool<span class="w"> </span>close<span class="w"> </span>coding<span class="w"> </span>--target<span class="w"> </span>lab
 </code></pre></div>
 <h2 id="jobs">Jobs<a class="headerlink" href="#jobs" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>sandweave<span class="w"> </span>job<span class="w"> </span>submit<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--<span class="w"> </span><span class="s2">"python -c 'print(2 + 2)'"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sandweave<span class="w"> </span>job<span class="w"> </span>submit<span class="w"> </span>--target<span class="w"> </span>lab<span class="w"> </span>--<span class="w"> </span><span class="s2">"python -c 'print(2 + 2)'"</span>
 </code></pre></div>
 <p>The command prints the job ID. Substitute that ID in these commands:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sandweave<span class="w"> </span>job<span class="w"> </span>status<span class="w"> </span>JOB_ID<span class="w"> </span>--target<span class="w"> </span>lab
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>sandweave<span class="w"> </span>job<span class="w"> </span>result<span class="w"> </span>JOB_ID<span class="w"> </span>--target<span class="w"> </span>lab
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>sandweave<span class="w"> </span>job<span class="w"> </span>status<span class="w"> </span>JOB_ID<span class="w"> </span>--target<span class="w"> </span>lab
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>sandweave<span class="w"> </span>job<span class="w"> </span>result<span class="w"> </span>JOB_ID<span class="w"> </span>--target<span class="w"> </span>lab
 </code></pre></div>
 <h2 id="stereo-recording">Stereo recording<a class="headerlink" href="#stereo-recording" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--template<span class="w"> </span>vr/gunspinning<span class="w"> </span>--gpu<span class="w"> </span>auto<span class="w"> </span>--name<span class="w"> </span>gunspin
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>sandweave<span class="w"> </span>vr<span class="w"> </span>record<span class="w"> </span>gunspin<span class="w"> </span>--duration<span class="w"> </span><span class="m">30</span><span class="w"> </span>--output<span class="w"> </span>./episode
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>sandweave<span class="w"> </span>terminate<span class="w"> </span>gunspin
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--template<span class="w"> </span>vr/gunspinning<span class="w"> </span>--gpu<span class="w"> </span>auto<span class="w"> </span>--name<span class="w"> </span>gunspin
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>sandweave<span class="w"> </span>vr<span class="w"> </span>record<span class="w"> </span>gunspin<span class="w"> </span>--duration<span class="w"> </span><span class="m">30</span><span class="w"> </span>--output<span class="w"> </span>./episode
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>sandweave<span class="w"> </span>terminate<span class="w"> </span>gunspin
 </code></pre></div>
 <p>The VR template needs prepared game files and an available GPU. Recording exports
 both eyes and a synchronized side-by-side preview. See <a href="../vr/">VR games</a>.</p>

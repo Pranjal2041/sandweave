@@ -50,7 +50,10 @@ artifacts deliberately covered by `.gitignore`. Apply this habit on every task.
 - At handoff, check both this repository and `sources/gvisor` for uncommitted or
   untracked files. Report the relevant commit IDs and any unresolved changes.
 - A recovery archive supplements Git history; it does not replace a commit.
-  Push only when the user requests it.
+- The user has given standing authorization to sync completed changes to GitHub
+  and PyPI. Include the required version, validation and release steps; do not
+  stop at local commits. Publish documentation updates when affected, and verify
+  that the remote source and published artifacts match the completed changes.
 
 ## Validation
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.6
 
 - Allow a live cluster client to acquire new sandboxes after its last worker
   lease expires during an idle period. Keep expired assignments fenced and

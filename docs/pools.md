@@ -28,6 +28,11 @@ replaces them from its baseline.
 that capacity. Entering the pool waits for its initial reserve. Actual readiness
 is limited by worker resources.
 
+If cluster pool preparation fails, pending and unissued leases receive the
+preparation error. Issued leases remain usable until released or the pool closes.
+When an error leaves a pool context, the SDK requests closure and propagates the
+original error; the controller continues cleanup.
+
 ```python
 with Pool(target="lab", size=8, warm=2) as pool:
     with pool.acquire() as env:
@@ -82,3 +87,7 @@ pool terminates it on exit, including when `detached=True`.
 
 Use a [job](jobs.md) for a submitted command that should run independently of your
 Python callback and retain its result.
+
+Closing a pool releases its environments. It retains saved baselines and image
+files for reuse. Automatic eviction by age or storage size is not implemented;
+pool size bounds live environments, not retained disk usage.

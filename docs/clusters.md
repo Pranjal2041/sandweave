@@ -124,6 +124,19 @@ Active leases finish normally. `cluster.resume(worker_id)` allows new placement.
 `cluster.remove_worker(worker_id)` unregisters a drained worker after reservations
 are released; it does not cancel the machine's allocation.
 
+If a worker is unreachable, its reservations remain charged. A lost connection
+does not establish that its sandboxes stopped. Once you have independently
+confirmed that its allocation ended, release those records with:
+
+```python
+cluster.remove_worker(worker_id, lost=True)
+```
+
+The CLI equivalent is `sandweave cluster remove lab WORKER_ID --lost`. This does
+not kill remote processes. The removed worker workspace cannot rejoin that
+controller; a replacement needs a new workspace. Pending claims receive the
+failure instead of keeping a route to that worker.
+
 ## Controller lifetime
 
 ```bash

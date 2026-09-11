@@ -405,8 +405,15 @@ class Cluster:
         return self.connection.call('worker_update', identity=worker, draining=False)
 
     @dualmethod
-    def remove_worker(self, worker):
-        return self.connection.call('worker_update', identity=worker, remove=True)
+    def remove_worker(self, worker, *, lost=False):
+        """Remove a worker. lost=True asserts its allocation has already stopped.
+
+        This releases unresolved reservations; it does not stop a remote
+        machine. The removed workspace cannot rejoin this controller.
+        """
+        if type(lost) is not bool:
+            raise ValueError('lost must be a bool')
+        return self.connection.call('worker_update', identity=worker, remove=True, **({'lost': True} if lost else {}))
 
     @dualmethod
     def events(self, *, after=0, limit=100):

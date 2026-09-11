@@ -46,6 +46,15 @@ toward cluster admission. Neither is the host machine's total memory.
 A string such as `memory="8GiB"` overrides guest memory and retains the template's
 runtime budget. Sizes can also be supplied as integer byte counts.
 
+A 32 GiB worker fits three sandboxes configured with 8 GiB guest memory and
+512 MiB runtime memory. With 256 MiB for each budget, it fits up to 64, subject
+to its slot limit and other reservations. Slots do not grant additional memory.
+
+Worker budgets are capped at visible cgroup hard limits, including narrower job
+steps and ancestor limits. An environment variable cannot raise that ceiling.
+If several workers or unrelated processes share a memory allocation, their
+budgets still need to fit within that shared allocation.
+
 ## Use a GPU
 
 ```python

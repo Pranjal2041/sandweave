@@ -138,6 +138,9 @@ def configure(sub):
         p.add_argument('--label', action='append', default=[], metavar='KEY=VALUE')
     for action in ('drain', 'resume', 'remove'):
         p = cluster.add_parser(action); p.add_argument('name'); p.add_argument('worker')
+        if action == 'remove':
+            p.add_argument('--lost', action='store_true',
+                           help='Confirm the worker allocation has stopped and release unresolved reservations; does not kill remote processes')
     p = cluster.add_parser('backup'); p.add_argument('name'); p.add_argument('destination')
     jobs = sub.add_parser('job', help='Submit and inspect durable commands').add_subparsers(dest='job_operation', required=True)
     from ..cli import creation_options
@@ -225,7 +228,10 @@ def main(args):
             elif action == 'backup':
                 output({'path': cluster.backup(args.destination)})
             elif action in ('drain', 'resume', 'remove'):
-                output(getattr(cluster, 'remove_worker' if action == 'remove' else action)(args.worker))
+                if action == 'remove':
+                    output(cluster.remove_worker(args.worker, lost=args.lost))
+                else:
+                    output(getattr(cluster, action)(args.worker))
             elif action in ('add', 'join'):
                 labels = {}
                 for item in args.label:

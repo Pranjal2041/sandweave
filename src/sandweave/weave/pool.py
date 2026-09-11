@@ -1,6 +1,7 @@
 """The public pool contract, with durable coordination for cluster targets."""
 from contextlib import contextmanager
 import copy
+import sys
 import threading
 import time
 import uuid
@@ -87,7 +88,12 @@ class ManagedPool(LocalPool):
                 time.sleep(.05)
         except BaseException:
             if self.owned:
-                self.terminate()
+                # Request cleanup without waiting for unreachable workers or
+                # replacing the preparation error with a cleanup timeout.
+                try:
+                    self.connection.call('pool_close', identity=self.id)
+                except Exception:
+                    pass
             raise
 
     @start.async_impl
@@ -124,12 +130,17 @@ class ManagedPool(LocalPool):
                     raise TimeoutError('pool checkout is waiting: ' + (self.info.get('reason') or 'capacity is in use'))
                 time.sleep(.05)
         finally:
+            failure = sys.exception()
             try:
-                self.connection.call('pool_release', identity=self.id, lease_id=identity)
-            finally:
-                if env is not None:
-                    self.connection.forget(env.id)
-                    env.close()
+                try:
+                    self.connection.call('pool_release', identity=self.id, lease_id=identity)
+                finally:
+                    if env is not None:
+                        self.connection.forget(env.id)
+                        env.close()
+            except Exception:
+                if failure is None:
+                    raise
 
     @dualmethod
     def update(self, **changes):
@@ -165,6 +176,27 @@ class ManagedPool(LocalPool):
             finally:
                 self.connection.close()
                 self.closed = True
+
+    def __exit__(self, error_type, error, traceback):
+        if error_type is None:
+            self.close()
+            return
+        # Propagate the original episode/preparation error. The controller
+        # reconciles this durable close request even if cleanup is still slow.
+        try:
+            if self.owned and self.started:
+                self.connection.call('pool_close', identity=self.id)
+        except Exception:
+            pass
+        finally:
+            try:
+                self.connection.close()
+            finally:
+                self.closed = True
+
+    async def __aexit__(self, *args):
+        import asyncio
+        await asyncio.to_thread(self.__exit__, *args)
 
 
 def validate(*, size, warm, weight, priority, labels, placement):
@@ -243,7 +275,7 @@ def dispatch(controller, operation, params):
             for allocation in state.list('allocation', parent=identity):
                 controller.allocation_cancel(allocation['id'])
             for lease in state.list('lease', parent=identity):
-                if lease['state'] not in ('released', 'cancelled'):
+                if lease['state'] not in ('released', 'cancelled', 'failed'):
                     state.put('lease', {**lease, 'state': 'cancelled'})
         return status(controller, identity)
     lease_id = params['lease_id']
@@ -252,7 +284,7 @@ def dispatch(controller, operation, params):
         with state.transaction():
             pool = resolve(controller, identity)
             if pool['desired'] != 'running' or pool['state'] == 'failed':
-                raise ResourceUnavailable('pool is closed or failed')
+                raise ResourceUnavailable(pool.get('error') or 'pool is closed or failed')
             old = state.get('lease', lease_id, required=False)
             if old is None:
                 state.put('lease', dict(id=lease_id, parent=identity, state='pending', owner=params.get('owner')))
@@ -266,14 +298,36 @@ def dispatch(controller, operation, params):
         if operation == 'pool_release':
             if lease.get('sandbox'):
                 controller.allocation_cancel(lease['sandbox'])
-            state.put('lease', {**lease, 'state': 'released' if lease.get('sandbox') else 'cancelled'})
+            if lease['state'] != 'failed':
+                state.put('lease', {**lease, 'state': 'released' if lease.get('sandbox') else 'cancelled'})
             return {'id': lease_id, 'state': 'released'}
         if operation == 'pool_lease':
+            pool = resolve(controller, identity)
+            if pool['state'] == 'failed' and lease['state'] in ('pending', 'claiming'):
+                _fail(controller, identity, pool.get('error') or 'pool failed')
+                lease = state.get('lease', lease_id)
             result = {k: lease.get(k) for k in ('id', 'state', 'sandbox', 'error')}
             if lease['state'] == 'ready':
                 result['route'] = controller.allocation_route(lease['sandbox'])
             return result
     raise ValueError('unknown pool operation: ' + operation)
+
+
+def _fail(controller, identity, error):
+    with controller.state.transaction():
+        pool = resolve(controller, identity)
+        if pool['state'] != 'failed':
+            controller.state.put('pool', {**pool, 'state': 'failed', 'error': error},
+                                 event={'message': 'pool failed', 'error': error})
+        for lease in controller.state.list('lease', parent=identity):
+            if lease['state'] in ('pending', 'claiming'):
+                controller.state.put('lease', {**lease, 'state': 'failed', 'error': error})
+        # Issued leases remain usable. Failed preparation must not leave its
+        # builder, idle members or unissued claims holding resources forever.
+        issued = {l.get('sandbox') for l in controller.state.list('lease', parent=identity) if l['state'] == 'ready'}
+        for allocation in controller.state.list('allocation', parent=identity):
+            if not allocation.get('released') and allocation['id'] not in issued:
+                controller.allocation_cancel(allocation['id'])
 
 
 def _new_member(controller, pool, *, builder=False):
@@ -318,24 +372,36 @@ def _capture(controller, pool_id, builder_id):
     except Exception as error:
         with controller.state.transaction():
             pool = resolve(controller, pool_id)
-            controller.state.put('pool', {**pool, 'state': 'failed', 'error': str(error)})
+            _fail(controller, pool_id, str(error))
             controller.allocation_cancel(builder_id)
 
 
 def _claim(controller, pool_id, lease_id, sandbox_id):
-    from . import providers
-    lease = controller.state.get('lease', lease_id)
-    record = controller.state.get('allocation', sandbox_id)
-    pool = resolve(controller, pool_id)
-    connection = controller.connection(record['endpoint'])
+    with controller.state.transaction():
+        lease = controller.state.get('lease', lease_id)
+        record = controller.state.get('allocation', sandbox_id)
+        pool = resolve(controller, pool_id)
+        if (lease['state'] != 'claiming' or record.get('lease') != lease_id or
+                record['desired'] != 'running' or pool['desired'] != 'running' or pool['state'] == 'failed'):
+            return
+        # Older controller records did not save the claim generation. They can
+        # be recovered only while this same claim is still current.
+        generation = lease.get('generation', record['generation'])
+        if record['generation'] != generation:
+            return
+    connection = None
     try:
+        connection = controller.connection(record['endpoint'])
         response = connection.call('managed_apply', identity=sandbox_id, cluster=controller.id,
-            generation=record['generation'], action='claim', owner=lease.get('owner'),
+            generation=generation, action='claim', owner=lease.get('owner'),
             process=controller._owner_process(lease.get('owner')), spec=pool['request']['spec'])
         with controller.state.transaction():
             lease = controller.state.get('lease', lease_id)
             record = controller.state.get('allocation', sandbox_id)
+            if record['generation'] != generation or lease['state'] != 'claiming' or record['desired'] != 'running':
+                return
             record.update(token=response['token'], info=response['sandbox'], owner=lease.get('owner'))
+            record.pop('error', None)
             if lease['state'] == 'claiming' and record['desired'] == 'running':
                 record['state'] = 'leased'
                 controller.state.put('lease', {**lease, 'state': 'ready'})
@@ -346,11 +412,15 @@ def _claim(controller, pool_id, lease_id, sandbox_id):
     except Exception as error:
         with controller.state.transaction():
             lease = controller.state.get('lease', lease_id)
+            record = controller.state.get('allocation', sandbox_id)
+            if record['generation'] != generation or lease['state'] != 'claiming':
+                return
             if lease['state'] == 'claiming':
                 controller.state.put('lease', {**lease, 'state': 'failed', 'error': str(error)})
             controller.allocation_cancel(sandbox_id)
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()
 
 
 def reconcile(controller):
@@ -370,11 +440,13 @@ def reconcile(controller):
                 state.put('pool', {**pool, 'state': 'closed'})
             continue
         if pool['state'] == 'failed':
+            _fail(controller, pool['id'], pool.get('error') or 'pool failed')
             continue
         failed = [a for a in allocations if a.get('error') and a.get('released') and a.get('role') == 'member']
-        latest_ready = max((a['created'] for a in allocations if a.get('info', {}).get('state') == 'ready'), default=0)
+        latest_ready = max((a['created'] for a in allocations if a.get('prepared') or
+                            a.get('info', {}).get('state') == 'ready'), default=0)
         if sum(a['created'] > latest_ready for a in failed) >= 3:
-            state.put('pool', {**pool, 'state': 'failed', 'error': 'pool preparation failed three times: ' + failed[-1]['error']})
+            _fail(controller, pool['id'], 'pool preparation failed three times: ' + failed[-1]['error'])
             continue
         if pool.get('baseline') is None:
             if not pool.get('builder'):
@@ -384,7 +456,7 @@ def reconcile(controller):
                 if builder['state'] == 'ready':
                     controller._submit(('capture', pool['id']), _capture, controller, pool['id'], builder['id'])
                 elif builder['state'] in ('failed', 'terminated'):
-                    state.put('pool', {**pool, 'state': 'failed', 'error': builder.get('error') or 'baseline preparation failed'})
+                    _fail(controller, pool['id'], builder.get('error') or 'baseline preparation failed')
             continue
         if pool['state'] != 'ready':
             pool = state.put('pool', {**pool, 'state': 'ready'})
@@ -394,16 +466,17 @@ def reconcile(controller):
             if controller.owners.reason(lease.get('owner')):
                 dispatch(controller, 'pool_release', {'identity': pool['id'], 'lease_id': lease['id']})
             elif lease['state'] == 'claiming':
-                controller._submit(('claim', lease['id']), _claim, controller, pool['id'], lease['id'], lease['sandbox'])
+                controller._submit(('allocation', lease['sandbox']), _claim, controller, pool['id'], lease['id'], lease['sandbox'])
         with state.transaction():
             pool = resolve(controller, pool['id'])
-            if pool['desired'] != 'running':
+            if pool['desired'] != 'running' or pool['state'] == 'failed':
                 continue
             live = [a for a in state.list('allocation', parent=pool['id']) if not a.get('released')]
             ready = [a for a in live if a['state'] == 'ready' and not a.get('lease') and a.get('role') != 'builder' and a['desired'] == 'running']
             waiting = state.list('lease', state='pending', parent=pool['id'])
             for lease, allocation in zip(waiting, ready):
-                state.put('lease', {**lease, 'sandbox': allocation['id'], 'state': 'claiming'})
+                state.put('lease', {**lease, 'sandbox': allocation['id'], 'state': 'claiming',
+                                    'generation': allocation['generation'] + 1})
                 state.put('allocation', {**allocation, 'lease': lease['id'], 'state': 'claiming',
                                         'generation': allocation['generation'] + 1})
             waiting_count = max(0, len(waiting) - len(ready))

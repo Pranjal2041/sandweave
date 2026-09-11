@@ -143,6 +143,8 @@ class Controller:
         identity = 'worker-' + hashlib.sha256(encode([info['hostname'], info['workspace']])).hexdigest()[:16]
         with self.state.transaction():
             previous = self.state.get('worker', identity, required=False)
+            if previous and previous.get('lost'):
+                raise ResourceUnavailable('worker was declared lost; join with a new worker workspace after stopping the old allocation')
             if previous and previous['state'] != 'removed':
                 if (previous['capacity']['slots'] != slots or previous['capacity']['memory'] != memory or
                         previous.get('labels', {}) != (labels or {})):
@@ -189,11 +191,13 @@ class Controller:
     def worker_list(self):
         return [self._public_worker(w) for w in self.state.list('worker')]
 
-    def worker_update(self, identity, *, draining=None, slots=None, labels=None, remove=False):
+    def worker_update(self, identity, *, draining=None, slots=None, labels=None, remove=False, lost=False):
+        if type(lost) is not bool or (lost and not remove):
+            raise ValueError('lost=True is only valid when removing a worker whose allocation has stopped')
         with self.state.transaction():
             worker = self.state.get('worker', identity)
-            if remove and any(scheduler.charged(a) for a in self.state.list('allocation', worker=identity)):
-                raise ResourceUnavailable('worker still has reserved sandboxes; drain it and wait for cleanup')
+            if remove and not lost and any(scheduler.charged(a) for a in self.state.list('allocation', worker=identity)):
+                raise ResourceUnavailable('worker still has reserved sandboxes; wait for cleanup, or use lost=True only after confirming its allocation has stopped')
             if draining is not None:
                 if type(draining) is not bool:
                     raise ValueError('draining must be a bool')
@@ -206,6 +210,19 @@ class Controller:
                 worker['labels'] = labels
             if remove:
                 worker['state'] = 'removed'
+                if lost:
+                    worker.update(lost=True, draining=True)
+                    error = 'worker allocation was confirmed stopped by the operator'
+                    for allocation in self.state.list('allocation', worker=identity):
+                        if not scheduler.charged(allocation):
+                            continue
+                        self.state.put('allocation', {**allocation, 'state': 'failed', 'desired': 'terminated',
+                            'released': True, 'generation': allocation['generation'] + 1, 'error': error},
+                            event={'message': error})
+                        if allocation.get('lease'):
+                            lease = self.state.get('lease', allocation['lease'])
+                            if lease['state'] in ('pending', 'claiming', 'ready'):
+                                self.state.put('lease', {**lease, 'state': 'failed', 'error': error})
             result = self.state.put('worker', worker, event={'message': 'worker configuration updated'})
         return self._public_worker(result)
 
@@ -241,6 +258,8 @@ class Controller:
                     old_info = previous.call('inventory')
                     with self.state.transaction():
                         current = self.state.get('worker', identity)
+                        if current['state'] == 'removed':
+                            return
                         current['instances'][workspace]['external'] = self._external(old_info)
                         current['instances'][workspace]['telemetry'] = old_info.get('telemetry', {})
                         self.state.put('worker', current)
@@ -271,6 +290,8 @@ class Controller:
         ping = ping or connection.call('ping')
         with self.state.transaction():
             record = self.state.get('worker', identity)
+            if record['state'] == 'removed':
+                raise ResourceUnavailable('worker has been removed')
             old = record['inventory']
             if (info['protocol'] != PROTOCOL or old['scope'] != info['scope'] or
                     set(old['cpus']) != set(info['cpus']) or
@@ -307,17 +328,18 @@ class Controller:
         request = dict(spec=spec, operation_id=operation_id, reference=reference, cache_key=cache_key,
                        refresh=refresh, owner=owner)
         stamp = hashlib.sha256(encode(request)).hexdigest()
+        canonical = hashlib.sha256(encode(request, canonical=True)).hexdigest()
         with self.state.transaction():
             old = self.state.get('allocation', identity, required=False)
             if old:
-                if old['stamp'] != stamp:
+                if (old['canonical_stamp'] != canonical if 'canonical_stamp' in old else old['stamp'] != stamp):
                     raise FileExistsError('sandbox ID belongs to a different request')
                 return self._public_allocation(old)
             if spec.get('name') and any(a['spec'].get('name') == spec['name'] and not a.get('released')
                                        for a in self.state.list('allocation')):
                 raise FileExistsError('sandbox name is already in use')
             record = self.state.put('allocation', dict(id=identity, state='pending', desired='running',
-                generation=1, released=False, request=request, spec=copy.deepcopy(spec), stamp=stamp,
+                generation=1, released=False, request=request, spec=copy.deepcopy(spec), stamp=stamp, canonical_stamp=canonical,
                 owner=owner, parent=None, ack=False, deadline=time.time() + spec['startup_timeout']),
                 event={'message': 'sandbox requested'})
         return self._public_allocation(record)
@@ -367,7 +389,8 @@ class Controller:
 
     def _launch(self, identity):
         record = self.state.get('allocation', identity)
-        if record['desired'] != 'running':
+        if (record['desired'] != 'running' or record.get('lease') or
+                record['state'] not in ('reserved', 'starting', 'unknown')):
             return
         connection = None
         try:
@@ -387,7 +410,7 @@ class Controller:
                 connection = self.connection(route)
             with self.state.transaction():
                 record = self.state.get('allocation', identity)
-                if record['desired'] != 'running':
+                if record['desired'] != 'running' or record.get('lease'):
                     return
                 record = self.state.put('allocation', {**record, 'endpoint': route, 'state': 'starting'})
             request = record['request']
@@ -402,31 +425,40 @@ class Controller:
                 process=self._owner_process(record.get('owner')))
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
+                if current['generation'] != record['generation'] or current.get('released'):
+                    return
                 current.update(token=response['token'], info=response['sandbox'])
-                if current['desired'] == 'running':
+                if current['desired'] == 'running' and current['generation'] == record['generation']:
                     current['state'] = response['sandbox']['state']
+                    if current['state'] == 'ready':
+                        current['prepared'] = True
+                        current.pop('error', None)
                     if current['state'] in scheduler.TERMINAL:
                         current['released'] = response['sandbox'].get('runtime_status', {}).get('status') not in ('running', 'paused', 'starting')
                 self.state.put('allocation', current, event={'message': 'worker acknowledged creation', 'state': current['state']})
         except OperationUnknown as error:
-            self._uncertain(identity, error)
+            self._uncertain(identity, error, generation=record['generation'])
         except Exception as error:
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
+                if current['generation'] != record['generation'] or current['desired'] != 'running':
+                    return
                 current.update(error=str(error), state='failed', desired='terminated', generation=current['generation'] + 1)
                 self.state.put('allocation', current, event={'message': 'creation failed', 'error': str(error)})
         finally:
             if connection:
                 connection.close()
 
-    def _uncertain(self, identity, error):
+    def _uncertain(self, identity, error, *, generation):
         with self.state.transaction():
             record = self.state.get('allocation', identity)
-            self.state.put('allocation', {**record, 'state': 'unknown', 'error': str(error)})
+            if record['generation'] != generation or record.get('released'):
+                return
+            self.state.put('allocation', {**record, 'state': 'unknown', 'error': record.get('error') or str(error)})
 
     def _observe(self, identity):
         record = self.state.get('allocation', identity)
-        if not record.get('endpoint'):
+        if not record.get('endpoint') or record['state'] == 'claiming' or record.get('released'):
             return
         if not record.get('token') and record['desired'] == 'running':
             return self._launch(identity)
@@ -436,22 +468,29 @@ class Controller:
             info = connection.call('describe', identity=identity)
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
+                if current['generation'] != record['generation'] or current['state'] == 'claiming' or current.get('released'):
+                    return
                 released = info['runtime_status']['status'] not in ('running', 'paused', 'starting') and info['state'] not in ('creating', 'preparing')
                 state = info['state']
                 if current.get('lease') and state == 'ready':
                     state = 'leased'
                 changed = current['state'] != state
                 current.update(info=info, state=state, released=released)
+                if state in ('ready', 'leased', 'paused') and current['desired'] == 'running':
+                    current['prepared'] = True
+                    current.pop('error', None)
                 self.state.put('allocation', current,
                                event={'message': 'sandbox state changed', 'state': state} if changed else None)
         except Exception as error:
-            self._uncertain(identity, error)
+            self._uncertain(identity, error, generation=record['generation'])
         finally:
             if connection:
                 connection.close()
 
     def _terminate(self, identity):
         record = self.state.get('allocation', identity)
+        if record['desired'] != 'terminated' or record.get('released'):
+            return
         route = record.get('endpoint') or self.state.get('worker', record['worker'])['endpoint']
         connection = None
         try:
@@ -460,10 +499,12 @@ class Controller:
                 generation=record['generation'], action='terminate')
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
+                if current['generation'] != record['generation'] or current.get('released'):
+                    return
                 current.update(state='terminated', released=True, info=response['sandbox'], token=response['token'], endpoint=route)
                 self.state.put('allocation', current, event={'message': 'termination confirmed'})
         except Exception as error:
-            self._uncertain(identity, error)
+            self._uncertain(identity, error, generation=record['generation'])
         finally:
             if connection:
                 connection.close()
@@ -481,11 +522,9 @@ class Controller:
         probe = now >= self.next_probe
         if probe:
             self.next_probe = now + 2
-            for worker in self.state.list('worker'):
-                if worker['state'] != 'removed':
-                    self._submit(('worker', worker['id']), self._probe, worker['id'])
         self._reconcile_pools()
         self._reconcile_jobs()
+        observations = []
         for record in self.state.list('allocation'):
             if record.get('released'):
                 continue
@@ -498,11 +537,19 @@ class Controller:
             elif record['state'] == 'reserved':
                 self._submit(('allocation', record['id']), self._launch, record['id'])
             elif probe and record.get('endpoint') and record['state'] not in ('starting', 'pending'):
-                self._submit(('allocation', record['id']), self._observe, record['id'])
+                observations.append(record['id'])
             elif record['state'] == 'starting':
                 # On restart there is no in-process launch future. Resubmit the
                 # identical operation to recover its result, never a new ID.
                 self._submit(('allocation', record['id']), self._launch, record['id'])
+        if probe:
+            # Polling already-ready members must not repeatedly fill the queue
+            # before a later pending launch or termination can be submitted.
+            for worker in self.state.list('worker'):
+                if worker['state'] != 'removed':
+                    self._submit(('worker', worker['id']), self._probe, worker['id'])
+            for identity in observations:
+                self._submit(('allocation', identity), self._observe, identity)
         with self.state.transaction():
             allocations = self.state.list('allocation')
             pending = [a for a in allocations if a['state'] == 'pending' and a['desired'] == 'running']

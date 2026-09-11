@@ -6,7 +6,7 @@ MAX_BODY = 64 * 1024**2
 MAX_HEADER = 4 * 1024**2
 
 
-def encode(value):
+def encode(value, *, canonical=False):
     blobs, locations = [], []
 
     def walk(item, path):
@@ -18,7 +18,8 @@ def encode(value):
         if isinstance(item, dict):
             if any(not isinstance(k, str) for k in item):
                 raise TypeError('wire mapping keys must be strings')
-            return {key: walk(v, [*path, key]) for key, v in item.items()}
+            keys = sorted(item) if canonical else item
+            return {key: walk(item[key], [*path, key]) for key in keys}
         if isinstance(item, (list, tuple)):
             return [walk(v, [*path, i]) for i, v in enumerate(item)]
         return item

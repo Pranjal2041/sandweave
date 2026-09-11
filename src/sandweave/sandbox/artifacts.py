@@ -124,11 +124,16 @@ class Artifacts:
                 if str(parent) in manifest['files'] and manifest['files'][str(parent)]['kind'] != 'directory':
                     raise ValueError('artifact has a non-directory parent')
         descriptor = directory / 'manifest.bin'
-        if descriptor.exists() and decode(descriptor.read_bytes()) != manifest:
+        if descriptor.exists() and self.content(decode(descriptor.read_bytes())) != self.content(manifest):
             raise IncompatibleSnapshot('artifact import already has a different manifest')
         if (directory / 'complete').exists():
             return []
-        descriptor.write_bytes(encode(manifest)); descriptor.chmod(0o600)
+        if not descriptor.exists():
+            temporary = descriptor.with_suffix('.importing')
+            with temporary.open('wb') as stream:
+                stream.write(encode(manifest)); stream.flush(); os.fsync(stream.fileno())
+            temporary.chmod(0o600)
+            os.replace(temporary, descriptor)
         missing = []
         for name, info in sorted(manifest['files'].items(), key=lambda p: len(Path(p[0]).parts)):
             path = directory / name
@@ -160,9 +165,14 @@ class Artifacts:
 
     def write(self, reference, path, offset, data):
         with locked(self.directory(reference).with_suffix('.lock')):
-            if (self.directory(reference) / 'complete').exists():
-                raise IncompatibleSnapshot('published artifacts are immutable')
             return self._write(reference, path, offset, data)
+
+    @staticmethod
+    def content(manifest):
+        # Replication rewrites only these host locations. The snapshot digest,
+        # recipe and complete file manifest must still match across sources.
+        metadata = {k: v for k, v in manifest['metadata'].items() if k not in ('workspace', 'location')}
+        return {**manifest, 'metadata': metadata}
 
     def _write(self, reference, path, offset, data):
         directory = self.directory(reference)
@@ -174,6 +184,14 @@ class Artifacts:
         destination = directory / relative
         if any(p.is_symlink() for p in [destination, *destination.parents] if p != directory.parent):
             raise ValueError('artifact write cannot follow a symlink')
+        if (directory / 'complete').exists():
+            # Another importer can publish while this caller's identical chunk
+            # is in flight. Acknowledge a matching retry without writing bytes.
+            with destination.open('rb') as stream:
+                stream.seek(offset)
+                if stream.read(len(data)) != data:
+                    raise IncompatibleSnapshot('published artifacts are immutable')
+            return len(data)
         with destination.open('r+b') as stream:
             stream.seek(offset)
             stream.write(data)
@@ -181,6 +199,9 @@ class Artifacts:
 
     def finish(self, reference):
         with locked(self.directory(reference).with_suffix('.lock')):
+            complete = self.directory(reference) / 'complete'
+            if complete.exists():
+                return json.loads(complete.read_text())
             result = self._finish(reference)
             atomic_json(self.directory(reference) / 'complete', result)
             return result

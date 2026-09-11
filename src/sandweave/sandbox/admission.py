@@ -8,13 +8,81 @@ from .resources import memory_bytes
 
 def budget():
     if os.environ.get('SANDWEAVE_MEMORY_BUDGET'):
-        return memory_bytes(os.environ['SANDWEAVE_MEMORY_BUDGET'])
-    if os.environ.get('SLURM_MEM_PER_NODE'):
-        return int(os.environ['SLURM_MEM_PER_NODE']) * 1024**2
-    if os.environ.get('SLURM_MEM_PER_CPU'):
-        return int(os.environ['SLURM_MEM_PER_CPU']) * len(os.sched_getaffinity(0)) * 1024**2
-    information = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
-    return int(information['MemAvailable'].split()[0]) * 1024
+        requested = memory_bytes(os.environ['SANDWEAVE_MEMORY_BUDGET'])
+    elif os.environ.get('SLURM_MEM_PER_NODE'):
+        requested = int(os.environ['SLURM_MEM_PER_NODE']) * 1024**2
+    elif os.environ.get('SLURM_MEM_PER_CPU'):
+        requested = int(os.environ['SLURM_MEM_PER_CPU']) * len(os.sched_getaffinity(0)) * 1024**2
+    else:
+        information = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
+        requested = int(information['MemAvailable'].split()[0]) * 1024
+    limit = cgroup_limit()
+    return min(requested, limit) if limit is not None else requested
+
+
+def cgroup_limit(proc=Path('/proc')):
+    """Read visible v1/v2 hard limits, including narrower ancestor limits.
+
+    A scheduler's environment can describe an entire job while this process
+    belongs to a smaller step. An explicit budget cannot expand that step.
+    """
+    import re
+    def unescape(value):
+        return re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), value)
+    try:
+        memberships = [line.split(':', 2) for line in (proc / 'self/cgroup').read_text().splitlines()]
+        mounts = (proc / 'self/mountinfo').read_text().splitlines()
+    except OSError:
+        return None
+    limits = []
+    for line in mounts:
+        fields, separator, filesystem = line.partition(' - ')
+        if not separator:
+            continue
+        fields, filesystem = fields.split(), filesystem.split()
+        if len(fields) < 5 or len(filesystem) < 3:
+            continue
+        version = filesystem[0]
+        if version != 'cgroup2' and not (version == 'cgroup' and 'memory' in filesystem[2].split(',')):
+            continue
+        root, mount = Path(unescape(fields[3])), Path(unescape(fields[4]))
+        for membership in memberships:
+            if len(membership) != 3:
+                continue
+            _, controllers, member = membership
+            if not (controllers == '' if version == 'cgroup2' else 'memory' in controllers.split(',')):
+                continue
+            member = Path(member)
+            try:
+                relative = member.relative_to(root)
+            except ValueError:
+                # A cgroup namespace may make membership relative to its own
+                # root while the visible mount names the host subtree.
+                relative = member.relative_to('/')
+            if '..' in relative.parts:
+                continue
+            directory = mount / relative
+            while directory.is_relative_to(mount):
+                filename = 'memory.max' if version == 'cgroup2' else 'memory.limit_in_bytes'
+                try:
+                    value = (directory / filename).read_text().strip()
+                    if value != 'max' and 0 <= int(value) < 2**60:
+                        limits.append(int(value))
+                    if version == 'cgroup':
+                        stats = dict(row.split() for row in (directory / 'memory.stat').read_text().splitlines())
+                        inherited = int(stats.get('hierarchical_memory_limit', 2**63))
+                        if 0 <= inherited < 2**60:
+                            limits.append(inherited)
+                        if 'hierarchical_memory_limit' in stats:
+                            # v1 can disable hierarchical accounting. The
+                            # kernel's effective value handles that case.
+                            break
+                except (OSError, ValueError):
+                    pass
+                if directory == mount:
+                    break
+                directory = directory.parent
+    return min(limits) if limits else None
 
 
 def reservation(spec):

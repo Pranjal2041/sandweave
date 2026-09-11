@@ -116,6 +116,13 @@ filters. A maximum larger than the available count uses the available count.
 eligible CPU cores. `--memory 16GiB` caps the worker's memory reservation budget.
 Worker status reports the actual CPU IDs, GPU devices and admission budgets.
 
+Memory admission counts both guest and runtime budgets and caps the worker's
+advertisement at visible cgroup hard limits. A slot is a concurrency ceiling,
+not a memory reservation. If a worker is unreachable, its existing reservations
+remain charged. After independently confirming its allocation has stopped,
+`sandweave cluster remove lab WORKER_ID --lost` releases those records and blocks
+that worker workspace from rejoining. It does not kill remote processes.
+
 On a client, use the address directly:
 
 ```python

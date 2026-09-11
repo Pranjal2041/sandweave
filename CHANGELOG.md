@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Make concurrent snapshot imports idempotent after publication. Compare replica
+  content independently of its host paths, while retaining checksum checks.
+- Propagate failed pool preparation to pending and claiming leases. Preserve the
+  original error while the controller finishes cleanup.
+- Serialize each sandbox's create, claim and terminate operations. Reject stale
+  controller work and compare replay requests independently of dictionary order.
+  Schedule launches and termination before routine status polling.
+- Add `cluster.remove_worker(worker_id, lost=True)` and CLI `cluster remove
+  lab WORKER_ID --lost` for allocations an operator has confirmed stopped.
+  Keep ordinary unreachable-worker reservations intact.
+- Cap advertised memory budgets at visible cgroup limits, including a narrower
+  job step. Slot counts remain independent of memory admission.
+
 ## 0.2.4
 
 - Add `Sandbox(image="docker://...")` and CLI `--image` for public Linux x86-64

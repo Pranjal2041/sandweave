@@ -53,6 +53,7 @@ class Management:
         intent = dict(action=action, spec=spec, operation_id=operation_id, reference=reference,
                       cache_key=cache_key, refresh=refresh, owner=owner, process=process)
         stamp = hashlib.sha256(encode(intent)).hexdigest()
+        canonical = hashlib.sha256(encode(intent, canonical=True)).hexdigest()
         with self.worker.lock(identity):
             previous = self.read(identity)
             if previous is None and self.worker.path(identity).exists():
@@ -64,12 +65,15 @@ class Management:
                     raise PermissionError('sandbox belongs to another controller')
                 if generation < previous['generation']:
                     raise OperationUnknown('assignment was superseded', sandbox_id=identity)
-                if generation == previous['generation'] and previous['intent'] != stamp:
+                matches = (previous['canonical_intent'] == canonical if 'canonical_intent' in previous
+                           else previous['intent'] == stamp)
+                if generation == previous['generation'] and not matches:
                     raise ValueError('assignment generation already has a different operation')
                 if previous['action'] == 'terminate' and action != 'terminate':
                     raise OperationUnknown('terminated assignment cannot be resurrected', sandbox_id=identity)
             value = dict(id=identity, cluster=cluster, generation=generation, action=action,
-                         intent=stamp, token=previous['token'] if previous else secrets.token_hex(32),
+                         intent=stamp, canonical_intent=canonical,
+                         token=previous['token'] if previous else secrets.token_hex(32),
                          owner=owner if action in ('claim', 'create') else (previous or {}).get('owner'))
             # Persist a cancellation even if launch has not reached the worker.
             # A delayed create then fails its generation/tombstone check.

@@ -2,6 +2,8 @@
 
 Sandweave 0.2.7 adds `shared_cache` to local and cluster pools and `affinity` to
 cluster pools. Public examples are in the README and `docs/pools.md`.
+Clients check controller support before creating a pool with either option;
+an older controller cannot silently ignore the requested cache or affinity.
 
 ## Contract
 

@@ -73,6 +73,8 @@ episode. They are separate from a sandbox's CPU scheduling weight.
 
 ## Reuse images across workers
 
+These options require Sandweave 0.2.7 or newer on the client, controller and workers.
+
 ```python
 with Pool(target="lab", template="coding", size=32, warm=8,
           shared_cache="/shared/sandweave", affinity="machine") as pool:

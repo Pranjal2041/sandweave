@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+import threading
 from types import SimpleNamespace
 import uuid
 
@@ -232,6 +233,7 @@ def test_unavailable_machine_identity_never_groups_by_hostname():
 
 
 def test_pool_exposes_cache_and_affinity_and_passes_cache_to_launch(lab, monkeypatch):
+    assert set(lab.controller.dispatch('ping', {})['pool_options']) == {'shared_cache', 'affinity'}
     pool = make_pool(lab.controller, size=2, warm=2)
     record = lab.controller.state.get('pool', pool)
     lab.controller.state.put('pool', {**record, 'shared_cache': '/workers/shared', 'affinity': 'machine'})
@@ -246,3 +248,19 @@ def test_pool_exposes_cache_and_affinity_and_passes_cache_to_launch(lab, monkeyp
     assert lab.controller.pool_status(pool)['affinity'] == 'worker'
     with pytest.raises(ValueError):
         dispatch(lab.controller, 'pool_update', {'identity': pool, 'shared_cache': '/other'})
+
+
+def test_older_controller_cannot_silently_ignore_requested_pool_options():
+    from sandweave import UnsupportedFeature
+    from sandweave.weave.pool import ManagedPool
+    pool = ManagedPool.__new__(ManagedPool)
+    pool.lock, pool.closed, pool.started = threading.RLock(), False, False
+    pool.policy = {'shared_cache': '/cache', 'affinity': 'machine'}
+    calls = []
+    def old_controller(operation, **params):
+        calls.append(operation)
+        return {'protocol': 1}
+    pool.connection = SimpleNamespace(call=old_controller)
+    with pytest.raises(UnsupportedFeature, match='0.2.7'):
+        pool._declare()
+    assert calls == ['ping']  # No pool was created with silently dropped options.

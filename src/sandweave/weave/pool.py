@@ -8,7 +8,7 @@ import uuid
 
 from ..sandbox.pool import Pool as LocalPool, Lease
 from ..sandbox.asyncio import dualmethod, dualclassmethod
-from ..sandbox.errors import ResourceUnavailable, OperationUnknown
+from ..sandbox.errors import ResourceUnavailable, OperationUnknown, UnsupportedFeature
 from ..sandbox.ownership import client_owner
 from ..sandbox.resources import positive
 from ..sandbox.artifacts import cache_path
@@ -67,6 +67,9 @@ class ManagedPool(LocalPool):
             if self.closed:
                 raise RuntimeError('pool is closed')
             if not self.started:
+                requested = {k for k in ('shared_cache', 'affinity') if self.policy.get(k) is not None}
+                if requested and requested - set(self.connection.call('ping').get('pool_options', ())):
+                    raise UnsupportedFeature('shared_cache and affinity require Sandweave 0.2.7 or newer on the controller')
                 request = definition(target=self.target, **self.options)
                 owner = None if self.options.get('detached') else client_owner(self.connection)
                 self.connection.call('pool_create', identity=self.id, name=self.name, request=request,

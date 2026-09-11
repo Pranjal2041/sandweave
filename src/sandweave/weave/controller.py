@@ -592,7 +592,8 @@ class Controller:
         if operation == 'relay_result':
             return self.relay.result(**parameters)
         if operation == 'ping':
-            return {'cluster_id': self.id, 'protocol': PROTOCOL}
+            return {'cluster_id': self.id, 'protocol': PROTOCOL,
+                    'pool_options': ['shared_cache', 'affinity']}
         if operation == 'events':
             return self.state.events(**parameters)
         if operation == 'backup':

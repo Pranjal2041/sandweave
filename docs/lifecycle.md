@@ -17,8 +17,14 @@ leaving if you need to retain state.
 
 By default, a sandbox follows its creating Python process. It terminates when
 that process exits, including a crash or an IPython kernel shutdown. Local
-workers track process identity; remote workers allow a 30-second heartbeat grace
-period. A prolonged network outage can therefore terminate an attached sandbox.
+workers track process identity. For remote ownership, the SDK sends heartbeats
+automatically every five seconds. Workers and cluster controllers allow ten
+minutes without a successful renewal before expiring ownership. A longer network
+outage can therefore terminate an attached sandbox.
+
+The ten-minute grace period requires Sandweave 0.2.11 or newer on workers and
+controllers. Restart older worker and controller processes after upgrading;
+upgrading only the client does not change their timeout.
 
 Interrupting one notebook cell does not end the kernel. Its sandbox can remain
 running until you terminate it or shut down the kernel.

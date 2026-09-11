@@ -353,8 +353,9 @@ or replay is imposed on the RL application.
 The ephemeral-context behavior is an agreed convenience and is deliberately
 documented; it does not change the existing manager's save-before-stop default.
 `detached=True` changes process ownership, not explicit context cleanup. Local
-process death is checked directly; remote clients have a 30-second grace period
-after their last heartbeat. Ownership is established before startup and is not
+process death is checked directly; remote clients have a ten-minute grace period
+after their last successful heartbeat, sent automatically every five seconds.
+Ownership is established before startup and is not
 inherited by snapshot clones or included in preparation cache fingerprints.
 Snapshot/pause hooks detach non-restorable I/O and release held inputs in order.
 A live resume restores the same process identity; `stop` followed by

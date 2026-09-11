@@ -36,13 +36,16 @@ def test_remote_renewal_expiry_and_restart_are_final(tmp_path, monkeypatch):
     monkeypatch.setattr(ownership.time, 'time', lambda: now[0])
     owners = Owners(tmp_path)
     identity = uuid.uuid4().hex
-    owners.register(identity, None)
-    now[0] = 125
+    assert owners.register(identity, None) == {'heartbeat_seconds': 5, 'grace_seconds': 600}
+    for elapsed in (31, 300, 599):
+        now[0] = 100 + elapsed
+        assert owners.reason(identity) is None
+    # A renewal just before expiry starts a fresh ten-minute window.
     owners.heartbeat(identity)
     owners = Owners(tmp_path)
-    now[0] = 154
+    now[0] = 1298.999
     assert owners.reason(identity) is None
-    now[0] = 155
+    now[0] = 1299
     assert owners.reason(identity) == 'owner_heartbeat_expired'
     # Even a clock adjustment or a late renewal cannot undo decided cleanup.
     now[0] = 120

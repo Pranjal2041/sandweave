@@ -7,8 +7,9 @@ the detached option. Borrowed handles do not acquire or transfer ownership.
 
 The worker records ownership before starting a guest. Local process identity
 includes its PID, start time, host boot and PID namespace; zombie processes
-count as exited. Other clients renew one lease per process and worker every
-five seconds. After 30 seconds without renewal, ownership expires permanently.
+count as exited. The SDK automatically renews one lease per process and worker
+every five seconds, and also renews the controller owner when using Weave.
+Since 0.2.11, ten minutes without a successful renewal expires ownership permanently.
 Brief connection loss can recover within that window; a longer outage can
 terminate a remote guest even while the client process is alive.
 
@@ -23,6 +24,23 @@ Ownership is outside the saved template recipe. New snapshot/cache restores
 receive their own owner; the detached flag does not invalidate preparation
 caches. Forked Python clients register new owners for environments they create.
 Closing or dropping a handle does not end the process's ownership.
+
+## Ten-minute grace period
+
+Version 0.2.11 extends remote ownership from 30 to 600 seconds. Both initial
+registration and each successful renewal grant the full interval. The controller
+uses the same interval when accepting a client and when allowing reconnection
+after restart. Renewal remains automatic every five seconds; no application
+heartbeat loop is required. Existing worker/controller processes must be
+restarted after upgrading to use the new timeout.
+
+The host regression checks survival after 31, 300 and 599 seconds without a
+renewal, renewal just before expiry, persistence, and final expiry at the new
+deadline. The managed live crash test suspends its test client for 40 seconds,
+resumes automatic renewal, then kills that client. It checks that the guest is
+still usable 570 seconds later and is subsequently reclaimed. Only local process
+identity is withheld; the SDK, HTTP requests, workers and runtime are real, and
+the grace period is not shortened for this test.
 
 ## Cluster clients returning after an idle period
 
@@ -50,9 +68,10 @@ serialized with lease registration and heartbeats.
 The regression cases are in `tests/test_idle_owner.py` and
 `tests/integration/test_idle_owner_live.py`. Live tests use disposable workers
 and real HTTP/relay requests, withholding the test client's local process
-identity to exercise remote lease semantics. The actual 30-second grace period
-is retained. They check reacquisition after 40 idle seconds, concurrent new
-leases, renewal beyond another grace period, and cleanup after client SIGKILL.
+identity to exercise remote lease semantics. They use the configured grace
+period without shortening it, checking reacquisition after an idle period,
+concurrent new leases, renewal beyond another grace period, and cleanup after
+client SIGKILL. The measurements below used the former 30-second grace period.
 
 On 2026-09-11 UTC, the same live idle-pool case failed against unmodified 0.2.5
 source (`8de4113`) with `owner_heartbeat_expired`, in 75.30 seconds. With the fix,

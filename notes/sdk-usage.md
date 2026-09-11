@@ -372,9 +372,10 @@ creates detached sandboxes; CLI `run` uses an owned scope.
 
 Local workers identify an owner by its process ID, start time, host boot and PID
 namespace. A live local process is retained even if it is suspended. Remote
-clients send heartbeats every five seconds over a separate connection shared
-by their sandboxes on each worker. After 30 seconds without a heartbeat, the
-worker expires ownership. A network outage of that duration can therefore
+clients automatically send heartbeats every five seconds over a separate
+connection shared by their sandboxes on each worker, and to the controller when
+using Weave. After ten minutes without a successful renewal, ownership expires.
+A network outage of that duration can therefore
 terminate a remote sandbox even if Python is still alive. Late heartbeats do
 not revive expired environments.
 

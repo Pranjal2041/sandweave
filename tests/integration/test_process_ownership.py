@@ -11,6 +11,7 @@ import uuid
 import pytest
 
 from sandweave import Sandbox
+from sandweave.sandbox.ownership import GRACE_SECONDS
 from sandweave.sandbox.targets import local_connection
 from sandweave.templates.resolve import Template
 
@@ -155,7 +156,7 @@ def test_heartbeat_keeps_remote_owner_alive_then_expires_after_sigkill(clients):
     assert connection.call('describe', identity=identity)['state'] == 'ready'
     child.kill()
     child.wait(timeout=10)
-    assert wait_terminated(connection, identity, timeout=40)['termination_reason'] == 'owner_heartbeat_expired'
+    assert wait_terminated(connection, identity, timeout=GRACE_SECONDS + 15)['termination_reason'] == 'owner_heartbeat_expired'
 
 
 @pytest.mark.parametrize('options', ["runtime='apptainer'", "template='gnome'"])

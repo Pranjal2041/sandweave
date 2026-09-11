@@ -12,7 +12,7 @@ from .errors import OwnerExpired
 from .workspace import atomic_json
 
 HEARTBEAT_SECONDS = 5
-GRACE_SECONDS = 30
+GRACE_SECONDS = 10 * 60
 
 
 def process_scope():

@@ -203,7 +203,8 @@ can supply a reachable HTTP/HTTPS address without a new Sandweave adapter.
 Forwarding adds a controller hop for commands, files and observations. It does
 not forward arbitrary guest ports or a VNC viewer's separate TCP connection.
 For an attached sandbox, a prolonged loss of the forwarding path can expire its
-30-second owner heartbeat lease. Detached sandboxes retain their existing
+ten-minute owner heartbeat lease. The SDK renews it automatically every five
+seconds. Detached sandboxes retain their existing
 lifetime policy. Direct worker connections remain available for local targets
 and existing deployments that have that connectivity.
 

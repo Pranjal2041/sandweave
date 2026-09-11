@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sandweave"
-version = "0.2.10"
+version = "0.2.11"
 description = "Fast, modular sandboxes for AI agents"
 readme = "README.md"
 license-files = ["LICENSES/*"]

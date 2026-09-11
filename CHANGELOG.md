@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.11
+
+- Extend remote ownership's heartbeat grace period from 30 seconds to ten
+  minutes on workers and controllers. The SDK continues renewing automatically
+  every five seconds, allowing temporary connection loss without early cleanup.
+- Keep direct detection of local process exit, explicit termination, detached
+  environments and TTL behavior unchanged. Restart older workers and controllers
+  after upgrading to apply the longer timeout.
+
 ## 0.2.10
 
 - Add `ProxyPolicy(distribution="random", region=None)` to `Network`, with

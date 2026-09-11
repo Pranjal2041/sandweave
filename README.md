@@ -79,8 +79,9 @@ basic tools, with one virtual CPU and 1 GiB of guest memory.
 Leaving the `with` block terminates the sandbox and discards unsaved state.
 
 By default, a sandbox also terminates when its creating Python process exits,
-including a crash or an IPython kernel shutdown. Remote workers allow a
-30-second heartbeat grace period. To keep an environment running after Python
+including a crash or an IPython kernel shutdown. The SDK sends heartbeats
+automatically every five seconds; remote ownership expires after ten minutes
+without a successful renewal. To keep an environment running after Python
 exits, pass `detached=True`:
 
 ```python

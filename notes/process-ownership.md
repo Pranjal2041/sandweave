@@ -42,6 +42,16 @@ still usable 570 seconds later and is subsequently reclaimed. Only local process
 identity is withheld; the SDK, HTTP requests, workers and runtime are real, and
 the grace period is not shortened for this test.
 
+The installed 0.2.11 candidate survived the 40-second suspension, resumed
+automatic renewal, and remained usable 570 seconds after client SIGKILL.
+The controller confirmed termination 600.21 seconds after the last renewal;
+its saved owner reason was `owner_heartbeat_expired`, and the runtime was stopped.
+The test's original final assertion assumed the worker would initiate cleanup.
+It now accepts either expiry loop's reason and checks terminated/stopped state;
+that corrected assertion was checked against the preserved controller records.
+No runtime code changed for this test correction. Logs and the resulting
+acceptance report are under ignored `runs/owner-grace-20260911/`.
+
 ## Cluster clients returning after an idle period
 
 Version 0.2.5 reused the controller's process-owner ID as the worker lease ID.

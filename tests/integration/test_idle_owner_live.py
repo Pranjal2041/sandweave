@@ -20,6 +20,15 @@ from sandweave.sandbox import ownership
 from test_weave_live import cluster, wait_for, pytestmark
 
 
+def assert_remote_cleanup(record, controller_owner):
+    assert record['state'] == 'terminated'
+    assert record['runtime_status']['status'] == 'stopped'
+    # Either expiry loop can initiate termination. A controller-initiated
+    # termination need not leave a worker-side termination_reason field.
+    assert 'owner_heartbeat_expired' in (
+        record.get('termination_reason'), controller_owner.get('reason'))
+
+
 @pytest.mark.parametrize('warm', [0, 1])
 def test_idle_pool_reacquires_and_renews_on_same_worker(cluster, monkeypatch, warm):
     monkeypatch.setattr(ownership, 'process_identity', lambda: None)
@@ -103,10 +112,15 @@ with Cluster.connect(**settings) as cluster:
             records = [connection.call('describe', identity=env_id) for connection in cluster.test_workers
                        if any(r['id'] == env_id for r in connection.call('list'))]
             assert len(records) == 1
-            assert records[0]['termination_reason'] == 'owner_heartbeat_expired'
+            allocation = cluster.connection.call('allocation_get', identity=env_id)
+            owner_path = Path(cluster.config['directory']) / 'owners' / (allocation['owner'] + '.json')
+            controller_owner = json.loads(owner_path.read_text())
+            assert_remote_cleanup(records[0], controller_owner)
             print('Remote ownership expired and the worker released the sandbox.', flush=True)
             root.joinpath('idle-owner-crash.json').write_text(json.dumps({
-                'id': env_id, 'termination_reason': records[0]['termination_reason'],
+                'id': env_id, 'termination_reason': 'owner_heartbeat_expired',
+                'worker_reason': records[0].get('termination_reason'),
+                'controller_reason': controller_owner.get('reason'),
                 'state': records[0]['state'], 'missed_heartbeat_seconds': 40,
                 'seconds_after_client_kill': time.monotonic() - killed_at,
                 'grace_seconds': ownership.GRACE_SECONDS}, indent=2) + '\n')

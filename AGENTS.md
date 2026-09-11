@@ -15,6 +15,9 @@ desktops when testing; use separate disposable environments for new tests.
 
 ## Communication and scope
 
+- Answer specific questions with a single word or short phrase when sufficient.
+  Explain further only when asked or necessary to answer correctly. Do not append
+  unsolicited explanations, recaps, or unrelated details.
 - The README's public examples define the agreed v1 contract for the SDK/CLI
   and the future public repository. Preserve its examples and semantics,
   including single command strings for `run`/`exec`. Keep the detailed API notes

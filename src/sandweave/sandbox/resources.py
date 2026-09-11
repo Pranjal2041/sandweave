@@ -1,5 +1,5 @@
 """Small immutable resource values; guest limits are distinct from host overhead."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 import math
 import re
@@ -91,11 +91,20 @@ class GPU:
 class Network:
     mode: str = 'internet'
     allow_cidrs: tuple[str, ...] = ()
+    proxy: str | tuple[str, ...] | None = field(default=None, repr=False)
 
     def __post_init__(self):
         import ipaddress
-        if self.mode not in ('internet', 'offline'):
-            raise ValueError('network mode must be internet or offline')
+        if self.mode not in ('internet', 'offline', 'proxy'):
+            raise ValueError('network mode must be internet, offline or proxy')
+        if self.proxy is not None:
+            from .proxy import values
+            if self.mode == 'offline' or self.allow_cidrs:
+                raise ValueError('proxy networking cannot be combined with offline mode or allow_cidrs')
+            object.__setattr__(self, 'proxy', values(self.proxy))
+            object.__setattr__(self, 'mode', 'proxy')
+        elif self.mode == 'proxy':
+            raise ValueError('proxy mode requires a proxy URL')
         object.__setattr__(self, 'allow_cidrs', tuple(self.allow_cidrs))
         for cidr in self.allow_cidrs:
             if ipaddress.ip_network(cidr).version != 4:
@@ -113,10 +122,10 @@ def normalize(cpu=1, memory='1GiB', gpu=False, network='internet'):
         gpu = GPU(model=gpu)
     elif gpu is not False and gpu is not None and not isinstance(gpu, GPU):
         raise ValueError('gpu must be a bool, model string or GPU')
-    network = network if isinstance(network, Network) else Network(network)
+    network = network if isinstance(network, Network) else Network(**network) if isinstance(network, dict) else Network(network)
     return {'cpu': asdict(cpu), 'memory': {k: v for k, v in asdict(memory).items() if v is not None},
             'gpu': asdict(gpu) if isinstance(gpu, GPU) else None,
-            'network': asdict(network)}
+            'network': {k: v for k, v in asdict(network).items() if v is not None}}
 
 
 def restore_resources(resources):

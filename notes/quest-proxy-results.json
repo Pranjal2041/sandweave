@@ -1,0 +1,1396 @@
+{
+  "dataset": {
+    "dataset": "osunlp/QUEST-RL-Data",
+    "revision": "6003ea03bfa41b54d76ad7abe486ba41fa3e0d01",
+    "seed": 20260911,
+    "rows": 1133,
+    "parquet_sha256": "2c9f7d4b18f034fbf14c74702ff58db91c4e9a39f4ffdc8a2451e71d938d18a6"
+  },
+  "plain_http_requests": 330,
+  "repeated_http_requests": 110,
+  "browser_navigations": 16,
+  "routes": [
+    {
+      "route": "direct",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 2
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 0.181
+    },
+    {
+      "route": "uk-1",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 4
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 0.897
+    },
+    {
+      "route": "uk-2",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 0
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 1.003
+    },
+    {
+      "route": "uk-3",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 6
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 0.941
+    },
+    {
+      "route": "es-1",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 2
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 1.097
+    },
+    {
+      "route": "us-1",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 6
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 0.721
+    },
+    {
+      "route": "us-2",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 4
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 0.239
+    },
+    {
+      "route": "pl-1",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 4
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 1.44
+    },
+    {
+      "route": "jp-1",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 2
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 1.74
+    },
+    {
+      "route": "us-3",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 3
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 0.974
+    },
+    {
+      "route": "de-1",
+      "search": {
+        "google": {
+          "requests": 6,
+          "results_present": 0
+        },
+        "bing": {
+          "requests": 6,
+          "results_present": 6
+        },
+        "ddg": {
+          "requests": 6,
+          "results_present": 6
+        }
+      },
+      "source_pages_with_content": 9,
+      "source_pages_requested": 12,
+      "source_median_seconds": 0.996
+    }
+  ],
+  "repeated_requests": [
+    {
+      "route": "us-2",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.581
+    },
+    {
+      "route": "us-2",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.812
+    },
+    {
+      "route": "uk-1",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.048
+    },
+    {
+      "route": "us-1",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.574
+    },
+    {
+      "route": "us-3",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.255
+    },
+    {
+      "route": "de-1",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": null,
+      "error": "SSLError",
+      "signals": null,
+      "search_results": null,
+      "seconds": 0.533
+    },
+    {
+      "route": "uk-2",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.64
+    },
+    {
+      "route": "direct",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.187
+    },
+    {
+      "route": "uk-1",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.975
+    },
+    {
+      "route": "es-1",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 11,
+      "seconds": 0.939
+    },
+    {
+      "route": "es-1",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 2.01
+    },
+    {
+      "route": "jp-1",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.061
+    },
+    {
+      "route": "de-1",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.764
+    },
+    {
+      "route": "es-1",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.508
+    },
+    {
+      "route": "jp-1",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [
+        "no_search_results_in_html"
+      ],
+      "search_results": 0,
+      "seconds": 1.169
+    },
+    {
+      "route": "direct",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [
+        "no_search_results_in_html"
+      ],
+      "search_results": 0,
+      "seconds": 0.107
+    },
+    {
+      "route": "uk-3",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.196
+    },
+    {
+      "route": "pl-1",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.125
+    },
+    {
+      "route": "pl-1",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.267
+    },
+    {
+      "route": "us-1",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.782
+    },
+    {
+      "route": "us-1",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.622
+    },
+    {
+      "route": "uk-3",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.186
+    },
+    {
+      "route": "jp-1",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.149
+    },
+    {
+      "route": "direct",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.149
+    },
+    {
+      "route": "jp-1",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 2.015
+    },
+    {
+      "route": "uk-1",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.663
+    },
+    {
+      "route": "uk-3",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.708
+    },
+    {
+      "route": "uk-1",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.551
+    },
+    {
+      "route": "direct",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.08
+    },
+    {
+      "route": "es-1",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.813
+    },
+    {
+      "route": "direct",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.086
+    },
+    {
+      "route": "jp-1",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [
+        "no_search_results_in_html"
+      ],
+      "search_results": 0,
+      "seconds": 1.196
+    },
+    {
+      "route": "de-1",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.272
+    },
+    {
+      "route": "uk-2",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.807
+    },
+    {
+      "route": "de-1",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.065
+    },
+    {
+      "route": "uk-3",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.992
+    },
+    {
+      "route": "jp-1",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.045
+    },
+    {
+      "route": "us-2",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.606
+    },
+    {
+      "route": "us-1",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [
+        "no_search_results_in_html"
+      ],
+      "search_results": 0,
+      "seconds": 0.584
+    },
+    {
+      "route": "jp-1",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.136
+    },
+    {
+      "route": "us-3",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.873
+    },
+    {
+      "route": "de-1",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.323
+    },
+    {
+      "route": "direct",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.097
+    },
+    {
+      "route": "us-3",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.71
+    },
+    {
+      "route": "us-1",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.452
+    },
+    {
+      "route": "es-1",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.024
+    },
+    {
+      "route": "uk-3",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.649
+    },
+    {
+      "route": "us-2",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.127
+    },
+    {
+      "route": "de-1",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.022
+    },
+    {
+      "route": "uk-1",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.721
+    },
+    {
+      "route": "pl-1",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.915
+    },
+    {
+      "route": "us-1",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [
+        "no_search_results_in_html"
+      ],
+      "search_results": 0,
+      "seconds": 0.578
+    },
+    {
+      "route": "us-2",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.748
+    },
+    {
+      "route": "pl-1",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.357
+    },
+    {
+      "route": "uk-1",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.636
+    },
+    {
+      "route": "uk-2",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.796
+    },
+    {
+      "route": "uk-1",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.606
+    },
+    {
+      "route": "pl-1",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.387
+    },
+    {
+      "route": "uk-2",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.884
+    },
+    {
+      "route": "uk-2",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.98
+    },
+    {
+      "route": "direct",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.164
+    },
+    {
+      "route": "us-1",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.469
+    },
+    {
+      "route": "us-1",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.206
+    },
+    {
+      "route": "uk-1",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.589
+    },
+    {
+      "route": "pl-1",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.555
+    },
+    {
+      "route": "uk-1",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.183
+    },
+    {
+      "route": "uk-3",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.596
+    },
+    {
+      "route": "uk-1",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.174
+    },
+    {
+      "route": "es-1",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.425
+    },
+    {
+      "route": "uk-2",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.859
+    },
+    {
+      "route": "pl-1",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.3
+    },
+    {
+      "route": "jp-1",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.107
+    },
+    {
+      "route": "de-1",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.631
+    },
+    {
+      "route": "direct",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [
+        "no_search_results_in_html"
+      ],
+      "search_results": 0,
+      "seconds": 0.092
+    },
+    {
+      "route": "us-2",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.234
+    },
+    {
+      "route": "de-1",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.616
+    },
+    {
+      "route": "de-1",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.801
+    },
+    {
+      "route": "us-3",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.112
+    },
+    {
+      "route": "pl-1",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.881
+    },
+    {
+      "route": "us-3",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.511
+    },
+    {
+      "route": "uk-2",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.982
+    },
+    {
+      "route": "us-3",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.832
+    },
+    {
+      "route": "us-2",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.209
+    },
+    {
+      "route": "es-1",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.39
+    },
+    {
+      "route": "direct",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.166
+    },
+    {
+      "route": "uk-3",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.698
+    },
+    {
+      "route": "es-1",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.682
+    },
+    {
+      "route": "us-1",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.143
+    },
+    {
+      "route": "us-1",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.602
+    },
+    {
+      "route": "us-3",
+      "request": "google-741",
+      "repeat": 1,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.942
+    },
+    {
+      "route": "pl-1",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.041
+    },
+    {
+      "route": "jp-1",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.025
+    },
+    {
+      "route": "es-1",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 1.235
+    },
+    {
+      "route": "jp-1",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.338
+    },
+    {
+      "route": "direct",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.103
+    },
+    {
+      "route": "de-1",
+      "request": "scholar",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.335
+    },
+    {
+      "route": "us-3",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.152
+    },
+    {
+      "route": "us-3",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.651
+    },
+    {
+      "route": "uk-3",
+      "request": "ddg-31",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.258
+    },
+    {
+      "route": "uk-2",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 202,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.634
+    },
+    {
+      "route": "uk-2",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.277
+    },
+    {
+      "route": "us-2",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.329
+    },
+    {
+      "route": "us-2",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.722
+    },
+    {
+      "route": "us-3",
+      "request": "bing-355",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.67
+    },
+    {
+      "route": "us-2",
+      "request": "apple",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.115
+    },
+    {
+      "route": "uk-2",
+      "request": "apple",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 0.667
+    },
+    {
+      "route": "pl-1",
+      "request": "scholar",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": null,
+      "seconds": 1.463
+    },
+    {
+      "route": "uk-3",
+      "request": "google-741",
+      "repeat": 0,
+      "status": 429,
+      "error": null,
+      "signals": [
+        "challenge"
+      ],
+      "search_results": 0,
+      "seconds": 0.867
+    },
+    {
+      "route": "es-1",
+      "request": "bing-355",
+      "repeat": 1,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 0.818
+    },
+    {
+      "route": "uk-3",
+      "request": "ddg-31",
+      "repeat": 0,
+      "status": 200,
+      "error": null,
+      "signals": [],
+      "search_results": 10,
+      "seconds": 1.213
+    }
+  ]
+}

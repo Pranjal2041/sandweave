@@ -541,6 +541,20 @@ a supported disk filesystem, and a delegated memory cgroup or a Slurm allocation
 with enforced step memory limits. See [disk-backed memory](https://pranjal2041.github.io/sandweave/resources/#disk-backed-memory)
 for storage requirements and performance measurements.
 
+To give sandboxes separate proxy exits, pass a proxy URL or a list:
+
+```python
+from sandweave import Network
+
+with Sandbox(network=Network(proxy=proxies)) as env:
+    print(env.run("curl -s https://api.ipify.org").stdout)
+```
+
+Here, `proxies` is your list of proxy URLs. Each sandbox selects one for its
+lifetime. Compatible tools receive proxy settings; direct egress is blocked.
+See [proxy networking](https://pranjal2041.github.io/sandweave/networking/#use-a-proxy)
+for credentials, pools, browser configuration and setup behavior.
+
 ## Choose a worker
 
 Sandboxes run locally by default. To use an existing Slurm job:

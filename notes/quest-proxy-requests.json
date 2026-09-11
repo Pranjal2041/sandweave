@@ -1,0 +1,361 @@
+{
+  "dataset": "osunlp/QUEST-RL-Data",
+  "revision": "6003ea03bfa41b54d76ad7abe486ba41fa3e0d01",
+  "seed": 20260911,
+  "population": 1133,
+  "tasks": [
+    {
+      "row": 741,
+      "id": "tree2py_traj_2010_20260221_040537_C8_Technology_&_Science_formatted",
+      "category": "objective",
+      "query": "2025 gaming laptop OLED Core Ultra 285H RTX 5070 USB C Power Delivery"
+    },
+    {
+      "row": 31,
+      "id": "tree2py_traj_196_20260226_023454_C6_Technology_&_Science_formatted",
+      "category": "objective",
+      "query": "iPhone Pixel emergency SOS satellite countries free two years carrier"
+    },
+    {
+      "row": 918,
+      "id": "openended_60",
+      "category": "open-ended",
+      "query": "film industry 2026 theatrical streaming revenue attendance Netflix annual report"
+    },
+    {
+      "row": 186,
+      "id": "tree2py_traj_605_20260226_051823_C2_Technology_&_Science_formatted",
+      "category": "objective",
+      "query": "FCC NORS wireline outage reporting 900000 user minutes 120 minutes 72 hours"
+    },
+    {
+      "row": 355,
+      "id": "tree2py_traj_39_20260216_015752_C5_Research_&_Academia_formatted",
+      "category": "objective",
+      "query": "Chris Harrison Carnegie Mellon CHI 2024 Google Scholar"
+    },
+    {
+      "row": 1033,
+      "id": "openended_182",
+      "category": "open-ended",
+      "query": "Oval Office addresses State of the Union constitutional history differences"
+    }
+  ],
+  "requests": [
+    {
+      "id": "google-741",
+      "kind": "search",
+      "task_row": 741,
+      "url": "https://www.google.com/search?q=2025+gaming+laptop+OLED+Core+Ultra+285H+RTX+5070+USB+C+Power+Delivery&hl=en",
+      "keywords": [
+        "2025",
+        "gaming",
+        "laptop"
+      ]
+    },
+    {
+      "id": "bing-741",
+      "kind": "search",
+      "task_row": 741,
+      "url": "https://www.bing.com/search?q=2025+gaming+laptop+OLED+Core+Ultra+285H+RTX+5070+USB+C+Power+Delivery&hl=en",
+      "keywords": [
+        "2025",
+        "gaming",
+        "laptop"
+      ]
+    },
+    {
+      "id": "ddg-741",
+      "kind": "search",
+      "task_row": 741,
+      "url": "https://html.duckduckgo.com/html/?q=2025+gaming+laptop+OLED+Core+Ultra+285H+RTX+5070+USB+C+Power+Delivery&hl=en",
+      "keywords": [
+        "2025",
+        "gaming",
+        "laptop"
+      ]
+    },
+    {
+      "id": "google-31",
+      "kind": "search",
+      "task_row": 31,
+      "url": "https://www.google.com/search?q=iPhone+Pixel+emergency+SOS+satellite+countries+free+two+years+carrier&hl=en",
+      "keywords": [
+        "iPhone",
+        "Pixel",
+        "emergency"
+      ]
+    },
+    {
+      "id": "bing-31",
+      "kind": "search",
+      "task_row": 31,
+      "url": "https://www.bing.com/search?q=iPhone+Pixel+emergency+SOS+satellite+countries+free+two+years+carrier&hl=en",
+      "keywords": [
+        "iPhone",
+        "Pixel",
+        "emergency"
+      ]
+    },
+    {
+      "id": "ddg-31",
+      "kind": "search",
+      "task_row": 31,
+      "url": "https://html.duckduckgo.com/html/?q=iPhone+Pixel+emergency+SOS+satellite+countries+free+two+years+carrier&hl=en",
+      "keywords": [
+        "iPhone",
+        "Pixel",
+        "emergency"
+      ]
+    },
+    {
+      "id": "google-918",
+      "kind": "search",
+      "task_row": 918,
+      "url": "https://www.google.com/search?q=film+industry+2026+theatrical+streaming+revenue+attendance+Netflix+annual+report&hl=en",
+      "keywords": [
+        "film",
+        "industry",
+        "2026"
+      ]
+    },
+    {
+      "id": "bing-918",
+      "kind": "search",
+      "task_row": 918,
+      "url": "https://www.bing.com/search?q=film+industry+2026+theatrical+streaming+revenue+attendance+Netflix+annual+report&hl=en",
+      "keywords": [
+        "film",
+        "industry",
+        "2026"
+      ]
+    },
+    {
+      "id": "ddg-918",
+      "kind": "search",
+      "task_row": 918,
+      "url": "https://html.duckduckgo.com/html/?q=film+industry+2026+theatrical+streaming+revenue+attendance+Netflix+annual+report&hl=en",
+      "keywords": [
+        "film",
+        "industry",
+        "2026"
+      ]
+    },
+    {
+      "id": "google-186",
+      "kind": "search",
+      "task_row": 186,
+      "url": "https://www.google.com/search?q=FCC+NORS+wireline+outage+reporting+900000+user+minutes+120+minutes+72+hours&hl=en",
+      "keywords": [
+        "FCC",
+        "NORS",
+        "wireline"
+      ]
+    },
+    {
+      "id": "bing-186",
+      "kind": "search",
+      "task_row": 186,
+      "url": "https://www.bing.com/search?q=FCC+NORS+wireline+outage+reporting+900000+user+minutes+120+minutes+72+hours&hl=en",
+      "keywords": [
+        "FCC",
+        "NORS",
+        "wireline"
+      ]
+    },
+    {
+      "id": "ddg-186",
+      "kind": "search",
+      "task_row": 186,
+      "url": "https://html.duckduckgo.com/html/?q=FCC+NORS+wireline+outage+reporting+900000+user+minutes+120+minutes+72+hours&hl=en",
+      "keywords": [
+        "FCC",
+        "NORS",
+        "wireline"
+      ]
+    },
+    {
+      "id": "google-355",
+      "kind": "search",
+      "task_row": 355,
+      "url": "https://www.google.com/search?q=Chris+Harrison+Carnegie+Mellon+CHI+2024+Google+Scholar&hl=en",
+      "keywords": [
+        "Chris",
+        "Harrison",
+        "Carnegie"
+      ]
+    },
+    {
+      "id": "bing-355",
+      "kind": "search",
+      "task_row": 355,
+      "url": "https://www.bing.com/search?q=Chris+Harrison+Carnegie+Mellon+CHI+2024+Google+Scholar&hl=en",
+      "keywords": [
+        "Chris",
+        "Harrison",
+        "Carnegie"
+      ]
+    },
+    {
+      "id": "ddg-355",
+      "kind": "search",
+      "task_row": 355,
+      "url": "https://html.duckduckgo.com/html/?q=Chris+Harrison+Carnegie+Mellon+CHI+2024+Google+Scholar&hl=en",
+      "keywords": [
+        "Chris",
+        "Harrison",
+        "Carnegie"
+      ]
+    },
+    {
+      "id": "google-1033",
+      "kind": "search",
+      "task_row": 1033,
+      "url": "https://www.google.com/search?q=Oval+Office+addresses+State+of+the+Union+constitutional+history+differences&hl=en",
+      "keywords": [
+        "Oval",
+        "Office",
+        "addresses"
+      ]
+    },
+    {
+      "id": "bing-1033",
+      "kind": "search",
+      "task_row": 1033,
+      "url": "https://www.bing.com/search?q=Oval+Office+addresses+State+of+the+Union+constitutional+history+differences&hl=en",
+      "keywords": [
+        "Oval",
+        "Office",
+        "addresses"
+      ]
+    },
+    {
+      "id": "ddg-1033",
+      "kind": "search",
+      "task_row": 1033,
+      "url": "https://html.duckduckgo.com/html/?q=Oval+Office+addresses+State+of+the+Union+constitutional+history+differences&hl=en",
+      "keywords": [
+        "Oval",
+        "Office",
+        "addresses"
+      ]
+    },
+    {
+      "id": "asus",
+      "kind": "source",
+      "task_row": 741,
+      "url": "https://rog.asus.com/laptops/rog-zephyrus/rog-zephyrus-g16-2025-gu605/spec/",
+      "keywords": [
+        "OLED",
+        "285H"
+      ]
+    },
+    {
+      "id": "apple",
+      "kind": "source",
+      "task_row": 31,
+      "url": "https://support.apple.com/en-us/101573",
+      "keywords": [
+        "satellite",
+        "Canada"
+      ]
+    },
+    {
+      "id": "mpa",
+      "kind": "source",
+      "task_row": 918,
+      "url": "https://www.motionpictures.org/research-docs/the-american-motion-picture-and-television-industry-creating-jobs-trading-around-the-world-2024/",
+      "keywords": [
+        "million",
+        "wages"
+      ]
+    },
+    {
+      "id": "netflix",
+      "kind": "source",
+      "task_row": 918,
+      "url": "https://ir.netflix.net/financials/quarterly-earnings/default.aspx",
+      "keywords": [
+        "earnings",
+        "2025"
+      ]
+    },
+    {
+      "id": "fcc",
+      "kind": "source",
+      "task_row": 186,
+      "url": "https://www.fcc.gov/network-outage-reporting-system-nors",
+      "keywords": [
+        "outage",
+        "NORS"
+      ]
+    },
+    {
+      "id": "ecfr",
+      "kind": "source",
+      "task_row": 186,
+      "url": "https://www.ecfr.gov/current/title-47/chapter-I/subchapter-A/part-4/section-4.9",
+      "keywords": [
+        "900,000",
+        "wireline"
+      ]
+    },
+    {
+      "id": "cmu",
+      "kind": "source",
+      "task_row": 355,
+      "url": "https://hcii.cmu.edu/people/chris-harrison",
+      "keywords": [
+        "Chris Harrison",
+        "Professor"
+      ]
+    },
+    {
+      "id": "acm",
+      "kind": "source",
+      "task_row": 355,
+      "url": "https://dl.acm.org/doi/proceedings/10.1145/3613904",
+      "keywords": [
+        "CHI",
+        "2024"
+      ]
+    },
+    {
+      "id": "scholar",
+      "kind": "source",
+      "task_row": 355,
+      "url": "https://scholar.google.com/citations?hl=en&user=36HRdqMAAAAJ",
+      "keywords": [
+        "Chris Harrison",
+        "h-index"
+      ]
+    },
+    {
+      "id": "house",
+      "kind": "source",
+      "task_row": 1033,
+      "url": "https://history.house.gov/Institution/SOTU/State-of-the-Union/",
+      "keywords": [
+        "Constitution",
+        "1913"
+      ]
+    },
+    {
+      "id": "presidency",
+      "kind": "source",
+      "task_row": 1033,
+      "url": "https://www.presidency.ucsb.edu/documents/presidential-documents-archive-guidebook/annual-messages-congress-the-state-the-union",
+      "keywords": [
+        "Wilson",
+        "Congress"
+      ]
+    },
+    {
+      "id": "fcc-pdf",
+      "kind": "source",
+      "task_row": 186,
+      "url": "https://docs.fcc.gov/public/attachments/FCC-12-22A1.pdf",
+      "keywords": []
+    }
+  ]
+}

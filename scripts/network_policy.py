@@ -9,14 +9,23 @@ import time
 class NetworkPolicy:
     def __init__(self, config):
         self.mode = config['mode']
-        if self.mode not in ('internet', 'offline'):
-            raise ValueError('network mode must be internet or offline')
+        if self.mode not in ('internet', 'offline', 'proxy'):
+            raise ValueError('network mode must be internet, offline or proxy')
         self.guest = ipaddress.IPv4Address(config['guest']).packed
         self.gateway = ipaddress.IPv4Address(config['gateway']).packed
         self.dns = ipaddress.IPv4Address(config['dns']).packed
         self.hosts = {ipaddress.IPv4Address(a).packed for a in config['host_addresses']}
         self.ports = set(config['forwarded_tcp_ports'])
         self.allowed = [ipaddress.IPv4Network(n) for n in config.get('allow_cidrs', [])]
+        self.proxies = set()
+        for endpoint in config.get('proxy_endpoints', []):
+            address, port = endpoint.rsplit(':', 1)
+            address, port = ipaddress.IPv4Address(address), int(port)
+            if not address.is_global or not 1 <= port <= 65535 or address.packed in self.hosts:
+                raise ValueError('proxy endpoint must be a public address outside this host')
+            self.proxies.add((address.packed, port))
+        if self.mode == 'proxy' and (not self.proxies or self.allowed):
+            raise ValueError('proxy networking requires endpoints and forbids extra egress rules')
         self.flows = collections.OrderedDict()
         self.counts = collections.Counter()
         self.lock = threading.Lock()
@@ -93,6 +102,8 @@ class NetworkPolicy:
                 return True, 'dns'
         if self.mode == 'offline':
             return False, 'offline'
+        if self.mode == 'proxy':
+            return proto == 6 and (dst, struct.unpack_from('!H', payload, 2)[0]) in self.proxies, 'proxy_endpoint'
         addr = ipaddress.IPv4Address(dst)
         if dst in self.hosts or dst in (self.gateway, self.dns, self.guest) or addr.is_loopback or addr.is_link_local:
             return False, 'host'

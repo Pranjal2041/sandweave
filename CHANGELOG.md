@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.9
+
+- Add `Network(proxy=...)` for one proxy URL or a list. Each sandbox selects
+  one proxy for its lifetime; setup and SDK commands receive standard proxy
+  environment variables. The external network policy blocks direct egress,
+  including direct DNS and UDP.
+- Preserve proxy selection through live snapshots. Filesystem-cache restores
+  can select another proxy or switch to internet/offline networking. Proxy
+  hostnames are resolved on the worker and pinned in the guest hosts file.
+- Add `--proxy-file` and credential-free endpoint details in `env.info`.
+  Dashboard resource summaries omit proxy credentials.
+- Add a reproducible QUEST-RL proxy assessment covering search, source pages,
+  browser challenges, repeated requests, and distinct exit addresses.
+
 ## 0.2.8
 
 - Add `Memory(disk="16GiB", disk_path="/scratch/my-memory")`. Each sandbox gets

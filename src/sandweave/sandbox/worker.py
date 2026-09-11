@@ -299,7 +299,8 @@ class Worker:
 
     def command_start(self, identity, process_id, command=None, argv=None, cwd=None,
                       env=None, user=None, timeout=None, shell=None, max_output_bytes=None, pty=False):
-        spec = self.read(identity)['spec']
+        record = self.read(identity)
+        spec = record['spec']
         if (command is None) == (argv is None):
             raise ValueError('provide exactly one command string or argv')
         if command is not None:
@@ -310,7 +311,7 @@ class Worker:
             raise ValueError('shell cannot be combined with argv')
         return self.agent(identity).call('spawn', identity=process_id, argv=argv,
                                          cwd=cwd if cwd is not None else spec['template'].get('workdir', '/workspace'),
-                                         env={**spec.get('env', {}), **(env or {})},
+                                         env={**spec.get('env', {}), **record['agent'].get('proxy_env', {}), **(env or {})},
                                          user=user if user is not None else spec['template'].get('user', 'root'), timeout=timeout,
                                          max_output_bytes=max_output_bytes if max_output_bytes is not None else
                                          spec['template'].get('runtime_options', {}).get('max_output_bytes', 64*1024**2), pty=pty)

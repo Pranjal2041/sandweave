@@ -13,6 +13,7 @@ import time
 from .scheduler import charged, requirements
 from ..sandbox.telemetry import tail
 from ..sandbox.wire import decode
+from ..sandbox.proxy import public_resources
 
 KINDS = ('workers', 'gpus', 'sandboxes', 'pools', 'jobs', 'tasks', 'snapshots')
 LOG = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ class Monitor:
             # agent credentials, mount paths, and setup scripts.
             item.pop('info', None)
             item.update(name=spec.get('name'), template=spec['template']['name'], runtime=spec['runtime'],
-                        resources=spec['resources'], desired=a.get('desired'),
+                        resources=public_resources(spec['resources']), desired=a.get('desired'),
                         detached=spec.get('detached'), role=a.get('role'),
                         leased=bool(a.get('lease')), timings=info.get('timings', {}),
                         telemetry=metric, telemetry_stale=stale)

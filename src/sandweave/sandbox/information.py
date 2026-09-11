@@ -30,6 +30,7 @@ def summarize(record):
         **({'disk_memory': {key: runtime['disk_memory'].get(key)
                            for key in ('directory', 'host_limit_bytes')}} if runtime.get('disk_memory') else {}),
         'gpus': gpus,
+        **({'network': runtime['proxy']} if runtime.get('proxy') else {}),
         'vnc': vnc,
         **({'image': {key: spec['image'][key] for key in ('reference', 'digest', 'platform')}}
            if spec.get('image') else {}),

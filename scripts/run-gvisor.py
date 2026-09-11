@@ -41,7 +41,10 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--detach', action='store_true', help='keep a desktop running independently of the terminal/chat command')
 parser.add_argument('--cpus', default=','.join(map(str, sorted(os.sched_getaffinity(0)))),
                     help='shared eligible CPU pool; defaults to the inherited Slurm allocation')
-parser.add_argument('--network-policy', choices=['internet', 'offline'], default='internet')
+parser.add_argument('--network-policy', choices=['internet', 'offline', 'proxy'], default='internet')
+parser.add_argument('--proxy-endpoint', dest='proxy_endpoints', action='append')
+parser.add_argument('--proxy-index', type=int)
+parser.add_argument('--clear-proxy', action='store_true', help=argparse.SUPPRESS)
 parser.add_argument('--allow-cidr', action='append', default=[], help='explicit additional IPv4 egress network; host addresses remain blocked')
 parser.add_argument('--guest-cpus', type=int, default=4, help='guest execution parallelism, independent of the shared host CPU pool')
 parser.add_argument('--memory-mib', type=int, default=8192, help='guest page budget including anonymous memory and writable filesystem data; excludes runtime overhead')
@@ -119,10 +122,17 @@ elif args.restore and not args.detach:
 if args.restore and (args.restore / 'launch-settings.json').is_file():
     saved_settings = json.loads((args.restore / 'launch-settings.json').read_text())
     for key, value in saved_settings['settings'].items():
-        option = '--' + key.replace('_', '-')
+        option = '--proxy-endpoint' if key == 'proxy_endpoints' else '--' + key.replace('_', '-')
         if not any(x == option or x.startswith(option + '=') for x in sys.argv[1:]):
             setattr(args, key, value)
 filesystem_restore = bool(snapshot_manifest and snapshot_manifest.get('kind') == 'filesystem')
+if args.clear_proxy:
+    args.proxy_endpoints = args.proxy_index = None
+if args.network_policy == 'proxy':
+    if not args.proxy_endpoints or args.proxy_index is None:
+        parser.error('proxy networking requires a bound proxy endpoint')
+elif args.proxy_endpoints:
+    parser.error('proxy endpoints require proxy networking')
 if args.no_disk_memory:
     args.ram_mib = args.disk_path = None
 if args.filesystem_runtime_current and not args.detach and not filesystem_restore:
@@ -207,6 +217,8 @@ runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 launch_settings = {'settings': settings, 'runtime': runtime}
+if args.network_policy == 'proxy':
+    settings.update(proxy_endpoints=args.proxy_endpoints, proxy_index=args.proxy_index)
 if args.disk_path:
     settings.update(ram_mib=args.ram_mib, disk_path=args.disk_path)
 mounts = external_mounts.normalize(json.loads(args.mounts.read_text()) if args.mounts else
@@ -314,7 +326,7 @@ policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.
           'dns': '10.0.2.3', 'forwarded_tcp_ports': list(map(int, ports)),
           'host_addresses': [address['local'] for interface in host_interfaces
                              for address in interface['addr_info'] if address['family'] == 'inet'],
-          'allow_cidrs': args.allow_cidr}
+          'allow_cidrs': args.allow_cidr, 'proxy_endpoints': args.proxy_endpoints or []}
 (bundle / 'network-policy.json').write_text(json.dumps(policy, indent=2) + '\n')
 mark('network_setup_seconds')
 

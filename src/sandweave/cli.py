@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 
-from . import Sandbox, SandboxError, CommandTimeout, CPU, Memory, Mount, Slurm
+from . import Sandbox, SandboxError, CommandTimeout, CPU, Memory, Network, Mount, Slurm
 from .sandbox.snapshots import SnapshotRef
 from .sandbox.targets import connect
 from .sandbox.workspace import home, atomic_json, locked
@@ -48,6 +48,7 @@ def creation_options(parser):
     parser.add_argument('--mount', action='append', default=[], help='JSON Mount object; repeat for multiple mounts')
     parser.add_argument('--gpu', help='auto, none, or an allocated model name')
     parser.add_argument('--network', choices=('internet', 'offline'))
+    parser.add_argument('--proxy-file', help='JSON list of proxy URLs; one is selected for each sandbox')
     parser.add_argument('--name')
     parser.add_argument('--ttl', type=float)
     parser.add_argument('--startup-timeout', type=float)
@@ -83,6 +84,8 @@ def creation(args):
                                    getattr(args, 'disk_memory', None), getattr(args, 'disk_path', None))
     if getattr(args, 'mount', None):
         options['mounts'] = [Mount(**json.loads(value)) for value in args.mount]
+    if getattr(args, 'proxy_file', None):
+        options['network'] = Network(mode=args.network or 'internet', proxy=json.loads(Path(args.proxy_file).read_text()))
     return options
 
 

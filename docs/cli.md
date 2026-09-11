@@ -33,6 +33,15 @@ sandweave run --memory 4GiB --disk-memory 16GiB --disk-path /scratch/my-memory -
 
 See [disk-backed memory](resources.md#disk-backed-memory) for host requirements.
 
+Use one proxy from a private JSON list of proxy URLs:
+
+```bash
+sandweave run --proxy-file ./proxies.json -- "curl -s https://api.ipify.org"
+```
+
+This also works with `create` and `pool create`. See
+[proxy networking](networking.md#use-a-proxy) for the file format and routing behavior.
+
 ## Create a persistent desktop
 
 ```bash

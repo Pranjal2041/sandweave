@@ -72,6 +72,8 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
     resources = normalize(cpu=cpu if cpu is not None else defaults.get('cpu', 1), memory=selected_memory,
                           gpu=gpu if gpu is not None else defaults.get('gpu', False),
                           network=network if network is not None else defaults.get('network', 'internet'))
+    if resources['network']['mode'] == 'proxy' and runtime != 'gvisor':
+        raise UnsupportedFeature('proxy egress enforcement requires runtime="gvisor"')
     if resources['memory'].get('disk') is not None:
         if runtime != 'gvisor':
             raise UnsupportedFeature('disk-backed guest memory requires runtime="gvisor"')

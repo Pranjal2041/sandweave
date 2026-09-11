@@ -182,6 +182,9 @@ class Runtime:
             options += ['--docker-data', '--docker-archive', str(self.root / relative)]
             command = ['/usr/local/bin/engine-docker', 'init']
         with measure('runtime_launch_seconds'):
+            from . import proxy
+            selected_proxy, proxy_options = proxy.bind(self.root, identity, spec['resources']['network'], snapshot)
+            options += proxy_options
             if spec['resources']['memory'].get('disk') is not None:
                 from .engine import disk_runtime
                 options += disk_runtime(self.root, snapshot)
@@ -196,7 +199,9 @@ class Runtime:
                                    timeout=remaining())
                 cold = True
         with measure('runtime_agent_seconds'):
-            return self._start_agent(identity, token, init, cold, deadline, remaining, agent_command)
+            metadata = self._start_agent(identity, token, init, cold, deadline, remaining, agent_command)
+            metadata.update(proxy.configure(self.connections[identity], selected_proxy))
+            return metadata
 
     def _start_agent(self, identity, token, init, cold, deadline, remaining, agent_command):
         if init in ('systemd', 'docker') and cold:

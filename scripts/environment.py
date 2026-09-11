@@ -98,7 +98,7 @@ class EnvironmentManager:
         if not bundle.exists() and launcher is None:
             result['status'] = 'missing'
         for filename, key in [('ports.json', 'ports'), ('stopped.json', 'last_stop'),
-                              ('disk-memory.json', 'disk_memory')]:
+                              ('disk-memory.json', 'disk_memory'), ('proxy.json', 'proxy')]:
             try:
                 result[key] = json.loads((self._logs(name) / filename).read_text())
             except FileNotFoundError:

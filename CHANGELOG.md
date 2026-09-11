@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5
 
 - Make concurrent snapshot imports idempotent after publication. Compare replica
   content independently of its host paths, while retaining checksum checks.

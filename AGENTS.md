@@ -30,6 +30,11 @@ desktops when testing; use separate disposable environments for new tests.
   available as an explicit option; switch when the user requests Wayland testing.
 - Respect explicit research-only or no-execution instructions. Source and
   documentation findings must not be presented as successful runtime tests.
+- Harbor integration is deferred; preserve the decisions in
+  [notes/harbor-integration.md](notes/harbor-integration.md). Use direct Sandweave
+  sandboxes, with benchmark-specific settings and any necessary supporting code
+  kept with the benchmark template. Do not restart this work during the user's
+  detour or substitute nested Docker for the planned integration.
 
 ## Git hygiene
 

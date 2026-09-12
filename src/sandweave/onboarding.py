@@ -194,6 +194,8 @@ def python_packages(recipe):
     packages = []
     if {'desktop', 'vr'} & recipe['capabilities'].keys():
         packages += [('PIL', 'Pillow'), ('numpy', 'numpy')]
+    if 'desktop' in recipe['capabilities']:
+        packages += [('Crypto', 'pycryptodome>=3.20,<4'), ('imageio_ffmpeg', 'imageio-ffmpeg>=0.6,<0.7')]
     if 'vr' in recipe['capabilities']:
         packages.append(('zstandard', 'zstandard'))
     return packages

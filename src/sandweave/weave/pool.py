@@ -81,6 +81,8 @@ class ManagedPool(LocalPool):
                     raise UnsupportedFeature('requested pool options require Sandweave ' + version +
                                              ' or newer on the controller: ' + ', '.join(sorted(requested)))
                 request = definition(target=self.target, **self.options)
+                if request['spec'].get('recording') and not self.connection.call('ping').get('desktop_recording'):
+                    raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the controller')
                 if proxy.requires_policy(request['spec']['resources']['network']) and not self.connection.call('ping').get('proxy_policy'):
                     raise UnsupportedFeature('pool proxy policies require Sandweave 0.2.10 or newer on the controller')
                 owner = None if self.options.get('detached') else client_owner(self.connection)
@@ -388,6 +390,10 @@ def _new_member(controller, pool, *, builder=False):
         request['spec'] = copy.deepcopy(pool.get('baseline_spec', request['spec']))
         request.update(reference=pool['baseline'], cache_key=None, refresh=False)
     request['spec'].update(detached=True, ttl=None, name=None)
+    if builder:
+        request['spec'].pop('recording', None)
+    elif pool['request']['spec'].get('recording'):
+        request['spec'].update(recording=pool['request']['spec']['recording'], _recording_on_claim=True)
     if not pool.get('retain_baseline', True):
         request['spec'].update(discard_workspace=True, _retention_pool=pool['id'])
     identity = ('vr-sw-' if 'vr' in request['spec']['template']['capabilities'] else 'sw-') + uuid.uuid4().hex

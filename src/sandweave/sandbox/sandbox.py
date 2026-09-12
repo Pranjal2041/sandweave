@@ -19,7 +19,7 @@ from ..templates.resolve import Template, setup_step
 def definition(*, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
-               keep_on_error=False, refresh=False, experimental_gpu_live=False):
+               keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False):
     """Resolve a complete portable definition without starting an environment."""
     if sum(x is not None for x in (cache, snapshot)) > 1:
         raise ValueError('cache and snapshot are alternative sources')
@@ -79,10 +79,14 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
             raise UnsupportedFeature('disk-backed guest memory requires runtime="gvisor"')
         if resources['gpu'] and resources['gpu'].get('sm_chunks') is not None:
             raise UnsupportedFeature('disk memory cannot enclose a shared CUDA MPS controller')
+    from .recording import validate as recording_options
+    recording = recording_options({'recording': recording, 'runtime': runtime, 'template': recipe})
     spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
             'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
             'ttl': ttl, 'detached': detached, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
             'experimental_gpu_live': experimental_gpu_live}
+    if recording is not None:
+        spec['recording'] = recording
     if saved and saved['spec'].get('image'):
         spec['image'] = copy.deepcopy(saved['spec']['image'])
     elif selected_image is not None:
@@ -94,7 +98,7 @@ class Sandbox:
     def __init__(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
-                 refresh=False, experimental_gpu_live=False):
+                 refresh=False, experimental_gpu_live=False, recording=False):
         options = dict(locals()); options.pop('self')
         self._connection = None
         try:
@@ -107,7 +111,7 @@ class Sandbox:
     def _initialize(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                     cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
-                    refresh=False, experimental_gpu_live=False):
+                    refresh=False, experimental_gpu_live=False, recording=False):
         options = dict(locals()); options.pop('self')
         request = definition(**options)
         self._launch(request, target)
@@ -143,6 +147,8 @@ class Sandbox:
         from .proxy import requires_policy
         if requires_policy(spec['resources']['network']) and not self._connection.call('ping').get('proxy_policy'):
             raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on the worker and controller')
+        if spec.get('recording') and not self._connection.call('ping').get('desktop_recording'):
+            raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker and controller')
         from .ownership import client_owner
         owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
@@ -243,6 +249,11 @@ class Sandbox:
     @property
     def vr(self):
         return self.capability('vr')
+
+    @property
+    def recording(self):
+        from .recording import RecordingHandle
+        return RecordingHandle(self)
 
     def __getattr__(self, name):
         # Installed template controls get the same convenient attribute access.

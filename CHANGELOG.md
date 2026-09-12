@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.14
+
+- Add opt-in desktop recording with `recording=True` or `Recording(fps=15,
+  cursor=True)`. Capture runs independently on the worker, between agent actions.
+- Retain fragmented MP4 videos, capture timestamps and dropped-frame metadata
+  outside the guest. Finalize before cleanup and allow downloads after sandbox
+  termination, including partial recordings after failures.
+- Pause and snapshot operations split recordings into timestamped segments.
+  Pool builders and warm members do not record; capture starts at checkout.
+- Add `env.recording` status, stop, download and deletion, plus CLI `--record`
+  and `sandweave recording` commands. Recording remains off by default.
+
 ## 0.2.13
 
 - Use scalable socket readiness checks for synchronous connections with high

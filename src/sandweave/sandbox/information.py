@@ -32,6 +32,7 @@ def summarize(record):
         'gpus': gpus,
         **({'network': runtime['proxy']} if runtime.get('proxy') else {}),
         'vnc': vnc,
+        **({'recording': record['recording']} if record.get('recording') else {}),
         **({'image': {key: spec['image'][key] for key in ('reference', 'digest', 'platform')}}
            if spec.get('image') else {}),
     })

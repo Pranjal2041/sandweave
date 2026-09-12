@@ -55,6 +55,7 @@ def creation_options(parser):
     parser.add_argument('--ttl', type=float)
     parser.add_argument('--startup-timeout', type=float)
     parser.add_argument('--keep-on-error', action='store_true')
+    parser.add_argument('--record', action='store_true', help='Record the desktop on the worker until termination')
     parser.add_argument('--experimental-gpu-live', action='store_true')
 
 
@@ -75,6 +76,8 @@ def creation(args):
             'target', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
             'keep_on_error', 'experimental_gpu_live')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
+    if getattr(args, 'record', False):
+        options['recording'] = True
     if options.get('gpu') in ('auto', 'none'):
         options['gpu'] = options['gpu'] == 'auto'
     if getattr(args, 'cpu_weight', None) is not None or getattr(args, 'cpu_quota', None) is not None:
@@ -184,6 +187,13 @@ def parser():
     shell = sub.add_parser('shell'); shell.add_argument('id'); shell.add_argument('--target')
     command_options(shell); shell.set_defaults(command=['/bin/bash -i'], pty=True)
     listing = sub.add_parser('list'); listing.add_argument('--target'); listing.add_argument('--all', action='store_true')
+    recording = sub.add_parser('recording', help='Inspect, download or delete retained desktop recordings').add_subparsers(
+        dest='recording_operation', required=True)
+    for action in ('status', 'stop', 'download', 'delete'):
+        p = recording.add_parser(action)
+        p.add_argument('id'); p.add_argument('--target')
+        if action == 'download':
+            p.add_argument('--output', required=True)
     for name in ('info', 'status', 'inspect', 'pause', 'resume', 'terminate', 'stop', 'snapshot'):
         p = sub.add_parser(name); p.add_argument('id'); p.add_argument('--target')
         if name in ('stop', 'snapshot'):
@@ -379,6 +389,8 @@ def main(argv=None):
             return 0
         if op == 'run':
             with Sandbox(**creation(args)) as env:
+                if args.record:
+                    print('Recording sandbox: ' + env.id, file=sys.stderr)
                 return execute(env, args)
         if op == 'list' or (op == 'cache' and args.cache_operation != 'save'):
             connection = connect(args.target)
@@ -422,6 +434,13 @@ def main(argv=None):
                     return 0
                 image = env.desktop.screenshot() if args.desktop_operation == 'screenshot' else env.desktop.step(json.loads(args.action)).image
                 image.save(args.output)
+            elif op == 'recording':
+                if args.recording_operation == 'status':
+                    output(env.recording.info)
+                elif args.recording_operation == 'download':
+                    output(str(env.recording.download(args.output)))
+                else:
+                    output(getattr(env.recording, args.recording_operation)())
             elif op == 'vr':
                 if args.duration <= 0:
                     raise ValueError('recording duration must be positive')

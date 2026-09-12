@@ -21,6 +21,12 @@ exits. Explicit context cleanup and TTL retain their existing meanings.
 
 ## 1. Design commitments
 
+Approved extension, 2026-09-12: desktop recording is opt-in with
+`Sandbox(recording=True)` or `Recording(fps=15, cursor=True)`. Pools start capture
+at checkout. `env.recording` provides retained export after termination, status,
+explicit stop and deletion. Defaults and existing command/lifecycle contracts
+remain unchanged. See [desktop recording](../docs/desktop.md#record-a-desktop).
+
 | User priority | API consequence |
 | --- | --- |
 | Simple Python and CLI | One `Sandbox` handle; ordinary calls work without an App, deployment decorator, mandatory server account or RL framework. The constructor returns a usable environment. |

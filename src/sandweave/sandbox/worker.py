@@ -39,6 +39,8 @@ class Worker:
         self.management = Management(self)
         from .artifacts import Artifacts
         self.artifacts = Artifacts(self)
+        from ..templates.gnome.recording import Recordings
+        self.recordings = Recordings(self)
         threading.Thread(target=self.expire, name='sandweave-cleanup', daemon=True).start()
 
     def expire(self):
@@ -136,6 +138,10 @@ class Worker:
             raise
 
     def _prepare_create(self, spec, identity, *, operation_id=None, reference=None, cache_key=None, refresh=False, owner=None):
+        from .recording import validate as recording_options
+        recording = recording_options(spec)
+        if recording is not None:
+            spec = {**spec, 'recording': recording}
         if not spec.get('detached', True) and owner is None:
             raise ValueError('an attached sandbox requires a process owner')
         if spec.get('detached') and owner is not None:
@@ -161,7 +167,8 @@ class Worker:
                 prepared = json.loads((self.root / 'prepared.json').read_text())
                 from ..templates.controls import descriptors
                 stamp = fingerprint({k: v for k, v in spec.items()
-                                     if k not in ('name', 'ttl', 'detached', 'startup_timeout', 'keep_on_error')} |
+                                     if k not in ('name', 'ttl', 'detached', 'startup_timeout', 'keep_on_error',
+                                                  'recording', '_recording_on_claim')} |
                                     {'engine': prepared['engine_sources_sha256'],
                                      'sdk': prepared.get('sdk_sources_sha256'),
                                      'assets': prepared.get('assets_sha256'),
@@ -251,6 +258,11 @@ class Worker:
                     record['expires_at'] = time.time() + spec['ttl']
                 record['timings']['ready_seconds'] = time.monotonic() - started
                 self.write(record)
+                if spec.get('recording') and not spec.get('_recording_on_claim'):
+                    with measure('recording_start_seconds'):
+                        self.recordings.start(identity)
+                    record['timings']['ready_seconds'] = time.monotonic() - started
+                    self.write(record)
                 self.deadlines.pop(identity, None)
                 return self.describe(identity)
             except BaseException as error:
@@ -266,6 +278,8 @@ class Worker:
                     record['termination_reason'] = owner_reason
                 if owner_reason or not spec.get('keep_on_error'):
                     try:
+                        if spec.get('recording'):
+                            self.recordings.stop(identity)
                         self.detach_controls(identity, reason='terminate')
                         state = self.runtime.status(identity)['status']
                         if state in ('starting', 'running', 'paused'):
@@ -309,7 +323,8 @@ class Worker:
                     self.write(record)
         # Secret guest control tokens stay in the worker's private record.
         worker = {'hostname': socket.gethostname(), 'job_id': os.environ.get('SLURM_JOB_ID')}
-        return {key: value for key, value in {**record, 'runtime_status': status, 'worker': worker}.items()
+        recording = {'recording': self.recordings.status(identity)} if record['spec'].get('recording') else {}
+        return {key: value for key, value in {**record, **recording, 'runtime_status': status, 'worker': worker}.items()
                 if key not in ('agent', 'owner')}
 
     def list(self):
@@ -405,12 +420,16 @@ class Worker:
         revision = 'snap-' + uuid.uuid4().hex
         from .retention import capture as retain_capture
         retain_capture(record['spec'].get('_retention_pool'), revision, identity)
-        self.detach_controls(identity, reason='snapshot')
+        if record['spec'].get('recording'):
+            self.recordings.stop(identity, reason='paused')
         try:
+            self.detach_controls(identity, reason='snapshot')
             saved = self.runtime.capture(identity, revision, state, experimental_gpu_live=experimental_gpu_live)
         finally:
             if record['state'] == 'ready':
                 self.attach_controls(identity, cold=False)
+                if record['spec'].get('recording'):
+                    self.recordings.start(identity, resume=True)
         metadata = self.store.record(revision, saved, record)
         if key is not None:
             self.store.publish(key, metadata, (previous or {}).get('id'))
@@ -436,6 +455,8 @@ class Worker:
 
     def pause(self, identity):
         record = self.read(identity)
+        if record['spec'].get('recording'):
+            self.recordings.stop(identity, reason='paused')
         self.detach_controls(identity, reason='pause')
         self.runtime.pause(identity)
         record['state'] = 'paused'
@@ -448,10 +469,14 @@ class Worker:
         record['state'] = 'ready'
         self.write(record)
         self.attach_controls(identity, cold=False)
+        if record['spec'].get('recording'):
+            self.recordings.start(identity, resume=True)
         return self.describe(identity)
 
     def terminate(self, identity):
         record = self.read(identity)
+        if record['spec'].get('recording'):
+            self.recordings.stop(identity)
         self.detach_controls(identity, reason='terminate')
         if self.runtime.status(identity)['status'] in ('running', 'paused', 'starting'):
             self.runtime.terminate(identity)
@@ -570,6 +595,9 @@ class Worker:
         raise ValueError('unknown pool operation')
 
     def dispatch(self, operation, parameters):
+        if operation == 'recording':
+            with self.lock(parameters['identity']):
+                return self.recordings.dispatch(**parameters)
         if operation.startswith('artifact_'):
             return self.artifacts.dispatch(operation, parameters)
         if operation == 'managed_apply':
@@ -606,7 +634,8 @@ class Worker:
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
                     'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget,
-                    'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1, 'pool_retention': 1}
+                    'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1, 'pool_retention': 1,
+                    'desktop_recording': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')

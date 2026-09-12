@@ -21,6 +21,7 @@ scripts/mps_client_gateway.py
 scripts/mps-rm-observer.c
 scripts/fast_io.py
 scripts/fastio.py
+scripts/vnc_zrle.py
 scripts/vr_frames.py
 scripts/vr_stream.py
 scripts/vr_stream_guest.py

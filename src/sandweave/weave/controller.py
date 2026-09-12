@@ -441,6 +441,8 @@ class Controller:
                     return
                 record = self.state.put('allocation', {**record, 'endpoint': route, 'state': 'starting'})
             request = record['request']
+            if request['spec'].get('recording') and not connection.call('ping').get('desktop_recording'):
+                raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker')
             if request['spec'].get('discard_workspace') and not connection.call('ping').get('pool_retention'):
                 with self.state.transaction():
                     current = self.state.get('allocation', identity)
@@ -642,7 +644,7 @@ class Controller:
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
                     'pool_options': ['shared_cache', 'affinity', 'retain_baseline'], 'proxy_policy': 1,
-                    'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1}
+                    'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1, 'desktop_recording': 1}
         if operation == 'events':
             return self.state.events(**parameters)
         if operation == 'backup':

@@ -122,6 +122,22 @@ sandweave job status JOB_ID --target lab
 sandweave job result JOB_ID --target lab
 ```
 
+## Desktop recording
+
+```bash
+sandweave create --template gnome --record
+sandweave recording status SANDBOX_ID
+sandweave terminate SANDBOX_ID
+sandweave recording download SANDBOX_ID --output ./episode
+sandweave recording delete SANDBOX_ID
+```
+
+Replace `SANDBOX_ID` with the ID printed by `create`. Add `--target lab` to each
+command for a cluster. `--record` also works with `run` and `pool create`.
+Recordings remain available after termination until explicitly deleted. Use
+`sandweave recording stop SANDBOX_ID` to finish recording and keep the desktop.
+See [desktop recording](desktop.md#record-a-desktop) for timing and recovery.
+
 ## Stereo recording
 
 ```bash

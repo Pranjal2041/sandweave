@@ -4,7 +4,7 @@ Import the public objects from `sandweave`:
 
 ```python
 from sandweave import Sandbox, Pool, Cluster, Job
-from sandweave import CPU, Memory, GPU, Network, Template, SnapshotRef, Mount, Slurm
+from sandweave import CPU, Memory, GPU, Network, Template, SnapshotRef, Mount, Slurm, Recording
 ```
 
 Methods that support async calls expose `.aio`. See [async Python](async.md).
@@ -37,6 +37,7 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `name` | User-supplied sandbox name. | None |
 | `ttl` | Seconds of lifetime after readiness. | No TTL |
 | `detached` | Survive the creating Python process exiting. | `False` |
+| `recording` | Record an Xvnc desktop; accepts `True` or `Recording(fps=15, cursor=True)`. | `False` |
 | `startup_timeout` | Sandbox creation deadline in seconds. | `300` |
 | `keep_on_error` | Retain a failed sandbox for diagnosis, subject to its lifetime. | `False` |
 | `experimental_gpu_live` | Opt into qualified experimental CUDA memory restore. | `False` |
@@ -87,6 +88,10 @@ with streams, `wait`, `poll`, `result`, `terminate`, and terminal `resize`.
 | `env.stop(state="auto")` | Save, then release the runtime. |
 | `env.terminate()` | Release the runtime and discard unsaved state. |
 | `env.close()` | Disconnect the handle. |
+| `env.recording.info` | Recording segments, capture timings, drops and worker storage. |
+| `env.recording.stop()` | Finalize recording, leaving the desktop running. |
+| `env.recording.download(directory)` | Finalize and export to an empty client directory; works after termination. |
+| `env.recording.delete()` | Delete finalized recording files from the worker. |
 | `Sandbox.connect(id, target=...)` | Borrow a handle to an existing sandbox. |
 | `Sandbox.create.aio(...)` | Asynchronous creation. |
 

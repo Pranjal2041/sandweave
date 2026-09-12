@@ -179,6 +179,22 @@ observation with `.image` and timing metadata. It captures after the input serve
 acknowledges the action; your application may still be processing it.
 See the [desktop loop example](https://github.com/Pranjal2041/sandweave/blob/main/notes/sandbox-api-examples.md#4-a-desktop-agent-loop).
 
+To record a desktop, enable recording when you create it:
+
+```python
+with Sandbox(template="gnome", recording=True) as env:
+    env.desktop.keyboard.press("super")
+
+env.recording.download("./episode")
+```
+
+Recording is off by default. Capture runs on the worker between actions and
+includes the cursor. Termination finalizes the video before removing the guest;
+the download includes video segments, capture timestamps and dropped-frame
+counts. Pools accept the same option and start recording at checkout.
+See [desktop recording](https://pranjal2041.github.io/sandweave/desktop/#record-a-desktop)
+for settings, recovery and storage.
+
 To inspect startup time:
 
 ```python

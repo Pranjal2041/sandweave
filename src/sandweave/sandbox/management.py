@@ -118,6 +118,8 @@ class Management:
                     else:
                         record.pop('expires_at', None)
                 self.worker.write(record)
+                if record['spec'].get('recording'):
+                    self.worker.recordings.start(identity)
                 result = self.worker.describe(identity)
             elif self.worker.path(identity).exists():
                 result = self.worker.terminate(identity)
@@ -150,7 +152,7 @@ class Management:
                 return False
         if operation not in {'describe', 'command_start', 'process_status', 'process_output',
                              'process_stdin', 'process_terminate', 'process_resize', 'file', 'setup',
-                             'pause', 'resume', 'terminate', 'capture', 'stop', 'control'}:
+                             'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording'}:
             return False
         return parameters.get('identity') == value['id']
 

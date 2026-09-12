@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sandweave"
-version = "0.2.13"
+version = "0.2.14"
 description = "Fast, modular sandboxes for AI agents"
 readme = "README.md"
 license-files = ["LICENSES/*"]
@@ -18,8 +18,8 @@ Documentation = "https://pranjal2041.github.io/sandweave/"
 Issues = "https://github.com/Pranjal2041/sandweave/issues"
 
 [project.optional-dependencies]
-desktop = ["Pillow", "numpy"]
-vr = ["Pillow", "numpy", "zstandard"]
+desktop = ["Pillow", "numpy", "pycryptodome>=3.20,<4", "imageio-ffmpeg>=0.6,<0.7"]
+vr = ["Pillow", "numpy", "zstandard", "pycryptodome>=3.20,<4", "imageio-ffmpeg>=0.6,<0.7"]
 test = ["pytest", "pyte>=0.8,<0.9"]
 
 [project.scripts]

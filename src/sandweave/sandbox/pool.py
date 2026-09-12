@@ -156,13 +156,20 @@ class Pool:
                     destination.close()
             finally:
                 source.close()
-        if self.proxy_network is None:
+        if self.proxy_network is None and not self.options.get('recording'):
             return Sandbox(target=target, **self.options)
         from .sandbox import definition
-        request = definition(target=target, **{**self.options, 'network': self.proxy_network})
+        request = definition(target=target, **{**self.options, **(
+            {'network': self.proxy_network} if self.proxy_network is not None else {})})
         return self._launch_definition(request, target)
 
     def _launch_definition(self, request, target, *, builder=False):
+        if request['spec'].get('recording'):
+            request = copy.deepcopy(request)
+            if builder:
+                request['spec'].pop('recording')
+            else:
+                request['spec']['_recording_on_claim'] = True
         if self.proxy_network is not None:
             from .proxy import select
             with self.condition:
@@ -216,6 +223,8 @@ class Pool:
                 self._release(env)
                 raise RuntimeError('pool closed during checkout')
         try:
+            if env.spec.get('recording'):
+                env._call('recording', action='start')
             yield env
         finally:
             self._release(env)

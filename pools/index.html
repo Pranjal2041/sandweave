@@ -1469,6 +1469,9 @@ filesystem lets them reuse one baseline and its image files without sending the
 payload through the controller. With node-local storage, workers on each node
 reuse that node's copy; Weave transfers the baseline once per cache. The path
 does not change worker state directories or share writable sandbox files.</p>
+<p>With 0.2.15 or newer on controllers and workers, sandboxes waiting for the same
+image share its preparation work without occupying launch threads. Other
+launches and cleanup can proceed while that image is being published.</p>
 <p>Local pools, including pools with explicit <code>targets</code>, also accept <code>shared_cache</code>.
 By default, closing a pool keeps the cache for reuse. Creating separate pools still creates
 separate baselines unless they use the same saved <code>cache</code> or <code>snapshot</code>.

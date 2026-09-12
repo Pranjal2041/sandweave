@@ -1428,6 +1428,9 @@ It does not release the runtime's memory reservation or save a durable checkpoin
 <p>A supported gVisor memory snapshot saves process and kernel state as well as
 files. Verification can run asynchronously; the example checks it before
 attempting a restore. External services and shared volumes do not roll back.</p>
+<p>During gVisor snapshot publication and transfer, Sandweave reuses checksums for
+files whose recorded identity and timestamps still match. New copies are checked
+before publication. Calling <code>checkpoint.verify()</code> explicitly rechecks the bytes.</p>
 <h2 id="save-before-stopping">Save before stopping<a class="headerlink" href="#save-before-stopping" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">()</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">saved</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>

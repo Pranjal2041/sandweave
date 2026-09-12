@@ -303,8 +303,9 @@ class Artifacts:
         metadata = parameters.get('metadata') or parameters.get('manifest', {}).get('metadata')
         if metadata is None and parameters.get('reference'):
             reference = parameters['reference']
-            descriptor = self.directory(reference) / 'manifest.bin'
-            if descriptor.exists():
+            descriptor = (self.directory(reference) / 'manifest.bin'
+                          if operation not in ('metadata', 'manifest') else None)
+            if descriptor is not None and descriptor.exists():
                 metadata = decode(descriptor.read_bytes())['metadata']
             else:
                 from .errors import CacheMiss

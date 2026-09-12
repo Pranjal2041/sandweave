@@ -84,6 +84,8 @@ def remove(path):
 
 def release(worker, pool, sources, references=(), shared_cache=None):
     """Idempotent worker RPC. Keep tombstones and journals; delete only owned payloads."""
+    from .artifacts import cache_path
+    shared_cache = cache_path(shared_cache)
     validate(pool)
     sources = set(sources)
     for identity in sources:

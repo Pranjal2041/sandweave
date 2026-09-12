@@ -143,6 +143,20 @@ def test_live_reference_and_named_cache_block_reclamation(stored):
     assert (first.root/'snapshots'/SNAP/'payload').read_text() == 'owned'
 
 
+def test_snapshot_metadata_still_accepts_cache_names(stored, monkeypatch):
+    worker, record = stored[0][0], stored[1]
+    worker.store.publish('named-snapshot', record, None)
+    monkeypatch.setattr(worker.store, 'verify', lambda record: {'status': 'passed'})
+    assert worker.artifacts.dispatch('artifact_metadata', {'reference': 'named-snapshot'}) == record
+
+
+def test_release_rejects_relative_shared_path_before_deleting(stored):
+    worker = stored[0][0]
+    with pytest.raises(ValueError, match='absolute path'):
+        retention.release(worker, POOL, [SOURCE], [SNAP], '../other')
+    assert (worker.root/'snapshots'/SNAP/'payload').exists()
+
+
 def test_interrupted_capture_without_revision_record_is_reclaimed(stored):
     workers, _ = stored
     worker = workers[0]

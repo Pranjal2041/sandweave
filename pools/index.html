@@ -1041,6 +1041,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#release-pool-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release pool files
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1350,6 +1361,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#release-pool-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release pool files
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1448,7 +1470,7 @@ payload through the controller. With node-local storage, workers on each node
 reuse that node's copy; Weave transfers the baseline once per cache. The path
 does not change worker state directories or share writable sandbox files.</p>
 <p>Local pools, including pools with explicit <code>targets</code>, also accept <code>shared_cache</code>.
-Closing a pool keeps the cache for reuse. Creating separate pools still creates
+By default, closing a pool keeps the cache for reuse. Creating separate pools still creates
 separate baselines unless they use the same saved <code>cache</code> or <code>snapshot</code>.
 Workers may link or copy cached files into their runtime workspace; this setting
 does not guarantee zero disk copies across filesystems.</p>
@@ -1475,9 +1497,28 @@ running. Use <code>pool.terminate()</code> to end a cluster pool. A context that
 pool terminates it on exit, including when <code>detached=True</code>.</p>
 <p>Use a <a href="../jobs/">job</a> for a submitted command that should run independently of your
 Python callback and retain its result.</p>
-<p>Closing a pool releases its environments. It retains saved baselines and image
-files for reuse. Automatic eviction by age or storage size is not implemented;
-pool size bounds live environments, not retained disk usage.</p>
+<h2 id="release-pool-files">Release pool files<a class="headerlink" href="#release-pool-files" title="Permanent link">&para;</a></h2>
+<p>For a cluster pool whose prepared files are needed only for one run:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">,</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>          <span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">warm</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">retain_baseline</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">results</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">evaluate</span><span class="p">,</span> <span class="n">programs</span><span class="p">))</span>
+</code></pre></div>
+<p>This requires Sandweave 0.2.13 or newer on the client, controller and workers.
+After the sandboxes terminate, closing the pool removes its generated snapshots,
+downloaded image files and private writable workspaces. Shared caches use a
+pool-specific subdirectory. Previously prepared images can be linked or copied
+into that directory without rebuilding; their original copies remain available.
+Shared runtime installations, external volumes and other pools' files remain.</p>
+<p>Use this option with a new gVisor baseline. It cannot be combined with <code>cache</code>,
+<code>snapshot</code>, <code>cache_key</code>, or <code>keep_on_error</code>. Local pools retain their files.
+The default <code>retain_baseline=True</code> preserves the existing behavior.</p>
+<p>If another sandbox, pool or named cache still needs the baseline, cleanup waits
+and <code>pool.info["cleanup_error"]</code> explains what retains it. Otherwise, closure
+waits for reclamation and <code>pool.info["artifacts_released"]</code> becomes <code>True</code>.
+The controller retries interrupted cleanup; a close timeout leaves that request
+active. Small lifecycle records and release markers remain for recovery.</p>
+<p>Automatic eviction by age or storage size is not implemented. Pool size bounds
+live environments; <code>retain_baseline=False</code> bounds the lifetime of its own files.</p>
 
 
 

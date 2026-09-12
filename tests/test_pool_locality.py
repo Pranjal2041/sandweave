@@ -233,7 +233,7 @@ def test_unavailable_machine_identity_never_groups_by_hostname():
 
 
 def test_pool_exposes_cache_and_affinity_and_passes_cache_to_launch(lab, monkeypatch):
-    assert set(lab.controller.dispatch('ping', {})['pool_options']) == {'shared_cache', 'affinity'}
+    assert set(lab.controller.dispatch('ping', {})['pool_options']) >= {'shared_cache', 'affinity'}
     pool = make_pool(lab.controller, size=2, warm=2)
     record = lab.controller.state.get('pool', pool)
     lab.controller.state.put('pool', {**record, 'shared_cache': '/workers/shared', 'affinity': 'machine'})

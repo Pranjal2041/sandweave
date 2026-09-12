@@ -279,3 +279,16 @@ class Runtime:
     def terminate(self, identity):
         self.detach(identity)
         return self.manager.stop(identity, discard=True)
+
+    def discard(self, identity):
+        """Remove only this stopped sandbox's writable bundle and network files."""
+        from ...retention import remove
+        control = importlib.import_module('environment_control')
+        with control.acquire_lock(self.manager.local, identity):
+            status = self.manager.status(identity)
+            if status['status'] in ('running', 'paused', 'starting'):
+                raise ResourceUnavailable('cannot discard a live sandbox')
+            importlib.import_module('disk_memory').cleanup(self.manager._logs(identity))
+            remove(self.manager._bundle(identity))
+            remove(self.manager.local / 'gvisor/network' / identity)
+            (self.root / 'sandboxes' / (identity + '.mounts.json')).unlink(missing_ok=True)

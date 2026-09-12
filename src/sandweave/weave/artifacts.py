@@ -13,6 +13,8 @@ def register(controller, reference, endpoint, key=None, *, expected=None, compar
         connection.close()
     with controller.state.transaction():
         old = controller.state.get('artifact', info['id'], required=False)
+        if old and (old.get('retiring') or old.get('released')):
+            raise CacheMiss('snapshot is being released: ' + info['id'])
         locations = old['locations'] if old else []
         if endpoint not in locations:
             locations.append(endpoint)
@@ -30,6 +32,8 @@ def resolve(controller, reference):
     identity = alias['reference'] if alias else reference
     record = controller.state.get('artifact', identity, required=False)
     if record:
+        if record.get('retiring') or record.get('released'):
+            raise CacheMiss('snapshot has been released or is being released: ' + identity)
         return record
     for worker in controller.state.list('worker', state='ready'):
         try:
@@ -43,10 +47,14 @@ def resolve(controller, reference):
 def ensure(controller, reference, destination, endpoint, shared_cache=None):
     record = resolve(controller, reference)
     try:
-        if shared_cache is None:
-            destination.call('snapshot_info', reference=record['id'])
-            return record['id']
-        if destination.call('artifact_cached', reference=record['id'], shared_cache=shared_cache)['ready']:
+        destination.call('snapshot_info', reference=record['id'])
+        if endpoint not in record['locations']:
+            register(controller, record['id'], endpoint)
+        return record['id']
+    except (CacheMiss, FileNotFoundError):
+        pass
+    try:
+        if shared_cache is not None and destination.call('artifact_cached', reference=record['id'], shared_cache=shared_cache)['ready']:
             register(controller, record['id'], endpoint)
             return record['id']
     except (CacheMiss, FileNotFoundError):

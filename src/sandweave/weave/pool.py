@@ -30,7 +30,8 @@ class Pool(LocalPool):
 
 class ManagedPool(LocalPool):
     def __init__(self, *, target, size=1, warm=0, weight=1, priority=0, labels=None,
-                 placement='spread', shared_cache=None, affinity=None, wait_timeout=300, **options):
+                 placement='spread', shared_cache=None, affinity=None, wait_timeout=300,
+                 retain_baseline=True, **options):
         from .client import ClusterConnection, cluster_config
         shared_cache = cache_path(shared_cache)
         validate(size=size, warm=warm, weight=weight, priority=priority, labels=labels or {},
@@ -40,6 +41,10 @@ class ManagedPool(LocalPool):
         self.size, self.warm, self.target = size, warm, target
         self.policy = dict(size=size, warm=warm, weight=weight, priority=priority, labels=labels or {},
                            placement=placement, affinity=affinity, shared_cache=shared_cache)
+        if type(retain_baseline) is not bool:
+            raise ValueError('retain_baseline must be a bool')
+        if not retain_baseline:
+            self.policy['retain_baseline'] = False
         self.id = 'pool-' + uuid.uuid4().hex
         self.name = options.pop('name', None)
         self.options = options
@@ -69,8 +74,12 @@ class ManagedPool(LocalPool):
                 raise RuntimeError('pool is closed')
             if not self.started:
                 requested = {k for k in ('shared_cache', 'affinity') if self.policy.get(k) is not None}
+                if not self.policy.get('retain_baseline', True):
+                    requested.add('retain_baseline')
                 if requested and requested - set(self.connection.call('ping').get('pool_options', ())):
-                    raise UnsupportedFeature('shared_cache and affinity require Sandweave 0.2.7 or newer on the controller')
+                    version = '0.2.13' if 'retain_baseline' in requested else '0.2.7'
+                    raise UnsupportedFeature('requested pool options require Sandweave ' + version +
+                                             ' or newer on the controller: ' + ', '.join(sorted(requested)))
                 request = definition(target=self.target, **self.options)
                 if proxy.requires_policy(request['spec']['resources']['network']) and not self.connection.call('ping').get('proxy_policy'):
                     raise UnsupportedFeature('pool proxy policies require Sandweave 0.2.10 or newer on the controller')
@@ -239,7 +248,9 @@ def status(controller, identity):
     pool = resolve(controller, identity)
     live = controller.state.list('allocation', parent=pool['id'], released=False)
     return {**{k: pool.get(k) for k in ('id', 'name', 'state', 'size', 'warm', 'weight', 'priority',
-                                       'labels', 'placement', 'affinity', 'shared_cache', 'error', 'baseline')},
+                                       'labels', 'placement', 'affinity', 'shared_cache', 'error', 'baseline',
+                                       'artifacts_released', 'cleanup_error')},
+            'retain_baseline': pool.get('retain_baseline', True),
             'ready': sum(a['state'] == 'ready' and not a.get('lease') and a.get('role') != 'builder' and a['desired'] == 'running' for a in live),
             'active': sum(bool(a.get('lease')) for a in live),
             'pending': sum(a['state'] in ('pending', 'reserved', 'starting', 'unknown') for a in live),
@@ -255,6 +266,17 @@ def dispatch(controller, operation, params):
         policy = {k: params[k] for k in ('size', 'warm', 'weight', 'priority', 'labels', 'placement')}
         policy.update(affinity=params.get('affinity'), shared_cache=cache_path(params.get('shared_cache')))
         validate(**policy)
+        retain = params.get('retain_baseline', True)
+        if type(retain) is not bool:
+            raise ValueError('retain_baseline must be a bool')
+        if not retain:
+            from ..sandbox.retention import validate as validate_pool
+            validate_pool(identity)
+            if (params['request'].get('reference') or params['request'].get('cache_key') or
+                    params['request']['spec'].get('keep_on_error') or
+                    params['request']['spec']['runtime'] != 'gvisor'):
+                raise ValueError('retain_baseline=False requires a new gvisor baseline without cache, cache_key or keep_on_error')
+        policy['retain_baseline'] = retain
         controller._owner_process(params.get('owner'))
         request = params['request']
         if proxy.requires_policy(request['spec']['resources']['network']):
@@ -266,6 +288,10 @@ def dispatch(controller, operation, params):
                 if resolve_artifact(controller, request['reference'])['info']['state'] == 'memory':
                     raise ValueError('pool proxy policies require a filesystem cache; memory snapshots retain their assigned proxy')
         with state.transaction():
+            reference = params['request'].get('reference')
+            artifact = state.get('artifact', reference, required=False) if reference else None
+            if artifact and (artifact.get('retiring') or artifact.get('released')):
+                raise ResourceUnavailable('pool baseline is being released')
             existing = state.get('pool', identity, required=False)
             if existing is None:
                 if params.get('name') and any(p.get('name') == params['name'] and p['state'] != 'closed' for p in state.list('pool')):
@@ -274,7 +300,8 @@ def dispatch(controller, operation, params):
                     name=params.get('name'), owner=params.get('owner'), request=params['request'],
                     baseline=params['request'].get('reference'), failures=0, **policy), event={'message': 'pool requested'})
             elif (existing['request'] != params['request'] or existing.get('owner') != params.get('owner') or
-                    existing.get('shared_cache') != policy['shared_cache']):
+                    existing.get('shared_cache') != policy['shared_cache'] or
+                    existing.get('retain_baseline', True) != retain):
                 raise FileExistsError('pool ID is already in use')
         return status(controller, identity)
     pool = resolve(controller, identity)
@@ -361,6 +388,8 @@ def _new_member(controller, pool, *, builder=False):
         request['spec'] = copy.deepcopy(pool.get('baseline_spec', request['spec']))
         request.update(reference=pool['baseline'], cache_key=None, refresh=False)
     request['spec'].update(detached=True, ttl=None, name=None)
+    if not pool.get('retain_baseline', True):
+        request['spec'].update(discard_workspace=True, _retention_pool=pool['id'])
     identity = ('vr-sw-' if 'vr' in request['spec']['template']['capabilities'] else 'sw-') + uuid.uuid4().hex
     with controller.state.transaction():
         pool = resolve(controller, pool['id'])
@@ -452,6 +481,51 @@ def _claim(controller, pool_id, lease_id, sandbox_id):
             connection.close()
 
 
+def _release_artifacts(controller, pool_id):
+    state = controller.state
+    pool = resolve(controller, pool_id)
+    allocations = state.list('allocation', parent=pool_id)
+    if pool['desired'] != 'closed' or any(not a.get('released') for a in allocations):
+        return
+    sources = {a['id'] for a in allocations}
+    try:
+        with state.transaction():
+            records = [r for r in state.list('artifact') if r['id'] == pool.get('baseline') or r['info']['source'] in sources]
+            references = {r['id'] for r in records} | ({pool['baseline']} if pool.get('baseline') else set())
+            if references and (any(p['id'] != pool_id and p['state'] != 'closed' and
+                                 (p.get('baseline') in references or p['request'].get('reference') in references)
+                                 for p in state.list('pool')) or
+                              any(a['parent'] != pool_id and a['request'].get('reference') in references
+                                  for a in state.list('allocation', released=False)) or
+                              any(a['reference'] in references for a in state.list('alias'))):
+                raise ResourceUnavailable('pool baseline is retained by another cluster user')
+            for record in records:
+                state.put('artifact', {**record, 'retiring': True})
+        endpoints = [a['endpoint'] for a in allocations if a.get('endpoint') and not a.get('retention_unsupported')]
+        endpoints.extend(e for record in records for e in record['locations'])
+        routes = {(e['hostname'], e['workspace']): e for e in endpoints}
+        for endpoint in routes.values():
+            connection = controller.connection(endpoint)
+            try:
+                connection.call('artifact_release', pool=pool_id, references=sorted(references),
+                                sources=sorted(sources), shared_cache=pool.get('shared_cache'))
+            finally:
+                connection.close()
+        with state.transaction():
+            current = resolve(controller, pool_id)
+            current.pop('cleanup_error', None)
+            current.pop('cleanup_retry_at', None)
+            state.put('pool', {**current, 'artifacts_released': True},
+                      event={'message': 'pool artifacts released'})
+            for record in records:
+                state.put('artifact', {**state.get('artifact', record['id']), 'released': True, 'locations': []})
+    except Exception as error:
+        with state.transaction():
+            current = resolve(controller, pool_id)
+            state.put('pool', {**current, 'cleanup_error': str(error), 'cleanup_retry_at': time.time() + 5},
+                      event={'message': 'pool artifact cleanup will retry', 'error': str(error)})
+
+
 def reconcile(controller):
     state = controller.state
     for pool in state.list('pool'):
@@ -465,7 +539,11 @@ def reconcile(controller):
             for allocation in live:
                 controller.allocation_cancel(allocation['id'])
             if not live:
-                state.put('pool', {**pool, 'state': 'closed'})
+                if not pool.get('retain_baseline', True) and not pool.get('artifacts_released'):
+                    if time.time() >= pool.get('cleanup_retry_at', 0):
+                        controller._submit(('capture', pool['id']), _release_artifacts, controller, pool['id'])
+                else:
+                    state.put('pool', {**pool, 'state': 'closed'})
             continue
         if pool['state'] == 'failed':
             _fail(controller, pool['id'], pool.get('error') or 'pool failed')

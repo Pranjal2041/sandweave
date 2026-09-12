@@ -111,6 +111,31 @@ class Worker:
         os.replace(temporary, destination)
 
     def create(self, spec, identity, *, operation_id=None, reference=None, cache_key=None, refresh=False, owner=None):
+        if self.path(identity).exists():
+            return self._prepare_create(spec, identity, operation_id=operation_id, reference=reference,
+                                        cache_key=cache_key, refresh=refresh, owner=owner)
+        from . import retention
+        pool = spec.get('_retention_pool')
+        if reference:
+            pool = self.store.resolve(reference).get('spec', {}).get('_retention_pool', pool)
+        if pool:
+            spec = {**spec, '_retention_pool': pool}
+            retention.pin(pool, self.root, identity)
+        try:
+            return self._prepare_create(spec, identity, operation_id=operation_id, reference=reference,
+                                        cache_key=cache_key, refresh=refresh, owner=owner)
+        except BaseException:
+            if pool:
+                if not self.path(identity).exists():
+                    retention.unpin(pool, self.root, identity)
+                elif not spec.get('keep_on_error'):
+                    try:
+                        self.terminate(identity)
+                    except Exception:
+                        logging.getLogger(__name__).exception('Pool sandbox cleanup will retry: %s', identity)
+            raise
+
+    def _prepare_create(self, spec, identity, *, operation_id=None, reference=None, cache_key=None, refresh=False, owner=None):
         if not spec.get('detached', True) and owner is None:
             raise ValueError('an attached sandbox requires a process owner')
         if spec.get('detached') and owner is not None:
@@ -378,6 +403,8 @@ class Worker:
         if experimental_gpu_live and (state != 'memory' or not record['spec']['resources']['gpu']):
             raise ValueError('experimental GPU live capture requires GPU memory state')
         revision = 'snap-' + uuid.uuid4().hex
+        from .retention import capture as retain_capture
+        retain_capture(record['spec'].get('_retention_pool'), revision, identity)
         self.detach_controls(identity, reason='snapshot')
         try:
             saved = self.runtime.capture(identity, revision, state, experimental_gpu_live=experimental_gpu_live)
@@ -428,6 +455,10 @@ class Worker:
         self.detach_controls(identity, reason='terminate')
         if self.runtime.status(identity)['status'] in ('running', 'paused', 'starting'):
             self.runtime.terminate(identity)
+        if record['spec'].get('discard_workspace'):
+            self.runtime.adapter(record['spec']['runtime']).discard(identity)
+        from .retention import unpin
+        unpin(record['spec'].get('_retention_pool'), self.root, identity)
         record['state'] = 'terminated'
         self.write(record)
         return self.describe(identity)
@@ -575,7 +606,7 @@ class Worker:
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
                     'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget,
-                    'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1}
+                    'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1, 'pool_retention': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')

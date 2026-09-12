@@ -96,22 +96,40 @@ def metadata(config):
     return {'env': environment, 'workdir': working_dir, 'user': user, **commands}
 
 
-def prepare(image, root, *, refresh=False):
+def prepare(image, root, *, refresh=False, pool=None):
     """Return a pinned descriptor; a cached tag performs no registry requests."""
     from ..bootstrap import Builder, download
     from ..setup_progress import Stage
     root = Path(root)
-    directory = home() / 'images'
+    shared = home() / 'images'
+    directory = shared
+    if pool:
+        from ..sandbox.retention import validate
+        directory = directory / 'pools' / validate(pool)
     directory.mkdir(parents=True, exist_ok=True)
     alias = directory / 'references' / (fingerprint(reference(image)) + '.json')
     with locked(alias.with_suffix('.lock')):
         registry = Registry(image, directory / 'blobs')
-        selected = json.loads(alias.read_text()) if alias.is_file() and not refresh else registry.resolve()
+        cached_alias = alias
+        if pool and not cached_alias.is_file():
+            cached_alias = shared / 'references' / alias.name
+        selected = json.loads(cached_alias.read_text()) if cached_alias.is_file() and not refresh else registry.resolve()
         settings = metadata(selected['config'])
         key = fingerprint({'digest': selected['digest'], 'python': PYTHON_SHA256, 'format': FORMAT})
         destination = directory / (key + '.erofs')
         receipt = destination.with_suffix('.json')
         with locked(directory / (key + '.lock')):
+            if pool and not destination.exists():
+                # Borrow a previously prepared immutable image into the pool's
+                # namespace. Closing the pool removes only its link or copy.
+                with locked(shared / (key + '.lock')):
+                    original = shared / destination.name
+                    original_receipt = original.with_suffix('.json')
+                    info = json.loads(original_receipt.read_text()) if original_receipt.is_file() else {}
+                    if original.is_file() and (info.get('signature') == file_signature(original) or
+                                              info.get('sha256') == file_digest(original)):
+                        _immutable(original, destination, sha256=info['sha256'])
+                        atomic_json(receipt, {'sha256': info['sha256'], 'signature': file_signature(destination)})
             recorded = json.loads(receipt.read_text()) if receipt.is_file() else {}
             valid = destination.is_file() and recorded.get('signature') == file_signature(destination)
             if not valid and destination.is_file() and recorded.get('sha256') == file_digest(destination):
@@ -125,7 +143,9 @@ def prepare(image, root, *, refresh=False):
                     # The builder needs its trusted helper files in /lab. Only
                     # temporary files go here; durable image blobs use the
                     # selected Sandweave data directory.
-                    with tempfile.TemporaryDirectory(prefix='.image-', dir=root) as temporary:
+                    build_root = root / 'pool-builds' / pool if pool else root
+                    build_root.mkdir(parents=True, exist_ok=True)
+                    with tempfile.TemporaryDirectory(prefix='.image-', dir=build_root) as temporary:
                         working = Path(temporary)
                         filesystem = Filesystem()
                         for number, (layer, expected) in enumerate(zip(layers, selected['config']['rootfs']['diff_ids'])):
@@ -156,8 +176,8 @@ def prepare(image, root, *, refresh=False):
                         atomic_json(receipt, recorded)
                         progress.update(advance=1, detail='Ready')
             atomic_json(alias, selected)
-        relative = 'images/oci-' + key + '.erofs'
-        (root / 'images').mkdir(exist_ok=True)
+        relative = ('images/pools/' + pool + '/' if pool else 'images/') + 'oci-' + key + '.erofs'
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
         _immutable(destination, root / relative)
         return {'reference': image, 'digest': selected['digest'], 'platform': selected['platform'],
                 'base_image': relative, 'agent': '/' + PRIVATE + '/python/bin/python3.13',
@@ -167,7 +187,7 @@ def prepare(image, root, *, refresh=False):
 def configure(spec, root, *, refresh=False):
     spec = copy.deepcopy(spec)
     started = time.monotonic()
-    image = prepare(spec['image']['reference'], root, refresh=refresh)
+    image = prepare(spec['image']['reference'], root, refresh=refresh, pool=spec.get('_retention_pool'))
     spec['image'] = image
     recipe, settings = spec['template'], image['settings']
     spec['env'] = {**settings['env'], **spec.get('env', {})}

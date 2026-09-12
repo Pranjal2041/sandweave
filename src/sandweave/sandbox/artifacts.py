@@ -285,6 +285,9 @@ class Artifacts:
         return self.import_shared(saved)
 
     def dispatch(self, operation, parameters):
+        from . import retention
+        if operation == 'artifact_release':
+            return retention.release(self.worker, **parameters)
         parameters = dict(parameters)
         shared_cache = parameters.pop('shared_cache', None)
         if shared_cache is not None:
@@ -297,4 +300,19 @@ class Artifacts:
                   'cached': self.cached, 'cache': self.cache}.get(operation)
         if method is None:
             raise ValueError('unknown artifact operation')
-        return method(**parameters)
+        metadata = parameters.get('metadata') or parameters.get('manifest', {}).get('metadata')
+        if metadata is None and parameters.get('reference'):
+            reference = parameters['reference']
+            descriptor = self.directory(reference) / 'manifest.bin'
+            if descriptor.exists():
+                metadata = decode(descriptor.read_bytes())['metadata']
+            else:
+                from .errors import CacheMiss
+                try:
+                    metadata = self.worker.store.resolve(reference)
+                except CacheMiss:
+                    pass
+        pool = (metadata or {}).get('spec', {}).get('_retention_pool')
+        with retention.guard(pool):
+            retention.active(pool)
+            return method(**parameters)

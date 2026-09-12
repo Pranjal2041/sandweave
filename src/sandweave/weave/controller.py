@@ -82,6 +82,8 @@ class Controller:
 
     def _submit(self, key, function, *args):
         with self.guard:
+            if self.stopping.is_set():
+                return
             previous = self.pending.get(key)
             if previous is not None and not previous.done():
                 return
@@ -347,6 +349,9 @@ class Controller:
                 if (old['canonical_stamp'] != canonical if 'canonical_stamp' in old else old['stamp'] != stamp):
                     raise FileExistsError('sandbox ID belongs to a different request')
                 return self._public_allocation(old)
+            artifact = self.state.get('artifact', reference, required=False) if reference else None
+            if artifact and (artifact.get('retiring') or artifact.get('released')):
+                raise ResourceUnavailable('snapshot is being released')
             if spec.get('name') and any(a['spec'].get('name') == spec['name'] and not a.get('released')
                                        for a in self.state.list('allocation')):
                 raise FileExistsError('sandbox name is already in use')
@@ -436,13 +441,22 @@ class Controller:
                     return
                 record = self.state.put('allocation', {**record, 'endpoint': route, 'state': 'starting'})
             request = record['request']
+            if request['spec'].get('discard_workspace') and not connection.call('ping').get('pool_retention'):
+                with self.state.transaction():
+                    current = self.state.get('allocation', identity)
+                    self.state.put('allocation', {**current, 'retention_unsupported': True})
+                raise UnsupportedFeature('retain_baseline=False requires Sandweave 0.2.13 or newer on every participating worker')
             from ..sandbox.proxy import requires_policy
             if requires_policy(request['spec']['resources']['network']) and not connection.call('ping').get('proxy_policy'):
                 raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on every participating worker')
             if request.get('reference'):
                 from .artifacts import ensure
                 pool = self.state.get('pool', record['parent'], required=False) if record.get('parent') else None
-                ensure(self, request['reference'], connection, route, (pool or {}).get('shared_cache'))
+                cache = (pool or {}).get('shared_cache')
+                if pool and not pool.get('retain_baseline', True):
+                    from ..sandbox.retention import shared_path
+                    cache = shared_path(cache, pool['id'])
+                ensure(self, request['reference'], connection, route, cache)
             initial = connection
             connection = self.connection(route, timeout=request['spec']['startup_timeout'] + 60)
             initial.close()
@@ -461,6 +475,8 @@ class Controller:
                         current.pop('error', None)
                     if current['state'] in scheduler.TERMINAL:
                         current['released'] = response['sandbox'].get('runtime_status', {}).get('status') not in ('running', 'paused', 'starting')
+                        if current['spec'].get('discard_workspace') and current['state'] != 'terminated':
+                            current.update(desired='terminated', released=False, generation=current['generation'] + 1)
                 self.state.put('allocation', current, event={'message': 'worker acknowledged creation', 'state': current['state']})
         except OperationUnknown as error:
             self._uncertain(identity, error, generation=record['generation'])
@@ -497,6 +513,9 @@ class Controller:
                 if current['generation'] != record['generation'] or current['state'] == 'claiming' or current.get('released'):
                     return
                 released = info['runtime_status']['status'] not in ('running', 'paused', 'starting') and info['state'] not in ('creating', 'preparing')
+                if released and current['spec'].get('discard_workspace') and info['state'] != 'terminated':
+                    self.allocation_cancel(identity)
+                    return
                 state = info['state']
                 if current.get('lease') and state == 'ready':
                     state = 'leased'
@@ -622,7 +641,7 @@ class Controller:
             return self.relay.results(**parameters)
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
-                    'pool_options': ['shared_cache', 'affinity'], 'proxy_policy': 1,
+                    'pool_options': ['shared_cache', 'affinity', 'retain_baseline'], 'proxy_policy': 1,
                     'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1}
         if operation == 'events':
             return self.state.events(**parameters)

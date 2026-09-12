@@ -222,6 +222,11 @@ def test_prepared_image_reuses_digest_without_registry_or_repacking(tmp_path, mo
     assert counters == {'resolve': 2, 'download': 1, 'pack': 1}
     assert (root / first['base_image']).is_file()
     assert first['settings']['workdir'] == '/'
+    for pool in ('pool-' + 'a'*32, 'pool-' + 'b'*32):
+        private = images.prepare('docker://example.com/image', root, pool=pool)
+        assert private['base_image'].startswith('images/pools/' + pool + '/')
+        assert (root / private['base_image']).read_bytes() == (root / first['base_image']).read_bytes()
+    assert counters == {'resolve': 2, 'download': 1, 'pack': 1}
 
 
 def test_redirect_does_not_forward_registry_token_to_blob_host():

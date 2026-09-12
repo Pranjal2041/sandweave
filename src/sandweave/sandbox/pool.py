@@ -16,7 +16,12 @@ from .transfers import transfer
 
 
 class Pool:
-    def __init__(self, *, size=1, warm=0, targets=None, shared_cache=None, affinity=None, **sandbox_options):
+    def __init__(self, *, size=1, warm=0, targets=None, shared_cache=None, affinity=None,
+                 retain_baseline=True, **sandbox_options):
+        if type(retain_baseline) is not bool:
+            raise ValueError('retain_baseline must be a bool')
+        if not retain_baseline:
+            raise ValueError('retain_baseline=False requires a cluster target')
         if affinity is not None:
             raise ValueError('pool affinity requires a cluster target')
         self.shared_cache = cache_path(shared_cache)

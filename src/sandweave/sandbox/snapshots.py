@@ -14,6 +14,7 @@ from .asyncio import dualmethod
 from .errors import CacheConflict, CacheMiss, IncompatibleSnapshot
 from .wire import encode, decode
 from .workspace import home, locked, atomic_json, _immutable, file_signature
+from . import retention
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,9 @@ class Store:
 
     def publish(self, name, revision, expected, *, provenance='captured', fingerprint=None):
         # Caller reads the expected revision before starting its capture/build.
-        with self.name_lock(name):
+        pool = self.resolve(revision['id']).get('spec', {}).get('_retention_pool')
+        with retention.guard(pool), self.name_lock(name):
+            retention.active(pool)
             current = self.alias(name)
             if (current or {}).get('id') != expected:
                 raise CacheConflict('cache name changed during publication: ' + name)
@@ -88,11 +91,18 @@ class Store:
         if not path.is_file():
             raise CacheMiss('saved revision does not exist: ' + str(reference))
         record = decode(path.read_bytes())
+        retention.active(record.get('spec', {}).get('_retention_pool'))
         # Metadata includes preparation inputs and the live agent secret. It is
         # private to the worker; only public() crosses the control boundary.
         return record
 
     def record(self, identity, saved, source):
+        pool = source['spec'].get('_retention_pool')
+        with retention.guard(pool):
+            retention.active(pool)
+            return self._record(identity, saved, source)
+
+    def _record(self, identity, saved, source):
         path = Path(saved['snapshot'])
         manifest = json.loads((path / 'snapshot-manifest.json').read_text())
         metadata = {'id': identity, 'state': 'filesystem' if saved['kind'] == 'filesystem' else 'memory',
@@ -129,6 +139,12 @@ class Store:
 
     def materialize(self, record):
         """Make all engine-relative inputs available on this worker, without aliases outside it."""
+        pool = record.get('spec', {}).get('_retention_pool')
+        with retention.guard(pool):
+            retention.active(pool)
+            return self._materialize(record)
+
+    def _materialize(self, record):
         import snapshot_store
         source, workspace = Path(record['location']), Path(record['workspace'])
         native = record.get('spec', {}).get('runtime', 'gvisor') == 'apptainer'

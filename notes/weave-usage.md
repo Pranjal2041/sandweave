@@ -12,6 +12,10 @@ under an explicit worker path. `affinity="machine"` prefers workers sharing a
 Linux boot ID; `affinity="worker"` prefers one worker. Both allow spillover.
 These options require Sandweave 0.2.7 or newer on the client, controller and workers.
 
+Cluster pools also accept `retain_baseline=False` with 0.2.13 or newer peers.
+The [retention guide](../docs/pools.md#release-pool-files) describes which files
+are reclaimed, reference protection, and retryable cleanup after closure.
+
 These connection examples use Sandweave 0.2.3 or newer. Upgrade an existing installation
 with `uv pip install --upgrade sandweave` before trying these examples.
 

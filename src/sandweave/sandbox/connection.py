@@ -2,7 +2,7 @@
 import asyncio
 import http.client
 import socket
-import select
+import selectors
 import threading
 import ssl
 
@@ -69,7 +69,9 @@ class Connection:
             # EOF before sending any bytes; reconnecting here cannot duplicate
             # a mutation. Failures after sending still have uncertain outcomes.
             try:
-                readable = select.select([connection.sock], [], [], 0)[0]
+                with selectors.DefaultSelector() as watcher:
+                    watcher.register(connection.sock, selectors.EVENT_READ)
+                    readable = watcher.select(0)
                 # SSL sockets cannot use MSG_PEEK. With no outstanding request,
                 # readable TLS data may be close_notify or a session ticket;
                 # replacing the idle connection is safe in either case.

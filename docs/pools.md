@@ -97,7 +97,7 @@ reuse that node's copy; Weave transfers the baseline once per cache. The path
 does not change worker state directories or share writable sandbox files.
 
 Local pools, including pools with explicit `targets`, also accept `shared_cache`.
-Closing a pool keeps the cache for reuse. Creating separate pools still creates
+By default, closing a pool keeps the cache for reuse. Creating separate pools still creates
 separate baselines unless they use the same saved `cache` or `snapshot`.
 Workers may link or copy cached files into their runtime workspace; this setting
 does not guarantee zero disk copies across filesystems.
@@ -132,6 +132,32 @@ pool terminates it on exit, including when `detached=True`.
 Use a [job](jobs.md) for a submitted command that should run independently of your
 Python callback and retain its result.
 
-Closing a pool releases its environments. It retains saved baselines and image
-files for reuse. Automatic eviction by age or storage size is not implemented;
-pool size bounds live environments, not retained disk usage.
+## Release pool files
+
+For a cluster pool whose prepared files are needed only for one run:
+
+```python
+with Pool(target="lab", image="docker://python:3.12-slim",
+          size=8, warm=2, retain_baseline=False) as pool:
+    results = list(pool.map(evaluate, programs))
+```
+
+This requires Sandweave 0.2.13 or newer on the client, controller and workers.
+After the sandboxes terminate, closing the pool removes its generated snapshots,
+downloaded image files and private writable workspaces. Shared caches use a
+pool-specific subdirectory. Previously prepared images can be linked or copied
+into that directory without rebuilding; their original copies remain available.
+Shared runtime installations, external volumes and other pools' files remain.
+
+Use this option with a new gVisor baseline. It cannot be combined with `cache`,
+`snapshot`, `cache_key`, or `keep_on_error`. Local pools retain their files.
+The default `retain_baseline=True` preserves the existing behavior.
+
+If another sandbox, pool or named cache still needs the baseline, cleanup waits
+and `pool.info["cleanup_error"]` explains what retains it. Otherwise, closure
+waits for reclamation and `pool.info["artifacts_released"]` becomes `True`.
+The controller retries interrupted cleanup; a close timeout leaves that request
+active. Small lifecycle records and release markers remain for recovery.
+
+Automatic eviction by age or storage size is not implemented. Pool size bounds
+live environments; `retain_baseline=False` bounds the lifetime of its own files.

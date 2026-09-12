@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.13
+
+- Use scalable socket readiness checks for synchronous connections with high
+  file descriptor numbers. Keep the async transport and bounded executors.
+- Reuse snapshots already present on the destination worker even when a shared
+  cache is configured; register the additional location without transferring it.
+- Add `Pool(target=..., retain_baseline=False)` to reclaim the pool's generated
+  snapshots, image files and stopped writable workspaces after closure. Workers
+  protect live references and named caches, reject imports during retirement,
+  and resume interrupted cleanup. Existing retention remains the default.
+- Reuse previously prepared images in private pool storage without downloading
+  or building them again. Shared runtime installation files remain available.
+- Negotiate retention support before launching on a worker. Failed builders
+  and rejected older workers do not leave cleanup waiting for nonexistent files.
+
 ## 0.2.12
 
 - Serve controller records from indexed memory. Persist worker observations in

@@ -375,6 +375,11 @@ with Pool(target="lab", size=8, warm=2,
 writable state. `affinity="worker"` prefers the same worker instead. Affinity
 falls back when capacity is unavailable. See [shared caches and placement](https://pranjal2041.github.io/sandweave/pools/#reuse-images-across-workers).
 
+To release a cluster pool's prepared files when it closes, pass
+`retain_baseline=False`. The pool removes its generated snapshots, image files
+and stopped writable workspaces once they are no longer in use. Existing files
+are retained by default. See [pool file retention](https://pranjal2041.github.io/sandweave/pools/#release-pool-files).
+
 Add an existing SSH worker with
 `sandweave cluster add lab --target ssh://worker-two`. Each worker needs
 Sandweave installed. You can also register existing Slurm allocations.

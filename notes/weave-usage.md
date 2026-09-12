@@ -380,8 +380,12 @@ records. `cluster.backup(path)` saves a consistent database copy. Credentials an
 process-owner leases are separate files, so preserve the controller directory
 alongside that database backup.
 
-This implementation uses one controller with SQLite and an exclusive controller
-lock. Rollback journaling avoids WAL's shared-memory requirement. It supports
+This implementation uses one controller with indexed memory records and an
+ordered SQLite persistence writer. Tool routing does not wait for database
+commits. Recoverable worker observations publish in memory immediately; resource
+reservations, ownership changes and job results publish after a durable commit.
+An exclusive controller lock prevents competing writers. Rollback journaling
+avoids WAL's shared-memory requirement. It supports
 controller restart; automatic failover to another controller host is a separate
 deployment feature. Backups of controller metadata do not contain sandbox disks
 or external volumes.

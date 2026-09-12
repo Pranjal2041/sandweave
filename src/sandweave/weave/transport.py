@@ -80,5 +80,9 @@ class ForwardedConnection:
         return self.control.call('sandbox_rpc', identity=self.route['id'],
                                  method=operation, parameters=parameters)
 
+    async def acall(self, operation, **parameters):
+        return await self.control.acall('sandbox_rpc', identity=self.route['id'],
+                                       method=operation, parameters=parameters)
+
     def close(self):
         pass  # The owning ClusterConnection closes this shared transport.

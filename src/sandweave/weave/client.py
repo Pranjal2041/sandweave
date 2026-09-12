@@ -246,6 +246,39 @@ class ClusterConnection:
                 connection.close()
             self.connections.clear()
 
+    async def aclose(self):
+        await self.control.aclose()
+        with self.lock:
+            connections = list(self.connections.values())
+            self.connections.clear()
+        for connection in connections:
+            if hasattr(connection, 'aclose'):
+                await connection.aclose()
+            else:
+                connection.close()
+
+    async def acall(self, operation, **params):
+        # Lifecycle operations retain their durable synchronous implementation.
+        # Commands and file traffic stay on the caller's event loop end to end.
+        fast = {'command_start', 'process_status', 'process_output', 'process_stdin',
+                'process_terminate', 'process_resize', 'file', 'describe'}
+        if operation not in fast:
+            import asyncio
+            return await asyncio.to_thread(self.call, operation, **params)
+        identity = params.get('identity')
+        if identity is None:
+            raise ValueError('sandbox operation needs an identity')
+        with self.registry['lock']:
+            route = self.registry['routes'].get(identity)
+        if route is None:
+            route = self.remember(await self.control.acall('allocation_route', identity=identity))
+        params['identity'] = route['id']
+        try:
+            return await self._worker(route).acall(operation, **params)
+        except OperationUnknown:
+            self.forget(route['id'])
+            raise
+
 
 class Cluster:
     """Manage a named cluster. Closing this handle leaves its controller running."""

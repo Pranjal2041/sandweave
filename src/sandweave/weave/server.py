@@ -1,14 +1,19 @@
-"""Authenticated controller service with HTTP, TLS and loopback SSH access."""
+"""Async authenticated controller listener for HTTP, TLS and SSH forwarding."""
 import argparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import functools
 import hmac
+import io
 import json
 import os
 from pathlib import Path
 import secrets
 import socket
-import threading
 import ssl
+from types import SimpleNamespace
+
+from aiohttp import web
 
 from .controller import Controller
 from ..sandbox.ownership import process_identity
@@ -16,7 +21,98 @@ from ..sandbox.wire import encode, decode, MAX_BODY
 from ..sandbox.workspace import atomic_json
 
 
-def serve(directory):
+class DashboardRequest:
+    """Adapt the existing read-only dashboard handlers without blocking sockets."""
+    def __init__(self, request, body):
+        self.path, self.command = request.raw_path, request.method
+        self.headers, self.rfile, self.wfile = request.headers, io.BytesIO(body), io.BytesIO()
+        self.client_address = (request.remote or '', 0)
+        self.connection = SimpleNamespace(settimeout=lambda value: None)
+        self.secure = request.secure
+        self.close_connection = False
+        self.status, self.response_headers = 200, {}
+
+    def send_response(self, status):
+        self.status = status
+
+    def send_header(self, key, value):
+        self.response_headers[key] = value
+
+    def end_headers(self):
+        pass
+
+
+class RPC:
+    def __init__(self, controller, token, dashboard, stop):
+        self.controller, self.token, self.dashboard, self.stop = controller, token, dashboard, stop
+        self.executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix='weave-control')
+        self.monitor_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix='weave-dashboard')
+        self.connections = {}
+        self.connection_lock = asyncio.Lock()
+
+    async def blocking(self, function, *args, monitoring=False, **kwargs):
+        executor = self.monitor_executor if monitoring else self.executor
+        return await asyncio.get_running_loop().run_in_executor(executor, functools.partial(function, *args, **kwargs))
+
+    async def forward(self, identity, method, parameters):
+        # Indexed memory lookup. Neither disk I/O nor lifecycle locks intervene.
+        endpoint = self.controller.sandbox_endpoint(identity)
+        if endpoint.get('relay'):
+            return await self.controller.relay.acall(endpoint, method, parameters, 300)
+        key = (endpoint['hostname'], endpoint['port'], endpoint.get('ssh_host'), endpoint.get('ssh_port'))
+        connection = self.connections.get(key)
+        if connection is None:
+            async with self.connection_lock:
+                connection = self.connections.get(key)
+                if connection is None:
+                    connection = await self.blocking(self.controller.connection, endpoint)
+                    self.connections[key] = connection
+        return await connection.arequest(method, parameters, token=endpoint['token'])
+
+    async def handle(self, request):
+        if request.path != '/rpc':
+            if request.content_length and request.content_length > 4096:
+                return web.Response(status=413)
+            body = await asyncio.wait_for(request.read(), 10)
+            adapted = DashboardRequest(request, body)
+            if not await self.blocking(self.dashboard.handle, adapted, monitoring=True):
+                return web.Response(status=404)
+            return web.Response(status=adapted.status, headers=adapted.response_headers, body=adapted.wfile.getvalue())
+        if request.method != 'POST' or not hmac.compare_digest(request.headers.get('X-Sandweave-Token', ''), self.token):
+            return web.Response(status=403)
+        try:
+            if request.content_length is None or not 8 <= request.content_length <= MAX_BODY:
+                raise ValueError('invalid request size')
+            message = decode(await asyncio.wait_for(request.read(), 60))
+            operation, params = message['op'], message.get('params', {})
+            if operation == 'relay_poll':
+                result = await self.controller.relay.apoll(**params)
+            elif operation == 'relay_result':
+                result = self.controller.relay.result(**params)
+            elif operation == 'relay_results':
+                result = self.controller.relay.results(**params)
+            elif operation == 'sandbox_rpc':
+                result = await self.forward(**params)
+            elif operation == 'shutdown':
+                result = {'stopping': True}
+                asyncio.get_running_loop().call_later(.05, self.stop.set)
+            else:
+                result = await self.blocking(self.controller.dispatch, operation, params)
+            payload = encode({'result': result})
+        except Exception as error:
+            payload = encode({'error': {'kind': type(error).__name__, 'message': str(error),
+                **{k: getattr(error, k, None) for k in ('operation_id', 'sandbox_id', 'phase')}}})
+        return web.Response(body=payload, content_type='application/vnd.sandweave.frame')
+
+    async def close(self):
+        await asyncio.to_thread(self.executor.shutdown, wait=True)
+        await asyncio.to_thread(self.monitor_executor.shutdown, wait=True)
+        for connection in self.connections.values():
+            await connection.aclose()
+        self.connections.clear()
+
+
+async def serve_async(directory):
     controller = Controller(directory)
     directory = controller.state.root
     settings_file = directory / 'listener.json'
@@ -37,99 +133,52 @@ def serve(directory):
     monitoring = directory / 'monitoring.json'
     dashboard = Dashboard(controller, token, **(json.loads(monitoring.read_text()) if monitoring.exists() else {}))
     controller.dashboard = dashboard
-
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = 'HTTP/1.1'
-        wbufsize = 64 * 1024
-
-        def setup(self):
-            super().setup()
-            self.connection.settimeout(60)
-            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-
-        def log_message(self, *args):
-            pass
-
-        def do_POST(self):
-            if dashboard.handle(self):
-                return
-            if self.path != '/rpc' or not hmac.compare_digest(self.headers.get('X-Sandweave-Token', ''), token):
-                self.close_connection = True
-                self.send_error(403)
-                return
-            try:
-                size = int(self.headers.get('Content-Length', '-1'))
-                if not 8 <= size <= MAX_BODY:
-                    raise ValueError('invalid request size')
-                body = self.rfile.read(size)
-                if len(body) != size:
-                    raise ValueError('incomplete request')
-                request = decode(body)
-                if request['op'] == 'shutdown':
-                    result = {'stopping': True}
-                    threading.Thread(target=server.shutdown, daemon=True).start()
-                else:
-                    result = controller.dispatch(request['op'], request.get('params', {}))
-                payload = encode({'result': result})
-            except Exception as error:
-                payload = encode({'error': {'kind': type(error).__name__, 'message': str(error),
-                    **{k: getattr(error, k, None) for k in ('operation_id', 'sandbox_id', 'phase')}}})
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/vnd.sandweave.frame')
-            self.send_header('Content-Length', str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-
-        def do_GET(self):
-            if not dashboard.handle(self):
-                self.send_error(404)
-
-        do_HEAD = do_GET
-
-    # A new cluster accepts direct HTTP and SSH through the same service.
-    # Port zero lets multiple clusters coexist without choosing ports first.
-    hostname = settings.get('host', '0.0.0.0')
-    server_type = ThreadingHTTPServer
-    if ':' in hostname:
-        class IPv6HTTPServer(ThreadingHTTPServer):
-            address_family = socket.AF_INET6
-        server_type = IPv6HTTPServer
-    server = server_type((hostname, settings.get('port') or previous.get('port', 0)), Handler)
-    server.daemon_threads = True
-    local_server = None
-    if settings.get('tls_cert'):
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(settings['tls_cert'], settings['tls_key'])
-        # Handshakes run in request threads under their socket timeout. An
-        # incomplete TLS connection must not block the server's accept loop.
-        server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
-    if settings.get('tls_cert') or hostname not in ('127.0.0.1', 'localhost', '0.0.0.0'):
-        local_port = previous.get('local_port', 0)
-        if local_port == server.server_port:
-            local_port = 0
-        local_server = ThreadingHTTPServer(('127.0.0.1', local_port), Handler)
-        local_server.daemon_threads = True
-        threading.Thread(target=local_server.serve_forever, daemon=True).start()
-    controller.start()
-    dashboard.monitor.start()
-    advertised = socket.gethostname() if hostname in ('0.0.0.0', '::') else hostname
-    if ':' in advertised:
-        advertised = '[' + advertised + ']'
-    atomic_json(marker, {'hostname': socket.gethostname(), 'port': server.server_port, 'token': token,
-                        'local_port': local_server.server_port if local_server else server.server_port,
-                        'address': ('https' if settings.get('tls_cert') else 'http') + '://' +
-                            advertised + ':' + str(server.server_port),
-                        'pid': os.getpid(), 'process': process_identity(), 'status': 'ready'})
+    stop = asyncio.Event()
+    rpc = RPC(controller, token, dashboard, stop)
+    app = web.Application(client_max_size=MAX_BODY)
+    app.router.add_route('*', '/{path:.*}', rpc.handle)
+    runner = web.AppRunner(app, access_log=None, keepalive_timeout=60,
+                           handler_cancellation=True, shutdown_timeout=5)
     try:
-        server.serve_forever(poll_interval=.1)
+        await runner.setup()
+        hostname = settings.get('host', '0.0.0.0')
+        context = None
+        if settings.get('tls_cert'):
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(settings['tls_cert'], settings['tls_key'])
+        site = web.TCPSite(runner, hostname, settings.get('port') or previous.get('port', 0),
+                           ssl_context=context, backlog=socket.SOMAXCONN)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        local_port = port
+        if context or hostname not in ('127.0.0.1', 'localhost', '0.0.0.0'):
+            local_port = previous.get('local_port', 0)
+            local = web.TCPSite(runner, '127.0.0.1', 0 if local_port == port else local_port,
+                               backlog=socket.SOMAXCONN)
+            await local.start()
+            local_port = local._server.sockets[0].getsockname()[1]
+        controller.start()
+        dashboard.monitor.start()
+        advertised = socket.gethostname() if hostname in ('0.0.0.0', '::') else hostname
+        if ':' in advertised:
+            advertised = '[' + advertised + ']'
+        atomic_json(marker, {'hostname': socket.gethostname(), 'port': port, 'token': token,
+                            'local_port': local_port, 'address': ('https' if context else 'http') + '://' + advertised + ':' + str(port),
+                            'pid': os.getpid(), 'process': process_identity(), 'status': 'ready'})
+        await stop.wait()
     finally:
-        server.server_close()
-        if local_server:
-            local_server.shutdown()
-            local_server.server_close()
-        dashboard.monitor.close()
-        controller.close()
-        atomic_json(marker, {**json.loads(marker.read_text()), 'status': 'stopped'})
+        controller.stopping.set()
+        controller.relay.close()
+        await runner.cleanup()
+        await rpc.close()
+        await asyncio.to_thread(dashboard.monitor.close)
+        await asyncio.to_thread(controller.close)
+        if marker.exists():
+            atomic_json(marker, {**json.loads(marker.read_text()), 'status': 'stopped'})
+
+
+def serve(directory):
+    asyncio.run(serve_async(directory))
 
 
 def main():

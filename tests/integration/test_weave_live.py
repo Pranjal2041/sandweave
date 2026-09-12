@@ -6,6 +6,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -35,6 +36,10 @@ def wait_for(function, *, timeout=180):
 def cluster(tmp_path_factory):
     root = Path(os.environ['SANDWEAVE_WEAVE_INTEGRATION']).resolve()
     root.mkdir(parents=True, exist_ok=True)
+    # A module-scoped fixture can run several times in one invocation. Give
+    # each controller fresh records instead of inheriting stopped workers from
+    # the previous module or an earlier acceptance run.
+    root = Path(tempfile.mkdtemp(prefix='workers-', dir=root))
     controller_home = root / 'client'
     previous = os.environ.get('SANDWEAVE_HOME')
     os.environ['SANDWEAVE_HOME'] = str(controller_home)

@@ -165,7 +165,10 @@ and result commits cannot.
 Reconcile changed objects through indexed work queues. Maintain incremental
 resource accounting instead of scanning every sandbox for every placement.
 
-Start with one controller and durable SQLite storage. This mode has no
+Use indexed memory for request-serving records and an ordered SQLite writer for
+durability. Recoverable telemetry can publish before persistence; lifecycle and
+ownership transactions publish after their commit. Async HTTP and worker relays
+keep tool traffic independent of that writer. This mode has no
 automatic controller-host failover. The implementation uses rollback journaling
 and an exclusive controller lock; local storage and one NFS4 deployment have
 passed restart checks. Prefer durable local storage; other filesystem/locking

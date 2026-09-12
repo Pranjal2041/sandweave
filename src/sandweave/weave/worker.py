@@ -1,5 +1,6 @@
 """A persistent worker agent that reaches the controller through outbound RPCs."""
 import argparse
+import asyncio
 from collections import OrderedDict
 import hashlib
 import json
@@ -50,63 +51,127 @@ def limits(cpus=None, gpus=None, memory=None):
 
 class Bridge:
     def __init__(self, config, channel, *, connections=32):
-        self.config, self.channel, self.count = config, channel, connections
+        self.config, self.channel = config, channel
         self.stopping = threading.Event()
         self.threads = []
+        self.loop = self.wakeup = None
 
     def start(self):
-        for _ in range(self.count):
-            thread = threading.Thread(target=self._run, daemon=True, name='weave-forward')
-            thread.start()
-            self.threads.append(thread)
+        thread = threading.Thread(target=lambda: asyncio.run(self._serve()),
+                                  daemon=True, name='weave-forward')
+        thread.start()
+        self.threads.append(thread)
         return self
 
-    def _run(self):
-        controller = None
-        worker_connections = OrderedDict()
-        response = None
-        try:
+    async def _serve(self):
+        from ..sandbox.async_connection import AsyncConnection
+        self.loop, self.wakeup = asyncio.get_running_loop(), asyncio.Event()
+        controller = await asyncio.to_thread(ClusterConnection, self.config, timeout=30)
+        links, tasks = OrderedDict(), set()
+        responses = asyncio.Queue()
+        batch_results = False
+
+        async def execute(request):
+            link = None
+            try:
+                endpoint = request['endpoint']
+                if endpoint['hostname'] != socket.gethostname() or endpoint.get('relay') != self.channel:
+                    raise PermissionError('worker channel cannot forward to another machine')
+                port = endpoint['port']
+                if port not in links:
+                    links[port] = dict(connection=AsyncConnection('127.0.0.1', port, endpoint['token']), active=0)
+                link = links[port]
+                links.move_to_end(port)
+                link['active'] += 1
+                result = {'result': await link['connection'].request(request['method'], request['parameters'], token=endpoint['token'])}
+            except Exception as error:
+                result = {'error': {'kind': type(error).__name__, 'message': str(error),
+                    **{k: getattr(error, k, None) for k in ('operation_id', 'sandbox_id', 'phase')}}}
+            finally:
+                if link is not None:
+                    link['active'] -= 1
+                for port in list(links):
+                    if len(links) <= 4:
+                        break
+                    if not links[port]['active']:
+                        await links.pop(port)['connection'].close()
+            if batch_results:
+                from ..sandbox.wire import encode
+                responses.put_nowait(({'identity': request['id'], 'response': result}, len(encode(result))))
+                return
             while not self.stopping.is_set():
                 try:
-                    if controller is None:
-                        controller = ClusterConnection(self.config, timeout=30)
-                    if response is not None:
-                        controller.control.call('relay_result', channel=self.channel, **response)
-                        response = None
-                    request = controller.control.call('relay_poll', channel=self.channel)
-                    if request is None:
-                        continue
-                    try:
-                        endpoint = request['endpoint']
-                        if endpoint['hostname'] != socket.gethostname() or endpoint.get('relay') != self.channel:
-                            raise PermissionError('worker channel cannot forward to another machine')
-                        key = (endpoint['port'], endpoint['token'])
-                        if key not in worker_connections:
-                            if len(worker_connections) >= 4:
-                                worker_connections.popitem(last=False)[1].close()
-                            worker_connections[key] = Connection('127.0.0.1', *key)
-                        worker_connections.move_to_end(key)
-                        result = {'result': worker_connections[key].call(request['method'], **request['parameters'])}
-                    except Exception as error:
-                        result = {'error': {'kind': type(error).__name__, 'message': str(error),
-                            **{k: getattr(error, k, None) for k in ('operation_id', 'sandbox_id', 'phase')}}}
-                    response = {'identity': request['id'], 'response': result}
+                    await controller.control.acall('relay_result', channel=self.channel,
+                        identity=request['id'], response=result)
+                    return
                 except Exception:
-                    # Keep a completed result until acknowledged, but never
-                    # execute its command again after losing the reply.
+                    # Only resend the completed response, never its guest command.
+                    await asyncio.sleep(1)
+
+        async def send_results():
+            carry = None
+            while True:
+                first, size = carry or await responses.get()
+                carry = None
+                batch = [first]
+                while len(batch) < 64 and not responses.empty():
+                    item, length = responses.get_nowait()
+                    if size + length > 8*1024**2:
+                        carry = (item, length)
+                        break
+                    batch.append(item)
+                    size += length
+                while not self.stopping.is_set():
+                    try:
+                        await controller.control.acall('relay_results', channel=self.channel, responses=batch)
+                        break
+                    except Exception:
+                        # Completed results are idempotent, including batches
+                        # whose acknowledgement was lost during reconnect.
+                        await asyncio.sleep(1)
+
+        async def poll():
+            nonlocal batch_results
+            batch = None
+            while not self.stopping.is_set():
+                try:
+                    if batch is None:
+                        features = await controller.control.acall('ping')
+                        batch = bool(features.get('relay_batch'))
+                        batch_results = bool(features.get('relay_results'))
+                    response = await controller.control.acall('relay_poll', channel=self.channel,
+                                                               **({'limit': 64} if batch else {}))
+                    if response is not None:
+                        for request in response if batch else [response]:
+                            task = asyncio.create_task(execute(request))
+                            tasks.add(task)
+                            task.add_done_callback(tasks.discard)
+                except Exception:
                     LOG.debug('Worker channel reconnecting', exc_info=True)
-                    if controller:
-                        controller.close()
-                        controller = None
-                    self.stopping.wait(1)
+                    await asyncio.sleep(1)
+
+        poller = asyncio.create_task(poll())
+        sender = asyncio.create_task(send_results())
+        try:
+            if not self.stopping.is_set():
+                await self.wakeup.wait()
         finally:
-            if controller:
-                controller.close()
-            for connection in worker_connections.values():
-                connection.close()
+            poller.cancel()
+            sender.cancel()
+            await asyncio.gather(poller, sender, return_exceptions=True)
+            pending = list(tasks)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            for link in links.values():
+                await link['connection'].close()
+            await controller.control.aclose()
+            controller.close()
 
     def close(self):
         self.stopping.set()
+        if self.loop is not None and not self.loop.is_closed() and self.wakeup is not None:
+            self.loop.call_soon_threadsafe(self.wakeup.set)
 
 
 def start(config, *, cpus=None, gpus=None, memory=None, slots=None, labels=None):
@@ -197,10 +262,14 @@ def serve(directory):
             information.update(state='ready', worker=worker)
             atomic_json(directory / 'worker.json', worker)
             atomic_json(directory / 'agent.json', information)
+            lookup = bool(controller.control.call('ping').get('worker_lookup'))
             while not bridge.stopping.wait(5):
                 try:
-                    workers = controller.control.call('worker_list')
-                    current = next((w for w in workers if w['id'] == worker['id']), None)
+                    if lookup:
+                        current = controller.control.call('worker_get', identity=worker['id'])
+                    else:
+                        workers = controller.control.call('worker_list')
+                        current = next((w for w in workers if w['id'] == worker['id']), None)
                     if current is not None:
                         information.update(worker=current)
                         atomic_json(directory / 'agent.json', information)

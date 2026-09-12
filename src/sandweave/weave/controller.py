@@ -36,6 +36,7 @@ class Controller:
             if not owner.get('reason'):
                 self.owners._write({**owner, 'expires_at': time.time() + GRACE_SECONDS})
         self.executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='weave-worker')
+        self.observers = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='weave-observe')
         self.pending, self.guard = {}, threading.RLock()
         self.stopping, self.interval = threading.Event(), interval
         self.thread = None
@@ -89,17 +90,16 @@ class Controller:
                     previous.result()
                 except Exception:
                     LOG.exception('Worker operation failed: %s', key)
-            if len([f for f in self.pending.values() if not f.done()]) >= self.executor._max_workers * 2:
-                return
-            self.pending[key] = self.executor.submit(function, *args)
+            executor = self.observers if key[0] in ('observe', 'worker') else self.executor
+            self.pending[key] = executor.submit(function, *args)
 
     def owner_register(self, identity, process):
         return self.owners.register(identity, process)
 
     def owner_heartbeat(self, identity):
         result = self.owners.heartbeat(identity)
-        result['routes'] = [self.allocation_route(a['id']) for a in self.state.list('allocation')
-                            if a.get('owner') == identity and a.get('token') and not a.get('released')]
+        result['routes'] = [self._route(a) for a in self.state.list('allocation', owner=identity, released=False)
+                            if a.get('token')]
         return result
 
     def owner_routes(self, identity, sandboxes):
@@ -192,6 +192,9 @@ class Controller:
     def worker_list(self):
         return [self._public_worker(w) for w in self.state.list('worker')]
 
+    def worker_get(self, identity):
+        return self._public_worker(self.state.get('worker', identity))
+
     def worker_update(self, identity, *, draining=None, slots=None, labels=None, remove=False, lost=False):
         if type(lost) is not bool or (lost and not remove):
             raise ValueError('lost=True is only valid when removing a worker whose allocation has stopped')
@@ -257,7 +260,7 @@ class Controller:
                 previous = self.connection(instance['endpoint'], timeout=5)
                 try:
                     old_info = previous.call('inventory')
-                    with self.state.transaction():
+                    with self.state.transaction(deferred=True):
                         current = self.state.get('worker', identity)
                         if current['state'] == 'removed':
                             return
@@ -268,11 +271,13 @@ class Controller:
                     pass
                 finally:
                     previous.close()
-            with self.state.transaction():
+            with self.state.transaction(deferred=True):
                 record = self.state.get('worker', identity)
                 if record['state'] == 'removed':
                     return
                 recovered = record['state'] != 'ready'
+                if recovered:
+                    self.state.require_durable()
                 record.update(state='ready', seen=time.time(), external=self._sum_external(record))
                 record.pop('error', None)
                 self.state.put('worker', record, event={'message': 'worker reachable'} if recovered else None)
@@ -289,7 +294,7 @@ class Controller:
     def _accept_worker(self, identity, connection, information=None, *, promote=False, ping=None):
         info = information or connection.call('inventory')
         ping = ping or connection.call('ping')
-        with self.state.transaction():
+        with self.state.transaction(deferred=True):
             record = self.state.get('worker', identity)
             if record['state'] == 'removed':
                 raise ResourceUnavailable('worker has been removed')
@@ -299,6 +304,9 @@ class Controller:
                     {g['uuid'] for g in old['gpus']} != {g['uuid'] for g in info['gpus']}):
                 raise ResourceUnavailable('worker resource allocation changed; drain and register it separately')
             route = providers.endpoint(ping, connection, record['target'])
+            previous_route = record.get('instances', {}).get(info['workspace'], {}).get('endpoint')
+            if previous_route != route or promote:
+                self.state.require_durable()
             record.setdefault('instances', {})[info['workspace']] = {
                 'endpoint': route, 'external': self._external(info), 'telemetry': info.get('telemetry', {})}
             if promote or old['workspace'] == info['workspace']:
@@ -306,6 +314,8 @@ class Controller:
             record['external'] = self._sum_external(record)
             record['machine'] = scheduler.machine(info)
             self.state.put('worker', record)
+            if previous_route == route:
+                return route
             for allocation in self.state.list('allocation', worker=identity):
                 if (allocation.get('endpoint', {}).get('workspace') == info['workspace'] and
                         allocation['endpoint'] != route):
@@ -365,7 +375,17 @@ class Controller:
         return self._public_allocation(self._resolve(identity))
 
     def allocation_route(self, identity):
-        record = self._resolve(identity)
+        return self._route(self._resolve(identity))
+
+    def sandbox_endpoint(self, identity):
+        record = self.state.get('allocation', identity, required=False,
+                                fields=('id', 'state', 'endpoint', 'token'))
+        if record is None:
+            record = self._resolve(identity)
+        return self._route(record)['endpoint']
+
+    @staticmethod
+    def _route(record):
         if not record.get('endpoint') or not record.get('token'):
             raise ResourceUnavailable('sandbox has no acknowledged worker route: ' + record['state'])
         return dict(id=record['id'], endpoint={**record['endpoint'], 'token': record['token']},
@@ -481,6 +501,8 @@ class Controller:
                 if current.get('lease') and state == 'ready':
                     state = 'leased'
                 changed = current['state'] != state
+                if current.get('info') == info and current['state'] == state and current.get('released') == released:
+                    return
                 current.update(info=info, state=state, released=released)
                 if state in ('ready', 'leased', 'paused') and current['desired'] == 'running':
                     current['prepared'] = True
@@ -531,7 +553,7 @@ class Controller:
         self._reconcile_pools()
         self._reconcile_jobs()
         observations = []
-        for record in self.state.list('allocation'):
+        for record in self.state.list('allocation', released=False):
             if record.get('released'):
                 continue
             if self.owners.reason(record.get('owner')) or (
@@ -555,9 +577,11 @@ class Controller:
                 if worker['state'] != 'removed':
                     self._submit(('worker', worker['id']), self._probe, worker['id'])
             for identity in observations:
-                self._submit(('allocation', identity), self._observe, identity)
+                self._submit(('observe', identity), self._observe, identity)
+        if not self.state.list('allocation', state='pending', released=False):
+            return
         with self.state.transaction():
-            allocations = self.state.list('allocation')
+            allocations = self.state.list('allocation', released=False)
             pending = [a for a in allocations if a['state'] == 'pending' and a['desired'] == 'running']
             policies = {p['id']: p for p in self.state.list('pool')}
             placements, reasons = scheduler.plan(pending, self.state.list('worker'), allocations, policies, now=now)
@@ -594,9 +618,12 @@ class Controller:
             return self.relay.poll(**parameters)
         if operation == 'relay_result':
             return self.relay.result(**parameters)
+        if operation == 'relay_results':
+            return self.relay.results(**parameters)
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
-                    'pool_options': ['shared_cache', 'affinity'], 'proxy_policy': 1}
+                    'pool_options': ['shared_cache', 'affinity'], 'proxy_policy': 1,
+                    'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1}
         if operation == 'events':
             return self.state.events(**parameters)
         if operation == 'backup':
@@ -611,7 +638,7 @@ class Controller:
             from .artifacts import dispatch
             return dispatch(self, operation, parameters)
         if operation not in {'create', 'allocation_get', 'allocation_route', 'allocation_ack',
-                             'allocation_cancel', 'worker_add', 'worker_list', 'worker_update',
+                             'allocation_cancel', 'worker_add', 'worker_get', 'worker_list', 'worker_update',
                              'owner_register', 'owner_heartbeat', 'owner_routes', 'status', 'sandbox_rpc'}:
             raise ValueError('unknown cluster operation: ' + operation)
         return getattr(self, operation)(**parameters)
@@ -631,4 +658,5 @@ class Controller:
         if self.thread:
             self.thread.join()
         self.executor.shutdown(wait=True)
+        self.observers.shutdown(wait=True)
         self.state.close()

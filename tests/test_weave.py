@@ -545,7 +545,7 @@ def test_connection_reopens_closed_idle_socket_before_sending():
     client = Connection('127.0.0.1', server.server_port, 'test')
     try:
         assert client.call('mutation') == 1
-        assert select.select([client.local.connection.sock], [], [], 2)[0]
+        assert select.select([client.idle[0].sock], [], [], 2)[0]
         assert client.call('mutation') == 2
         assert len(calls) == 2
     finally:

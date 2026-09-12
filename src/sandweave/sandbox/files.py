@@ -40,9 +40,23 @@ class Files:
             if len(chunk) < CHUNK:
                 return b''.join(chunks)
 
+    @read_bytes.async_impl
+    async def _read_bytes_async(self, path):
+        chunks, offset = [], 0
+        while True:
+            chunk = await self.sandbox._acall('file', op='read', path=str(path), offset=offset, size=CHUNK)
+            chunks.append(chunk)
+            offset += len(chunk)
+            if len(chunk) < CHUNK:
+                return b''.join(chunks)
+
     @dualmethod
     def read_text(self, path, encoding='utf-8'):
         return self.read_bytes(path).decode(encoding)
+
+    @read_text.async_impl
+    async def _read_text_async(self, path, encoding='utf-8'):
+        return (await self.read_bytes.aio(path)).decode(encoding)
 
     @dualmethod
     def write_bytes(self, path, data, *, mode=None):
@@ -52,9 +66,21 @@ class Files:
                                offset=offset, truncate=(offset == 0), mode=mode)
         return len(data)
 
+    @write_bytes.async_impl
+    async def _write_bytes_async(self, path, data, *, mode=None):
+        data = bytes(data)
+        for offset in range(0, max(1, len(data)), CHUNK):
+            await self.sandbox._acall('file', op='write', path=str(path), data=data[offset:offset+CHUNK],
+                offset=offset, truncate=(offset == 0), mode=mode)
+        return len(data)
+
     @dualmethod
     def write_text(self, path, text, encoding='utf-8'):
         return self.write_bytes(path, text.encode(encoding))
+
+    @write_text.async_impl
+    async def _write_text_async(self, path, text, encoding='utf-8'):
+        return await self.write_bytes.aio(path, text.encode(encoding))
 
     @dualmethod
     def upload(self, source, destination):

@@ -1,4 +1,5 @@
-"""Persistent per-thread control connections with explicit uncertain outcomes."""
+"""Reusable control connections with exclusive requests and uncertain outcomes."""
+import asyncio
 import http.client
 import socket
 import select
@@ -25,8 +26,33 @@ class Connection:
         self.host, self.port, self.token, self.timeout = host, int(port), token, timeout
         self.unix_path = unix_path
         self.tls, self.ca_file, self.rpc_path = tls, ca_file, rpc_path
-        self.local = threading.local()
-        self.connections, self.lock = [], threading.Lock()
+        self.connections, self.idle, self.lock = set(), [], threading.Lock()
+        self.generation = 0
+        self.async_connections = {}
+
+    async def acall(self, operation, **parameters):
+        return await self.arequest(operation, parameters)
+
+    async def arequest(self, operation, parameters, *, token=None):
+        from .async_connection import AsyncConnection
+        loop = asyncio.get_running_loop()
+        with self.lock:
+            self.async_connections = {key: value for key, value in self.async_connections.items()
+                                      if not key.is_closed()}
+            connection = self.async_connections.get(loop)
+            if connection is None or connection.session.closed:
+                connection = self.async_connections[loop] = AsyncConnection(
+                    self.host, self.port, self.token, timeout=self.timeout,
+                    unix_path=self.unix_path, tls=self.tls, ca_file=self.ca_file, rpc_path=self.rpc_path)
+        return await connection.request(operation, parameters, token=token)
+
+    async def aclose(self):
+        loop = asyncio.get_running_loop()
+        with self.lock:
+            connection = self.async_connections.pop(loop, None)
+        if connection is not None:
+            await connection.close()
+        self.close()
 
     def clone(self, *, timeout=None):
         return Connection(self.host, self.port, self.token,
@@ -34,7 +60,10 @@ class Connection:
                           tls=self.tls, ca_file=self.ca_file, rpc_path=self.rpc_path)
 
     def call(self, operation, **parameters):
-        connection = getattr(self.local, 'connection', None)
+        body = encode({'op': operation, 'params': parameters})
+        with self.lock:
+            generation = self.generation
+            connection = self.idle.pop() if self.idle else None
         if connection is not None and connection.sock is not None:
             # A peer may close an idle keep-alive socket between calls. Detect
             # EOF before sending any bytes; reconnecting here cannot duplicate
@@ -50,10 +79,8 @@ class Connection:
             if stale:
                 connection.close()
                 with self.lock:
-                    if connection in self.connections:
-                        self.connections.remove(connection)
+                    self.connections.discard(connection)
                 connection = None
-                self.local.connection = None
         if connection is None:
             if self.unix_path:
                 connection = UnixHTTPConnection(self.unix_path, self.timeout)
@@ -62,10 +89,9 @@ class Connection:
                     context=ssl.create_default_context(cafile=self.ca_file))
             else:
                 connection = http.client.HTTPConnection(self.host, self.port, timeout=self.timeout)
-            self.local.connection = connection
             with self.lock:
-                self.connections.append(connection)
-        body = encode({'op': operation, 'params': parameters})
+                self.connections.add(connection)
+        reusable = False
         try:
             connection.request('POST', self.rpc_path, body=body,
                                headers={'X-Sandweave-Token': self.token,
@@ -78,14 +104,17 @@ class Connection:
             if not 0 <= length <= MAX_BODY:
                 raise ValueError('invalid response size')
             result = decode(response.read(length))
+            reusable = True
         except (OSError, http.client.HTTPException) as error:
-            connection.close()
-            with self.lock:
-                if connection in self.connections:
-                    self.connections.remove(connection)
-            self.local.connection = None
             raise errors.OperationUnknown(f'{operation}: transport failed; delivery outcome unknown: {error}',
                                           operation_id=parameters.get('operation_id') or parameters.get('identity')) from error
+        finally:
+            with self.lock:
+                if reusable and generation == self.generation and len(self.idle) < 8:
+                    self.idle.append(connection)
+                else:
+                    self.connections.discard(connection)
+                    connection.close()
         return self.unwrap(result)
 
     @staticmethod
@@ -111,7 +140,13 @@ class Connection:
 
     def close(self):
         with self.lock:
+            self.generation += 1
             for connection in self.connections:
                 connection.close()
             self.connections.clear()
-        self.local = threading.local()
+            self.idle.clear()
+            asynchronous = list(self.async_connections.items())
+            self.async_connections.clear()
+        for loop, connection in asynchronous:
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(lambda c=connection: asyncio.create_task(c.close()))

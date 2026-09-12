@@ -49,6 +49,8 @@ class Monitor:
         self.started = time.time()
         self.view = {'time': None, 'summary': {}, 'entities': {k: [] for k in KINDS}}
         self.error = None
+        self.metadata_cache = defaultdict(dict)
+        self.archived_allocations = {}
         path = controller.state.root / 'monitor.sqlite'
         self.db = sqlite3.connect(path, check_same_thread=False, isolation_level=None, timeout=5)
         os.chmod(path, 0o600)
@@ -76,9 +78,10 @@ class Monitor:
 
     def refresh(self):
         state = self.controller.state
-        # Each read releases the authority lock before JSON decoding. Binary
-        # programs and completed command output never enter the monitoring view.
-        records = {k: state.metadata(k) for k in ('worker', 'allocation', 'pool', 'job', 'task', 'artifact', 'lease')}
+        # Versioned snapshots avoid repeatedly copying retained specifications.
+        # Binary programs and command output never enter the monitoring view.
+        records = {k: state.metadata(k, _cache=self.metadata_cache[k])
+                   for k in ('worker', 'allocation', 'pool', 'job', 'task', 'artifact', 'lease')}
         now = time.time()
         allocations, tasks = records['allocation'], records['task']
         workers, pools, jobs = {}, {}, {}
@@ -117,10 +120,15 @@ class Monitor:
                     telemetry={} if item['telemetry_stale'] else measurement, updated=metric.get('time')))
         by_pool = defaultdict(list)
         for a in allocations:
+            archived = self.archived_allocations.get(a['id']) if a.get('released') else None
+            if archived and archived[0] == a['version']:
+                entities['sandboxes'].append(archived[1])
+                by_pool[a.get('parent')].append(archived[1])
+                continue
             spec = a['spec']
             info = a.get('info') or {}
             worker = workers.get(a.get('worker'), {})
-            telemetry = worker.get('telemetry', {}).get('sandboxes', {}).get(a['id'], {})
+            telemetry = {} if a.get('released') else worker.get('telemetry', {}).get('sandboxes', {}).get(a['id'], {})
             stale = now - telemetry.get('time', 0) > max(20, self.interval * 3)
             metric = telemetry if not stale else {}
             item = self.controller._public_allocation(a)
@@ -133,6 +141,8 @@ class Monitor:
                         leased=bool(a.get('lease')), timings=info.get('timings', {}),
                         telemetry=metric, telemetry_stale=stale)
             entities['sandboxes'].append(item)
+            if a.get('released'):
+                self.archived_allocations[a['id']] = (a['version'], item)
             by_pool[a.get('parent')].append(item)
         leases = defaultdict(list)
         for lease in records['lease']:
@@ -327,10 +337,7 @@ class Monitor:
             # SQL and filter message text only within the bounded returned page.
             clauses.append('(id LIKE ? OR kind LIKE ?)')
             values.extend(['%' + str(q)[:200] + '%'] * 2)
-        sql = 'SELECT sequence,time,kind,id,data FROM events'
-        with self.controller.state.lock:
-            rows = self.controller.state.db.execute(sql + (' WHERE ' + ' AND '.join(clauses) if clauses else '') +
-                ' ORDER BY sequence DESC LIMIT ?', [*values, limit + 1]).fetchall()
+        rows = self.controller.state.event_page(clauses, values, limit=limit + 1, reverse=True)
         return {'items': [dict(sequence=r[0], time=r[1], kind=r[2], id=r[3], detail=decode(bytes(r[4]))) for r in rows[:limit]],
                 'more': len(rows) > limit}
 

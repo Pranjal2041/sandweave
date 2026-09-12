@@ -191,6 +191,13 @@ class Sandbox:
             raise RuntimeError('sandbox client is closed; connect with its ID to attach again')
         return self._connection.call(operation, identity=self.id, **kwargs)
 
+    async def _acall(self, operation, **kwargs):
+        if self._closed:
+            raise RuntimeError('sandbox client is closed; connect with its ID to attach again')
+        if hasattr(self._connection, 'acall'):
+            return await self._connection.acall(operation, identity=self.id, **kwargs)
+        return await asyncio.to_thread(self._call, operation, **kwargs)
+
     @property
     def spec(self):
         return copy.deepcopy(self._info['spec'])
@@ -259,12 +266,18 @@ class Sandbox:
         return Process(self, identity, binary=binary)
 
     @exec.async_impl
-    async def _exec_async(self, *args, **kwargs):
-        operation = asyncio.create_task(asyncio.to_thread(self.exec, *args, **kwargs))
+    async def _exec_async(self, command=None, *, argv=None, cwd=None, env=None, user=None,
+                          timeout=None, shell=None, binary=False, max_output_bytes=None, pty=False):
+        identity = uuid.uuid4().hex
+        process = Process(self, identity, binary=binary)
+        operation = asyncio.create_task(self._acall('command_start', process_id=identity,
+            command=command, argv=argv, cwd=cwd, env=env, user=user, timeout=timeout,
+            shell=shell, max_output_bytes=max_output_bytes, **({'pty': pty} if pty else {})))
         try:
-            return await asyncio.shield(operation)
+            await asyncio.shield(operation)
+            return process
         except asyncio.CancelledError:
-            process = await asyncio.shield(operation)
+            await asyncio.shield(operation)
             await process.terminate.aio()
             raise
 
@@ -287,7 +300,7 @@ class Sandbox:
         try:
             await process.stdin.close.aio()
             await process.wait.aio()
-            result = await asyncio.to_thread(process.result)
+            result = await process.result.aio()
             if check and result.returncode:
                 raise CommandError(f'command exited with {result.returncode}', result=result, operation_id=process.id)
             return result
@@ -337,6 +350,15 @@ class Sandbox:
     def close(self):
         if not self._closed:
             self._connection.close()
+            self._closed = True
+
+    @close.async_impl
+    async def _close_async(self):
+        if not self._closed:
+            if hasattr(self._connection, 'aclose'):
+                await self._connection.aclose()
+            else:
+                await asyncio.to_thread(self._connection.close)
             self._closed = True
 
     def __enter__(self):

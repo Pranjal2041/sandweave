@@ -63,7 +63,7 @@ class Dashboard:
     def cookie(self, handler, value, age):
         # Behind a TLS-terminating proxy, a same-origin HTTPS login should still
         # issue a Secure cookie. An arbitrary forwarded header is never trusted.
-        secure = isinstance(handler.connection, ssl.SSLSocket) or handler.headers.get('Origin', '').startswith('https://')
+        secure = getattr(handler, 'secure', False) or isinstance(handler.connection, ssl.SSLSocket) or handler.headers.get('Origin', '').startswith('https://')
         return f'{self.cookie_name}={value}; Path=/; Max-Age={age}; HttpOnly; SameSite=Strict' + ('; Secure' if secure else '')
 
     def reply(self, handler, status, body, content_type='application/json', headers=None):

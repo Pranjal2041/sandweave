@@ -31,6 +31,21 @@ to raise `CommandError`; timeouts and connection failures still raise.
 Creation, file operations, commands, snapshots, and lifecycle methods use the
 same arguments and ownership rules in both forms.
 
+Commands, process polling, stream reads and writes, and file reads and writes use
+async network connections. Creation, snapshots, and other lifecycle operations
+run in background threads.
+
+To read all captured output instead of the inline result:
+
+```python
+process = await env.exec.aio("python /workspace/evaluate.py")
+await process.wait.aio()
+output = await process.stdout.read.aio()
+result = await process.result.aio(limit=0)
+```
+
+The command's [output budget](commands.md) still applies.
+
 ## Run a few tasks concurrently
 
 ```python

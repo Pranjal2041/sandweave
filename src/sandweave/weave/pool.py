@@ -237,14 +237,13 @@ def resolve(controller, identity):
 
 def status(controller, identity):
     pool = resolve(controller, identity)
-    allocations = controller.state.list('allocation', parent=pool['id'])
-    live = [a for a in allocations if not a.get('released')]
+    live = controller.state.list('allocation', parent=pool['id'], released=False)
     return {**{k: pool.get(k) for k in ('id', 'name', 'state', 'size', 'warm', 'weight', 'priority',
                                        'labels', 'placement', 'affinity', 'shared_cache', 'error', 'baseline')},
             'ready': sum(a['state'] == 'ready' and not a.get('lease') and a.get('role') != 'builder' and a['desired'] == 'running' for a in live),
             'active': sum(bool(a.get('lease')) for a in live),
             'pending': sum(a['state'] in ('pending', 'reserved', 'starting', 'unknown') for a in live),
-            'waiting': sum(l['state'] == 'pending' for l in controller.state.list('lease', parent=pool['id'])),
+            'waiting': len(controller.state.list('lease', parent=pool['id'], state='pending')),
             'reason': next((a.get('reason') or a.get('error') for a in live if a.get('reason') or a.get('error')), None),
             'sandboxes': [a['id'] for a in live]}
 
@@ -461,8 +460,7 @@ def reconcile(controller):
         if controller.owners.reason(pool.get('owner')):
             dispatch(controller, 'pool_close', {'identity': pool['id']})
             pool = resolve(controller, pool['id'])
-        allocations = state.list('allocation', parent=pool['id'])
-        live = [a for a in allocations if not a.get('released')]
+        live = state.list('allocation', parent=pool['id'], released=False)
         if pool['desired'] == 'closed':
             for allocation in live:
                 controller.allocation_cancel(allocation['id'])
@@ -472,9 +470,11 @@ def reconcile(controller):
         if pool['state'] == 'failed':
             _fail(controller, pool['id'], pool.get('error') or 'pool failed')
             continue
-        failed = [a for a in allocations if a.get('error') and a.get('released') and a.get('role') == 'member']
-        latest_ready = max((a['created'] for a in allocations if a.get('prepared') or
-                            a.get('info', {}).get('state') == 'ready'), default=0)
+        history = state.list('allocation', parent=pool['id'],
+                             fields=('created', 'error', 'released', 'role', 'prepared', 'info.state'))
+        failed = [a for a in history if a.get('error') and a.get('released') and a.get('role') == 'member']
+        latest_ready = max((a['created'] for a in history if a.get('prepared') or
+                            a.get('info.state') == 'ready'), default=0)
         if sum(a['created'] > latest_ready for a in failed) >= 3:
             _fail(controller, pool['id'], 'pool preparation failed three times: ' + failed[-1]['error'])
             continue
@@ -490,9 +490,9 @@ def reconcile(controller):
             continue
         if pool['state'] != 'ready':
             pool = state.put('pool', {**pool, 'state': 'ready'})
-        for lease in state.list('lease', parent=pool['id']):
-            if lease['state'] not in ('ready', 'claiming', 'pending'):
-                continue
+        leases = [lease for status in ('ready', 'claiming', 'pending')
+                  for lease in state.list('lease', parent=pool['id'], state=status)]
+        for lease in leases:
             if controller.owners.reason(lease.get('owner')):
                 dispatch(controller, 'pool_release', {'identity': pool['id'], 'lease_id': lease['id']})
             elif lease['state'] == 'claiming':
@@ -501,7 +501,7 @@ def reconcile(controller):
             pool = resolve(controller, pool['id'])
             if pool['desired'] != 'running' or pool['state'] == 'failed':
                 continue
-            live = [a for a in state.list('allocation', parent=pool['id']) if not a.get('released')]
+            live = state.list('allocation', parent=pool['id'], released=False)
             ready = [a for a in live if a['state'] == 'ready' and not a.get('lease') and a.get('role') != 'builder' and a['desired'] == 'running']
             waiting = state.list('lease', state='pending', parent=pool['id'])
             for lease, allocation in zip(waiting, ready):

@@ -649,7 +649,9 @@ def serve(metadata_path):
             self.end_headers()
             self.wfile.write(payload)
 
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    class Server(ThreadingHTTPServer):
+        request_queue_size = socket.SOMAXCONN
+    server = Server(('127.0.0.1', 0), Handler)
     server.daemon_threads = True
     from .targets import Endpoint
     worker.endpoint = Endpoint(server.server_port, token)

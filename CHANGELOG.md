@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.12
+
+- Serve controller records from indexed memory. Persist worker observations in
+  the background; acknowledge reservations, ownership changes and job results
+  only after their durable commit. Existing controller databases remain readable.
+- Use async HTTP for controller forwarding, outbound worker bridges and SDK
+  command/file operations. Batch relay requests and responses, isolate dashboard
+  work, and separate observation work from launches and termination.
+- Reuse synchronous connections across calling threads, bound retained idle
+  connections, and increase the worker listener backlog for concurrent arrivals.
+- Cache completed process status and read streams in larger chunks. Add
+  `process.result.aio()` and close async connections when their event loop ends.
+  Upgrade clients, controllers and worker processes to apply all changes.
+
 ## 0.2.11
 
 - Extend remote ownership's heartbeat grace period from 30 seconds to ten

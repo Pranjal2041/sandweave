@@ -1500,7 +1500,7 @@
 <h1 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h1>
 <p>Import the public objects from <code>sandweave</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">Cluster</span><span class="p">,</span> <span class="n">Job</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPU</span><span class="p">,</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">GPU</span><span class="p">,</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Template</span><span class="p">,</span> <span class="n">SnapshotRef</span><span class="p">,</span> <span class="n">Mount</span><span class="p">,</span> <span class="n">Slurm</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPU</span><span class="p">,</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">GPU</span><span class="p">,</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Template</span><span class="p">,</span> <span class="n">SnapshotRef</span><span class="p">,</span> <span class="n">Mount</span><span class="p">,</span> <span class="n">Slurm</span><span class="p">,</span> <span class="n">Recording</span>
 </code></pre></div>
 <p>Methods that support async calls expose <code>.aio</code>. See <a href="../async/">async Python</a>.</p>
 <h2 id="sandbox">Sandbox<a class="headerlink" href="#sandbox" title="Permanent link">&para;</a></h2>
@@ -1604,6 +1604,11 @@
 <tr>
 <td><code>detached</code></td>
 <td>Survive the creating Python process exiting.</td>
+<td><code>False</code></td>
+</tr>
+<tr>
+<td><code>recording</code></td>
+<td>Record an Xvnc desktop; accepts <code>True</code> or <code>Recording(fps=15, cursor=True)</code>.</td>
 <td><code>False</code></td>
 </tr>
 <tr>
@@ -1727,6 +1732,22 @@ with streams, <code>wait</code>, <code>poll</code>, <code>result</code>, <code>t
 <tr>
 <td><code>env.close()</code></td>
 <td>Disconnect the handle.</td>
+</tr>
+<tr>
+<td><code>env.recording.info</code></td>
+<td>Recording segments, capture timings, drops and worker storage.</td>
+</tr>
+<tr>
+<td><code>env.recording.stop()</code></td>
+<td>Finalize recording, leaving the desktop running.</td>
+</tr>
+<tr>
+<td><code>env.recording.download(directory)</code></td>
+<td>Finalize and export to an empty client directory; works after termination.</td>
+</tr>
+<tr>
+<td><code>env.recording.delete()</code></td>
+<td>Delete finalized recording files from the worker.</td>
 </tr>
 <tr>
 <td><code>Sandbox.connect(id, target=...)</code></td>

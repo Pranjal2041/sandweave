@@ -836,6 +836,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#record-a-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Record a desktop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Record a desktop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#files-and-timing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files and timing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stop-recover-or-delete-a-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stop, recover, or delete a recording
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#record-pool-episodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Record pool episodes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#find-the-vnc-address-and-password" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1318,6 +1368,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#record-a-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Record a desktop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Record a desktop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#files-and-timing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files and timing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stop-recover-or-delete-a-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stop, recover, or delete a recording
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#record-pool-episodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Record pool episodes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#find-the-vnc-address-and-password" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1415,26 +1515,111 @@ focused window; these calls do not choose an application for you.</p>
 <code>{"mouse": {"left_click": [400, 300]}}</code>. <code>step</code> captures an observation after the
 input server acknowledges the action. An application may still be processing
 the input or repainting; add task-specific readiness checks when necessary.</p>
+<h2 id="record-a-desktop">Record a desktop<a class="headerlink" href="#record-a-desktop" title="Permanent link">&para;</a></h2>
+<p>Recording is off by default. Enable it for an individual sandbox:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"gnome"</span><span class="p">,</span> <span class="n">recording</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">env</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">keyboard</span><span class="o">.</span><span class="n">press</span><span class="p">(</span><span class="s2">"super"</span><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">"./episode"</span><span class="p">)</span>
+</code></pre></div>
+<p>Capture starts when the desktop is ready and continues between actions, including
+while your client waits or disconnects. Termination finalizes the recording
+before cleaning up the guest. The recording stays on the worker and can be
+downloaded after the sandbox closes.</p>
+<p>Choose capture cadence and cursor inclusion with <code>Recording</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Recording</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"gnome"</span><span class="p">,</span> <span class="n">recording</span><span class="o">=</span><span class="n">Recording</span><span class="p">(</span><span class="n">fps</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">cursor</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">env</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">mouse</span><span class="o">.</span><span class="n">click</span><span class="p">(</span><span class="mi">400</span><span class="p">,</span> <span class="mi">300</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">"./episode-without-cursor"</span><span class="p">)</span>
+</code></pre></div>
+<p>The default is 15 captures per second with the actual desktop cursor included.
+<code>fps</code> accepts integers from 1 to 60. It requests a capture cadence; it does not
+set the application's frame rate. Capture and encoding consume worker CPU, memory
+and storage only when recording is enabled. A bounded frame queue drops frames
+if encoding falls behind.</p>
+<h3 id="files-and-timing">Files and timing<a class="headerlink" href="#files-and-timing" title="Permanent link">&para;</a></h3>
+<p>The download contains <code>recording.json</code> and a directory for each video segment.
+Each segment includes:</p>
+<ul>
+<li><code>video.mp4</code>: H.264 desktop video.</li>
+<li><code>timeline.jsonl</code>: capture request/response timestamps and their video positions.</li>
+<li><code>segment.json</code>: capture cadence, encoded frame counts, missed capture slots,
+  frames dropped at the encoder queue, and repeated video frames.</li>
+<li><code>encoder.log</code>: encoder diagnostics, if any.</li>
+</ul>
+<p>Timestamps use the worker's monotonic clock. <code>started_at</code> anchors each segment
+to Unix time. They measure display capture, not application render timestamps.
+When a capture is missed, the video holds the previous frame to preserve elapsed
+time; repeated frames are reported separately from captured frames. Videos use
+lossy encoding. A display resize fits the whole desktop into the segment's initial
+dimensions, with padding where needed; the timeline records the source dimensions.</p>
+<p>Pause and snapshot operations finalize the current segment. Resume starts another
+segment; the manifest preserves the gap. A restored sandbox records only if you
+explicitly pass <code>recording=True</code> again.</p>
+<h3 id="stop-recover-or-delete-a-recording">Stop, recover, or delete a recording<a class="headerlink" href="#stop-recover-or-delete-a-recording" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">"./saved-episode"</span><span class="p">)</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+</code></pre></div>
+<p><code>stop()</code> leaves the desktop running. <code>download()</code> also stops recording, verifies
+file checksums, and writes to an empty client directory. These methods support
+<code>.aio</code>. <code>env.info["recording"]</code> includes status for a sandbox created with recording
+enabled.</p>
+<p>To retrieve a recording from another process, use the sandbox's ID and its
+original target:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">sandbox_id</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">"./recovered-episode"</span><span class="p">)</span>
+</code></pre></div>
+<p>The recorder runs independently of the client and worker server process. If the
+display or recorder fails, its metadata reports a partial recording. Completed
+MP4 fragments remain retrievable; a crash can lose the final incomplete fragment.
+The first fragment must have been written for a video to be recoverable.</p>
+<p>Recordings live under the worker workspace's <code>recordings/&lt;sandbox-id&gt;</code> directory,
+outside the guest, its snapshots and pool caches. Sandbox termination and
+<code>retain_baseline=False</code> preserve them. Download does not delete the worker copy;
+use <code>delete()</code> to reclaim it. Availability after a machine or storage failure
+depends on the worker's storage, and downloads require a reachable worker.</p>
+<h3 id="record-pool-episodes">Record pool episodes<a class="headerlink" href="#record-pool-episodes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pool</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="s2">"gnome"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">warm</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">recording</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>        <span class="n">env</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">keyboard</span><span class="o">.</span><span class="n">press</span><span class="p">(</span><span class="s2">"super"</span><span class="p">)</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">env</span><span class="o">.</span><span class="n">recording</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="s2">"./pool-episode"</span><span class="p">)</span>
+</code></pre></div>
+<p>Only checked-out environments record. Baseline builders and the warm reserve do
+not record. Releasing a lease finalizes its recording before guest cleanup.
+Each sandbox has its own retained recording, including in a pool that removes
+its baseline files on closure.</p>
+<p>Desktop recording requires the gVisor Xvnc desktop and Sandweave 0.2.14 or newer
+on clients, controllers and workers. Its dependencies install with the desktop;
+no guest internet access or package installation is needed to record an existing
+desktop. For paired VR eye videos, use <a href="../vr/">VR recording</a>.</p>
 <h2 id="find-the-vnc-address-and-password">Find the VNC address and password<a class="headerlink" href="#find-the-vnc-address-and-password" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">info</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">info</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">"vnc"</span><span class="p">][</span><span class="s2">"url"</span><span class="p">])</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">"vnc"</span><span class="p">][</span><span class="s2">"password"</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">info</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">info</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">"vnc"</span><span class="p">][</span><span class="s2">"url"</span><span class="p">])</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">"vnc"</span><span class="p">][</span><span class="s2">"password"</span><span class="p">])</span>
 </code></pre></div>
 <p>The VNC address points to the worker's loopback port. Remote VNC access uses your
 own network or tunnel arrangement. A cluster's command transport does not
 automatically forward that separate TCP connection.</p>
 <h2 id="measure-startup">Measure startup<a class="headerlink" href="#measure-startup" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">timings</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">timings</span><span class="p">)</span>
 </code></pre></div>
 <p><code>ready_seconds</code> measures startup on the worker. Other entries break down runtime
 launch, setup, and desktop readiness. First-use installation and worker preparation
 happen before that timer starts.</p>
 <h2 id="reuse-the-installed-desktop">Reuse the installed desktop<a class="headerlink" href="#reuse-the-installed-desktop" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">baseline</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"my-desktop"</span><span class="p">)</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">baseline</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">restored</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">screenshot</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"restored.png"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">baseline</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"my-desktop"</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">baseline</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="n">restored</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">screenshot</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"restored.png"</span><span class="p">)</span>
 </code></pre></div>
 <p>This saves installed files and the template. Restoring a filesystem cache starts
 a fresh desktop session. Use <code>detached=True</code> when you want the current session

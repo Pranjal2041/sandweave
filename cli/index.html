@@ -1226,6 +1226,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#desktop-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Desktop recording
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#stereo-recording" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1384,6 +1395,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#desktop-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Desktop recording
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#stereo-recording" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1495,10 +1517,22 @@ printed join command onto each worker. See <a href="../clusters/">connect a clus
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>sandweave<span class="w"> </span>job<span class="w"> </span>status<span class="w"> </span>JOB_ID<span class="w"> </span>--target<span class="w"> </span>lab
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>sandweave<span class="w"> </span>job<span class="w"> </span>result<span class="w"> </span>JOB_ID<span class="w"> </span>--target<span class="w"> </span>lab
 </code></pre></div>
+<h2 id="desktop-recording">Desktop recording<a class="headerlink" href="#desktop-recording" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--template<span class="w"> </span>gnome<span class="w"> </span>--record
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>sandweave<span class="w"> </span>recording<span class="w"> </span>status<span class="w"> </span>SANDBOX_ID
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>sandweave<span class="w"> </span>terminate<span class="w"> </span>SANDBOX_ID
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>sandweave<span class="w"> </span>recording<span class="w"> </span>download<span class="w"> </span>SANDBOX_ID<span class="w"> </span>--output<span class="w"> </span>./episode
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>sandweave<span class="w"> </span>recording<span class="w"> </span>delete<span class="w"> </span>SANDBOX_ID
+</code></pre></div>
+<p>Replace <code>SANDBOX_ID</code> with the ID printed by <code>create</code>. Add <code>--target lab</code> to each
+command for a cluster. <code>--record</code> also works with <code>run</code> and <code>pool create</code>.
+Recordings remain available after termination until explicitly deleted. Use
+<code>sandweave recording stop SANDBOX_ID</code> to finish recording and keep the desktop.
+See <a href="../desktop/#record-a-desktop">desktop recording</a> for timing and recovery.</p>
 <h2 id="stereo-recording">Stereo recording<a class="headerlink" href="#stereo-recording" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--template<span class="w"> </span>vr/gunspinning<span class="w"> </span>--gpu<span class="w"> </span>auto<span class="w"> </span>--name<span class="w"> </span>gunspin
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>sandweave<span class="w"> </span>vr<span class="w"> </span>record<span class="w"> </span>gunspin<span class="w"> </span>--duration<span class="w"> </span><span class="m">30</span><span class="w"> </span>--output<span class="w"> </span>./episode
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>sandweave<span class="w"> </span>terminate<span class="w"> </span>gunspin
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>sandweave<span class="w"> </span>create<span class="w"> </span>--template<span class="w"> </span>vr/gunspinning<span class="w"> </span>--gpu<span class="w"> </span>auto<span class="w"> </span>--name<span class="w"> </span>gunspin
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>sandweave<span class="w"> </span>vr<span class="w"> </span>record<span class="w"> </span>gunspin<span class="w"> </span>--duration<span class="w"> </span><span class="m">30</span><span class="w"> </span>--output<span class="w"> </span>./episode
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>sandweave<span class="w"> </span>terminate<span class="w"> </span>gunspin
 </code></pre></div>
 <p>The VR template needs prepared game files and an available GPU. Recording exports
 both eyes and a synchronized side-by-side preview. See <a href="../vr/">VR games</a>.</p>

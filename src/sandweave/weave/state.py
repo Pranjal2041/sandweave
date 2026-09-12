@@ -143,6 +143,16 @@ class State:
         """Upgrade a recoverable observation when it discovers a state change."""
         self.local.transaction['deferred'] = False
 
+    @contextmanager
+    def read(self):
+        """Read related published records consistently without a writer lock.
+
+        This section must not mutate state or perform I/O. Transactions publish
+        their complete change set under the same brief memory lock.
+        """
+        with self.cache_lock:
+            yield self
+
     def _enqueue(self, rows=(), events=(), operation=None):
         future = Future()
         with self.condition:

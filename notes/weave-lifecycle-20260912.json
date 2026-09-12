@@ -1,0 +1,81 @@
+{
+  "before_version": "0.2.17",
+  "after_version": "0.2.18",
+  "before": {
+    "kind": "simulated delayed worker; real HTTP and durable controller claims",
+    "count": 256,
+    "worker_delay_seconds": 1,
+    "peak_worker_requests": 16,
+    "claim_burst_seconds": 16.529516676208004,
+    "unrelated_executor_wait_seconds": 16.145595025038347,
+    "polls": 37671,
+    "poll_seconds": {
+      "p50": 0.012065874878317118,
+      "p95": 0.0188548241276294,
+      "p99": 0.02743580797687173,
+      "max": 0.07957168598659337
+    }
+  },
+  "after": {
+    "kind": "simulated delayed worker; real HTTP and durable controller claims",
+    "count": 256,
+    "worker_delay_seconds": 1,
+    "peak_worker_requests": 256,
+    "claim_burst_seconds": 1.8151841450016946,
+    "unrelated_executor_wait_seconds": 0.001730585005134344,
+    "polls": 4689,
+    "poll_seconds": {
+      "p50": 0.00502684386447072,
+      "p95": 0.025206711841747165,
+      "p99": 0.13025097898207605,
+      "max": 0.1897215370554477
+    }
+  },
+  "live_latency": {
+    "acquire_seconds": {
+      "count": 16,
+      "p50": 0.22407358302734792,
+      "p95": 0.2326395669952035,
+      "p99": 0.2326395669952035,
+      "max": 0.2596400249749422
+    },
+    "run_seconds": {
+      "count": 128,
+      "p50": 0.1341566639021039,
+      "p95": 0.20076226699166,
+      "p99": 0.22509219904895872,
+      "max": 0.23732275096699595
+    },
+    "guest_seconds": {
+      "count": 128,
+      "p50": 0.008923463,
+      "p95": 0.035084842,
+      "p99": 0.069581979,
+      "max": 0.11558721
+    },
+    "read_seconds": {
+      "count": 128,
+      "p50": 0.019055782933719456,
+      "p95": 0.0424822480417788,
+      "p99": 0.06320350407622755,
+      "max": 0.07052049110643566
+    },
+    "status_seconds": {
+      "count": 512,
+      "p50": 0.4115092670544982,
+      "p95": 1.233525088056922,
+      "p99": 1.3021460209274665,
+      "max": 1.3055936080636457
+    }
+  },
+  "validation": {
+    "host_passed": 437,
+    "host_skipped": 2,
+    "live_passed": 13,
+    "live_seconds": 145.63,
+    "live_workers": 2,
+    "live_peak_sandboxes": 16,
+    "live_transport": "outbound relay",
+    "engine_commit": "dd5239ad8db0753e8af7da0ea915df71c5357f7c"
+  }
+}

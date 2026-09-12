@@ -12,6 +12,7 @@ from ..sandbox.process import CommandResult
 from ..sandbox.resources import positive
 from . import providers
 from .pool import dispatch as pool_dispatch
+from .lifecycle import lifecycle, rpc
 
 TERMINAL = {'succeeded', 'failed', 'cancelled'}
 
@@ -214,6 +215,7 @@ def dispatch(controller, operation, params):
     raise ValueError('unknown job operation')
 
 
+@lifecycle
 def _step(controller, task_id):
     state = controller.state
     task = state.get('task', task_id)
@@ -248,7 +250,7 @@ def _step(controller, task_id):
                 if relative.is_absolute() or '..' in relative.parts:
                     raise ValueError('job file escapes /workspace')
                 for offset in range(0, max(1, len(data)), 1024**2):
-                    connection.call('file', identity=route['id'], op='write', path='/workspace/' + name,
+                    yield rpc(connection, 'file', identity=route['id'], op='write', path='/workspace/' + name,
                                     data=data[offset:offset+1024**2], offset=offset, truncate=offset == 0)
             with state.transaction():
                 task = state.get('task', task_id)
@@ -256,17 +258,17 @@ def _step(controller, task_id):
                     return
                 task = state.put('task', {**task, 'state': 'starting', 'sandbox': route['id']})
         if task['state'] == 'starting':
-            connection.call('command_start', identity=route['id'], process_id=task['process'], command=request['command'],
+            yield rpc(connection, 'command_start', identity=route['id'], process_id=task['process'], command=request['command'],
                 env={'SANDWEAVE_ITEM': json.dumps(task['item']), 'SANDWEAVE_TASK_ID': task['id'],
                      'SANDWEAVE_ATTEMPT': str(task['attempt'])},
                 timeout=request['timeout'], max_output_bytes=request['max_output_bytes'])
-            connection.call('process_stdin', identity=route['id'], process_id=task['process'], close=True)
+            yield rpc(connection, 'process_stdin', identity=route['id'], process_id=task['process'], close=True)
             with state.transaction():
                 task = state.get('task', task_id)
                 if task['state'] != 'starting':
                     return
                 task = state.put('task', {**task, 'state': 'running'})
-        outcome = connection.call('process_status', identity=route['id'], process_id=task['process'])
+        outcome = yield rpc(connection, 'process_status', identity=route['id'], process_id=task['process'])
         if outcome['returncode'] is None:
             return
         result = {'returncode': outcome['returncode'], 'timed_out': outcome.get('timed_out', False),
@@ -275,7 +277,7 @@ def _step(controller, task_id):
         for stream in ('stdout', 'stderr'):
             pieces, offset = [], 0
             while offset < outcome[stream + '_size']:
-                data = connection.call('process_output', identity=route['id'], process_id=task['process'],
+                data = yield rpc(connection, 'process_output', identity=route['id'], process_id=task['process'],
                                        stream=stream, offset=offset, size=1024**2)
                 if not data:
                     raise OSError('job output ended before its recorded size')

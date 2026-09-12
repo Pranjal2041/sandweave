@@ -144,6 +144,12 @@ connection failure still preserves reservations.
 
 ## Controller lifetime
 
+In 0.2.18 and newer, waiting for worker lifecycle operations does not occupy a
+controller thread. Pool lease and status polling also proceeds independently of
+state writes. These changes apply to HTTP, HTTPS and SSH connections, including
+workers connected through outbound relay. Upgrade and restart the controller to
+apply them; existing pool and sandbox arguments stay the same.
+
 ```bash
 sandweave cluster stop lab
 sandweave cluster start lab --no-worker

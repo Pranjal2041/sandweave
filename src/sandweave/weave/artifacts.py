@@ -1,13 +1,15 @@
 """Snapshot discovery and transfer through existing authenticated worker RPCs."""
 from ..sandbox.errors import CacheMiss, CacheConflict, OperationUnknown, ResourceUnavailable
 from ..sandbox.transfers import transfer
+from .lifecycle import lifecycle, rpc
 
 
+@lifecycle
 def register(controller, reference, endpoint, key=None, *, expected=None, compare=False):
     connection = controller.connection(endpoint)
     try:
-        spec = connection.call('snapshot_spec', reference=reference)
-        info = connection.call('snapshot_info', reference=spec['reference'])
+        spec = yield rpc(connection, 'snapshot_spec', reference=reference)
+        info = yield rpc(connection, 'snapshot_info', reference=spec['reference'])
     finally:
         connection.close()
     with controller.state.transaction():

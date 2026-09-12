@@ -1,5 +1,6 @@
 """Durable desired state reconciled against independently running workers."""
 from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import copy
 import hashlib
 import json
@@ -10,12 +11,16 @@ import uuid
 
 from . import PROTOCOL, providers, scheduler
 from .state import State
+from .lifecycle import lifecycle, rpc, execute
 from ..sandbox.errors import OperationUnknown, ResourceUnavailable, OwnerExpired, UnsupportedFeature
 from ..sandbox.ownership import Owners, GRACE_SECONDS
 from ..sandbox.resources import positive, memory_bytes
 from ..sandbox.wire import encode
 
 LOG = logging.getLogger(__name__)
+ALLOCATION_FIELDS = ('id', 'state', 'parent', 'worker', 'created', 'updated',
+                     'reason', 'error', 'released', 'info', 'deadline')
+ROUTE_FIELDS = ('id', 'state', 'endpoint', 'token', 'owner', 'info')
 
 
 class Controller:
@@ -96,16 +101,27 @@ class Controller:
         with self.guard:
             if self.stopping.is_set():
                 return
+            executor = self.observers if key[0] in ('observe', 'worker') else self.executor
+            # Observation can recover a launch. It shares the allocation's
+            # lifecycle future so it cannot overlap a claim or termination.
+            if key[0] == 'observe':
+                key = ('allocation', key[1])
             previous = self.pending.get(key)
             if previous is not None and not previous.done():
-                return
+                return previous
             if previous is not None:
                 try:
                     previous.result()
                 except Exception:
                     LOG.exception('Worker operation failed: %s', key)
-            executor = self.observers if key[0] in ('observe', 'worker') else self.executor
-            self.pending[key] = executor.submit(function, *args)
+            if hasattr(function, 'steps'):
+                owner = getattr(function, '__self__', None)
+                steps = function.steps(*((owner,) if owner is not None else ()), *args)
+                future = asyncio.run_coroutine_threadsafe(execute(steps, executor), self.connections.loop)
+            else:
+                future = executor.submit(function, *args)
+            self.pending[key] = future
+            return future
 
     def owner_register(self, identity, process):
         return self.owners.register(identity, process)
@@ -252,6 +268,7 @@ class Controller:
             self.connections.exclude(self._worker_endpoints(worker))
         return self._public_worker(result)
 
+    @lifecycle
     def _probe(self, identity):
         record = self.state.get('worker', identity)
         if record['state'] == 'removed':
@@ -260,7 +277,7 @@ class Controller:
         try:
             try:
                 connection = self.connection(record['endpoint'], timeout=5)
-                info = connection.call('inventory')
+                info = yield rpc(connection, 'inventory')
             except Exception:
                 if connection:
                     connection.close()
@@ -271,10 +288,11 @@ class Controller:
                 # Existing targets check exact process ownership before they
                 # restart a dead worker. Opaque endpoints are only reconnectable.
                 connection = self.connections.adopt(record['endpoint'], self._attach(record['target']))
-                info = connection.call('inventory')
+                info = yield rpc(connection, 'inventory')
                 if info['workspace'] != record['inventory']['workspace']:
                     raise ResourceUnavailable('worker workspace changed while disconnected; existing assignments remain reserved')
-            self._accept_worker(identity, connection, info)
+            ping = yield rpc(connection, 'ping')
+            self._accept_worker(identity, connection, info, ping=ping)
             # Older installations may still contain unrelated local sandboxes.
             # Keep their last reservation if that authority is unavailable.
             record = self.state.get('worker', identity)
@@ -283,7 +301,7 @@ class Controller:
                     continue
                 previous = self.connection(instance['endpoint'], timeout=5)
                 try:
-                    old_info = previous.call('inventory')
+                    old_info = yield rpc(previous, 'inventory')
                     with self.state.transaction(deferred=True):
                         current = self.state.get('worker', identity)
                         if current['state'] == 'removed':
@@ -383,26 +401,25 @@ class Controller:
                 event={'message': 'sandbox requested'})
         return self._public_allocation(record)
 
-    def _resolve(self, identity):
-        record = self.state.get('allocation', identity, required=False)
+    def _resolve(self, identity, *, fields=None):
+        record = self.state.get('allocation', identity, required=False, fields=fields)
         if record is None:
-            matches = [a for a in self.state.list('allocation') if a['spec'].get('name') == identity
-                       and not a.get('released')]
+            matches = [a for a in self.state.list('allocation', released=False, fields=('id', 'spec.name'))
+                       if a['spec.name'] == identity]
             if len(matches) != 1:
                 raise FileNotFoundError('sandbox ID or unique name is missing: ' + identity)
-            record = matches[0]
+            record = self.state.get('allocation', matches[0]['id'], fields=fields)
         return record
 
     @staticmethod
     def _public_allocation(record):
-        return {k: record.get(k) for k in ('id', 'state', 'parent', 'worker', 'created', 'updated',
-                                         'reason', 'error', 'released', 'info', 'deadline')}
+        return {k: record.get(k) for k in ALLOCATION_FIELDS}
 
     def allocation_get(self, identity):
-        return self._public_allocation(self._resolve(identity))
+        return self._public_allocation(self._resolve(identity, fields=ALLOCATION_FIELDS))
 
     def allocation_route(self, identity):
-        return self._route(self._resolve(identity))
+        return self._route(self._resolve(identity, fields=ROUTE_FIELDS))
 
     def sandbox_endpoint(self, identity):
         record = self.state.get('allocation', identity, required=False,
@@ -436,6 +453,7 @@ class Controller:
                 self.state.put('allocation', record, event={'message': 'termination requested'})
         return self._public_allocation(record)
 
+    @lifecycle
     def _launch(self, identity):
         record = self.state.get('allocation', identity)
         if (record['desired'] != 'running' or record.get('lease') or
@@ -453,13 +471,15 @@ class Controller:
             if route is None:
                 preparer = self.connection(worker['endpoint'])
                 try:
-                    prepared = preparer.call('managed_prepare', template=record['spec']['template'])
+                    prepared = yield rpc(preparer, 'managed_prepare', template=record['spec']['template'])
                 finally:
                     preparer.close()
                 route = {**worker['endpoint'], **{k: prepared['information'][k]
                          for k in ('hostname', 'port', 'workspace')}, 'token': prepared['token']}
                 connection = self.connection(route)
-                route = self._accept_worker(worker['id'], connection, promote=True)
+                information = yield rpc(connection, 'inventory')
+                ping = yield rpc(connection, 'ping')
+                route = self._accept_worker(worker['id'], connection, information, promote=True, ping=ping)
             else:
                 connection = self.connection(route)
             with self.state.transaction():
@@ -468,15 +488,15 @@ class Controller:
                     return
                 record = self.state.put('allocation', {**record, 'endpoint': route, 'state': 'starting'})
             request = record['request']
-            if request['spec'].get('recording') and not connection.call('ping').get('desktop_recording'):
+            if request['spec'].get('recording') and not (yield rpc(connection, 'ping')).get('desktop_recording'):
                 raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker')
-            if request['spec'].get('discard_workspace') and not connection.call('ping').get('pool_retention'):
+            if request['spec'].get('discard_workspace') and not (yield rpc(connection, 'ping')).get('pool_retention'):
                 with self.state.transaction():
                     current = self.state.get('allocation', identity)
                     self.state.put('allocation', {**current, 'retention_unsupported': True})
                 raise UnsupportedFeature('retain_baseline=False requires Sandweave 0.2.13 or newer on every participating worker')
             from ..sandbox.proxy import requires_policy
-            if requires_policy(request['spec']['resources']['network']) and not connection.call('ping').get('proxy_policy'):
+            if requires_policy(request['spec']['resources']['network']) and not (yield rpc(connection, 'ping')).get('proxy_policy'):
                 raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on every participating worker')
             if request.get('reference'):
                 pool = self.state.get('pool', record['parent'], required=False) if record.get('parent') else None
@@ -485,17 +505,17 @@ class Controller:
                     from ..sandbox.retention import shared_path
                     cache = shared_path(cache, pool['id'])
                 if prepared_image is None:
-                    self.preparation.request(record, connection, route, cache)
+                    yield from self.preparation.request.steps(self.preparation, record, connection, route, cache)
                     return
                 reference = prepared_image[1].result() or request['reference']
                 if cache is not None:
                     # Publication is complete. Each worker attaches its own
                     # revision record without repeating the image transfer.
-                    connection.call('artifact_cached', reference=reference, shared_cache=cache)
+                    yield rpc(connection, 'artifact_cached', reference=reference, shared_cache=cache)
             initial = connection
             connection = self.connection(route, timeout=request['spec']['startup_timeout'] + 60)
             initial.close()
-            response = connection.call('managed_apply', identity=identity, cluster=self.id,
+            response = yield rpc(connection, 'managed_apply', identity=identity, cluster=self.id,
                 generation=record['generation'], action='create', **request,
                 process=self._owner_process(record.get('owner')))
             with self.state.transaction():
@@ -536,16 +556,17 @@ class Controller:
                 return
             self.state.put('allocation', {**record, 'state': 'unknown', 'error': record.get('error') or str(error)})
 
+    @lifecycle
     def _observe(self, identity):
         record = self.state.get('allocation', identity)
         if not record.get('endpoint') or record['state'] == 'claiming' or record.get('released'):
             return
         if not record.get('token') and record['desired'] == 'running':
-            return self._launch(identity)
+            return (yield from self._launch.steps(self, identity))
         connection = None
         try:
             connection = self.connection(record['endpoint'], timeout=5)
-            info = connection.call('describe', identity=identity)
+            info = yield rpc(connection, 'describe', identity=identity)
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
                 if current['generation'] != record['generation'] or current['state'] == 'claiming' or current.get('released'):
@@ -572,6 +593,7 @@ class Controller:
             if connection:
                 connection.close()
 
+    @lifecycle
     def _terminate(self, identity):
         record = self.state.get('allocation', identity)
         if record['desired'] != 'terminated' or record.get('released'):
@@ -580,7 +602,7 @@ class Controller:
         connection = None
         try:
             connection = self.connection(route)
-            response = connection.call('managed_apply', identity=identity, cluster=self.id,
+            response = yield rpc(connection, 'managed_apply', identity=identity, cluster=self.id,
                 generation=record['generation'], action='terminate')
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
@@ -719,6 +741,16 @@ class Controller:
         self.relay.close()
         if self.thread:
             self.thread.join()
+        # Requests have been interrupted, but their exception handlers may still
+        # need a thread to commit unknown outcomes. Drain before closing either
+        # executor, the I/O loop, or state persistence.
+        with self.guard:
+            pending = list(self.pending.values())
+        for future in pending:
+            try:
+                future.result()
+            except Exception:
+                LOG.exception('Lifecycle operation failed while stopping')
         self.executor.shutdown(wait=True)
         self.observers.shutdown(wait=True)
         self.preparation.close()

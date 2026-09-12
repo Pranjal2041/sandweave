@@ -18,12 +18,17 @@ def summary(values):
 def test_concurrent_public_sdk_latency_and_complete_output(cluster):
     for worker in cluster.workers:
         cluster.connection.call('worker_update', identity=worker['id'], slots=8)
-    samples = {'run_seconds': [], 'guest_seconds': [], 'read_seconds': [], 'status_seconds': []}
+    samples = {'acquire_seconds': [], 'run_seconds': [], 'guest_seconds': [], 'read_seconds': [], 'status_seconds': []}
     with Pool(target='weave-live', image='docker://busybox:1.37.0', size=16, warm=16,
               memory=Memory('256MiB', '256MiB'), wait_timeout=900) as pool:
         async def run():
             leases = [pool.acquire() for _ in range(16)]
-            environments = await asyncio.gather(*(lease.__aenter__() for lease in leases))
+            async def acquire(lease):
+                started = time.perf_counter()
+                env = await lease.__aenter__()
+                samples['acquire_seconds'].append(time.perf_counter() - started)
+                return env
+            environments = await asyncio.gather(*(acquire(lease) for lease in leases))
             try:
                 async def episode(index, env):
                     value = f'agent-{index}'

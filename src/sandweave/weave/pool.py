@@ -14,6 +14,7 @@ from ..sandbox.resources import positive
 from ..sandbox.artifacts import cache_path
 from ..sandbox import proxy
 from . import scheduler
+from .lifecycle import lifecycle, rpc
 
 
 class Pool(LocalPool):
@@ -236,34 +237,61 @@ def validate(*, size, warm, weight, priority, labels, placement, affinity=None, 
     cache_path(shared_cache)
 
 
-def resolve(controller, identity):
-    record = controller.state.get('pool', identity, required=False)
+STATUS_FIELDS = ('id', 'name', 'state', 'size', 'warm', 'weight', 'priority',
+                 'labels', 'placement', 'affinity', 'shared_cache', 'error', 'baseline',
+                 'artifacts_released', 'cleanup_error')
+
+
+def resolve(controller, identity, *, fields=None):
+    record = controller.state.get('pool', identity, required=False, fields=fields)
     if record is None:
-        matches = [p for p in controller.state.list('pool') if p.get('name') == identity and p['state'] != 'closed']
+        matches = [p for p in controller.state.list('pool', fields=('id', 'name', 'state'))
+                   if p.get('name') == identity and p['state'] != 'closed']
         if len(matches) != 1:
             raise FileNotFoundError('pool ID or unique name is missing: ' + identity)
-        record = matches[0]
+        record = controller.state.get('pool', matches[0]['id'], fields=fields)
     return record
 
 
 def status(controller, identity):
-    pool = resolve(controller, identity)
-    live = controller.state.list('allocation', parent=pool['id'], released=False)
-    return {**{k: pool.get(k) for k in ('id', 'name', 'state', 'size', 'warm', 'weight', 'priority',
-                                       'labels', 'placement', 'affinity', 'shared_cache', 'error', 'baseline',
-                                       'artifacts_released', 'cleanup_error')},
-            'retain_baseline': pool.get('retain_baseline', True),
+    with controller.state.read():
+        pool = resolve(controller, identity, fields=(*STATUS_FIELDS, 'retain_baseline'))
+        live = controller.state.list('allocation', parent=pool['id'], released=False,
+                                     fields=('id', 'state', 'lease', 'role', 'desired', 'reason', 'error'))
+        waiting = len(controller.state.list('lease', parent=pool['id'], state='pending', fields=('id',)))
+    return {**{k: pool.get(k) for k in STATUS_FIELDS},
+            'retain_baseline': pool['retain_baseline'] is not False,
             'ready': sum(a['state'] == 'ready' and not a.get('lease') and a.get('role') != 'builder' and a['desired'] == 'running' for a in live),
             'active': sum(bool(a.get('lease')) for a in live),
             'pending': sum(a['state'] in ('pending', 'reserved', 'starting', 'unknown') for a in live),
-            'waiting': len(controller.state.list('lease', parent=pool['id'], state='pending')),
+            'waiting': waiting,
             'reason': next((a.get('reason') or a.get('error') for a in live if a.get('reason') or a.get('error')), None),
             'sandboxes': [a['id'] for a in live]}
+
+
+def lease_status(controller, identity, lease_id):
+    with controller.state.read():
+        pool = resolve(controller, identity, fields=('id', 'state', 'error'))
+        lease = controller.state.get('lease', lease_id, fields=('id', 'parent', 'state', 'sandbox', 'error'))
+        if lease['parent'] != pool['id']:
+            raise PermissionError('lease belongs to another pool')
+        result = {k: lease.get(k) for k in ('id', 'state', 'sandbox', 'error')}
+        if pool['state'] == 'failed' and lease['state'] in ('pending', 'claiming'):
+            # Reconciliation persists failure and cancels unissued members.
+            # A poll only reports it, including old records awaiting recovery.
+            result.update(state='failed', error=pool.get('error') or 'pool failed')
+        elif lease['state'] == 'ready':
+            result['route'] = controller.allocation_route(lease['sandbox'])
+        return result
 
 
 def dispatch(controller, operation, params):
     state = controller.state
     identity = params['identity']
+    if operation == 'pool_status':
+        return status(controller, identity)
+    if operation == 'pool_lease':
+        return lease_status(controller, identity, params['lease_id'])
     if operation == 'pool_create':
         policy = {k: params[k] for k in ('size', 'warm', 'weight', 'priority', 'labels', 'placement')}
         policy.update(affinity=params.get('affinity'), shared_cache=cache_path(params.get('shared_cache')))
@@ -308,8 +336,6 @@ def dispatch(controller, operation, params):
         return status(controller, identity)
     pool = resolve(controller, identity)
     identity = pool['id']
-    if operation == 'pool_status':
-        return status(controller, identity)
     if operation == 'pool_update':
         allowed = {'size', 'warm', 'weight', 'priority', 'labels', 'placement', 'affinity'}
         if params.keys() - allowed - {'identity'}:
@@ -353,15 +379,6 @@ def dispatch(controller, operation, params):
             if lease['state'] != 'failed':
                 state.put('lease', {**lease, 'state': 'released' if lease.get('sandbox') else 'cancelled'})
             return {'id': lease_id, 'state': 'released'}
-        if operation == 'pool_lease':
-            pool = resolve(controller, identity)
-            if pool['state'] == 'failed' and lease['state'] in ('pending', 'claiming'):
-                _fail(controller, identity, pool.get('error') or 'pool failed')
-                lease = state.get('lease', lease_id)
-            result = {k: lease.get(k) for k in ('id', 'state', 'sandbox', 'error')}
-            if lease['state'] == 'ready':
-                result['route'] = controller.allocation_route(lease['sandbox'])
-            return result
     raise ValueError('unknown pool operation: ' + operation)
 
 
@@ -414,18 +431,19 @@ def _new_member(controller, pool, *, builder=False):
             controller.state.put('pool', {**pool, 'builder': identity})
 
 
+@lifecycle
 def _capture(controller, pool_id, builder_id):
     from . import providers
     try:
         record = controller.state.get('allocation', builder_id)
         connection = controller.connection(record['endpoint'])
         try:
-            saved = connection.call('capture', identity=builder_id, state='filesystem')
-            verification = connection.call('snapshot_verify', reference=saved['id'])
+            saved = yield rpc(connection, 'capture', identity=builder_id, state='filesystem')
+            verification = yield rpc(connection, 'snapshot_verify', reference=saved['id'])
             if verification.get('status') != 'passed':
                 raise ResourceUnavailable('pool baseline verification failed: ' + str(verification.get('error')))
             from .artifacts import register
-            prepared = register(controller, saved['id'], record['endpoint'])['spec']
+            prepared = (yield from register.steps(controller, saved['id'], record['endpoint']))['spec']
         finally:
             connection.close()
         with controller.state.transaction():
@@ -442,11 +460,13 @@ def _capture(controller, pool_id, builder_id):
             controller.allocation_cancel(builder_id)
 
 
+@lifecycle
 def _claim(controller, pool_id, lease_id, sandbox_id):
-    with controller.state.transaction():
+    with controller.state.read():
         lease = controller.state.get('lease', lease_id)
-        record = controller.state.get('allocation', sandbox_id)
-        pool = resolve(controller, pool_id)
+        record = controller.state.get('allocation', sandbox_id,
+                                      fields=('lease', 'desired', 'generation', 'endpoint'))
+        pool = resolve(controller, pool_id, fields=('desired', 'state', 'request.spec'))
         if (lease['state'] != 'claiming' or record.get('lease') != lease_id or
                 record['desired'] != 'running' or pool['desired'] != 'running' or pool['state'] == 'failed'):
             return
@@ -458,9 +478,9 @@ def _claim(controller, pool_id, lease_id, sandbox_id):
     connection = None
     try:
         connection = controller.connection(record['endpoint'])
-        response = connection.call('managed_apply', identity=sandbox_id, cluster=controller.id,
+        response = yield rpc(connection, 'managed_apply', identity=sandbox_id, cluster=controller.id,
             generation=generation, action='claim', owner=lease.get('owner'),
-            process=controller._owner_process(lease.get('owner')), spec=pool['request']['spec'])
+            process=controller._owner_process(lease.get('owner')), spec=pool['request.spec'])
         with controller.state.transaction():
             lease = controller.state.get('lease', lease_id)
             record = controller.state.get('allocation', sandbox_id)
@@ -491,6 +511,7 @@ def _claim(controller, pool_id, lease_id, sandbox_id):
             connection.close()
 
 
+@lifecycle
 def _release_artifacts(controller, pool_id):
     state = controller.state
     pool = resolve(controller, pool_id)
@@ -520,7 +541,7 @@ def _release_artifacts(controller, pool_id):
             connection = None
             try:
                 connection = controller.connection(endpoint)
-                connection.call('artifact_release', pool=pool_id, references=sorted(references),
+                yield rpc(connection, 'artifact_release', pool=pool_id, references=sorted(references),
                                 sources=sorted(sources), shared_cache=pool.get('shared_cache'))
             except Exception:
                 if not controller.connections.is_lost(endpoint):

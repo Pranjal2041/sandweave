@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 
 from .connections import worker_key
+from .lifecycle import lifecycle, rpc
 from ..sandbox.errors import UnsupportedFeature
 
 
@@ -13,12 +14,13 @@ class Preparation:
         self.lock = threading.Lock()
         self.transfers, self.waiters = {}, {}
 
+    @lifecycle
     def request(self, record, connection, endpoint, cache):
         reference = record['request']['reference']
         # Resolve actual storage identity, not a mount path or hostname. This
         # probe never takes the artifact's publication lock.
         try:
-            destination = (('cache', connection.call('artifact_cache_identity', shared_cache=cache))
+            destination = (('cache', (yield rpc(connection, 'artifact_cache_identity', shared_cache=cache)))
                            if cache is not None else ('worker', worker_key(endpoint)))
         except ValueError as error:
             if str(error) == 'unknown artifact operation':

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.18
+
+- Wait for worker lifecycle RPCs asynchronously. Concurrent creates, claims,
+  termination, observations, baseline capture, cleanup and job operations release
+  controller threads while waiting for replies over HTTP or outbound relay.
+- Keep each allocation serialized until its operation and final state commit
+  finish. Preserve assignment generations, lost-worker cancellation, shared-image
+  preparation and shutdown draining.
+- Serve pool lease polling and projected pool/allocation status from indexed
+  memory, outside the writer lock and control executor. Failed pool polls report
+  the failure immediately; reconciliation persists cleanup separately.
+- Upgrade and restart the controller to apply these changes. Public APIs, worker
+  RPCs, saved controller state and the engine binary are unchanged.
+
 ## 0.2.17
 
 - Make staged NVIDIA EGL and Vulkan configuration files readable by guest

@@ -33,7 +33,7 @@ class Link:
             except FileNotFoundError:
                 raise CacheMiss(reference)
         self.artifacts = Artifacts(SimpleNamespace(root=root, store=SimpleNamespace(
-            root=store, resolve=resolve, verify=lambda record: {'status': 'passed'})))
+            root=store, resolve=resolve, verify=lambda record, **kw: {'status': 'passed'})))
         self.cache = cache
         self.bytes = 0
         self.fail_read = False
@@ -149,7 +149,7 @@ def test_materialized_images_do_not_repeat_cross_filesystem_reads(tmp_path, monk
     monkeypatch.setitem(sys.modules, 'snapshot_store', SimpleNamespace(inspect=lambda *args: manifest))
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path / 'state'))
     copies = []
-    def copy_file(src, dst):
+    def copy_file(src, dst, **options):
         copies.append((src, dst))
         Path(dst).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
@@ -233,6 +233,15 @@ def test_unavailable_machine_identity_never_groups_by_hostname():
 
 
 def test_pool_exposes_cache_and_affinity_and_passes_cache_to_launch(lab, monkeypatch):
+    from test_weave import Executor
+    original = Executor.call
+    def call(self, operation, **params):
+        if operation == 'artifact_cache_identity':
+            return 'shared-store'
+        if operation == 'artifact_cached':
+            return {'ready': True}
+        return original(self, operation, **params)
+    monkeypatch.setattr(Executor, 'call', call)
     assert set(lab.controller.dispatch('ping', {})['pool_options']) >= {'shared_cache', 'affinity'}
     pool = make_pool(lab.controller, size=2, warm=2)
     record = lab.controller.state.get('pool', pool)
@@ -242,7 +251,7 @@ def test_pool_exposes_cache_and_affinity_and_passes_cache_to_launch(lab, monkeyp
     until(lab, lambda: lab.controller.pool_status(pool)['ready'] == 2)
     info = lab.controller.pool_status(pool)
     assert info['shared_cache'] == '/workers/shared' and info['affinity'] == 'machine'
-    assert calls == ['/workers/shared'] * 2
+    assert 1 <= len(calls) <= 2 and set(calls) == {'/workers/shared'}
     assert len({w['machine'] for w in lab.controller.worker_list()}) == 1
     dispatch(lab.controller, 'pool_update', {'identity': pool, 'affinity': 'worker'})
     assert lab.controller.pool_status(pool)['affinity'] == 'worker'

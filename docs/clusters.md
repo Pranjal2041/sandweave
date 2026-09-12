@@ -137,6 +137,11 @@ not kill remote processes. The removed worker workspace cannot rejoin that
 controller; a replacement needs a new workspace. Pending claims receive the
 failure instead of keeping a route to that worker.
 
+In 0.2.15 and newer, marking a worker lost also cancels outstanding requests to
+it. Image fetching and pool cleanup skip its endpoints, including after a
+controller restart. This applies to an explicit loss decision; a temporary
+connection failure still preserves reservations.
+
 ## Controller lifetime
 
 ```bash

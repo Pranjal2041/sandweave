@@ -73,6 +73,10 @@ A supported gVisor memory snapshot saves process and kernel state as well as
 files. Verification can run asynchronously; the example checks it before
 attempting a restore. External services and shared volumes do not roll back.
 
+During gVisor snapshot publication and transfer, Sandweave reuses checksums for
+files whose recorded identity and timestamps still match. New copies are checked
+before publication. Calling `checkpoint.verify()` explicitly rechecks the bytes.
+
 ## Save before stopping
 
 ```python

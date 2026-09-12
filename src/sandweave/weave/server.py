@@ -47,8 +47,6 @@ class RPC:
         self.controller, self.token, self.dashboard, self.stop = controller, token, dashboard, stop
         self.executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix='weave-control')
         self.monitor_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix='weave-dashboard')
-        self.connections = {}
-        self.connection_lock = asyncio.Lock()
 
     async def blocking(self, function, *args, monitoring=False, **kwargs):
         executor = self.monitor_executor if monitoring else self.executor
@@ -59,14 +57,7 @@ class RPC:
         endpoint = self.controller.sandbox_endpoint(identity)
         if endpoint.get('relay'):
             return await self.controller.relay.acall(endpoint, method, parameters, 300)
-        key = (endpoint['hostname'], endpoint['port'], endpoint.get('ssh_host'), endpoint.get('ssh_port'))
-        connection = self.connections.get(key)
-        if connection is None:
-            async with self.connection_lock:
-                connection = self.connections.get(key)
-                if connection is None:
-                    connection = await self.blocking(self.controller.connection, endpoint)
-                    self.connections[key] = connection
+        connection = self.controller.connection(endpoint)
         return await connection.arequest(method, parameters, token=endpoint['token'])
 
     async def handle(self, request):
@@ -107,9 +98,6 @@ class RPC:
     async def close(self):
         await asyncio.to_thread(self.executor.shutdown, wait=True)
         await asyncio.to_thread(self.monitor_executor.shutdown, wait=True)
-        for connection in self.connections.values():
-            await connection.aclose()
-        self.connections.clear()
 
 
 async def serve_async(directory):
@@ -168,6 +156,7 @@ async def serve_async(directory):
         await stop.wait()
     finally:
         controller.stopping.set()
+        controller.connections.stop()
         controller.relay.close()
         await runner.cleanup()
         await rpc.close()

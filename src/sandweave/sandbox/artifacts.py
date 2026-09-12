@@ -1,15 +1,14 @@
 """Verified snapshot transport, confined to a private import directory."""
 import copy
-import hashlib
 import json
 import os
 from pathlib import Path
 import stat
 import uuid
 
-from .errors import IncompatibleSnapshot
+from .errors import IncompatibleSnapshot, ResourceUnavailable
 from .wire import encode, decode
-from .workspace import locked, atomic_json, _immutable
+from .workspace import locked, atomic_json, _immutable, verified_digest, verification_signature
 
 
 def cache_path(value):
@@ -26,19 +25,25 @@ class Artifacts:
     def __init__(self, worker, *, shared_cache=None):
         self.worker = worker
         self.exports = {}
+        self.verified = {}
         self.root = (Path(cache_path(shared_cache)) / 'artifacts-v1' if shared_cache is not None
                      else worker.store.root / 'imports')
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    def cached(self, reference):
-        directory = self.directory(reference)
+    def cache_identity(self):
         # Paths and hostnames cannot tell whether two workers see the same
         # storage. A marker created under a filesystem lock can.
+        marker = self.root / 'cache.json'
+        if marker.exists():
+            return json.loads(marker.read_text())['id']
         with locked(self.root / '.identity.lock'):
-            marker = self.root / 'cache.json'
             if not marker.exists():
                 atomic_json(marker, {'id': uuid.uuid4().hex})
-            identity = json.loads(marker.read_text())['id']
+            return json.loads(marker.read_text())['id']
+
+    def cached(self, reference):
+        directory = self.directory(reference)
+        identity = self.cache_identity()
         with locked(directory.with_suffix('.lock')):
             ready = (directory / 'complete').exists()
             if ready:
@@ -52,7 +57,7 @@ class Artifacts:
                 manifest = self.manifest(reference)
                 for name in self._begin(manifest):
                     _immutable(self.exports[reference][name], self.directory(reference) / name,
-                               sha256=manifest['files'][name]['sha256'])
+                               sha256=manifest['files'][name]['sha256'], verified=self.verified)
                 result = self._finish(reference)
                 atomic_json(self.directory(reference) / 'complete', result)
             else:
@@ -74,8 +79,10 @@ class Artifacts:
 
     def metadata(self, reference):
         saved = self.worker.store.resolve(reference)
-        if self.worker.store.verify(saved)['status'] != 'passed':
+        result = self.worker.store.verify(saved, reuse=True)
+        if result['status'] != 'passed':
             raise IncompatibleSnapshot('snapshot verification failed')
+        self.verified = result.get('verified_files', {})
         return saved
 
     def _publish(self, metadata):
@@ -96,7 +103,7 @@ class Artifacts:
         self.directory(metadata['id'])
         if not Path(metadata['location']).is_dir() or not Path(metadata['workspace']).is_dir():
             raise FileNotFoundError('snapshot is not on shared storage')
-        if self.worker.store.verify(metadata)['status'] != 'passed':
+        if self.worker.store.verify(metadata, reuse=True)['status'] != 'passed':
             raise IncompatibleSnapshot('shared snapshot verification failed')
         return self._publish(metadata)
 
@@ -125,8 +132,7 @@ class Artifacts:
                 elif path.is_dir():
                     entry.update(kind='directory')
                 elif path.is_file():
-                    with path.open('rb') as stream:
-                        checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+                    checksum = verified_digest(path, verified=self.verified)
                     entry.update(kind='file', size=info.st_size, sha256=checksum)
                 else:
                     raise IncompatibleSnapshot('unsupported artifact entry: ' + name)
@@ -193,7 +199,7 @@ class Artifacts:
                             stat.S_IMODE(existing.stat().st_mode) == info['mode'] and
                             {k: os.getxattr(existing, k).hex() for k in os.listxattr(existing)} == info.get('xattrs', {})):
                         try:
-                            _immutable(existing, path, sha256=info['sha256'])
+                            _immutable(existing, path, sha256=info['sha256'], verified=self.verified)
                             continue
                         except Exception:
                             pass
@@ -202,6 +208,7 @@ class Artifacts:
                 if not path.exists():
                     path.touch(mode=0o600)
                 missing.append(name)
+        atomic_json(directory / 'verified.json', self.verified)
         return missing
 
     def write(self, reference, path, offset, data):
@@ -252,20 +259,29 @@ class Artifacts:
     def _finish(self, reference):
         directory = self.directory(reference)
         manifest = decode((directory / 'manifest.bin').read_bytes())
+        receipt_file = directory / 'verified.json'
+        if receipt_file.exists():
+            self.verified = {**json.loads(receipt_file.read_text()), **self.verified}
         for name, info in manifest['files'].items():
             path = directory / self.relative(name)
             if info['kind'] == 'file':
+                if path.stat().st_size != info['size']:
+                    raise IncompatibleSnapshot('artifact size mismatch: ' + name)
+                try:
+                    verified_digest(path, sha256=info['sha256'], verified=self.verified)
+                except ResourceUnavailable as error:
+                    raise IncompatibleSnapshot('artifact checksum mismatch: ' + name) from error
                 with path.open('rb') as stream:
-                    if path.stat().st_size != info['size'] or hashlib.file_digest(stream, 'sha256').hexdigest() != info['sha256']:
-                        raise IncompatibleSnapshot('artifact checksum mismatch: ' + name)
                     os.fsync(stream.fileno())
             if info['kind'] != 'symlink' and stat.S_IMODE(path.stat().st_mode) != info['mode']:
                 path.chmod(info['mode'])
             for key, value in info.get('xattrs', {}).items():
                 if key not in os.listxattr(path, follow_symlinks=False) or os.getxattr(path, key, follow_symlinks=False).hex() != value:
                     os.setxattr(path, key, bytes.fromhex(value), follow_symlinks=False)
+            if info['kind'] == 'file':
+                self.verified[str(path)]['signature'] = verification_signature(path)
         saved = self._saved(reference)
-        if self.worker.store.verify(saved)['status'] != 'passed':
+        if self.worker.store.verify(saved, reuse=True, verified=self.verified)['status'] != 'passed':
             raise IncompatibleSnapshot('imported snapshot failed verification')
         return self._publish(saved)
 
@@ -282,7 +298,10 @@ class Artifacts:
         # immutable revision. Do not hash gigabytes again for every lease.
         if record.exists() and decode(record.read_bytes()) == saved:
             return {'id': reference}
-        return self.import_shared(saved)
+        # Callers hold the artifact lock and have observed its completion
+        # marker. Publication already checked these immutable bytes. A new
+        # worker needs a private revision record, not another full verification.
+        return self._publish(saved)
 
     def dispatch(self, operation, parameters):
         from . import retention
@@ -291,13 +310,13 @@ class Artifacts:
         parameters = dict(parameters)
         shared_cache = parameters.pop('shared_cache', None)
         if shared_cache is not None:
-            if operation not in ('artifact_cached', 'artifact_cache', 'artifact_begin', 'artifact_write', 'artifact_finish'):
+            if operation not in ('artifact_cache_identity', 'artifact_cached', 'artifact_cache', 'artifact_begin', 'artifact_write', 'artifact_finish'):
                 raise ValueError('shared_cache is not supported for this artifact operation')
             return Artifacts(self.worker, shared_cache=shared_cache).dispatch(operation, parameters)
         operation = operation.removeprefix('artifact_')
         method = {'metadata': self.metadata, 'import': self.import_shared, 'manifest': self.manifest,
                   'read': self.read, 'begin': self.begin, 'write': self.write, 'finish': self.finish,
-                  'cached': self.cached, 'cache': self.cache}.get(operation)
+                  'cached': self.cached, 'cache': self.cache, 'cache_identity': self.cache_identity}.get(operation)
         if method is None:
             raise ValueError('unknown artifact operation')
         metadata = parameters.get('metadata') or parameters.get('manifest', {}).get('metadata')

@@ -434,6 +434,8 @@ def _capture(controller, pool_id, builder_id):
                                          'baseline_spec': prepared, 'state': 'ready'})
             controller.allocation_cancel(builder_id)
     except Exception as error:
+        if controller.stopping.is_set():
+            return
         with controller.state.transaction():
             pool = resolve(controller, pool_id)
             _fail(controller, pool_id, str(error))
@@ -474,6 +476,8 @@ def _claim(controller, pool_id, lease_id, sandbox_id):
         # Recover the same committed lease and assignment generation on retry.
         return
     except Exception as error:
+        if controller.stopping.is_set():
+            return
         with controller.state.transaction():
             lease = controller.state.get('lease', lease_id)
             record = controller.state.get('allocation', sandbox_id)
@@ -511,12 +515,19 @@ def _release_artifacts(controller, pool_id):
         endpoints.extend(e for record in records for e in record['locations'])
         routes = {(e['hostname'], e['workspace']): e for e in endpoints}
         for endpoint in routes.values():
-            connection = controller.connection(endpoint)
+            if controller.connections.is_lost(endpoint):
+                continue
+            connection = None
             try:
+                connection = controller.connection(endpoint)
                 connection.call('artifact_release', pool=pool_id, references=sorted(references),
                                 sources=sorted(sources), shared_cache=pool.get('shared_cache'))
+            except Exception:
+                if not controller.connections.is_lost(endpoint):
+                    raise
             finally:
-                connection.close()
+                if connection:
+                    connection.close()
         with state.transaction():
             current = resolve(controller, pool_id)
             current.pop('cleanup_error', None)

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.15
+
+- Cancel outstanding HTTP and relay requests when a worker is explicitly marked
+  lost. Exclude its current and historical endpoints from image fetching and
+  pool cleanup, including after a controller restart.
+- Share one image-preparation future per destination cache and snapshot.
+  Waiting sandboxes release their launch threads while publication completes.
+  Unrelated launches and termination continue independently.
+- Reuse verified file checksums through snapshot publication, import and runtime
+  staging. Newly copied bytes are checked; explicit snapshot verification still
+  reads the payload. Accept hard-link metadata changes during the first base-image
+  verification while retaining strict checks for unhashed checkpoint sources.
+- Upgrade controllers and workers to apply these fixes. Public sandbox and pool
+  arguments are unchanged.
+
 ## 0.2.14
 
 - Add opt-in desktop recording with `recording=True` or `Recording(fps=15,

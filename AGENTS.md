@@ -6,8 +6,10 @@ physical embodiment and other workloads. Do not redefine the goal around an
 individual application or a current implementation choice. gVisor is an
 isolation engine; Xvnc/Wayland are display infrastructure and Monado is an XR
 runtime. Their roles are distinct, and multiple interaction backends belong
-in the scope. The current objective is running a real VR game at high frame
-rates, then comparing the relevant presentation paths.
+in the scope. The project aims to serve sandboxes with low latency at scale.
+Test coordination and verification changes under concurrent load, including
+their effect on unrelated work. VR gameplay and presentation-path comparisons
+remain part of runtime coverage.
 
 Work here is independent of Gym Anything's main repository. Runtime experiments
 use the existing Slurm allocation without host sudo or KVM. Preserve user-facing

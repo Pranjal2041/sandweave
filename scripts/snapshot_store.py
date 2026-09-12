@@ -121,7 +121,7 @@ def start_verification(lab, snapshot):
     return child
 
 
-def verify(lab, snapshot):
+def verify(lab, snapshot, *, verified=None, reuse=False):
     """Compare new copies with their frozen source; recheck existing hashes later."""
     snapshot = Path(snapshot).resolve()
     with (snapshot / '.verification.lock').open('a') as lock:
@@ -134,29 +134,40 @@ def verify(lab, snapshot):
         if status_file.exists():
             previous = json.loads(status_file.read_text())
             if previous.get('snapshot_id') == identity(manifest):
+                if reuse and previous['status'] == 'passed':
+                    # Read receipts after acquiring the verification lock: an
+                    # initial background verifier may have just finished.
+                    verified = {**previous.get('verified_files', {}), **(verified or {})}
                 if previous['status'] == 'failed' or previous.get('previous_failure'):
                     status['previous_failure'] = previous.get('error') or previous.get('previous_failure') or 'verification failed'
         write_json(snapshot / 'verification.json', status)
         cache = {}
 
-        def digest(path, expected_stat=None, expected_sha256=None):
+        receipts = {}
+
+        def digest(path, expected_stat=None, expected_sha256=None, *, immutable_base=False):
             before = signature(path)
-            if expected_stat is not None and before != expected_stat:
+            after = before
+            content_identity = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns')
+            if expected_stat is not None and before != expected_stat and not (
+                    immutable_base and all(before[k] == expected_stat[k] for k in content_identity)):
                 raise ValueError('captured source changed before verification: ' + str(path))
             key = tuple(before.values())
+            receipt = (verified or {}).get(str(path))
+            if receipt and receipt['signature'] == before and receipt['sha256'] == expected_sha256:
+                cache[key] = receipt['sha256']
             if key not in cache:
                 result = runtime_store.digest(path)
                 after = signature(path)
                 if after != before:
-                    # Adding a hard link changes ctime even when immutable
-                    # content is unchanged. Only a previously pinned SHA-256
-                    # permits that metadata-only change; frozen unhashed
-                    # checkpoint sources retain the strict signature check.
-                    content_identity = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns')
-                    if (expected_sha256 is None or result != expected_sha256 or
+                    # An immutable base can acquire hard links before its first
+                    # hash is pinned. Frozen checkpoint sources remain strict.
+                    if ((not immutable_base and (expected_sha256 is None or result != expected_sha256)) or
                             any(after[k] != before[k] for k in content_identity)):
                         raise ValueError('file changed during verification: ' + str(path))
                 cache[key] = result
+                cache[tuple(after.values())] = result
+            receipts[str(path)] = {'signature': after, 'sha256': cache[key]}
             return cache[key]
 
         try:
@@ -183,7 +194,7 @@ def verify(lab, snapshot):
             expected = base.get('sha256')
             if expected is None:
                 reference_path()
-                expected = digest(Path(reference['base_path']), reference['base_stat'])
+                expected = digest(Path(reference['base_path']), reference['base_stat'], immutable_base=True)
             if digest(contained(lab, base['path']), expected_sha256=expected) != expected:
                 raise ValueError('base image digest mismatch')
             base['sha256'] = expected
@@ -196,7 +207,8 @@ def verify(lab, snapshot):
             if manifest['format'] == 2:
                 write_json(snapshot / 'snapshot-manifest.json', manifest)
             status.pop('previous_failure', None)
-            status.update(status='passed', finished_at=time.time(), seconds=time.perf_counter() - started)
+            status.update(status='passed', finished_at=time.time(), seconds=time.perf_counter() - started,
+                          verified_files=receipts)
         except Exception as error:
             status.update(status='failed', error=str(error), finished_at=time.time(), seconds=time.perf_counter() - started)
         write_json(snapshot / 'verification.json', status)

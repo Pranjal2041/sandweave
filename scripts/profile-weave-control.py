@@ -65,7 +65,8 @@ async def run(args):
                 info={'id': identity, 'state': 'ready', 'runtime_status': {'status': 'running'}}))
     state.close()
     log = (root / 'controller.log').open('wb')
-    child = subprocess.Popen([sys.executable, '-m', 'sandweave.weave.server', '--directory', str(root / 'controller')],
+    profile = ['-m', 'cProfile', '-o', str(root / 'controller.prof')] if args.profile_controller else []
+    child = subprocess.Popen([sys.executable, *profile, '-m', 'sandweave.weave.server', '--directory', str(root / 'controller')],
         env={**os.environ, **({'PYTHONPATH': args.controller_pythonpath} if args.controller_pythonpath else {})},
         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
     connection, bridge = None, None
@@ -136,4 +137,5 @@ if __name__ == '__main__':
     parser.add_argument('--concurrency', type=int, default=1000)
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--controller-pythonpath', help='Optional archived SDK source for a controller-only comparison')
+    parser.add_argument('--profile-controller', action='store_true', help='Write controller.prof for CPU attribution')
     asyncio.run(run(parser.parse_args()))

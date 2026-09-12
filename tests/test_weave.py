@@ -410,9 +410,9 @@ def test_cluster_cache_publication_rejects_concurrent_alias_change(lab, monkeypa
             pass
     monkeypatch.setattr(providers, 'direct', lambda *a, **kw: SnapshotWorker())
     first, second = 'snap-' + 'a'*32, 'snap-' + 'b'*32
-    artifacts.register(lab.controller, first, {}, key='baseline', expected=None, compare=True)
+    artifacts.register(lab.controller, first, dict(hostname='test', port=100, token='test'), key='baseline', expected=None, compare=True)
     with pytest.raises(CacheConflict):
-        artifacts.register(lab.controller, second, {}, key='baseline', expected=None, compare=True)
+        artifacts.register(lab.controller, second, dict(hostname='test', port=100, token='test'), key='baseline', expected=None, compare=True)
     assert lab.controller.state.get('alias', 'baseline')['reference'] == first
 
 
@@ -433,14 +433,14 @@ def test_failed_job_pool_does_not_block_other_reconciliation(lab):
 def test_artifact_replica_is_used_when_first_worker_cannot_connect(lab, monkeypatch):
     identity = 'snap-' + 'c'*32
     lab.controller.state.put('artifact', dict(id=identity, spec={'reference': identity},
-        locations=[{'port': 1}, {'port': 2}], info={}))
+        locations=[dict(hostname='test', port=i, token='test') for i in (1, 2)], info={}))
     class Replica:
         def call(self, operation, **params):
             assert operation == 'snapshot_info'
             return {'id': identity}
         def close(self):
             pass
-    def connection(endpoint):
+    def connection(endpoint, **options):
         if endpoint['port'] == 1:
             raise ResourceUnavailable('SSH forwarding failed')
         return Replica()
@@ -508,7 +508,7 @@ def test_remote_attached_job_waits_until_creator_knows_worker_route(lab, monkeyp
                 return {'returncode': 0, 'stdout_size': 0, 'stderr_size': 0}
         def close(self):
             pass
-    monkeypatch.setattr(providers, 'direct', lambda *a, **kw: Guest())
+    monkeypatch.setattr(lab.controller, 'connection', lambda *a, **kw: Guest())
     _step(lab.controller, task['id'])
     assert not called
     info = dispatch(lab.controller, 'job_status', {'identity': 'job-remote-owner'})

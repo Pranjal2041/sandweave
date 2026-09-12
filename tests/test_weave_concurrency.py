@@ -24,7 +24,7 @@ def imports(tmp_path):
         root = tmp_path / name
         root.mkdir()
         workers.append(Artifacts(SimpleNamespace(root=root, store=SimpleNamespace(
-            root=store, verify=lambda metadata: {'status': 'passed'}))))
+            root=store, verify=lambda metadata, **kw: {'status': 'passed'}))))
     identity = 'snap-' + uuid.uuid4().hex
     data = b'one immutable snapshot'
     manifest = {'metadata': {'id': identity, 'digest': 'same-snapshot',
@@ -118,7 +118,7 @@ def _import_process(index, root, manifest, data, barrier, published):
     worker_root = root / str(index)
     worker_root.mkdir()
     artifacts = Artifacts(SimpleNamespace(root=worker_root, store=SimpleNamespace(
-        root=root / 'shared-store', verify=lambda metadata: {'status': 'passed'})))
+        root=root / 'shared-store', verify=lambda metadata, **kw: {'status': 'passed'})))
     manifest = copy.deepcopy(manifest)
     manifest['metadata'].update(workspace='/replica/' + str(index), location='/snapshot/' + str(index))
     identity = manifest['metadata']['id']
@@ -269,6 +269,11 @@ def test_cleanup_does_not_erase_the_last_successful_preparation(lab):
     pools._new_member(controller, record)
     successful = controller.state.list('allocation', parent=pool)[-1]
     controller.state.put('allocation', {**successful, 'state': 'reserved', 'worker': lab.workers[0]['id']})
+    controller._launch(successful['id'])
+    # Image preparation now yields the launch thread. Resume after the
+    # shared dependency finishes, without reconciling the synthetic history.
+    pending = controller.preparation.waiters[successful['id']][1]
+    pending.result(timeout=5)
     controller._launch(successful['id'])
     assert controller.allocation_get(successful['id'])['state'] == 'ready'
     controller.allocation_cancel(successful['id'])

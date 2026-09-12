@@ -1,5 +1,4 @@
 """Snapshot discovery and transfer through existing authenticated worker RPCs."""
-from . import providers
 from ..sandbox.errors import CacheMiss, CacheConflict, OperationUnknown, ResourceUnavailable
 from ..sandbox.transfers import transfer
 
@@ -12,6 +11,7 @@ def register(controller, reference, endpoint, key=None, *, expected=None, compar
     finally:
         connection.close()
     with controller.state.transaction():
+        controller.connections.check(endpoint)
         old = controller.state.get('artifact', info['id'], required=False)
         if old and (old.get('retiring') or old.get('released')):
             raise CacheMiss('snapshot is being released: ' + info['id'])
@@ -45,6 +45,7 @@ def resolve(controller, reference):
 
 
 def ensure(controller, reference, destination, endpoint, shared_cache=None):
+    controller.connections.check(endpoint)
     record = resolve(controller, reference)
     try:
         destination.call('snapshot_info', reference=record['id'])
@@ -61,6 +62,8 @@ def ensure(controller, reference, destination, endpoint, shared_cache=None):
         pass
     errors = []
     for location in record['locations']:
+        if not controller.connections.available(location):
+            continue
         source = None
         try:
             source = controller.connection(location)
@@ -73,6 +76,7 @@ def ensure(controller, reference, destination, endpoint, shared_cache=None):
         finally:
             if source:
                 source.close()
+    controller.connections.check(endpoint)
     raise CacheMiss('snapshot sources are unavailable: ' + '; '.join(errors))
 
 
@@ -89,6 +93,8 @@ def dispatch(controller, operation, parameters):
         return record['spec']
     errors = []
     for endpoint in record['locations']:
+        if not controller.connections.available(endpoint):
+            continue
         connection = None
         try:
             connection = controller.connection(endpoint)

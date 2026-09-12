@@ -146,7 +146,7 @@ def test_live_reference_and_named_cache_block_reclamation(stored):
 def test_snapshot_metadata_still_accepts_cache_names(stored, monkeypatch):
     worker, record = stored[0][0], stored[1]
     worker.store.publish('named-snapshot', record, None)
-    monkeypatch.setattr(worker.store, 'verify', lambda record: {'status': 'passed'})
+    monkeypatch.setattr(worker.store, 'verify', lambda record, **kw: {'status': 'passed'})
     assert worker.artifacts.dispatch('artifact_metadata', {'reference': 'named-snapshot'}) == record
 
 

@@ -1,0 +1,79 @@
+{
+  "baseline": {
+    "kind": "simulated worker; real HTTP, relay, reconciliation and dashboard collection",
+    "history": 10000,
+    "active_records": 500,
+    "concurrency": 1000,
+    "requests": 58516,
+    "seconds": 30.228655733168125,
+    "requests_per_second": 1935.7791003519167,
+    "latency_seconds": {
+      "p50": 0.5004730150103569,
+      "p95": 0.7361624978948385,
+      "p99": 1.514947604155168,
+      "max": 1.8115556370466948
+    },
+    "heartbeat_seconds": {
+      "p50": 0.21545539190992713,
+      "p95": 0.32917756820097566,
+      "p99": 0.35860957601107657,
+      "max": 0.3629728960804641
+    },
+    "controller_max_threads": 22,
+    "controller_peak_rss_mib": 205.19140625
+  },
+  "updated": {
+    "kind": "simulated worker; real HTTP, relay, reconciliation and dashboard collection",
+    "history": 10000,
+    "active_records": 500,
+    "concurrency": 1000,
+    "requests": 58200,
+    "seconds": 30.188652995973825,
+    "requests_per_second": 1927.8766763049007,
+    "latency_seconds": {
+      "p50": 0.4975244249217212,
+      "p95": 0.8101735759992152,
+      "p99": 1.3686518259346485,
+      "max": 2.078271142905578
+    },
+    "heartbeat_seconds": {
+      "p50": 0.19484368595294654,
+      "p95": 0.3512364779599011,
+      "p99": 0.3740690858103335,
+      "max": 0.5978050499688834
+    },
+    "controller_max_threads": 23,
+    "controller_peak_rss_mib": 205.84375
+  },
+  "scope": "Simulated worker; actual HTTP and outbound relay. No GCS timing claim.",
+  "live": {
+    "run_seconds": {
+      "count": 128,
+      "p50": 0.09754325891844928,
+      "p95": 0.24055481795221567,
+      "p99": 0.2763823810964823,
+      "max": 0.3985237190499902
+    },
+    "guest_seconds": {
+      "count": 128,
+      "p50": 0.017112862,
+      "p95": 0.086989507,
+      "p99": 0.140505537,
+      "max": 0.183155926
+    },
+    "read_seconds": {
+      "count": 128,
+      "p50": 0.005018820986151695,
+      "p95": 0.01922864094376564,
+      "p99": 0.03903618082404137,
+      "max": 0.0812053510453552
+    },
+    "status_seconds": {
+      "count": 512,
+      "p50": 0.2624391461722553,
+      "p95": 1.0927023501135409,
+      "p99": 1.1050242739729583,
+      "max": 1.1102084789890796
+    }
+  }
+}

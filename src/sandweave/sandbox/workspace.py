@@ -172,17 +172,44 @@ def file_signature(path):
     return [getattr(info, name) for name in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')]
 
 
-def _immutable(source, destination, *, sha256=None):
+def verification_signature(path):
+    return dict(zip(('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns'), file_signature(path)))
+
+
+def verified_digest(path, *, sha256=None, verified=None):
+    """Reuse a private verification receipt only while the file is unchanged."""
+    before = verification_signature(path)
+    receipt = (verified or {}).get(str(path))
+    if receipt and receipt['signature'] == before:
+        result = receipt['sha256']
+    else:
+        result = file_digest(path)
+        after = verification_signature(path)
+        if after != before and not (sha256 == result and all(
+                after[k] == before[k] for k in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns'))):
+            raise ResourceUnavailable('File changed during verification: ' + str(path))
+        before = after
+    if sha256 is not None and result != sha256:
+        raise ResourceUnavailable('Runtime source checksum mismatch: ' + str(path))
+    if verified is not None:
+        verified[str(path)] = {'signature': before, 'sha256': result}
+    return result
+
+
+def _immutable(source, destination, *, sha256=None, verified=None):
     source, destination = Path(source), Path(destination)
-    size = source.stat().st_size
+    source_stamp = verification_signature(source)
+    size = source_stamp['st_size']
     expected = sha256
-    if expected is not None and file_digest(source) != expected:
-        raise ResourceUnavailable('Runtime source checksum mismatch: ' + str(source))
+    if expected is not None:
+        verified_digest(source, sha256=expected, verified=verified)
     if destination.is_file() and destination.stat().st_size == size:
         if source.samefile(destination):
+            if verified is not None and expected:
+                verified[str(destination)] = {'signature': verification_signature(destination), 'sha256': expected}
             return
-        expected = expected or file_digest(source)
-        if file_digest(destination) == expected:
+        expected = expected or verified_digest(source, verified=verified)
+        if verified_digest(destination, verified=verified) == expected:
             return
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix='.' + destination.name + '.', dir=destination.parent)
@@ -200,11 +227,27 @@ def _immutable(source, destination, *, sha256=None):
                 os.fsync(stream.fileno())
         if temporary.stat().st_size != size:
             raise ResourceUnavailable('Runtime file copy is incomplete: ' + str(source))
-        if not source.samefile(temporary):
-            expected = expected or file_digest(source)
-            if file_digest(temporary) != expected:
+        linked = source.samefile(temporary)
+        if not linked:
+            expected = expected or verified_digest(source, verified=verified)
+            if verified_digest(temporary, verified=verified) != expected:
                 raise ResourceUnavailable('Runtime file copy checksum mismatch: ' + str(source))
+        else:
+            current = verification_signature(source)
+            if any(current[k] != source_stamp[k] for k in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns')):
+                raise ResourceUnavailable('Runtime source changed during staging: ' + str(source))
         os.replace(temporary, destination)
+        if verified is not None and expected:
+            # We just created this link/copy. Carry its byte verification across
+            # the ctime change, without rereading the source through its mount.
+            current = verification_signature(source)
+            if current == source_stamp or (linked and all(current[k] == source_stamp[k]
+                    for k in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns'))):
+                verified[str(source)] = {'signature': current, 'sha256': expected}
+            else:
+                verified.pop(str(source), None)
+            verified[str(destination)] = {'signature': verification_signature(destination), 'sha256': expected}
+            verified.pop(str(temporary), None)
     except OSError as error:
         raise ResourceUnavailable('Could not stage runtime file ' + str(source) +
                                   ' in ' + str(destination.parent) + ': ' + str(error)) from error

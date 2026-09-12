@@ -130,12 +130,13 @@ class Store:
                                  'external_mounts': record['spec'].get('mounts', [])},
                 'verification': json.loads(status.read_text()) if status.exists() else {'status': 'missing'}}
 
-    def verify(self, record):
+    def verify(self, record, *, reuse=False, verified=None):
         if record.get('spec', {}).get('runtime', 'gvisor') == 'apptainer':
             from .runtimes.apptainer.driver import verify
             return verify(Path(record['workspace']), Path(record['location']))
         import snapshot_store
-        return snapshot_store.verify(Path(record['workspace']), Path(record['location']))
+        return snapshot_store.verify(Path(record['workspace']), Path(record['location']),
+                                     verified=verified, reuse=reuse)
 
     def materialize(self, record):
         """Make all engine-relative inputs available on this worker, without aliases outside it."""
@@ -161,6 +162,8 @@ class Store:
             if self.verify(record)['status'] != 'passed':
                 raise IncompatibleSnapshot('snapshot integrity verification failed')
             manifest = snapshot_store.inspect(workspace, source)
+            verification = json.loads((source / 'verification.json').read_text())
+        verified = verification.get('verified_files', {})
         destination = self.runtime.root / 'snapshots' / record['id']
         with locked(destination.parent / ('.' + record['id'] + '.import.lock')):
             dependencies = [manifest['base_image']] if native else [manifest['base_image'], manifest['runtime']]
@@ -187,9 +190,12 @@ class Store:
                     raise IncompatibleSnapshot('snapshot dependency escapes its workspace')
                 src, dst = workspace / relative, self.runtime.root / relative
                 if src.is_dir():
-                    shutil.copytree(src, dst, copy_function=_immutable, dirs_exist_ok=True)
+                    def copy_file(source_path, destination_path):
+                        checksum = info.get('sha256', {}).get(str(Path(source_path).relative_to(src)))
+                        _immutable(source_path, destination_path, sha256=checksum, verified=verified)
+                    shutil.copytree(src, dst, copy_function=copy_file, dirs_exist_ok=True)
                 else:
-                    _immutable(src, dst)
+                    _immutable(src, dst, sha256=info.get('sha256'), verified=verified)
             if not destination.exists():
                 temporary = destination.with_name('.' + destination.name + '.importing')
                 if temporary.exists():

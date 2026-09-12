@@ -9,6 +9,7 @@ import uuid
 from ..sandbox.connection import Connection
 from ..sandbox.errors import OperationUnknown, ResourceUnavailable
 from ..sandbox.wire import encode
+from .connections import worker_key
 
 
 def wake(future, value=None):
@@ -23,6 +24,7 @@ class Broker:
         self.pending, self.queues = {}, {}
         self.bytes = 0
         self.closed = False
+        self.lost = set()
 
     @staticmethod
     def validate(channel):
@@ -39,6 +41,8 @@ class Broker:
         with self.condition:
             if self.closed:
                 raise ResourceUnavailable('controller forwarding is stopping')
+            if worker_key(endpoint) in self.lost:
+                raise ResourceUnavailable('worker was declared lost')
             if self.bytes + size > 128 * 1024**2:
                 raise ResourceUnavailable('controller forwarding capacity is in use')
             self.pending[identity] = item
@@ -53,6 +57,26 @@ class Broker:
             if channel in self.pollers:
                 self.pollers[channel].notify()
         return identity, item
+
+    def exclude(self, endpoints):
+        keys = {worker_key(e) for e in endpoints}
+        with self.condition:
+            self.lost.update(keys)
+            for identity, item in self.pending.items():
+                endpoint = item['request']['endpoint']
+                if worker_key(endpoint) not in keys:
+                    continue
+                item['response'] = {'error': {'kind': 'ResourceUnavailable', 'message': 'worker was declared lost'}}
+                item['done'].set()
+                channel = endpoint['relay']
+                queue = self.queues.get(channel)
+                if queue is not None:
+                    queue.pop(identity, None)
+                    if not queue:
+                        self.queues.pop(channel, None)
+                if item['async']:
+                    loop, future = item['async']
+                    loop.call_soon_threadsafe(wake, future)
 
     def _finish(self, identity, item):
         channel = item['request']['endpoint']['relay']

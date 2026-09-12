@@ -147,9 +147,63 @@ class SnapshotStoreTest(unittest.TestCase):
 
     def test_source_changed_before_worker_started(self):
         (self.source / 'pages.img').write_bytes(b'Memory and files')
+        stamp = self.manifest['verification_source']['files']['pages.img']['st_mtime_ns']
+        os.utime(self.source / 'pages.img', ns=(stamp, stamp + 1000000000))
         result = snapshot_store.verify(self.lab, self.snapshot)
         self.assertEqual(result['status'], 'failed')
         self.assertIn('captured source changed', result['error'])
+
+    def test_first_base_hash_allows_hardlinks_before_and_during_read(self):
+        image = self.lab / 'images/base'
+        os.link(image, self.lab / 'before-hash')
+        original = runtime_store.digest
+        reads = []
+        def linking(path):
+            result = original(path)
+            if path == image:
+                reads.append(path)
+                os.link(image, self.lab / 'during-hash')
+            return result
+        with mock.patch.object(runtime_store, 'digest', side_effect=linking):
+            result = snapshot_store.verify(self.lab, self.snapshot)
+        self.assertEqual(result['status'], 'passed', result)
+        self.assertEqual(len(reads), 1)
+
+    def test_first_base_hash_rejects_content_change(self):
+        image = self.lab / 'images/base'
+        original = runtime_store.digest
+        def changing(path):
+            result = original(path)
+            if path == image:
+                path.write_bytes(b'corrupted base')
+                stamp = self.manifest['verification_source']['base_stat']['st_mtime_ns']
+                os.utime(path, ns=(stamp, stamp + 1000000000))
+                os.link(image, self.lab / 'also-linked')
+            return result
+        with mock.patch.object(runtime_store, 'digest', side_effect=changing):
+            result = snapshot_store.verify(self.lab, self.snapshot)
+        self.assertEqual(result['status'], 'failed', result)
+
+    def test_receipts_skip_unchanged_bytes_and_explicit_verify_rechecks(self):
+        result = snapshot_store.verify(self.lab, self.snapshot)
+        self.assertEqual(result['status'], 'passed', result)
+        with mock.patch.object(runtime_store, 'digest', side_effect=AssertionError('redundant payload read')):
+            reused = snapshot_store.verify(self.lab, self.snapshot, verified=result['verified_files'])
+        self.assertEqual(reused['status'], 'passed', reused)
+        image = self.lab / 'images/base'
+        stamp = image.stat()
+        image.write_bytes(b'corrupted base')
+        os.utime(image, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        self.assertEqual(snapshot_store.verify(self.lab, self.snapshot)['status'], 'failed')
+
+    def test_unhashed_checkpoint_does_not_allow_metadata_changes(self):
+        os.link(self.source / 'pages.img', self.lab / 'checkpoint-alias')
+        # Some filesystems round ctime. Ensure this test exercises a changed
+        # signature rather than depending on timestamp granularity.
+        stat = self.manifest['verification_source']['files']['pages.img']
+        stat['st_ctime_ns'] -= 1000000000
+        snapshot_store.write_json(self.snapshot / 'snapshot-manifest.json', self.manifest)
+        self.assertEqual(snapshot_store.verify(self.lab, self.snapshot)['status'], 'failed')
 
     def test_source_changed_during_hash(self):
         original = runtime_store.digest

@@ -28,6 +28,11 @@ class Controller:
         self.connector = connector or providers.attach
         from .relay import Broker
         self.relay = Broker()
+        from .connections import Connections
+        self.connections = Connections(self.relay)
+        for worker in self.state.list('worker'):
+            if worker.get('lost'):
+                self.connections.exclude(self._worker_endpoints(worker))
         self.owners = Owners(self.state.root)
         # A controller outage is not owner death. Give surviving remote clients
         # time to renew after restart; previously decided expiry stays final.
@@ -38,6 +43,8 @@ class Controller:
         self.executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='weave-worker')
         self.observers = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='weave-observe')
         self.pending, self.guard = {}, threading.RLock()
+        from .preparation import Preparation
+        self.preparation = Preparation(self, workers)
         self.stopping, self.interval = threading.Event(), interval
         self.thread = None
         self.next_probe = 0
@@ -50,13 +57,18 @@ class Controller:
         return self
 
     def connection(self, endpoint, **options):
-        if endpoint.get('relay'):
-            from .relay import RelayConnection
-            return RelayConnection(self.relay, endpoint, **options)
-        return providers.direct(endpoint, **options)
+        return self.connections.connection(endpoint, **options)
+
+    @staticmethod
+    def _worker_endpoints(worker):
+        endpoints = [worker['endpoint'], *(i['endpoint'] for i in worker.get('instances', {}).values())]
+        target = worker.get('target')
+        if isinstance(target, dict) and target.get('endpoint'):
+            endpoints.append(target['endpoint'])
+        return endpoints
 
     def _attach(self, target, **options):
-        if isinstance(target, dict) and target.get('endpoint', {}).get('relay'):
+        if isinstance(target, dict) and target.get('endpoint'):
             return self.connection(target['endpoint'])
         return self.connector(target, **options)
 
@@ -218,6 +230,12 @@ class Controller:
                 worker['state'] = 'removed'
                 if lost:
                     worker.update(lost=True, draining=True)
+                    from .connections import worker_key
+                    excluded = {worker_key(e) for e in self._worker_endpoints(worker)}
+                    for artifact in self.state.list('artifact'):
+                        locations = [e for e in artifact['locations'] if worker_key(e) not in excluded]
+                        if locations != artifact['locations']:
+                            self.state.put('artifact', {**artifact, 'locations': locations})
                     error = 'worker allocation was confirmed stopped by the operator'
                     for allocation in self.state.list('allocation', worker=identity):
                         if not scheduler.charged(allocation):
@@ -230,6 +248,8 @@ class Controller:
                             if lease['state'] in ('pending', 'claiming', 'ready'):
                                 self.state.put('lease', {**lease, 'state': 'failed', 'error': error})
             result = self.state.put('worker', worker, event={'message': 'worker configuration updated'})
+        if lost:
+            self.connections.exclude(self._worker_endpoints(worker))
         return self._public_worker(result)
 
     def _probe(self, identity):
@@ -244,11 +264,13 @@ class Controller:
             except Exception:
                 if connection:
                     connection.close()
+                if self.state.get('worker', identity)['state'] == 'removed':
+                    return
                 if record['endpoint'].get('relay'):
                     raise  # Outbound agents reconnect themselves; no inbound fallback.
                 # Existing targets check exact process ownership before they
                 # restart a dead worker. Opaque endpoints are only reconnectable.
-                connection = self._attach(record['target'])
+                connection = self.connections.adopt(record['endpoint'], self._attach(record['target']))
                 info = connection.call('inventory')
                 if info['workspace'] != record['inventory']['workspace']:
                     raise ResourceUnavailable('worker workspace changed while disconnected; existing assignments remain reserved')
@@ -389,10 +411,10 @@ class Controller:
             record = self._resolve(identity)
         return self._route(record)['endpoint']
 
-    @staticmethod
-    def _route(record):
+    def _route(self, record):
         if not record.get('endpoint') or not record.get('token'):
             raise ResourceUnavailable('sandbox has no acknowledged worker route: ' + record['state'])
+        self.connections.check(record['endpoint'])
         return dict(id=record['id'], endpoint={**record['endpoint'], 'token': record['token']},
                     owner=record.get('owner'), info=record.get('info'))
 
@@ -419,6 +441,11 @@ class Controller:
         if (record['desired'] != 'running' or record.get('lease') or
                 record['state'] not in ('reserved', 'starting', 'unknown')):
             return
+        if self.preparation.waiting(record):
+            return
+        prepared_image = self.preparation.take(record)
+        if prepared_image and prepared_image[0] != record['generation']:
+            prepared_image = None
         connection = None
         try:
             worker = self.state.get('worker', record['worker'])
@@ -452,13 +479,19 @@ class Controller:
             if requires_policy(request['spec']['resources']['network']) and not connection.call('ping').get('proxy_policy'):
                 raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on every participating worker')
             if request.get('reference'):
-                from .artifacts import ensure
                 pool = self.state.get('pool', record['parent'], required=False) if record.get('parent') else None
                 cache = (pool or {}).get('shared_cache')
                 if pool and not pool.get('retain_baseline', True):
                     from ..sandbox.retention import shared_path
                     cache = shared_path(cache, pool['id'])
-                ensure(self, request['reference'], connection, route, cache)
+                if prepared_image is None:
+                    self.preparation.request(record, connection, route, cache)
+                    return
+                reference = prepared_image[1].result() or request['reference']
+                if cache is not None:
+                    # Publication is complete. Each worker attaches its own
+                    # revision record without repeating the image transfer.
+                    connection.call('artifact_cached', reference=reference, shared_cache=cache)
             initial = connection
             connection = self.connection(route, timeout=request['spec']['startup_timeout'] + 60)
             initial.close()
@@ -483,6 +516,9 @@ class Controller:
         except OperationUnknown as error:
             self._uncertain(identity, error, generation=record['generation'])
         except Exception as error:
+            if self.stopping.is_set():
+                self._uncertain(identity, error, generation=record['generation'])
+                return
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
                 if current['generation'] != record['generation'] or current['desired'] != 'running':
@@ -574,7 +610,9 @@ class Controller:
         self._reconcile_pools()
         self._reconcile_jobs()
         observations = []
-        for record in self.state.list('allocation', released=False):
+        active = self.state.list('allocation', released=False)
+        self.preparation.reap({a['id']: a['generation'] for a in active if a['desired'] == 'running'})
+        for record in active:
             if record.get('released'):
                 continue
             if self.owners.reason(record.get('owner')) or (
@@ -583,6 +621,8 @@ class Controller:
                 record = self.state.get('allocation', record['id'])
             if record['desired'] == 'terminated' and record.get('worker'):
                 self._submit(('allocation', record['id']), self._terminate, record['id'])
+            elif self.preparation.waiting(record):
+                continue
             elif record['state'] == 'reserved':
                 self._submit(('allocation', record['id']), self._launch, record['id'])
             elif probe and record.get('endpoint') and record['state'] not in ('starting', 'pending'):
@@ -675,9 +715,12 @@ class Controller:
     def close(self):
         # Stopping this process leaves durable desired state and live guests.
         self.stopping.set()
+        self.connections.stop()
         self.relay.close()
         if self.thread:
             self.thread.join()
         self.executor.shutdown(wait=True)
         self.observers.shutdown(wait=True)
+        self.preparation.close()
+        self.connections.close()
         self.state.close()

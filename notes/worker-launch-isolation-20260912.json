@@ -1,0 +1,62 @@
+{
+  "host_launch": {
+    "count": 256,
+    "concurrency": 32,
+    "active": 128,
+    "native": {
+      "serial_median_seconds": 0.0008064070716500282,
+      "concurrent_seconds": 0.09571769693866372,
+      "requests_per_second": 2674.531546282876,
+      "concurrent_p50_seconds": 0.0066332570277154446,
+      "concurrent_p95_seconds": 0.022513305069878697
+    },
+    "isolated": {
+      "serial_median_seconds": 0.0021673499140888453,
+      "concurrent_seconds": 0.182207684032619,
+      "requests_per_second": 1404.9901427547404,
+      "concurrent_p50_seconds": 0.019481781986542046,
+      "concurrent_p95_seconds": 0.026262322906404734
+    }
+  },
+  "blocked_filesystem": {
+    "host_commands": 128,
+    "seconds": 0.08908079983666539,
+    "native_still_blocked": true
+  },
+  "blocked_filesystem_live": {
+    "sandboxes": 4,
+    "cpus": 2,
+    "create_execute_cleanup_seconds": 1.8451589019969106,
+    "native_still_blocked": true
+  },
+  "live_sixteen_sandboxes": {
+    "run_seconds": {
+      "count": 128,
+      "p50": 0.10876380116678774,
+      "p95": 0.2159229840617627,
+      "p99": 0.24826445011422038,
+      "max": 0.3743421249091625
+    },
+    "guest_seconds": {
+      "count": 128,
+      "p50": 0.020308699,
+      "p95": 0.067679257,
+      "p99": 0.146894137,
+      "max": 0.176266236
+    },
+    "read_seconds": {
+      "count": 128,
+      "p50": 0.006349325878545642,
+      "p95": 0.026413268875330687,
+      "p99": 0.03293525706976652,
+      "max": 0.100598483113572
+    },
+    "status_seconds": {
+      "count": 512,
+      "p50": 0.306326573016122,
+      "p95": 1.2103660500142723,
+      "p99": 1.2204788629896939,
+      "max": 1.2239417659584433
+    }
+  }
+}

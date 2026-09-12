@@ -646,6 +646,8 @@ class Worker:
 
 
 def serve(metadata_path):
+    from .launcher import install
+    install()
     from .workspace import tool_path, home
     os.environ['PATH'] = tool_path()
     # Existing workers retain their storage when a later setup changes the

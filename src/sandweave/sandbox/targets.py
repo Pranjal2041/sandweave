@@ -133,7 +133,7 @@ def local_connection(*, template=None):
         alive = process_alive(saved) if saved else False
         if alive is None:
             raise ResourceUnavailable('cannot establish the preparing worker process identity; inspect ' + str(launcher))
-        if not alive:
+        def start():
             with (directory / 'worker.log').open('ab') as log:
                 environment = {**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[2]) +
                                os.pathsep + os.environ.get('PYTHONPATH', '')}
@@ -149,13 +149,23 @@ def local_connection(*, template=None):
                 raise ResourceUnavailable('worker exited during preparation; inspect ' + str(directory / 'worker.log')) from None
             saved = {'pid': child.pid, 'started': started, 'scope': process_scope()}
             atomic_json(launcher, saved)
+            return child, saved
+        if not alive:
+            child, saved = start()
         # Preparing immutable files can outlast a sandbox startup deadline on
         # network storage. Wait for this same worker, retaining its identity
         # across client interruption so retry cannot launch a duplicate.
         with Stage('Preparing worker files', detail='Checking and staging runtime files',
                    log=directory / 'worker.log') as progress:
             while not metadata.exists():
-                if (child is not None and child.poll() is not None) or process_alive(saved) is False:
+                alive = process_alive(saved)
+                if child is None and alive is False:
+                    # A previous worker can remove its endpoint just before it
+                    # exits. Wait for that identity to die, then start once;
+                    # do not mistake its final shutdown for a failed new launch.
+                    child, saved = start()
+                    continue
+                if (child is not None and child.poll() is not None) or alive is False:
                     raise ResourceUnavailable('worker failed to start: ' + (directory / 'worker.log').read_text()[-5000:])
                 progress.update()
                 time.sleep(.1)

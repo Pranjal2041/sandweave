@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.16
+
+- Isolate worker subprocess launches from open storage handles. A dedicated
+  launcher passes only the descriptors each command requests; a slow filesystem
+  flush during image publication no longer stalls unrelated sandbox starts.
+  This applies to every filesystem, with no provider-specific settings.
+- Preserve command streams, timeouts, signals, sessions, passed descriptors and
+  the worker's current resource settings through the launcher.
+- Correct native snapshot import paths and preserve guest symlink metadata.
+- Allow a new local sandbox to start when the previous idle worker is completing
+  its acknowledged shutdown.
+- Upgrade and restart workers to apply the launcher fix. Public APIs and the
+  engine binary are unchanged.
+
 ## 0.2.15
 
 - Cancel outstanding HTTP and relay requests when a worker is explicitly marked

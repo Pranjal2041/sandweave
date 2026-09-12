@@ -167,8 +167,8 @@ def file_digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def file_signature(path):
-    info = Path(path).stat()
+def file_signature(path, *, follow_symlinks=True):
+    info = Path(path).stat(follow_symlinks=follow_symlinks)
     return [getattr(info, name) for name in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')]
 
 

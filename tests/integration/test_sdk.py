@@ -91,3 +91,12 @@ def test_async_create_execute_and_cleanup():
             with pytest.raises(OutputLimitExceeded):
                 await env.run.aio("python -c 'print(\"x\" * 65536)'", max_output_bytes=1024)
     asyncio.run(exercise())
+
+
+def test_create_after_acknowledged_worker_shutdown():
+    for _ in range(3):
+        with Sandbox() as env:
+            assert env.run('printf restarted').stdout == 'restarted'
+        connection = local_connection()
+        connection.call('_shutdown_if_idle')
+        connection.close()

@@ -123,3 +123,35 @@ def test_copy_cannot_stamp_changed_source_with_the_previous_checksum(tmp_path, m
     assert str(source) not in verified
     with pytest.raises(workspace.ResourceUnavailable, match='checksum'):
         workspace.verified_digest(source, sha256=expected, verified=verified)
+
+
+def test_native_snapshot_import_tracks_upper_paths_and_guest_symlinks(tmp_path, monkeypatch):
+    from sandweave.sandbox.runtimes.apptainer.driver import inventory, verify
+    monkeypatch.syspath_prepend(str(workspace.engine_sources()))
+    monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path / 'store'))
+    source = tmp_path / 'source'
+    saved = source / 'snapshots/saved'
+    upper = saved / 'upper'
+    (upper / 'opt/example').mkdir(parents=True)
+    (upper / 'opt/example/value').write_text('saved')
+    (upper / 'guest-link').symlink_to('/guest-only-path')
+    image = source / 'base.sif'
+    image.write_bytes(b'native image fixture')
+    manifest = {'backend': 'apptainer', 'kind': 'filesystem', 'snapshot_id': 'native-test',
+                'base_image': {'path': 'base.sif', 'size': image.stat().st_size,
+                               'sha256': hashlib.sha256(image.read_bytes()).hexdigest()},
+                'files': inventory(upper)}
+    (saved / 'snapshot-manifest.json').write_text(json.dumps(manifest))
+    assert verify(source, saved)['status'] == 'passed'
+    destination = tmp_path / 'destination'
+    store = Store(SimpleNamespace(root=destination))
+    record = {'id': 'snap-' + 'b' * 32, 'workspace': str(source), 'location': str(saved),
+              'spec': {'runtime': 'apptainer'}}
+    imported = store.materialize(record)
+    assert (imported / 'upper/opt/example/value').read_text() == 'saved'
+    assert (imported / 'upper/guest-link').readlink() == Path('/guest-only-path')
+    assert store.materialize(record) == imported
+    (imported / 'upper/guest-link').unlink()
+    (imported / 'upper/guest-link').symlink_to('/changed')
+    with pytest.raises(IncompatibleSnapshot):
+        store.materialize(record)

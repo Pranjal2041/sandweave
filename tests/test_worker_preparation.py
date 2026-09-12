@@ -31,3 +31,30 @@ def test_interrupt_and_retry_reuses_preparing_worker(tmp_path, monkeypatch):
     monkeypatch.setattr(targets, 'Connection', lambda *a, **kw: SimpleNamespace(call=lambda *a: {}))
     targets.local_connection(template={})
     assert len(starts) == 1
+
+
+def test_exiting_previous_worker_does_not_fail_the_next_creation(tmp_path, monkeypatch):
+    from sandweave.sandbox import ownership
+    installation = preparation.Installation(tmp_path, tmp_path/'assets')
+    monkeypatch.setattr(preparation, 'ensure', lambda recipe: installation)
+    monkeypatch.setattr(targets, 'worker_key', lambda assets: 'worker')
+    directory = tmp_path / 'connections/worker'
+    directory.mkdir(parents=True)
+    metadata = directory / 'worker.json'
+    (directory / 'launcher.json').write_text(json.dumps({'pid': -1}))
+    old_checks = []
+    def alive(record):
+        if record['pid'] != -1:
+            return True
+        old_checks.append(True)
+        return len(old_checks) <= 2
+    starts = []
+    def start(*args, **kwargs):
+        starts.append(args)
+        metadata.write_text(json.dumps({'port': 1234, 'token': 'test', 'pid': os.getpid()}))
+        return SimpleNamespace(pid=os.getpid(), poll=lambda: None)
+    monkeypatch.setattr(ownership, 'process_alive', alive)
+    monkeypatch.setattr(targets.subprocess, 'Popen', start)
+    monkeypatch.setattr(targets, 'Connection', lambda *a, **kw: SimpleNamespace(call=lambda *a: {}))
+    targets.local_connection(template={})
+    assert len(starts) == 1

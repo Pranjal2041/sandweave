@@ -168,14 +168,17 @@ class Store:
         with locked(destination.parent / ('.' + record['id'] + '.import.lock')):
             dependencies = [manifest['base_image']] if native else [manifest['base_image'], manifest['runtime']]
             def signatures():
-                paths = [destination / name for name in [*manifest['files'], 'snapshot-manifest.json']]
+                contents = destination / 'upper' if native else destination
+                paths = [contents / name for name in manifest['files']]
+                paths.append(destination / 'snapshot-manifest.json')
                 for info in dependencies:
                     relative = Path(info['path'])
                     if relative.is_absolute() or '..' in relative.parts:
                         raise IncompatibleSnapshot('snapshot dependency escapes its workspace')
                     for root in (workspace / relative, self.runtime.root / relative):
                         paths.extend(sorted(root.rglob('*')) if root.is_dir() else [root])
-                return {str(p): file_signature(p) for p in paths if not p.is_dir()}
+                return {str(p): file_signature(p, follow_symlinks=not native)
+                        for p in paths if p.is_symlink() or not p.is_dir()}
             try:
                 # Immutable copies already checked by this worker need only
                 # file-identity checks. Rehashing a shared image on every lease

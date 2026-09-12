@@ -56,7 +56,11 @@ def executor_server(executor):
             self.send_header('Content-Length', str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    class Server(ThreadingHTTPServer):
+        # Match the worker listener: the default backlog of five is smaller
+        # than the simultaneous clients in the connection reuse test.
+        request_queue_size = socket.SOMAXCONN
+    server = Server(('127.0.0.1', 0), Handler)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

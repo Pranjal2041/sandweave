@@ -13,6 +13,10 @@ image.save("desktop.png")
 Dependencies are prepared on first use. GNOME starts at 1920×1080 using Xvnc.
 Add `target="lab"` or a printed cluster address to run on a cluster worker.
 
+For a GPU game example, see [Stunt Rally 3](https://github.com/Pranjal2041/sandweave/tree/main/examples/stuntrally3).
+It starts the standalone Linux game at 1920×1080, accepts keyboard controls,
+and can record the desktop.
+
 ## Install an application
 
 ```python

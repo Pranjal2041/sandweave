@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.17
+
+- Make staged NVIDIA EGL and Vulkan configuration files readable by guest
+  desktop users, including when workers use a restrictive umask or reuse a
+  previously staged driver. This fixes graphics initialization failures while
+  `nvidia-smi` still works. Public APIs and the engine binary are unchanged.
+
 ## 0.2.16
 
 - Isolate worker subprocess launches from open storage handles. A dedicated

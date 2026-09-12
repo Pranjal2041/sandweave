@@ -63,7 +63,11 @@ class Runtime:
             if not destination.exists():
                 gpu_module.stage_driver(destination)
             destination.chmod(0o755)
-            (destination / 'driver.json').chmod(0o644)
+            # These non-secret descriptors are read by guest applications,
+            # including desktop users other than root. Repair cached drivers
+            # too: the worker's umask may have made them owner/group-only.
+            for name in ('driver.json', 'egl.json', 'vulkan.json'):
+                (destination / name).chmod(0o644)
             for directory in destination.rglob('*'):
                 if directory.is_dir() and not directory.is_symlink():
                     directory.chmod(0o755)

@@ -17,6 +17,14 @@ from . import scheduler
 from .lifecycle import lifecycle, rpc
 
 
+def _poll_wait(deadline, cancelled=None):
+    delay = .05 if deadline is None else min(.05, max(0, deadline - time.monotonic()))
+    if cancelled is None:
+        time.sleep(delay)
+    else:
+        cancelled.wait(delay)
+
+
 class Pool(LocalPool):
     def __new__(cls, *args, **kwargs):
         from .client import cluster_config
@@ -107,7 +115,7 @@ class ManagedPool(LocalPool):
                     return self
                 if deadline is not None and time.monotonic() >= deadline:
                     raise TimeoutError('pool is waiting: ' + (info.get('reason') or info['state']))
-                time.sleep(.05)
+                _poll_wait(deadline)
         except BaseException:
             if self.owned:
                 # Request cleanup without waiting for unreachable workers or
@@ -134,9 +142,11 @@ class ManagedPool(LocalPool):
         identity = uuid.uuid4().hex
         owner = client_owner(self.connection)
         deadline = None if timeout is None else time.monotonic() + positive(timeout, 'timeout')
-        self.connection.call('pool_checkout', identity=self.id, lease_id=identity, owner=owner)
         env = None
         try:
+            # The controller may commit checkout even if every reply is lost.
+            # Its lease ID must remain inside the cleanup scope from first send.
+            self.connection.call('pool_checkout', identity=self.id, lease_id=identity, owner=owner)
             while True:
                 if cancelled.is_set():
                     raise InterruptedError('pool checkout cancelled')
@@ -150,12 +160,12 @@ class ManagedPool(LocalPool):
                     raise ResourceUnavailable(info.get('error') or 'pool checkout was cancelled')
                 if deadline is not None and time.monotonic() >= deadline:
                     raise TimeoutError('pool checkout is waiting: ' + (self.info.get('reason') or 'capacity is in use'))
-                time.sleep(.05)
+                _poll_wait(deadline, cancelled)
         finally:
             failure = sys.exception()
             try:
                 try:
-                    self.connection.call('pool_release', identity=self.id, lease_id=identity)
+                    self._release_lease(identity)
                 finally:
                     if env is not None:
                         self.connection.forget(env.id)
@@ -163,6 +173,18 @@ class ManagedPool(LocalPool):
             except Exception:
                 if failure is None:
                     raise
+
+    def _release_lease(self, identity):
+        deadline = None if self.wait_timeout is None else time.monotonic() + self.wait_timeout
+        while True:
+            try:
+                return self.connection.call('pool_release', identity=self.id, lease_id=identity)
+            except OperationUnknown:
+                # Release is idempotent. An uncertain reply is not evidence
+                # that the controller received the cleanup request.
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise
+                _poll_wait(deadline)
 
     @dualmethod
     def update(self, **changes):
@@ -187,7 +209,7 @@ class ManagedPool(LocalPool):
                     return info
                 if deadline is not None and time.monotonic() >= deadline:
                     raise TimeoutError('pool cleanup is still pending; its desired state remains closed')
-                time.sleep(.05)
+                _poll_wait(deadline)
 
     @dualmethod
     def close(self):

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.19
+
+- Release a pool lease even when its checkout acknowledgement is lost. Retry
+  uncertain idempotent release requests within the pool's wait timeout while
+  preserving the original checkout or episode error.
+- Reuse a worker's existing snapshot before accessing a shared cache. Only
+  missing revisions enter the deduplicated publication and transfer path.
+- Preserve builder affinity after termination and controller restart without
+  charging the released builder against worker resources.
+- Keep pending pool polling at 50 ms, bound each wait by the remaining deadline,
+  and wake lease polling on cancellation.
+- Upgrade clients for lease cleanup and restart upgraded controllers for image
+  reuse and placement. Public APIs, worker RPCs and the engine are unchanged.
+  Live cluster checks passed against unmodified 0.2.16 workers.
+
 ## 0.2.18
 
 - Wait for worker lifecycle RPCs asynchronously. Concurrent creates, claims,

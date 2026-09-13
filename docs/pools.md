@@ -33,6 +33,9 @@ preparation error. Issued leases remain usable until released or the pool closes
 When an error leaves a pool context, the SDK requests closure and propagates the
 original error; the controller continues cleanup.
 
+If a checkout reply is lost, the client still requests release using the same
+lease ID. Uncertain release requests are retried within `wait_timeout`.
+
 ```python
 with Pool(target="lab", size=8, warm=2) as pool:
     with pool.acquire() as env:
@@ -100,6 +103,10 @@ With 0.2.15 or newer on controllers and workers, sandboxes waiting for the same
 image share its preparation work without occupying launch threads. Other
 launches and cleanup can proceed while that image is being published.
 
+With controller 0.2.19 or newer, a worker that already has the baseline starts
+from its existing revision. Shared-cache publication is needed only when a
+worker is missing that revision.
+
 Local pools, including pools with explicit `targets`, also accept `shared_cache`.
 By default, closing a pool keeps the cache for reuse. Creating separate pools still creates
 separate baselines unless they use the same saved `cache` or `snapshot`.
@@ -111,6 +118,8 @@ the pool's initial placement. `affinity="worker"` prefers the same worker.
 Both spill over when resources, labels, or worker availability require it.
 `placement` controls spreading or packing within the preferred location.
 The default `affinity=None` preserves the usual placement behavior.
+The initial builder remains the affinity reference after it terminates,
+including across controller restarts, and no longer reserves resources.
 
 A machine is a running Linux kernel, identified by its boot ID. Separate workers
 and PID namespaces can belong to it. If that ID is unavailable or masked,

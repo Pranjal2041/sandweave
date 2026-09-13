@@ -505,13 +505,15 @@ class Controller:
                     from ..sandbox.retention import shared_path
                     cache = shared_path(cache, pool['id'])
                 if prepared_image is None:
-                    yield from self.preparation.request.steps(self.preparation, record, connection, route, cache)
-                    return
-                reference = prepared_image[1].result() or request['reference']
-                if cache is not None:
-                    # Publication is complete. Each worker attaches its own
-                    # revision record without repeating the image transfer.
-                    yield rpc(connection, 'artifact_cached', reference=reference, shared_cache=cache)
+                    reference = yield from self.preparation.request.steps(self.preparation, record, connection, route, cache)
+                    if reference is None:
+                        return
+                else:
+                    reference = prepared_image[1].result() or request['reference']
+                    if cache is not None:
+                        # Publication is complete. Each worker attaches its own
+                        # revision record without repeating the image transfer.
+                        yield rpc(connection, 'artifact_cached', reference=reference, shared_cache=cache)
             initial = connection
             connection = self.connection(route, timeout=request['spec']['startup_timeout'] + 60)
             initial.close()
@@ -667,6 +669,14 @@ class Controller:
             allocations = self.state.list('allocation', released=False)
             pending = [a for a in allocations if a['state'] == 'pending' and a['desired'] == 'running']
             policies = {p['id']: p for p in self.state.list('pool')}
+            # Released builders anchor locality but reserve no resources. Read
+            # only each pool's builder, rather than scanning all stopped guests.
+            for policy in policies.values():
+                if policy.get('affinity') and policy.get('builder'):
+                    builder = self.state.get('allocation', policy['builder'], required=False,
+                        fields=('id', 'parent', 'worker', 'created', 'released', 'prepared'))
+                    if builder and builder['released'] and builder['prepared']:
+                        allocations.append(builder)
             placements, reasons = scheduler.plan(pending, self.state.list('worker'), allocations, policies, now=now)
             for identity, worker_id, gpu_uuid in placements:
                 record = self.state.get('allocation', identity)

@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from sandweave.sandbox.errors import OperationUnknown, ResourceUnavailable
+from sandweave.sandbox.errors import CacheMiss, OperationUnknown, ResourceUnavailable
 from sandweave.sandbox.management import Management
 from sandweave.sandbox.ownership import Owners, process_identity
 from sandweave.sandbox.sandbox import definition
@@ -61,6 +61,8 @@ class Executor(Worker):
             return dict(hostname=socket.gethostname(), port=self.index, workspace=str(self.root))
         if operation == 'managed_prepare':
             return {'information': self.call('ping'), 'token': 'private-worker-token'}
+        if operation == 'snapshot_info':
+            raise CacheMiss(params['reference'])
         result = self.dispatch(operation, params)
         if operation == 'managed_apply' and self.drop_reply:
             self.drop_reply = False

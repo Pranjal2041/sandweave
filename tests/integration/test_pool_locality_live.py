@@ -3,6 +3,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from sandweave import Pool, Memory
+from sandweave.sandbox.errors import CacheMiss
 from sandweave.sandbox.targets import Endpoint
 from test_weave_live import cluster, pytestmark, wait_for
 
@@ -15,7 +16,10 @@ def test_shared_pool_baseline_across_independent_workers(cluster):
         reference = info['baseline']
         assert info['shared_cache'] == str(cache) and info['affinity'] == 'machine'
         locations = {w.call('snapshot_info', reference=reference)['location'] for w in cluster.test_workers}
-        assert len(locations) == 1 and Path(next(iter(locations))).is_relative_to(cache)
+        # Missing workers still trigger shared publication. Publishing may
+        # attach the builder's own revision to that copy too.
+        assert all(Path(location).is_dir() for location in locations)
+        assert any(Path(location).is_relative_to(cache) for location in locations)
         assert len({w['machine'] for w in cluster.info['workers']}) == 1
         with ExitStack() as scope:
             envs = [scope.enter_context(pool.acquire()) for _ in range(4)]
@@ -38,8 +42,19 @@ def test_worker_affinity_and_local_pool_use_the_same_cache_contract(cluster):
             assert len({cluster.connection.call('allocation_get', identity=e.id)['worker'] for e in envs}) == 1
             assert all(e.run('echo cached').stdout == 'cached\n' for e in envs)
         reference = pool.info['baseline']
+        # Affinity keeps all members on the builder's worker. Its native
+        # revision must not cause any shared-cache publication.
+        assert not cache.exists()
     wait_for(lambda: all(a['released'] for a in cluster.info['sandboxes']))
-    connections = cluster.test_workers
+    sources, others = [], []
+    for connection in cluster.test_workers:
+        try:
+            connection.call('snapshot_info', reference=reference)
+            sources.append(connection)
+        except CacheMiss:
+            others.append(connection)
+    assert len(sources) == 1
+    connections = sources + others
     # Both target endpoints are independent workers with private revision stores.
     with Pool(cache=reference, targets=[Endpoint(c.port, c.token) for c in connections],
               size=2, warm=2, shared_cache=cache) as pool:

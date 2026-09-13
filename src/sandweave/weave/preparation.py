@@ -4,7 +4,7 @@ import threading
 
 from .connections import worker_key
 from .lifecycle import lifecycle, rpc
-from ..sandbox.errors import UnsupportedFeature
+from ..sandbox.errors import CacheMiss, UnsupportedFeature
 
 
 class Preparation:
@@ -17,6 +17,22 @@ class Preparation:
     @lifecycle
     def request(self, record, connection, endpoint, cache):
         reference = record['request']['reference']
+        # A native revision already satisfies this launch. Do not make it wait
+        # for a shared cache that another worker may or may not need later.
+        try:
+            yield rpc(connection, 'snapshot_info', reference=reference)
+        except (CacheMiss, FileNotFoundError):
+            pass
+        else:
+            from .artifacts import register
+            artifact = self.controller.state.get('artifact', reference, required=False,
+                                                 fields=('locations', 'retiring', 'released'))
+            if artifact and (artifact.get('retiring') or artifact.get('released')):
+                raise CacheMiss('snapshot is being released: ' + reference)
+            if artifact is None or endpoint not in artifact['locations']:
+                saved = yield from register.steps(self.controller, reference, endpoint)
+                reference = saved['reference']
+            return reference
         # Resolve actual storage identity, not a mount path or hostname. This
         # probe never takes the artifact's publication lock.
         try:

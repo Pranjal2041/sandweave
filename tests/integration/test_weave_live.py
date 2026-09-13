@@ -61,7 +61,7 @@ def cluster(tmp_path_factory):
             environment = {**os.environ, 'SANDWEAVE_HOME': str(worker_home),
                            'SANDWEAVE_ASSETS': os.environ.get('SANDWEAVE_ASSETS', str(Path.cwd())),
                            'SANDWEAVE_MEMORY_BUDGET': '4GiB',
-                           'PYTHONPATH': package_path()}
+                           'PYTHONPATH': os.environ.get('SANDWEAVE_WEAVE_WORKER_PACKAGE', package_path())}
             child = subprocess.Popen(['taskset', '-c', ','.join(map(str, cpus[index*2:index*2+2])),
                 sys.executable, '-m', 'sandweave.sandbox.worker', '--metadata', str(marker)],
                 env=environment, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,

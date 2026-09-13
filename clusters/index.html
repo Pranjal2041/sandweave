@@ -1510,6 +1510,11 @@ it. Image fetching and pool cleanup skip its endpoints, including after a
 controller restart. This applies to an explicit loss decision; a temporary
 connection failure still preserves reservations.</p>
 <h2 id="controller-lifetime">Controller lifetime<a class="headerlink" href="#controller-lifetime" title="Permanent link">&para;</a></h2>
+<p>In 0.2.18 and newer, waiting for worker lifecycle operations does not occupy a
+controller thread. Pool lease and status polling also proceeds independently of
+state writes. These changes apply to HTTP, HTTPS and SSH connections, including
+workers connected through outbound relay. Upgrade and restart the controller to
+apply them; existing pool and sandbox arguments stay the same.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>stop<span class="w"> </span>lab
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
 </code></pre></div>

@@ -1424,6 +1424,8 @@ is limited by worker resources.</p>
 preparation error. Issued leases remain usable until released or the pool closes.
 When an error leaves a pool context, the SDK requests closure and propagates the
 original error; the controller continues cleanup.</p>
+<p>If a checkout reply is lost, the client still requests release using the same
+lease ID. Uncertain release requests are retried within <code>wait_timeout</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">warm</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
@@ -1472,6 +1474,9 @@ does not change worker state directories or share writable sandbox files.</p>
 <p>With 0.2.15 or newer on controllers and workers, sandboxes waiting for the same
 image share its preparation work without occupying launch threads. Other
 launches and cleanup can proceed while that image is being published.</p>
+<p>With controller 0.2.19 or newer, a worker that already has the baseline starts
+from its existing revision. Shared-cache publication is needed only when a
+worker is missing that revision.</p>
 <p>Local pools, including pools with explicit <code>targets</code>, also accept <code>shared_cache</code>.
 By default, closing a pool keeps the cache for reuse. Creating separate pools still creates
 separate baselines unless they use the same saved <code>cache</code> or <code>snapshot</code>.
@@ -1481,7 +1486,9 @@ does not guarantee zero disk copies across filesystems.</p>
 the pool's initial placement. <code>affinity="worker"</code> prefers the same worker.
 Both spill over when resources, labels, or worker availability require it.
 <code>placement</code> controls spreading or packing within the preferred location.
-The default <code>affinity=None</code> preserves the usual placement behavior.</p>
+The default <code>affinity=None</code> preserves the usual placement behavior.
+The initial builder remains the affinity reference after it terminates,
+including across controller restarts, and no longer reserves resources.</p>
 <p>A machine is a running Linux kernel, identified by its boot ID. Separate workers
 and PID namespaces can belong to it. If that ID is unavailable or masked,
 Sandweave does not infer shared hardware from matching hostnames. Worker listings

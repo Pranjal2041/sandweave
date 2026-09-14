@@ -41,8 +41,9 @@ Use `env.desktop.action("FAIL")` when an agent declares a task infeasible;
 `"DONE"` records ordinary completion. Declaring completion does not award a pass.
 
 Evaluate inside the task context. Leaving it releases the sandbox even if setup,
-the agent, or evaluation raises. An infrastructure error raises an exception;
-it does not become a score of zero.
+the agent, or evaluation raises. Setup and adapter failures raise exceptions.
+The canonical evaluator retains its upstream handling of missing results and
+getter failures, which can return zero.
 
 ## Run agents concurrently
 
@@ -131,7 +132,9 @@ The reference's 20-second desktop settle and five-second action settle remain
 in place. They contribute to elapsed time.
 
 Task setup and scoring use the pinned upstream hooks and canonical OSWorld
-evaluator. OSWorld scores are returned on the reference's 0–100 scale; a pass
+evaluator. After GUI launch and document-open commands, Sandweave waits for the
+matching application window before continuing setup or exposing the first
+observation. OSWorld scores are returned on the reference's 0–100 scale; a pass
 requires canonical reward 1. The representative split pins all 50 task JSON
 checksums. A screenshot/setup audit is not an agent accuracy measurement.
 

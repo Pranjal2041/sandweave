@@ -9,6 +9,8 @@
   task setup and canonical verifier. Prepare the original Ubuntu disk directly;
   keep private reference dependencies and verifier code outside the public package
   and agent sandbox. The representative split requires reference repository access.
+- Wait for task application/document windows after GUI launch commands so agents
+  receive a loaded desktop instead of racing background application startup.
 - Add opt-in headless virtual consoles, user keyrings and FUSE truncate support
   to the engine so the original GDM and GNOME session can start. Preserve console
   state across live snapshots and enforce guest console permissions.

@@ -75,8 +75,15 @@ Screenshots show the original Ubuntu dock and application state:
 The full 50-task setup/screenshot/evaluator audit is recorded separately. Scores
 from that audit describe untouched tasks, not agent performance. An initial
 development run was interrupted after editing the controls changed their version
-while a pool still held the previous version. The replacement audit uses a fixed,
-installed wheel outside the source checkout.
+while a pool still held the previous version. Visual inspection of a subsequent
+run caught background application startup racing the first screenshot: setup had
+returned zero while GIMP and Calc were still loading. That run is not the final
+acceptance record. Sandweave now runs the unchanged setup hook through a wrapper
+that waits for matching normal, mapped application/document windows after GUI
+launches. Non-GUI helpers do not incur this wait. The live regression checks
+waited 3.03 s for GIMP and 9.55 s for Calc; both first screenshots contained the
+requested files. The replacement audit uses a fixed installed wheel outside the
+source checkout and records window evidence alongside screenshots and scores.
 
 ## Service comparison and limits
 
@@ -93,7 +100,7 @@ Five original units fail on this no-KVM engine; they are not masked or replaced:
 | `rtkit-daemon` | Linux FIFO/RR real-time scheduling is unsupported; RealtimeKit rejects the available priority range. |
 | `gpu-manager` | Physical GPU detection exits unsuccessfully in this CPU-only dummy-Xorg environment. |
 | `setvtrgb` | Console palette setup cannot obtain a supported console descriptor. |
-| `systemd-sysctl` | Applying the image's kernel-variable configuration fails. |
+| `systemd-sysctl` | Writes to `vm/mmap_min_addr` and `kernel/pid_max` return `EIO`. |
 
 These are limits of service parity. The private reference explicitly requests
 Modal's VM runtime (`vm_runtime=True`), so source equivalence alone cannot prove

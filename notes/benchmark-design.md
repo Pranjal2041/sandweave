@@ -16,8 +16,8 @@ with Benchmark("osworld-energy50-representative", capacity=4) as bench:
 
 Iteration is sequential. To run agents concurrently, `bench.map(run_agent)`
 calls `run_agent(env, instruction)` for at most `capacity` tasks at once and
-returns their evaluations in task order. Exceptions remain exceptions: setup
-or verifier failures must not become an agent score of zero. A used sandbox
+returns their evaluations in task order. Setup and adapter exceptions propagate;
+canonical evaluator scoring behavior is preserved. A used sandbox
 is discarded on exit, including after setup, agent, or evaluation failures.
 
 The integration contract is a task list, sandbox options, and three methods:

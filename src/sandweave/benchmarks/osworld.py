@@ -67,8 +67,10 @@ class OSWorld:
         env.files.upload(directory, guest)
         env.files.upload(self.reference / 'scripts/osworld_shared/osworld_setup.py',
                          '/workspace/tasks/_shared/osworld_setup.py')
+        env.files.write_text('/workspace/tasks/_shared/readiness.py',
+            resources.files('sandweave.templates').joinpath('osworld/readiness.py').read_text())
         try:
-            env.run(argv=['python3', '/workspace/tasks/_shared/osworld_setup.py', guest + '/source.json'],
+            env.run(argv=['python3', '/workspace/tasks/_shared/readiness.py', guest + '/source.json'],
                     user='root', env={'OSWORLD_DESKTOP_USER': 'user', 'OSWORLD_DESKTOP_HOME': '/home/user',
                                       'OSWORLD_X11_DISPLAY': ':0'}, timeout=600, check=True)
         finally:

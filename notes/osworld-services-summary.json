@@ -247,5 +247,21 @@
       "seconds": 76.21674218587577
     }
   ],
-  "decoded_gui_screenshots": 22
+  "decoded_gui_screenshots": 22,
+  "publication": {
+    "version": "0.2.20rc2",
+    "commit": "772b4decb8fe6250c4013626db3826006e3507e0",
+    "files": {
+      "sandweave-0.2.20rc2-py3-none-any.whl": "b9273bcd050289afddfe2828f47ad2ef4dd6b81963920d6785417bf3ba081bad",
+      "sandweave-0.2.20rc2.tar.gz": "4c504a7ae6aa61805733b89bee7c539eed7a5df1cb3d6c7190b0f9f6e8d06584"
+    }
+  },
+  "release_tests": {
+    "host_passed": 476,
+    "host_skipped": 4,
+    "host_deselected": 138,
+    "installed_sdk_passed": 4,
+    "build_transfer_passed": 7
+  },
+  "osworld_https_status": 200
 }

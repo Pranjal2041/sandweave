@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import textwrap
 import threading
+import tomllib
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -130,7 +131,8 @@ def check_browser(site, output, url=None):
                 page.goto(url + 'benchmarks/')
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Benchmarks¶?$'))
                 page.get_by_role('button', name='Copy to clipboard').first.click()
-                assert 'sandweave[benchmarks]==0.2.20rc1' in page.evaluate('navigator.clipboard.readText()')
+                version = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version']
+                assert 'sandweave[benchmarks]==' + version in page.evaluate('navigator.clipboard.readText()')
                 expect(page.locator('article')).to_contain_text('private')
                 expect(page.locator('article')).to_contain_text('Full VM parity is not claimed')
                 page.screenshot(path=str(output / 'benchmarks-desktop.png'), animations='disabled')

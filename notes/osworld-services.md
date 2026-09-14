@@ -87,3 +87,21 @@ RealtimeKit and hardware GPU detection remain outside this change. The
 differences and the pinned image/application versions. Modal-native explicitly
 selects a VM runtime in the private reference; it is not equivalent to no-KVM
 gVisor merely because both use containers at the API level.
+
+## Publication
+
+SDK `0.2.20rc2` was published from `772b4decb8fe6250c4013626db3826006e3507e0`.
+The release command passed 476 host tests, four installed-wheel SDK tests and
+seven build-transfer tests. Four host tests were skipped and 138 opted-in
+integration/GPU tests were deselected; the OSWorld-specific live checks above
+ran separately. The source distribution reproduced the wheel contents.
+
+A clean installation downloaded runtime `2026.09.14.2` anonymously without
+compiling it. GitHub and PyPI exposed the matching wheel/source hashes recorded
+in the summary. The published runtime metadata also matched the local files.
+An OSWorld sandbox with the enabled services completed an HTTPS request to
+`https://example.com` with status 200.
+
+The published documentation passed its desktop/mobile browser checks, including
+copying the preview installation command. The check now reads the package
+version instead of retaining the previous preview's version string.

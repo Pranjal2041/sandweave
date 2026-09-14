@@ -1,3 +1,27 @@
+diff --git a/pkg/abi/linux/keyctl.go b/pkg/abi/linux/keyctl.go
+index 4fedb33..ac7f9a9 100644
+--- a/pkg/abi/linux/keyctl.go
++++ b/pkg/abi/linux/keyctl.go
+@@ -18,7 +18,9 @@ package linux
+ // Source: include/uapi/linux/keyctl.h
+ 
+ const (
+-	KEY_SPEC_SESSION_KEYRING = -3
++	KEY_SPEC_SESSION_KEYRING      = -3
++	KEY_SPEC_USER_KEYRING         = -4
++	KEY_SPEC_USER_SESSION_KEYRING = -5
+ )
+ 
+ const (
+@@ -26,4 +28,8 @@ const (
+ 	KEYCTL_JOIN_SESSION_KEYRING = 1
+ 	KEYCTL_SETPERM              = 5
+ 	KEYCTL_DESCRIBE             = 6
++	KEYCTL_CLEAR                = 7
++	KEYCTL_LINK                 = 8
++	KEYCTL_UNLINK               = 9
++	KEYCTL_READ                 = 11
+ )
 diff --git a/pkg/abi/nvgpu/ctrl.go b/pkg/abi/nvgpu/ctrl.go
 index fc07881..eda0c6c 100644
 --- a/pkg/abi/nvgpu/ctrl.go
@@ -804,6 +828,491 @@ index 5e1b63c..d9f2a7a 100644
  				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_BSP_GET_CAPS_V2] = simpleIoctlInfo("NV0080_CTRL_CMD_BSP_GET_CAPS_V2", "NV0080_CTRL_NVDEC_GET_CAPS_PARAMS_V2")
  				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_MSENC_GET_CAPS] = ioctlInfoWithStructName("NV0080_CTRL_CMD_MSENC_GET_CAPS", nvgpu.NV0080_CTRL_GET_CAPS_PARAMS{}, "NV0080_CTRL_NVENC_GET_CAPS_PARAMS")
  
+diff --git a/pkg/sentry/devices/ttydev/BUILD b/pkg/sentry/devices/ttydev/BUILD
+index 836d7b4..155d11a 100644
+--- a/pkg/sentry/devices/ttydev/BUILD
++++ b/pkg/sentry/devices/ttydev/BUILD
+@@ -6,13 +6,20 @@ licenses(["notice"])
+ 
+ go_library(
+     name = "ttydev",
+-    srcs = ["ttydev.go"],
++    srcs = ["ttydev.go", "console.go"],
+     visibility = ["//pkg/sentry:internal"],
+     deps = [
+         "//pkg/abi/linux",
+         "//pkg/context",
+         "//pkg/errors/linuxerr",
++        "//pkg/hostarch",
++        "//pkg/marshal/primitive",
++        "//pkg/sentry/arch",
+         "//pkg/sentry/kernel",
++        "//pkg/sentry/kernel/auth",
+         "//pkg/sentry/vfs",
++        "//pkg/sync",
++        "//pkg/usermem",
++        "//pkg/waiter",
+     ],
+ )
+diff --git a/pkg/sentry/devices/ttydev/console.go b/pkg/sentry/devices/ttydev/console.go
+new file mode 100644
+index 0000000..2923f84
+--- /dev/null
++++ b/pkg/sentry/devices/ttydev/console.go
+@@ -0,0 +1,453 @@
++// Copyright 2026 The gVisor Authors.
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//     https://www.apache.org/licenses/LICENSE-2.0
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package ttydev
++
++import (
++	"bytes"
++	"fmt"
++	"gvisor.dev/gvisor/pkg/abi/linux"
++	"gvisor.dev/gvisor/pkg/context"
++	"gvisor.dev/gvisor/pkg/errors/linuxerr"
++	"gvisor.dev/gvisor/pkg/hostarch"
++	"gvisor.dev/gvisor/pkg/marshal/primitive"
++	"gvisor.dev/gvisor/pkg/sentry/arch"
++	"gvisor.dev/gvisor/pkg/sentry/kernel"
++	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
++	"gvisor.dev/gvisor/pkg/sentry/vfs"
++	"gvisor.dev/gvisor/pkg/sync"
++	"gvisor.dev/gvisor/pkg/usermem"
++	"gvisor.dev/gvisor/pkg/waiter"
++)
++
++// Linux's console ABI, include/uapi/linux/{vt,kd}.h.
++const (
++	vtOpenqry     = 0x5600
++	vtGetmode     = 0x5601
++	vtSetmode     = 0x5602
++	vtGetstate    = 0x5603
++	vtReldisp     = 0x5605
++	vtActivate    = 0x5606
++	vtWaitactive  = 0x5607
++	vtDisallocate = 0x5608
++	kdSetmode     = 0x4b3a
++	kdGetmode     = 0x4b3b
++	kdGetkbmode   = 0x4b44
++	kdSetkbmode   = 0x4b45
++)
++
++// consoles supplies private, headless virtual consoles. It never opens a host
++// console or connects a host keyboard. X servers render through their selected
++// display driver; the consoles retain terminal ownership and VT-switch state.
++// Nodes are opt-in: a guest must create character devices with major 4.
++//
++// +stateify savable
++type consoles struct {
++	mu         sync.Mutex `state:"nosave"`
++	active     uint32
++	pending    uint32
++	terminals  [64]*console
++	changed    waiter.Queue
++	activePoll vfs.DynamicBytesPoller
++}
++
++// +stateify savable
++type console struct {
++	bank  *consoles
++	index uint32
++	tty   *kernel.TTY
++	// The bank's mu protects the fields below.
++	opens      uint32
++	termios    linux.KernelTermios
++	window     linux.Winsize
++	mode       [8]byte
++	graphics   int32
++	keyboard   int32
++	controller *kernel.ThreadGroup
++	queue      waiter.Queue
++}
++
++// +stateify savable
++type consoleDevice struct {
++	bank  *consoles
++	index uint32
++}
++
++func (d *consoleDevice) Open(ctx context.Context, mnt *vfs.Mount, dent *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
++	d.bank.mu.Lock()
++	index := d.index
++	if index == 0 {
++		index = d.bank.active
++	}
++	c := d.bank.terminals[index]
++	d.bank.mu.Unlock()
++	return c.OpenTTY(ctx, mnt, dent, opts)
++}
++
++// IncRef and DecRef implement kernel.TTYOperations. The device registry owns
++// the consoles for the lifetime of the sandbox.
++func (*console) IncRef()                {}
++func (*console) DecRef(context.Context) {}
++
++func (c *console) OpenTTY(ctx context.Context, mnt *vfs.Mount, dent *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
++	fd := &consoleFD{console: c}
++	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, dent,
++		&vfs.FileDescriptionOptions{UseDentryMetadata: true, SpecialFile: true}); err != nil {
++		return nil, err
++	}
++	c.bank.mu.Lock()
++	c.opens++
++	c.bank.mu.Unlock()
++	if task := kernel.TaskFromContext(ctx); task != nil && opts.Flags&linux.O_NOCTTY == 0 {
++		_ = task.ThreadGroup().SetControllingTTY(ctx, c.tty, false, fd.vfsfd.IsReadable())
++	}
++	return &fd.vfsfd, nil
++}
++
++// +stateify savable
++type consoleFD struct {
++	vfsfd vfs.FileDescription
++	vfs.FileDescriptionDefaultImpl
++	vfs.DentryMetadataFileDescriptionImpl
++	vfs.NoLockFD
++	console *console
++}
++
++func (fd *consoleFD) Release(context.Context) {
++	c := fd.console
++	c.bank.mu.Lock()
++	c.opens--
++	c.bank.mu.Unlock()
++}
++func (fd *consoleFD) TTY() *kernel.TTY { return fd.console.tty }
++func (fd *consoleFD) Epollable() bool  { return true }
++func (fd *consoleFD) EventRegister(e *waiter.Entry) error {
++	fd.console.queue.EventRegister(e)
++	return nil
++}
++func (fd *consoleFD) EventUnregister(e *waiter.Entry) { fd.console.queue.EventUnregister(e) }
++func (fd *consoleFD) Readiness(mask waiter.EventMask) waiter.EventMask {
++	return mask & waiter.WritableEvents
++}
++func (fd *consoleFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
++	if dst.NumBytes() == 0 {
++		return 0, nil
++	}
++	if err := fd.console.tty.CheckChange(ctx, linux.SIGTTIN); err != nil {
++		return 0, err
++	}
++	return 0, linuxerr.EWOULDBLOCK
++}
++func (fd *consoleFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
++	// A headless console has no text scanout. Still read userspace so invalid
++	// buffers report EFAULT, and retain normal tty job-control checks.
++	c := fd.console
++	c.bank.mu.Lock()
++	stop := c.termios.LEnabled(linux.TOSTOP)
++	c.bank.mu.Unlock()
++	if stop {
++		if err := c.tty.CheckChange(ctx, linux.SIGTTOU); err != nil {
++			return 0, err
++		}
++	}
++	var buffer [4096]byte
++	var total int64
++	for src.NumBytes() > 0 {
++		n, err := src.CopyIn(ctx, buffer[:])
++		total += int64(n)
++		if err != nil {
++			return total, err
++		}
++		src = src.DropFirst(n)
++	}
++	return total, nil
++}
++
++// activateLocked completes a VT switch after the old controller releases it.
++func (b *consoles) activateLocked(index uint32) {
++	b.active = index
++	b.pending = 0
++	c := b.terminals[index]
++	if c.mode[0] == 1 && c.controller != nil {
++		_ = c.controller.SendSignal(kernel.SignalInfoPriv(linux.Signal(hostarch.ByteOrder.Uint16(c.mode[4:6]))))
++	}
++	b.changed.Notify(waiter.EventIn)
++	b.activePoll.Notify()
++}
++
++// ConsoleActive exposes the same state as VT_GETSTATE to sysfs readers.
++func ConsoleActive(vfsObj *vfs.VirtualFilesystem) vfs.DynamicBytesSource {
++	device, ok := vfsObj.GetRegisteredDevice(vfs.CharDevice, 4, 0).(*consoleDevice)
++	if !ok {
++		return nil
++	}
++	return device.bank
++}
++
++// Generate implements vfs.DynamicBytesSource.
++func (b *consoles) Generate(ctx context.Context, buffer *bytes.Buffer) error {
++	b.mu.Lock()
++	defer b.mu.Unlock()
++	_, err := fmt.Fprintf(buffer, "tty%d\n", b.active)
++	return err
++}
++
++// GetDynamicBytesPoller implements vfs.PollableDynamicBytesSource.
++func (b *consoles) GetDynamicBytesPoller(context.Context) *vfs.DynamicBytesPoller {
++	return &b.activePoll
++}
++
++func (fd *consoleFD) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
++	task := kernel.TaskFromContext(ctx)
++	if task == nil {
++		return 0, linuxerr.ENOTTY
++	}
++	c, b := fd.console, fd.console.bank
++	command, arg := args[1].Uint(), args[2].Pointer()
++	// Controlling-terminal operations use kernel's session and permission
++	// checks, independently of the console state lock.
++	switch command {
++	case linux.TIOCSCTTY:
++		return 0, task.ThreadGroup().SetControllingTTY(ctx, c.tty, args[2].Int() == 1, fd.vfsfd.IsReadable())
++	case linux.TIOCNOTTY:
++		return 0, task.ThreadGroup().ReleaseControllingTTY(ctx, c.tty)
++	case linux.TIOCGPGRP:
++		pgid, err := task.ThreadGroup().ForegroundProcessGroupID(c.tty)
++		if err != nil {
++			return 0, err
++		}
++		v := primitive.Int32(pgid)
++		_, err = v.CopyOut(task, arg)
++		return 0, err
++	case linux.TIOCSPGRP:
++		var v primitive.Int32
++		if _, err := v.CopyIn(task, arg); err != nil {
++			return 0, err
++		}
++		return 0, task.ThreadGroup().SetForegroundProcessGroupID(ctx, c.tty, kernel.ProcessGroupID(v))
++	case vtWaitactive:
++		index := args[2].Uint()
++		if index < 1 || index >= 64 {
++			return 0, linuxerr.ENXIO
++		}
++		entry, ch := waiter.NewChannelEntry(waiter.EventIn)
++		b.changed.EventRegister(&entry)
++		defer b.changed.EventUnregister(&entry)
++		for {
++			b.mu.Lock()
++			active := b.active == uint32(index)
++			b.mu.Unlock()
++			if active {
++				return 0, nil
++			}
++			if err := task.Block(ch); err != nil {
++				return 0, err
++			}
++		}
++	}
++	b.mu.Lock()
++	defer b.mu.Unlock()
++	switch command {
++	case linux.TCGETS:
++		value := c.termios.ToTermios()
++		_, err := value.CopyOut(task, arg)
++		return 0, err
++	case linux.TCGETS2:
++		_, err := c.termios.CopyOut(task, arg)
++		return 0, err
++	case linux.TCSETS, linux.TCSETSW, linux.TCSETSF:
++		var value linux.Termios
++		if _, err := value.CopyIn(task, arg); err != nil {
++			return 0, err
++		}
++		c.termios.FromTermios(value)
++		return 0, nil
++	case linux.TCSETS2, linux.TCSETSW2, linux.TCSETSF2:
++		var value linux.KernelTermios
++		if _, err := value.CopyIn(task, arg); err != nil {
++			return 0, err
++		}
++		c.termios = value
++		return 0, nil
++	case linux.TIOCGWINSZ:
++		_, err := c.window.CopyOut(task, arg)
++		return 0, err
++	case linux.TIOCSWINSZ:
++		var value linux.Winsize
++		if _, err := value.CopyIn(task, arg); err != nil {
++			return 0, err
++		}
++		c.window = value
++		c.tty.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGWINCH))
++		return 0, nil
++	case linux.TCFLSH, linux.TCSBRK:
++		return 0, nil
++	case linux.FIONREAD:
++		v := primitive.Int32(0)
++		_, err := v.CopyOut(task, arg)
++		return 0, err
++	case vtGetmode:
++		_, err := io.CopyOut(ctx, arg, c.mode[:], usermem.IOOpts{})
++		return 0, err
++	case vtGetstate:
++		var value [6]byte
++		hostarch.ByteOrder.PutUint16(value[:2], uint16(b.active))
++		mask := uint16(1)
++		for i := 1; i < 16; i++ {
++			if b.terminals[i].opens > 0 {
++				mask |= 1 << i
++			}
++		}
++		hostarch.ByteOrder.PutUint16(value[4:], mask)
++		_, err := io.CopyOut(ctx, arg, value[:], usermem.IOOpts{})
++		return 0, err
++	case vtOpenqry:
++		value := primitive.Int32(-1)
++		for i := 1; i < 64; i++ {
++			if b.terminals[i].opens == 0 && b.terminals[i].tty.ThreadGroup() == nil {
++				value = primitive.Int32(i)
++				break
++			}
++		}
++		_, err := value.CopyOut(task, arg)
++		return 0, err
++	case kdGetmode, kdGetkbmode:
++		value := primitive.Int32(c.graphics)
++		if command == kdGetkbmode {
++			value = primitive.Int32(c.keyboard)
++		}
++		_, err := value.CopyOut(task, arg)
++		return 0, err
++	}
++	tty := task.ThreadGroup().GetTTY()
++	permitted := tty == c.tty || task.Credentials().HasRootCapability(linux.CAP_SYS_TTY_CONFIG)
++	if tty != nil {
++		tty.DecRef(ctx)
++	}
++	if !permitted {
++		return 0, linuxerr.EPERM
++	}
++	switch command {
++	case vtSetmode:
++		var value [8]byte
++		if _, err := io.CopyIn(ctx, arg, value[:], usermem.IOOpts{}); err != nil {
++			return 0, err
++		}
++		if value[0] > 1 {
++			return 0, linuxerr.EINVAL
++		}
++		if value[0] == 1 {
++			for _, offset := range []int{2, 4} {
++				sig := linux.Signal(hostarch.ByteOrder.Uint16(value[offset : offset+2]))
++				if !sig.IsValid() {
++					return 0, linuxerr.EINVAL
++				}
++			}
++		}
++		c.mode = value
++		c.controller = task.ThreadGroup()
++		return 0, nil
++	case kdSetmode:
++		mode := args[2].Int()
++		if mode < 0 || mode > 1 {
++			return 0, linuxerr.EINVAL
++		}
++		c.graphics = int32(mode)
++		return 0, nil
++	case kdSetkbmode:
++		mode := args[2].Int()
++		if mode < 0 || mode > 4 {
++			return 0, linuxerr.EINVAL
++		}
++		c.keyboard = int32(mode)
++		return 0, nil
++	case vtActivate:
++		requested := args[2].Uint64()
++		if requested < 1 || requested >= 64 {
++			return 0, linuxerr.ENXIO
++		}
++		index := uint32(requested)
++		if index == b.active {
++			return 0, nil
++		}
++		current := b.terminals[b.active]
++		if current.mode[0] == 1 && current.controller != nil {
++			b.pending = index
++			if err := current.controller.SendSignal(kernel.SignalInfoPriv(linux.Signal(hostarch.ByteOrder.Uint16(current.mode[2:4])))); err == nil {
++				return 0, nil
++			}
++			current.mode = [8]byte{}
++			current.controller = nil
++		} else if current.graphics == 1 {
++			return 0, nil
++		}
++		b.activateLocked(index)
++		return 0, nil
++	case vtReldisp:
++		if c.mode[0] != 1 {
++			return 0, linuxerr.EINVAL
++		}
++		switch args[2].Int() {
++		case 0:
++			b.pending = 0
++		case 1:
++			if b.pending == 0 {
++				return 0, linuxerr.EINVAL
++			}
++			b.activateLocked(b.pending)
++		case 2:
++		default:
++			return 0, linuxerr.EINVAL
++		}
++		return 0, nil
++	case vtDisallocate:
++		index := args[2].Uint()
++		if index >= 64 {
++			return 0, linuxerr.ENXIO
++		}
++		busy := func(i uint32) bool {
++			return i == b.active || b.terminals[i].opens > 0 || b.terminals[i].tty.ThreadGroup() != nil
++		}
++		if index != 0 && busy(uint32(index)) {
++			return 0, linuxerr.EBUSY
++		}
++		for i := uint32(1); i < 64; i++ {
++			if (index == 0 || uint32(index) == i) && !busy(i) {
++				terminal := b.terminals[i]
++				terminal.termios = linux.DefaultReplicaTermios
++				terminal.window = linux.Winsize{Row: 25, Col: 80}
++				terminal.mode = [8]byte{}
++				terminal.graphics, terminal.keyboard = 0, 3
++				terminal.controller = nil
++			}
++		}
++		return 0, nil
++	default:
++		return 0, linuxerr.ENOTTY
++	}
++}
++
++// RegisterConsoles enables the private console devices for this sandbox.
++func RegisterConsoles(vfsObj *vfs.VirtualFilesystem) error {
++	b := &consoles{active: 1}
++	for i := uint32(1); i < 64; i++ {
++		c := &console{bank: b, index: i, termios: linux.DefaultReplicaTermios, window: linux.Winsize{Row: 25, Col: 80}, keyboard: 3}
++		c.tty = kernel.NewTTY(i, c)
++		b.terminals[i] = c
++	}
++	for i := uint32(0); i < 64; i++ {
++		if err := vfsObj.RegisterDevice(vfs.CharDevice, 4, i, &consoleDevice{bank: b, index: i},
++			&vfs.RegisterDeviceOptions{GroupName: "tty"}); err != nil {
++			return err
++		}
++	}
++	return nil
++}
 diff --git a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go b/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
 index d5d2f4d..941bef4 100644
 --- a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
@@ -1087,6 +1596,19 @@ index de8b278..f31fbb2 100644
  }
  
  // PrependPath implements vfs.FilesystemImpl.PrependPath.
+diff --git a/pkg/sentry/fsimpl/fuse/connection_control.go b/pkg/sentry/fsimpl/fuse/connection_control.go
+index 67f336f..7f5e244 100644
+--- a/pkg/sentry/fsimpl/fuse/connection_control.go
++++ b/pkg/sentry/fsimpl/fuse/connection_control.go
+@@ -42,7 +42,7 @@ const (
+ 
+ 	// The FUSE_INIT_IN flags sent to the daemon.
+ 	// TODO(gvisor.dev/issue/3199): complete the flags.
+-	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES
++	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES | linux.FUSE_ATOMIC_O_TRUNC
+ 
+ 	// An INIT response needs to be at least this long.
+ 	minInitSize = 24
 diff --git a/pkg/sentry/fsimpl/proc/task.go b/pkg/sentry/fsimpl/proc/task.go
 index 69c94a6..1b24a49 100644
 --- a/pkg/sentry/fsimpl/proc/task.go
@@ -1136,6 +1658,66 @@ index 4602277..0bded7c 100644
  		if cg2Entry := d.task.GetCgroup2Entry(readerNS); cg2Entry != nil {
  			fmt.Fprintf(buf, "0::%s\n", cg2Entry.Path)
  		}
+diff --git a/pkg/sentry/fsimpl/sys/BUILD b/pkg/sentry/fsimpl/sys/BUILD
+index 6a4b589..b42a733 100644
+--- a/pkg/sentry/fsimpl/sys/BUILD
++++ b/pkg/sentry/fsimpl/sys/BUILD
+@@ -39,6 +39,7 @@ go_library(
+         "//pkg/rdma",
+         "//pkg/refs",
+         "//pkg/sentry/arch",
++        "//pkg/sentry/devices/ttydev",
+         "//pkg/sentry/fsimpl/host",
+         "//pkg/sentry/fsimpl/kernfs",
+         "//pkg/sentry/inet",
+diff --git a/pkg/sentry/fsimpl/sys/save_restore.go b/pkg/sentry/fsimpl/sys/save_restore.go
+index 312f11e..d5c6b15 100644
+--- a/pkg/sentry/fsimpl/sys/save_restore.go
++++ b/pkg/sentry/fsimpl/sys/save_restore.go
+@@ -56,6 +56,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
+ 	classSub := map[string]kernfs.Inode{
+ 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+ 	}
++	fs.addConsoleClass(ctx, creds, classSub)
+ 	devicesSub := map[string]kernfs.Inode{
+ 		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+ 			"cpu": cpuDir(ctx, fs, creds),
+diff --git a/pkg/sentry/fsimpl/sys/sys.go b/pkg/sentry/fsimpl/sys/sys.go
+index f043868..c4ad638 100644
+--- a/pkg/sentry/fsimpl/sys/sys.go
++++ b/pkg/sentry/fsimpl/sys/sys.go
+@@ -30,12 +30,23 @@ import (
+ 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+ 	"gvisor.dev/gvisor/pkg/log"
+ 	"gvisor.dev/gvisor/pkg/rdma"
++	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
+ 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+ 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+ 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+ 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+ )
+ 
++func (fs *filesystem) addConsoleClass(ctx context.Context, creds *auth.Credentials, children map[string]kernfs.Inode) {
++	if active := ttydev.ConsoleActive(fs.VFSFilesystem().VirtualFilesystem()); active != nil {
++		file := &kernfs.DynamicBytesFile{}
++		file.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), active, 0444)
++		children["tty"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
++			"tty0": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{"active": file}),
++		})
++	}
++}
++
+ const (
+ 	// Name is the default filesystem name.
+ 	Name                     = "sysfs"
+@@ -129,6 +140,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
+ 	classSub := map[string]kernfs.Inode{ // /sys/class
+ 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+ 	}
++	fs.addConsoleClass(ctx, creds, classSub)
+ 	devicesSub := map[string]kernfs.Inode{} // /sys/devices
+ 	systemSub := map[string]kernfs.Inode{   // /sys/devices/system
+ 		"cpu": cpuDir(ctx, fs, creds),
 diff --git a/pkg/sentry/fsimpl/tmpfs/tar.go b/pkg/sentry/fsimpl/tmpfs/tar.go
 index 54d92bc..6acce8e 100644
 --- a/pkg/sentry/fsimpl/tmpfs/tar.go
@@ -1614,6 +2196,372 @@ index bf182a5..753cc13 100644
  }
  
  // AbstractSockets returns AbstractSocketNamespace.
+diff --git a/pkg/sentry/kernel/auth/BUILD b/pkg/sentry/kernel/auth/BUILD
+index fd238f4..984cbaf 100644
+--- a/pkg/sentry/kernel/auth/BUILD
++++ b/pkg/sentry/kernel/auth/BUILD
+@@ -94,6 +94,7 @@ go_library(
+     ],
+     deps = [
+         "//pkg/abi/linux",
++        "//pkg/atomicbitops",
+         "//pkg/bits",
+         "//pkg/context",
+         "//pkg/errors/linuxerr",
+@@ -109,7 +110,7 @@ go_library(
+ 
+ go_test(
+     name = "auth_test",
+-    srcs = ["capability_set_test.go"],
++    srcs = ["capability_set_test.go", "key_links_test.go"],
+     library = ":auth",
+     deps = [
+         "//pkg/abi/linux",
+diff --git a/pkg/sentry/kernel/auth/key.go b/pkg/sentry/kernel/auth/key.go
+index 38ada05..c691c5f 100644
+--- a/pkg/sentry/kernel/auth/key.go
++++ b/pkg/sentry/kernel/auth/key.go
+@@ -19,6 +19,7 @@ import (
+ 	"fmt"
+ 	"strings"
+ 
++	"gvisor.dev/gvisor/pkg/atomicbitops"
+ 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+ 	"gvisor.dev/gvisor/pkg/rand"
+ )
+@@ -102,7 +103,10 @@ type Key struct {
+ 
+ 	// perms is a bitfield of key permissions.
+ 	// perms is only mutable in KeySet transactions.
+-	perms KeyPermissions
++	perms atomicbitops.Uint64
++
++	// links is protected by the containing KeySet's mu.
++	links map[KeySerial]*Key
+ }
+ 
+ // Type returns the type of this key.
+@@ -117,13 +121,13 @@ func (k *Key) KUID() KUID { return k.kuid }
+ func (k *Key) KGID() KGID { return k.kgid }
+ 
+ // Permissions returns the permission bits of the key.
+-func (k *Key) Permissions() KeyPermissions { return k.perms }
++func (k *Key) Permissions() KeyPermissions { return KeyPermissions(k.perms.Load()) }
+ 
+ // String is a human-friendly representation of the key.
+ // Notably, this is *not* the string returned to userspace when requested
+ // using `KEYCTL_DESCRIBE`.
+ func (k *Key) String() string {
+-	return fmt.Sprintf("id=%d,perms=0x%x,desc=%q", k.ID, k.perms, k.Description)
++	return fmt.Sprintf("id=%d,perms=0x%x,desc=%q", k.ID, k.Permissions(), k.Description)
+ }
+ 
+ // Bitmasks for permission checks.
+@@ -226,20 +230,27 @@ type PossessedKeys struct {
+ // PossessedKeys is short-lived; it should only live for so long as there
+ // are no changes to the KeySet or to any key permissions.
+ func (c *Credentials) PossessedKeys(sessionKeyring, processKeyring, threadKeyring *Key) *PossessedKeys {
++	c.UserNamespace.Keys.mu.RLock()
++	defer c.UserNamespace.Keys.mu.RUnlock()
+ 	possessed := &PossessedKeys{possessed: make(map[KeySerial]struct{})}
+-	for _, k := range [3]*Key{sessionKeyring, processKeyring, threadKeyring} {
++	var visit func(*Key)
++	visit = func(k *Key) {
+ 		if k == nil {
+-			continue
++			return
++		}
++		if _, exists := possessed.possessed[k.ID]; exists {
++			return
+ 		}
+-		// The possessor still needs "search" permission in order to actually possess anything.
+-		if ((k.perms&keyPossessorPermissionsMask)>>keyPossessorPermissionsShift)&keyPermissionSearch != 0 {
+-			possessed.possessed[k.ID] = struct{}{}
++		possessed.possessed[k.ID] = struct{}{}
++		if c.HasKeyPermission(k, possessed, KeySearch) {
++			for _, child := range k.links {
++				visit(child)
++			}
+ 		}
+ 	}
+-
+-	// If we implement keyrings that contain other keys, this is where the
+-	// recursion would happen.
+-
++	for _, k := range [3]*Key{sessionKeyring, processKeyring, threadKeyring} {
++		visit(k)
++	}
+ 	return possessed
+ }
+ 
+@@ -247,15 +258,16 @@ func (c *Credentials) PossessedKeys(sessionKeyring, processKeyring, threadKeyrin
+ //
+ //go:nosplit
+ func (c *Credentials) HasKeyPermission(k *Key, possessed *PossessedKeys, permission KeyPermission) bool {
+-	perms := k.perms & keyOtherPermissionsMask
++	current := k.Permissions()
++	perms := current & keyOtherPermissionsMask
+ 	if _, ok := possessed.possessed[k.ID]; ok {
+-		perms |= (k.perms & keyPossessorPermissionsMask) >> keyPossessorPermissionsShift
++		perms |= (current & keyPossessorPermissionsMask) >> keyPossessorPermissionsShift
+ 	}
+ 	if c.EffectiveKUID == k.kuid {
+-		perms |= (k.perms & keyOwnerPermissionsMask) >> keyOwnerPermissionsShift
++		perms |= (current & keyOwnerPermissionsMask) >> keyOwnerPermissionsShift
+ 	}
+ 	if c.EffectiveKGID == k.kgid {
+-		perms |= (k.perms & keyGroupPermissionsMask) >> keyGroupPermissionsShift
++		perms |= (current & keyGroupPermissionsMask) >> keyGroupPermissionsShift
+ 	}
+ 	switch permission {
+ 	case KeyView:
+@@ -292,7 +304,9 @@ type KeySet struct {
+ 	// keys maps key IDs to the underlying Key struct.
+ 	// It is initially nil to save on heap space.
+ 	// It is only initialized when doing mutable transactions on it using `Do`.
+-	keys map[KeySerial]*Key
++	keys                map[KeySerial]*Key
++	userKeyrings        map[KUID]*Key
++	userSessionKeyrings map[KUID]*Key
+ }
+ 
+ // LockedKeySet is a KeySet in a transaction.
+@@ -385,8 +399,8 @@ func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPerm
+ 		Description: description,
+ 		kuid:        creds.EffectiveKUID,
+ 		kgid:        creds.EffectiveKGID,
+-		perms:       perms,
+ 	}
++	k.perms.Store(uint64(perms))
+ 	s.keys[newID] = k
+ 	return k, nil
+ }
+@@ -394,5 +408,117 @@ func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPerm
+ // SetPerms sets the permissions on a given key.
+ // The caller must have SetAttr permission on the key.
+ func (s *LockedKeySet) SetPerms(key *Key, newPerms KeyPermissions) {
+-	key.perms = newPerms
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	key.perms.Store(uint64(newPerms))
++}
++
++// UserKeyring returns the per-real-UID keyring, creating it atomically.
++func (s *LockedKeySet) UserKeyring(creds *Credentials, session bool, limit int) (*Key, error) {
++	s.mu.RLock()
++	k := s.userKeyrings[creds.RealKUID]
++	if session {
++		k = s.userSessionKeyrings[creds.RealKUID]
++	}
++	s.mu.RUnlock()
++	if k != nil {
++		return k, nil
++	}
++	var user *Key
++	var err error
++	if session {
++		user, err = s.UserKeyring(creds, false, limit)
++		if err != nil {
++			return nil, err
++		}
++	}
++	owner := *creds
++	owner.EffectiveKUID, owner.EffectiveKGID = creds.RealKUID, creds.RealKGID
++	prefix := "_uid."
++	if session {
++		prefix = "_uid_ses."
++	}
++	k, err = s.Add(fmt.Sprintf("%s%d", prefix, creds.UserNamespace.MapFromKUID(creds.RealKUID)), &owner, 0x1b3f0000, limit)
++	if err != nil {
++		return nil, err
++	}
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	if session {
++		if s.userSessionKeyrings == nil {
++			s.userSessionKeyrings = make(map[KUID]*Key)
++		}
++		s.userSessionKeyrings[creds.RealKUID] = k
++		k.links = map[KeySerial]*Key{user.ID: user}
++	} else {
++		if s.userKeyrings == nil {
++			s.userKeyrings = make(map[KUID]*Key)
++		}
++		s.userKeyrings[creds.RealKUID] = k
++	}
++	return k, nil
++}
++
++// Link adds a keyring link. Caller has checked source Link and target Write.
++func (s *LockedKeySet) Link(key, ring *Key) error {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	var contains func(*Key, int) error
++	contains = func(current *Key, depth int) error {
++		if current.ID == ring.ID {
++			return linuxerr.EDEADLK
++		}
++		if depth > 6 {
++			return linuxerr.ELOOP
++		}
++		for _, child := range current.links {
++			if err := contains(child, depth+1); err != nil {
++				return err
++			}
++		}
++		return nil
++	}
++	if err := contains(key, 1); err != nil {
++		return err
++	}
++	if ring.links == nil {
++		ring.links = make(map[KeySerial]*Key)
++	}
++	// A keyring contains at most one key of a given type and description.
++	for id, previous := range ring.links {
++		if previous.Description == key.Description {
++			delete(ring.links, id)
++		}
++	}
++	ring.links[key.ID] = key
++	return nil
++}
++
++// Unlink removes one link. Caller has checked target Write permission.
++func (s *LockedKeySet) Unlink(key, ring *Key) error {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	if _, exists := ring.links[key.ID]; !exists {
++		return linuxerr.ENOENT
++	}
++	delete(ring.links, key.ID)
++	return nil
++}
++
++// Clear removes all links. Caller has checked Write permission.
++func (s *LockedKeySet) Clear(ring *Key) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	ring.links = nil
++}
++
++// Members returns a copy of a keyring's linked key IDs.
++func (s *KeySet) Members(ring *Key) []KeySerial {
++	s.mu.RLock()
++	defer s.mu.RUnlock()
++	result := make([]KeySerial, 0, len(ring.links))
++	for id := range ring.links {
++		result = append(result, id)
++	}
++	return result
+ }
+diff --git a/pkg/sentry/kernel/auth/key_links_test.go b/pkg/sentry/kernel/auth/key_links_test.go
+new file mode 100644
+index 0000000..537686b
+--- /dev/null
++++ b/pkg/sentry/kernel/auth/key_links_test.go
+@@ -0,0 +1,101 @@
++// Copyright 2026 The gVisor Authors.
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//     https://www.apache.org/licenses/LICENSE-2.0
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package auth
++
++import (
++	"sync"
++	"testing"
++
++	"gvisor.dev/gvisor/pkg/errors/linuxerr"
++)
++
++func TestUserKeyringConcurrentCreation(t *testing.T) {
++	creds := NewRootCredentials(NewRootUserNamespace())
++	creds.RealKUID, creds.RealKGID = 1000, 1001
++	keys := &creds.UserNamespace.Keys
++	ids := make(chan KeySerial, 32)
++	var workers sync.WaitGroup
++	for i := 0; i < 32; i++ {
++		workers.Add(1)
++		go func() {
++			defer workers.Done()
++			err := keys.Do(func(set *LockedKeySet) error {
++				key, err := set.UserKeyring(creds, false, 200)
++				if err == nil {
++					if key.KUID() != 1000 || key.KGID() != 1001 {
++						t.Error("incorrect user-keyring owner")
++					}
++					ids <- key.ID
++				}
++				return err
++			})
++			if err != nil {
++				t.Error(err)
++			}
++		}()
++	}
++	workers.Wait()
++	close(ids)
++	var first KeySerial
++	for id := range ids {
++		if first == 0 {
++			first = id
++		}
++		if id != first {
++			t.Fatal("duplicate user keyrings")
++		}
++	}
++}
++
++func TestKeyringLinksPossessionAndCycles(t *testing.T) {
++	creds := NewRootCredentials(NewRootUserNamespace())
++	keys := &creds.UserNamespace.Keys
++	var session, user *Key
++	if err := keys.Do(func(set *LockedKeySet) error {
++		var err error
++		session, err = set.Add("session", creds, 0x3f3f0000, 200)
++		if err != nil {
++			return err
++		}
++		user, err = set.UserKeyring(creds, false, 200)
++		if err != nil {
++			return err
++		}
++		return set.Link(user, session)
++	}); err != nil {
++		t.Fatal(err)
++	}
++	if ids := keys.Members(session); len(ids) != 1 || ids[0] != user.ID {
++		t.Fatal(ids)
++	}
++	if err := keys.Do(func(set *LockedKeySet) error {
++		if err := set.Link(session, user); !linuxerr.Equals(linuxerr.EDEADLK, err) {
++			t.Fatalf("cycle = %v", err)
++		}
++		set.SetPerms(user, 0x02000000) // Only a possessor can read this key.
++		return nil
++	}); err != nil {
++		t.Fatal(err)
++	}
++	if !creds.HasKeyPermission(user, creds.PossessedKeys(session, nil, nil), KeyRead) {
++		t.Fatal("linked key was not possessed")
++	}
++	if creds.HasKeyPermission(user, creds.PossessedKeys(nil, nil, nil), KeyRead) {
++		t.Fatal("unpossessed key granted read permission")
++	}
++	if err := keys.Do(func(set *LockedKeySet) error { return set.Unlink(user, session) }); err != nil {
++		t.Fatal(err)
++	}
++	if len(keys.Members(session)) != 0 {
++		t.Fatal("unlink retained the key")
++	}
++}
 diff --git a/pkg/sentry/kernel/cgroup.go b/pkg/sentry/kernel/cgroup.go
 index 047b21b..05b83e1 100644
 --- a/pkg/sentry/kernel/cgroup.go
@@ -2680,6 +3628,159 @@ index c9a0472..340a6e8 100644
  // TestSCMSenderBeforeSaveIdempotent verifies that calling beforeSave
  // on an SCMSender whose host file descriptor is already closed (fd < 0)
  // is a safe no-op and does not panic in fdnotifier.RemoveFD.
+diff --git a/pkg/sentry/syscalls/linux/sys_key.go b/pkg/sentry/syscalls/linux/sys_key.go
+index 3b75aec..24e6ccd 100644
+--- a/pkg/sentry/syscalls/linux/sys_key.go
++++ b/pkg/sentry/syscalls/linux/sys_key.go
+@@ -15,8 +15,10 @@
+ package linux
+ 
+ import (
++	"encoding/binary"
+ 	"fmt"
+ 	"math"
++	"sort"
+ 
+ 	"gvisor.dev/gvisor/pkg/abi/linux"
+ 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+@@ -37,6 +39,10 @@ func Keyctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
+ 		return keyctlJoinSessionKeyring(t, args)
+ 	case linux.KEYCTL_SETPERM:
+ 		return keyctlSetPerm(t, args)
++	case linux.KEYCTL_LINK, linux.KEYCTL_UNLINK, linux.KEYCTL_CLEAR:
++		return keyctlChangeLinks(t, args)
++	case linux.KEYCTL_READ:
++		return keyctlRead(t, args)
+ 	}
+ 	log.Debugf("Unimplemented keyctl operation: %d", args[0].Int())
+ 	kernel.IncrementUnimplementedSyscallCounter(sysno)
+@@ -56,6 +62,8 @@ func keyCtlGetKeyringID(t *kernel.Task, args arch.SyscallArguments) (uintptr, *k
+ 	switch keyID {
+ 	case linux.KEY_SPEC_SESSION_KEYRING:
+ 		key, err = t.SessionKeyring()
++	case linux.KEY_SPEC_USER_KEYRING, linux.KEY_SPEC_USER_SESSION_KEYRING:
++		key, err = resolveKey(t, keyID)
+ 	default:
+ 		if keyID <= 0 {
+ 			// Other special key IDs are not implemented.
+@@ -87,6 +95,8 @@ func keyctlDescribe(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
+ 	switch keyID {
+ 	case linux.KEY_SPEC_SESSION_KEYRING:
+ 		key, err = t.SessionKeyring()
++	case linux.KEY_SPEC_USER_KEYRING, linux.KEY_SPEC_USER_SESSION_KEYRING:
++		key, err = resolveKey(t, keyID)
+ 	default:
+ 		key, err = t.LookupKey(keyID)
+ 	}
+@@ -142,6 +152,8 @@ func keyctlSetPerm(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
+ 	switch keyID {
+ 	case linux.KEY_SPEC_SESSION_KEYRING:
+ 		key, err = t.SessionKeyring()
++	case linux.KEY_SPEC_USER_KEYRING, linux.KEY_SPEC_USER_SESSION_KEYRING:
++		key, err = resolveKey(t, keyID)
+ 	default:
+ 		key, err = t.UserNamespace().Keys.Lookup(keyID)
+ 	}
+@@ -150,3 +162,99 @@ func keyctlSetPerm(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
+ 	}
+ 	return 0, nil, t.SetPermsOnKey(key, newPerms)
+ }
++
++func resolveKey(t *kernel.Task, id auth.KeySerial) (*auth.Key, error) {
++	switch id {
++	case linux.KEY_SPEC_SESSION_KEYRING:
++		return t.SessionKeyring()
++	case linux.KEY_SPEC_USER_KEYRING, linux.KEY_SPEC_USER_SESSION_KEYRING:
++		var key *auth.Key
++		err := t.UserNamespace().Keys.Do(func(set *auth.LockedKeySet) error {
++			var err error
++			key, err = set.UserKeyring(t.Credentials(), id == linux.KEY_SPEC_USER_SESSION_KEYRING, int(t.Kernel().MaxKeySetSize.Load()))
++			return err
++		})
++		return key, err
++	default:
++		if id < 0 {
++			return nil, linuxerr.ENOSYS
++		}
++		return t.UserNamespace().Keys.Lookup(id)
++	}
++}
++
++func keyctlChangeLinks(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
++	operation := args[0].Int()
++	key, err := resolveKey(t, auth.KeySerial(args[1].Int()))
++	if err != nil {
++		return 0, nil, err
++	}
++	ring := key
++	if operation != linux.KEYCTL_CLEAR {
++		ring, err = resolveKey(t, auth.KeySerial(args[2].Int()))
++		if err != nil {
++			return 0, nil, err
++		}
++	}
++	session, err := t.SessionKeyring()
++	if err != nil {
++		return 0, nil, err
++	}
++	creds := t.Credentials()
++	err = t.UserNamespace().Keys.Do(func(set *auth.LockedKeySet) error {
++		possessed := creds.PossessedKeys(session, nil, nil)
++		if !creds.HasKeyPermission(ring, possessed, auth.KeyWrite) {
++			return linuxerr.EACCES
++		}
++		switch operation {
++		case linux.KEYCTL_LINK:
++			if !creds.HasKeyPermission(key, possessed, auth.KeyLink) {
++				return linuxerr.EACCES
++			}
++			return set.Link(key, ring)
++		case linux.KEYCTL_UNLINK:
++			return set.Unlink(key, ring)
++		default:
++			set.Clear(ring)
++			return nil
++		}
++	})
++	return 0, nil, err
++}
++
++func keyctlRead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
++	ring, err := resolveKey(t, auth.KeySerial(args[1].Int()))
++	if err != nil {
++		return 0, nil, err
++	}
++	session, err := t.SessionKeyring()
++	if err != nil {
++		return 0, nil, err
++	}
++	creds := t.Credentials()
++	var members []auth.KeySerial
++	err = t.UserNamespace().Keys.Do(func(set *auth.LockedKeySet) error {
++		if !creds.HasKeyPermission(ring, creds.PossessedKeys(session, nil, nil), auth.KeyRead) {
++			return linuxerr.EACCES
++		}
++		members = set.Members(ring)
++		return nil
++	})
++	if err != nil {
++		return 0, nil, err
++	}
++	sort.Slice(members, func(i, j int) bool { return members[i] < members[j] })
++	size := len(members) * 4
++	count := size
++	if uint64(count) > uint64(args[3].SizeT()) {
++		count = int(args[3].SizeT())
++	}
++	if args[2].Pointer() != 0 && count > 0 {
++		buffer := make([]byte, size)
++		for i, id := range members {
++			binary.LittleEndian.PutUint32(buffer[i*4:], uint32(id))
++		}
++		_, err = t.CopyOutBytes(args[2].Pointer(), buffer[:count])
++	}
++	return uintptr(size), nil, err
++}
 diff --git a/pkg/sentry/syscalls/linux/sys_tls_amd64.go b/pkg/sentry/syscalls/linux/sys_tls_amd64.go
 index 655cdc6..5df38d6 100644
 --- a/pkg/sentry/syscalls/linux/sys_tls_amd64.go
@@ -2707,6 +3808,24 @@ index 655cdc6..5df38d6 100644
  	default:
  		return 0, nil, linuxerr.EINVAL
  	}
+diff --git a/pkg/sentry/vfs/file_description.go b/pkg/sentry/vfs/file_description.go
+index 7257c31..349c7cd 100644
+--- a/pkg/sentry/vfs/file_description.go
++++ b/pkg/sentry/vfs/file_description.go
+@@ -978,7 +978,12 @@ func (fd *FileDescription) ComputeLockRange(ctx context.Context, start uint64, l
+ 		// Note that Linux does not hold any mutexes while retrieving the file
+ 		// offset, see fs/locks.c:flock_to_posix_lock and fs/locks.c:fcntl_setlk.
+ 		curOff, err := fd.Seek(ctx, 0, linux.SEEK_CUR)
+-		if err != nil {
++		if linuxerr.Equals(linuxerr.ESPIPE, err) {
++			// Linux uses file->f_pos here, even for sockets and pipes whose
++			// lseek is rejected. Streams retain a zero file position; locking
++			// them must not fail merely because they are not seekable.
++			curOff = 0
++		} else if err != nil {
+ 			return lock.LockRange{}, err
+ 		}
+ 		off = curOff
 diff --git a/pkg/tcpip/link/nested/nested.go b/pkg/tcpip/link/nested/nested.go
 index fdb5022..c297965 100644
 --- a/pkg/tcpip/link/nested/nested.go
@@ -5172,10 +6291,22 @@ index 0000000..a9deb96
 +	}
 +}
 diff --git a/runsc/boot/vfs.go b/runsc/boot/vfs.go
-index f320cd9..846b332 100644
+index f320cd9..84e5225 100644
 --- a/runsc/boot/vfs.go
 +++ b/runsc/boot/vfs.go
-@@ -1542,14 +1542,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
+@@ -188,6 +188,11 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
+ 	if err := ttydev.Register(vfsObj); err != nil {
+ 		return fmt.Errorf("registering ttydev: %w", err)
+ 	}
++	if info.conf.VirtualConsoles == "headless" {
++		if err := ttydev.RegisterConsoles(vfsObj); err != nil {
++			return fmt.Errorf("registering virtual consoles: %w", err)
++		}
++	}
+ 	tunSupported := tundev.IsNetTunSupported(inet.StackFromContext(ctx))
+ 	if tunSupported {
+ 		if err := tundev.Register(vfsObj); err != nil {
+@@ -1542,14 +1547,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
  	return l.k.VFS().RmdirAt(ctx, creds, &pop)
  }
  
@@ -5196,7 +6327,7 @@ index f320cd9..846b332 100644
  			if defaults := cgroupfsCPUDefaults(l.cpuQuota, l.cpuPeriod); defaults != nil {
  				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
  				log.Infof("Setting cgroupfs cpu defaults: quota=%d, period=%d (raw quota=%d, raw period=%d)", defaults["cpu.cfs_quota_us"], defaults["cpu.cfs_period_us"], l.cpuQuota, l.cpuPeriod)
-@@ -1618,7 +1622,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1618,7 +1627,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  
  	// Mount all the cgroup controllers in the container's mount namespace.
  	mountCtx := vfs.WithRoot(vfs.WithMountNamespace(ctx, mns), root)
@@ -5205,7 +6336,7 @@ index f320cd9..846b332 100644
  		ctrlName := string(ctrl)
  		cgroupMnt := c.l.k.GetCgroupMount(ctrlName)
  		if cgroupMnt == nil {
-@@ -1655,6 +1659,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1655,6 +1664,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  			log.Infof("error in bind mounting %v", err)
  			return err
  		}
@@ -5220,7 +6351,7 @@ index f320cd9..846b332 100644
  	}
  	c.cgroupsMounted = true
  	return nil
-@@ -1976,10 +1988,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
+@@ -1976,10 +1993,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
  	if err != nil {
  		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
  	}
@@ -5386,7 +6517,7 @@ index 640d01f..094d8b4 100644
  	}
  	return subcommands.ExitSuccess
 diff --git a/runsc/config/config.go b/runsc/config/config.go
-index 0fbf027..4e4b974 100644
+index 0fbf027..ce19829 100644
 --- a/runsc/config/config.go
 +++ b/runsc/config/config.go
 @@ -124,6 +124,10 @@ type Config struct {
@@ -5400,10 +6531,13 @@ index 0fbf027..4e4b974 100644
  	// GoferNetworkNamespace controls the network namespace used by gofer
  	// processes. The default is the shared empty "null" network namespace.
  	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
-@@ -321,6 +325,22 @@ type Config struct {
+@@ -321,6 +325,25 @@ type Config struct {
  	// Don't configure cgroups.
  	IgnoreCgroups bool `flag:"ignore-cgroups"`
  
++	// VirtualConsoles enables private headless consoles for guest display managers.
++	VirtualConsoles string `flag:"virtual-consoles"`
++
 +	// AppMemoryLimit limits the sandbox page allocator independently of host
 +	// cgroups. It does not include the Sentry heap or host file cache.
 +	AppMemoryLimit uint64 `flag:"app-memory-limit"`
@@ -5423,7 +6557,7 @@ index 0fbf027..4e4b974 100644
  	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
  	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
  
-@@ -381,6 +401,10 @@ type Config struct {
+@@ -381,6 +404,10 @@ type Config struct {
  	// unsupported driver version.
  	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
  
@@ -5434,10 +6568,13 @@ index 0fbf027..4e4b974 100644
  	// TPUProxy enables support for TPUs.
  	TPUProxy bool `flag:"tpuproxy"`
  
-@@ -493,6 +517,18 @@ type Config struct {
+@@ -493,6 +520,21 @@ type Config struct {
  // Config.Override does not validate, so callers must call Validate once they
  // are done overriding.
  func (c *Config) Validate() error {
++	if c.VirtualConsoles != "" && c.VirtualConsoles != "disabled" && c.VirtualConsoles != "headless" {
++		return fmt.Errorf("virtual-consoles must be disabled or headless")
++	}
 +	if c.RuntimeMemoryLimit != 0 && (c.RuntimeMemoryLimit < 32<<20 || c.RuntimeMemoryLimit > 1<<62) {
 +		return fmt.Errorf("runtime-memory-limit must be zero or between 32 MiB and 4 EiB")
 +	}
@@ -5453,7 +6590,7 @@ index 0fbf027..4e4b974 100644
  	if c.Overlay && c.Overlay2.Enabled() {
  		// Deprecated flag was used together with flag that replaced it.
  		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
-@@ -539,6 +575,9 @@ func (c *Config) Validate() error {
+@@ -539,6 +581,9 @@ func (c *Config) Validate() error {
  	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
  		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
  	}
@@ -5463,7 +6600,7 @@ index 0fbf027..4e4b974 100644
  	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
  	if err != nil {
  		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: %w", c.NVProxyAllowedDriverCapabilities, err)
-@@ -1649,3 +1688,28 @@ func (xd *XDP) Set(input string) error {
+@@ -1649,3 +1694,28 @@ func (xd *XDP) Set(input string) error {
  	}
  	return nil
  }
@@ -5523,13 +6660,14 @@ index 710cb07..3e73af3 100644
 +	}
 +}
 diff --git a/runsc/config/flags.go b/runsc/config/flags.go
-index f4852a7..06c3d4b 100644
+index f4852a7..7ec8066 100644
 --- a/runsc/config/flags.go
 +++ b/runsc/config/flags.go
-@@ -148,6 +148,10 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -148,6 +148,11 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
  
  	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
++	flagSet.String("virtual-consoles", "disabled", "Private virtual consoles: disabled (default) or headless. Never opens host consoles.")
 +	flagSet.Uint64("runtime-memory-limit", 0, "Sentry Go runtime memory guard in bytes: soft GC target plus sampled termination after failed reclaim; zero disables.")
 +	flagSet.Uint64("app-memory-limit", 0, "Maximum bytes in the sandbox page allocator, excluding runtime heap and host file cache; zero disables.")
 +	flagSet.String("app-memory-directory", "", "Directory for private disk-backed guest memory; requires an independently enforced resident-memory limit.")
@@ -5537,7 +6675,7 @@ index f4852a7..06c3d4b 100644
  	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
  	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
  	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
-@@ -156,6 +160,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -156,6 +161,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("TESTONLY-nftables", false, "TEST ONLY; Enables nftables support in the sentry.")
  
  	// Flags that control sandbox runtime behavior: network related.
@@ -5545,7 +6683,7 @@ index f4852a7..06c3d4b 100644
  	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
  	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
  	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-@@ -184,6 +189,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -184,6 +190,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
  	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
  	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")

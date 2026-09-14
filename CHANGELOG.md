@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.20rc1
+
+- Add `Benchmark`, with capacity-bounded task leases, instructions, sync/async
+  agent mapping, and evaluations. Use the existing pool lifecycle for cleanup
+  and independent starting state.
+- Add the OSWorld integration using the pinned `cua-speed-run` desktop recipe,
+  task setup and canonical verifier. Prepare the original Ubuntu disk directly;
+  keep private reference dependencies and verifier code outside the public package
+  and agent sandbox. The representative split requires reference repository access.
+- Add opt-in headless virtual consoles, user keyrings and FUSE truncate support
+  to the engine so the original GDM and GNOME session can start. Preserve console
+  state across live snapshots and enforce guest console permissions.
+- Share fallback engine builds across workers and reuse disk-image verification
+  receipts across pool/worker staging. Existing desktop and command APIs remain
+  unchanged. Full VM parity is not claimed; see the OSWorld acceptance record.
+
 ## 0.2.19
 
 - Release a pool lease even when its checkout acknowledgement is lost. Retry

@@ -345,6 +345,34 @@ the used sandbox and replaces it from the baseline. The callback runs in your
 Python process, and results preserve input order. Use `cache=baseline` for a
 prepared environment or `targets=[...]` to distribute tasks across workers.
 
+## Run a benchmark
+
+`Benchmark` pairs each task's instructions with a clean sandbox and its evaluator.
+The OSWorld integration is available in the `0.2.20rc1` preview:
+
+```bash
+uv pip install 'sandweave[benchmarks]==0.2.20rc1'
+```
+
+```python
+from sandweave import Benchmark
+
+with Benchmark("osworld-energy50-representative", capacity=4) as bench:
+    for task in bench:
+        with task as env:
+            run_agent(env, task.instruction)
+            print(task.evaluate())
+```
+
+`run_agent` is your agent loop; it uses `env.desktop.screenshot()`, keyboard and
+mouse controls. The loop above runs sequentially. Use `bench.map(run_agent)` to
+run up to `capacity` tasks concurrently and receive evaluations in task order.
+
+This split requires read access to the pinned `cua-speed-run` repository through
+`gh`, or a checkout passed as `source=`. First use downloads the original OSWorld
+Ubuntu image and prepares its desktop. See [benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/)
+for setup, resource requirements and the measured limits of VM parity.
+
 ## Manage workers with Weave
 
 Start a controller with a local worker:

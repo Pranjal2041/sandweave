@@ -1,0 +1,36 @@
+schema_version = 1
+installation = "coding"
+user = "user"
+command_shell = "/bin/bash"
+workdir = "/home/user"
+
+[env]
+DISPLAY = ":0"
+XAUTHORITY = "/run/user/1000/gdm/Xauthority"
+XDG_RUNTIME_DIR = "/run/user/1000"
+DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/1000/bus"
+
+[resources]
+cpu = 4
+memory = "16GiB"
+runtime_memory = "1GiB"
+
+[runtime_options]
+init = "systemd"
+virtual_consoles = true
+
+[image]
+format = "qcow2.zip"
+url = "https://huggingface.co/datasets/xlangai/ubuntu_osworld/resolve/a5d9c3eaae98eebf6e3a0beb84e7e47cf72ae133/Ubuntu.qcow2.zip"
+sha256 = "b795b6cd4c69b252c1b4f10150a347795555032501b60fd031751ed09b896712"
+image_sha256 = "6bf667a852b3c307f61d9f09c42559351f45e0607e428b4997becf534cf4d313"
+
+[capabilities.desktop]
+provider = "xorg"
+backend = "xorg"
+user = "user"
+display = ":0"
+resolution = [1920, 1080]
+ready_timeout = 300
+boot_settle = 20
+action_settle = 5

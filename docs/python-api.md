@@ -3,7 +3,7 @@
 Import the public objects from `sandweave`:
 
 ```python
-from sandweave import Sandbox, Pool, Cluster, Job
+from sandweave import Sandbox, Pool, Cluster, Job, Benchmark
 from sandweave import CPU, Memory, GPU, Network, Template, SnapshotRef, Mount, Slurm, Recording
 ```
 
@@ -159,6 +159,32 @@ Affinity prefers a location and allows spillover. The cache path is fixed at
 creation; the other placement settings can be updated for future assignments.
 `Pool.connect(name, target=...)` borrows a named cluster pool.
 See [pools and evaluation](pools.md) for ownership and cleanup.
+
+## Benchmark
+
+Available in `0.2.20rc1`. See [benchmarks](benchmarks.md) for installation and OSWorld parity.
+
+```python
+bench = Benchmark("osworld-energy50-representative", capacity=4)
+```
+
+`capacity` limits concurrent tasks; `preload` sets the initial ready reserve and
+defaults to capacity. `source` selects a reference checkout. Other options pass
+through to the pool, including `target`, resources and `shared_cache`.
+
+| Member | Purpose |
+| --- | --- |
+| `bench.start()` / `close()` | Prepare or release the pool and evaluator resources. |
+| `for task in bench` | Iterate over task attempts. |
+| `with task as env` | Acquire and prepare a clean sandbox; release it on exit. |
+| `task.id` / `task.instruction` | Task identity and agent instructions. |
+| `task.evaluate()` | Return an `Evaluation` while the task sandbox is leased. |
+| `bench.task(id)` | Create a new attempt for one task. |
+| `bench.map(agent)` | Run `agent(env, instruction)` concurrently and yield ordered evaluations. |
+| `bench.tasks` / `bench.results` | Task specifications and latest completed evaluations. |
+
+`Evaluation` contains `task_id`, `score`, `passed` and `feedback`.
+Async contexts and `.aio` methods follow the same lifecycle.
 
 ## Job
 

@@ -101,6 +101,7 @@ nav:
       - Caches and snapshots: snapshots.md
       - Async Python: async.md
   - Workloads:
+      - Benchmarks: benchmarks.md
       - Desktop agents: desktop.md
       - VR games: vr.md
       - Templates: templates.md

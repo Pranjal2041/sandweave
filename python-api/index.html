@@ -743,6 +743,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../desktop/" class="md-nav__link">
         
   
@@ -1226,6 +1254,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#job" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1451,6 +1490,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#job" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1489,7 +1539,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/python-api.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/feat/osworld-benchmarks/docs/python-api.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1499,7 +1549,7 @@
 
 <h1 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h1>
 <p>Import the public objects from <code>sandweave</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">Cluster</span><span class="p">,</span> <span class="n">Job</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">Cluster</span><span class="p">,</span> <span class="n">Job</span><span class="p">,</span> <span class="n">Benchmark</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPU</span><span class="p">,</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">GPU</span><span class="p">,</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Template</span><span class="p">,</span> <span class="n">SnapshotRef</span><span class="p">,</span> <span class="n">Mount</span><span class="p">,</span> <span class="n">Slurm</span><span class="p">,</span> <span class="n">Recording</span>
 </code></pre></div>
 <p>Methods that support async calls expose <code>.aio</code>. See <a href="../async/">async Python</a>.</p>
@@ -1849,8 +1899,59 @@ Affinity prefers a location and allows spillover. The cache path is fixed at
 creation; the other placement settings can be updated for future assignments.
 <code>Pool.connect(name, target=...)</code> borrows a named cluster pool.
 See <a href="../pools/">pools and evaluation</a> for ownership and cleanup.</p>
+<h2 id="benchmark">Benchmark<a class="headerlink" href="#benchmark" title="Permanent link">&para;</a></h2>
+<p>Available in <code>0.2.20rc1</code>. See <a href="../benchmarks/">benchmarks</a> for installation and OSWorld parity.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"osworld-energy50-representative"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+</code></pre></div>
+<p><code>capacity</code> limits concurrent tasks; <code>preload</code> sets the initial ready reserve and
+defaults to capacity. <code>source</code> selects a reference checkout. Other options pass
+through to the pool, including <code>target</code>, resources and <code>shared_cache</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bench.start()</code> / <code>close()</code></td>
+<td>Prepare or release the pool and evaluator resources.</td>
+</tr>
+<tr>
+<td><code>for task in bench</code></td>
+<td>Iterate over task attempts.</td>
+</tr>
+<tr>
+<td><code>with task as env</code></td>
+<td>Acquire and prepare a clean sandbox; release it on exit.</td>
+</tr>
+<tr>
+<td><code>task.id</code> / <code>task.instruction</code></td>
+<td>Task identity and agent instructions.</td>
+</tr>
+<tr>
+<td><code>task.evaluate()</code></td>
+<td>Return an <code>Evaluation</code> while the task sandbox is leased.</td>
+</tr>
+<tr>
+<td><code>bench.task(id)</code></td>
+<td>Create a new attempt for one task.</td>
+</tr>
+<tr>
+<td><code>bench.map(agent)</code></td>
+<td>Run <code>agent(env, instruction)</code> concurrently and yield ordered evaluations.</td>
+</tr>
+<tr>
+<td><code>bench.tasks</code> / <code>bench.results</code></td>
+<td>Task specifications and latest completed evaluations.</td>
+</tr>
+</tbody>
+</table>
+<p><code>Evaluation</code> contains <code>task_id</code>, <code>score</code>, <code>passed</code> and <code>feedback</code>.
+Async contexts and <code>.aio</code> methods follow the same lifecycle.</p>
 <h2 id="job">Job<a class="headerlink" href="#job" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">job</span> <span class="o">=</span> <span class="n">Job</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="s2">"python -c 'print(42)'"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">detached</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">job</span> <span class="o">=</span> <span class="n">Job</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="s2">"python -c 'print(42)'"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">detached</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p>Use <code>Job.connect(id, target=...)</code>, <code>job.info</code>, <code>job.wait(...)</code>, <code>job.result(...)</code>,
 <code>job.cancel()</code>, and <code>job.close()</code> to manage a submitted job. See <a href="../jobs/">jobs</a>

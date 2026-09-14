@@ -35,7 +35,8 @@ template, inside the guest; no host terminal devices are passed through.
 
 All three tasks were created through `Benchmark` and completed using desktop
 keyboard/mouse actions. The canonical verifier ran before and after the actions.
-No answer file, evaluator or task expectation was patched.
+They were repeated on fresh sandboxes with the released engine and default
+resources. No answer file, evaluator or task expectation was patched.
 
 | Task | Before | After |
 | --- | ---: | ---: |
@@ -53,7 +54,7 @@ Screenshots show the original Ubuntu dock and application state:
 
 ## Runtime and concurrency checks
 
-- Clean installed wheel: automatic setup fetched the candidate engine without
+- Clean installed wheel: automatic setup fetched the published preview engine without
   compiling it. Commands, internet/offline networking, CPU overrides, pause/resume,
   filesystem caches and process-memory restore passed. First setup took 73.49 s;
   a subsequent coding sandbox reported 1.11 s ready time on this host.
@@ -71,21 +72,61 @@ Screenshots show the original Ubuntu dock and application state:
 - Engine tests passed for `auth`, `sys`, `sys_integration`, `fuse` and `config`.
 - Mouse command sequences were compared against the read-only reference's actual
   `_inject` method. Keyboard source is loaded directly from that reference.
+- A separate client virtual environment started with only `sandweave[benchmarks]`.
+  First use installed the evaluator dependencies and started its protocol process
+  in 73.11 s. The managed environment contained PyTorch `2.14.0+cpu`
+  (`torch.version.cuda is None`) and OpenCV `5.0.0`. The host provided `/usr/bin/file`
+  for upstream file-type checks. Reusing that environment through the committed
+  `--prepare-only` script took 23.39 s, including dependency import checks.
 
-The full 50-task setup/screenshot/evaluator audit is recorded separately. Scores
-from that audit describe untouched tasks, not agent performance. An initial
-development run was interrupted after editing the controls changed their version
-while a pool still held the previous version. Visual inspection of a subsequent
-run caught background application startup racing the first screenshot: setup had
-returned zero while GIMP and Calc were still loading. That run is not the final
-acceptance record. Sandweave now runs the unchanged setup hook through a wrapper
+## Representative split audit
+
+All 50 tasks completed setup, screenshot capture and canonical evaluation through
+an installed wheel outside the source checkout. This audit used one concurrent
+lease, four vCPUs, 16 GiB of guest memory, 1 GiB of runtime memory and no GPU.
+The separate concurrency checks above exercise pool coordination; this run does
+not establish multi-worker OSWorld throughput.
+
+| Domain | Tasks |
+| --- | ---: |
+| Chrome | 5 |
+| GIMP | 4 |
+| LibreOffice Calc | 10 |
+| LibreOffice Impress | 7 |
+| LibreOffice Writer | 5 |
+| Multiple applications | 7 |
+| GNOME settings | 1 |
+| Thunderbird | 5 |
+| VLC | 3 |
+| VS Code | 3 |
+
+The [aggregate record](osworld-acceptance-summary.json) verifies exact split
+membership and order, 58 decoded screenshots, and the engine/resource flags and
+completed cleanup for all 54 attempts. It retains the initial audit failure and
+the failed follow-up replay. All recorded launch/resource/cleanup checks passed.
+
+Most evaluations ran on untouched tasks. Their scores are not agent accuracy.
+The GIMP infeasible-task check returned zero before a `FAIL` action and 100
+afterward, separately from the three GUI completions above.
+
+The initial full audit had one failed action assertion: a grouped Alt+F2,
+text and Enter replay raced GNOME's Run dialog, so Settings did not open and
+the timezone remained unchanged. A subsequent unattended replay remained
+timing-sensitive even after splitting those actions, although the interactive
+attempt passed. The final fixture includes an explicit 20-second wait after
+launching Settings, captures each action's screenshot, and passes the verifier.
+That wait belongs to the acceptance trajectory; the SDK's reference settle
+settings are unchanged. Both failed attempts are retained.
+
+During development, visual inspection caught background application startup
+racing the first screenshot: setup had returned zero while GIMP and Calc were
+still loading. Sandweave now runs the unchanged setup hook through a wrapper
 that waits for matching normal, mapped application/document windows after GUI
-launches, or an application-owned dialog requiring input. The GIMP color-profile
-prompt is preserved rather than dismissed during setup. Non-GUI helpers do not
-incur this wait. The live regression checks
-waited 3.03 s for GIMP and 9.55 s for Calc; both first screenshots contained the
-requested files. The replacement audit uses a fixed installed wheel outside the
-source checkout and records window evidence alongside screenshots and scores.
+launches, or an application-owned dialog requiring input. GIMP's color-profile
+prompt is preserved. Non-GUI helpers do not incur this wait. Live regression
+checks waited 3.03 s for GIMP and 9.55 s for Calc; both first screenshots
+contained the requested files. The audit records window evidence alongside
+screenshots and scores. Interrupted development runs are not acceptance results.
 
 ## Service comparison and limits
 
@@ -115,16 +156,29 @@ settle and five-second action settle are reference settings, not engine latency.
 ```bash
 SANDWEAVE_HOME=/path/with/enough/space sandweave doctor --check
 python scripts/accept-osworld-benchmark.py --output /path/to/results
+# Replay the three desktop completions and the infeasible-task terminal action.
+python scripts/accept-osworld-benchmark.py --output /path/to/replay-results \
+    --actions tests/fixtures/osworld-actions.json
+# Check automatic client evaluator preparation without starting a desktop.
+python scripts/accept-osworld-benchmark.py --prepare-only --output /path/to/client-check
 ```
 
 The script uses the installed `Benchmark` API and authenticated access to the
 pinned reference; `--source` selects an existing unchanged checkout. It captures
 each initial desktop and calls the canonical verifier. It does not run an agent.
+The recorded actions are authored acceptance inputs, not copied reference code.
+They use the pinned image at 1920×1080 and assert a score of zero before acting
+and 100 afterward. `--task` restricts a run to a task ID, and `--cache` reuses a
+previously prepared benchmark filesystem baseline.
+`scripts/summarize-osworld-acceptance.py` checks the audit and any subsequent
+replays against the pinned split and the tested worker's launch/cleanup records.
 Set `SANDWEAVE_OSWORLD_SOURCE` to that checkout for the input parity test and
 `SANDWEAVE_OSWORLD_INTEGRATION=1` for the opt-in runtime tests.
 
 Local raw evidence is under `/scratch/pranjala/sw-osworld-20260914`: downloaded
 source images, filesystem export metadata, manual action histories, service audit,
-runtime build/acceptance logs, and the `energy50-wheel` screenshots and JSONL.
+runtime build/acceptance logs, and the `energy50-qualified` and `energy50-replay`
+screenshots and JSONL. Final audit evidence is also retained in the ignored
+`runs/osworld-acceptance/20260914` directory of this checkout.
 Documentation screenshots and the final result summary are committed separately;
 downloads, credentials, worker state and private reference source are not.

@@ -3,7 +3,7 @@ site_description: Linux sandboxes for agent training and evaluation. Python, CLI
 site_url: https://pranjal2041.github.io/sandweave/
 repo_url: https://github.com/Pranjal2041/sandweave
 repo_name: Pranjal2041/sandweave
-edit_uri: edit/main/docs/
+edit_uri: !ENV [SANDWEAVE_DOCS_EDIT_URI, edit/main/docs/]
 copyright: Sandweave · Documentation
 docs_dir: docs
 site_dir: site

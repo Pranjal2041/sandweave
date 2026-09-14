@@ -94,6 +94,8 @@ The checkout must be at the commit above. Sandweave reads it without editing it.
 Private source files are not included in Sandweave's package or runtime release.
 The canonical evaluator runs in separate processes on the client. Its dependencies
 are prepared automatically if a compatible interpreter is not already available.
+The evaluator client needs the Linux `file` command for the upstream file-type
+checks; this host utility is not installed by pip.
 Verifier code and task answers stay outside the agent sandbox.
 
 The first worker downloads the checksum-pinned official OSWorld QCOW2 image,
@@ -135,8 +137,8 @@ Task setup and scoring use the pinned upstream hooks and canonical OSWorld
 evaluator. After GUI launch and document-open commands, Sandweave waits for the
 matching application window before continuing setup or exposing the first
 observation. Original application prompts, such as a color-profile choice, are
-left for the agent to answer. OSWorld scores are returned on the reference's 0–100 scale; a pass
-requires canonical reward 1. The representative split pins all 50 task JSON
+left for the agent to answer. OSWorld scores are returned on the reference's
+0–100 scale; a pass requires canonical reward 1. The representative split pins all 50 task JSON
 checksums. A screenshot/setup audit is not an agent accuracy measurement.
 
 Full VM parity is not claimed. The reference selects Modal's VM runtime;

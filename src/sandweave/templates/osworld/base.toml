@@ -18,6 +18,8 @@ runtime_memory = "1GiB"
 [runtime_options]
 init = "systemd"
 virtual_consoles = true
+netlink_address_events = true
+sysctl_reapply = true
 
 [image]
 format = "qcow2.zip"

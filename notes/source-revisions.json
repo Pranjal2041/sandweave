@@ -4,7 +4,7 @@
     "upstream": "https://github.com/google/gvisor.git",
     "branch": "feat/osworld-runtime",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "e5a1fb8e88f86b492b49ebcc426e1aa91f13301d",
+    "commit": "942b66253d03cf260d2ae8a1665dfabb8723b2d2",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
     "runtime_build": "tools/runtime-builds/19dfb215bc34b326d948e9ca54e7d8a5d2549e1e016aa008ae265cd67293e657",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
@@ -14,8 +14,8 @@
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
     "disk_memory_release": "2026.09.11.1",
-    "osworld_runtime_build": "tools/runtime-builds/f1e54e1fe0b2efa90c28d0c306e93f7ce9d6e4d91ef984c4bd2347cbd24874ff",
-    "osworld_status": "Original GDM, GNOME, Xorg and three canonical GUI task evaluations passed; full split audit is running; five original service units have documented limitations",
-    "osworld_runtime_release": "2026.09.14.1"
+    "osworld_runtime_build": "tools/runtime-builds/4d72f51230861e63b4385c5c1e7a42a06f7003f3887c6861346f29065626fc7c",
+    "osworld_status": "All 50 representative tasks completed setup/screenshots/canonical evaluation in rc1; rc2 adds template-selected Avahi, console palette and fixed desktop sysctl support. RealtimeKit and physical GPU detection remain outside that support.",
+    "osworld_runtime_release": "2026.09.14.2"
   }
 }

@@ -36,6 +36,49 @@ def test_console_permissions_primitives_and_live_restore():
             assert env.files.read_text('/tmp/value') == 'original'
 
 
+def test_template_service_options_restore_without_affecting_other_sandboxes():
+    def wait_file(env, path):
+        env.run(argv=['python', '-c', '''import os, sys, time
+for _ in range(200):
+    if os.path.exists(sys.argv[1]): break
+    time.sleep(.05)
+else: raise RuntimeError('guest listener did not respond')
+''', path], check=True)
+
+    recipe = resolve('coding')
+    recipe['runtime_options'].update(virtual_consoles=True, netlink_address_events=True, sysctl_reapply=True)
+    code = '''import fcntl, os, socket, stat, time
+for index in (10, 11):
+    os.mknod('/dev/tty'+str(index), stat.S_IFCHR | 0o600, os.makedev(4, index))
+fd = os.open('/dev/tty10', os.O_RDWR | os.O_NOCTTY)
+fcntl.ioctl(fd, 0x4b71, bytes(range(48)))
+listener = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, socket.NETLINK_ROUTE)
+listener.bind((0, 0x110))
+open('/tmp/listener-ready', 'w').write('ready')
+while not os.path.exists('/tmp/check-listener'): time.sleep(.05)
+open('/tmp/listener-groups', 'w').write(str(listener.getsockname()[1]))
+'''
+    with Sandbox(template=recipe, memory=Memory('256MiB', '256MiB')) as env:
+        env.files.upload(Path(__file__).resolve().parents[2] / 'scripts/probe-osworld-services.py', '/tmp/probe.py')
+        process = env.exec(argv=['python', '-u', '-c', code])
+        try:
+            wait_file(env, '/tmp/listener-ready')
+            assert '4194304' in env.run("cd /tmp && python -c 'import probe; print(probe.sysctls())'", check=True).stdout
+            snapshot = env.snapshot(state='memory')
+            with Sandbox(snapshot=snapshot.id) as clone, Sandbox(memory=Memory('256MiB', '256MiB')) as other:
+                clone.files.write_text('/tmp/check-listener', '')
+                wait_file(clone, '/tmp/listener-groups')
+                assert clone.files.read_text('/tmp/listener-groups') == '272'
+                read_palette = "import fcntl,os; f=os.open('/dev/tty10',os.O_RDWR); p=bytearray(48); fcntl.ioctl(f,0x4b70,p); assert p==bytes(range(48))"
+                clone.run(argv=['python', '-c', read_palette], check=True)
+                clone.run(argv=['python', '-c', "import fcntl,os; f=os.open('/dev/tty10',os.O_RDWR); fcntl.ioctl(f,0x4b71,bytes(48))"], check=True)
+                env.run(argv=['python', '-c', read_palette], check=True)
+                assert other.run('cat /proc/sys/kernel/pid_max', check=True).stdout.strip() == '65536'
+                other.run(argv=['python', '-c', "import socket,errno; s=socket.socket(socket.AF_NETLINK,socket.SOCK_RAW,socket.NETLINK_ROUTE)\ntry: s.bind((0,0x110))\nexcept OSError as e: assert e.errno==errno.EOPNOTSUPP\nelse: raise AssertionError('template option leaked')"], check=True)
+        finally:
+            process.terminate()
+
+
 def test_concurrent_guest_service_routes_do_not_block_unrelated_commands():
     server = '''import socket, threading
 s = socket.socket(); s.bind(('127.0.0.1', 17892)); s.listen(16)

@@ -348,10 +348,10 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 ## Run a benchmark
 
 `Benchmark` pairs each task's instructions with a clean sandbox and its evaluator.
-The OSWorld integration is available in the `0.2.20rc1` preview:
+The OSWorld integration is available in the `0.2.20rc2` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc1'
+uv pip install 'sandweave[benchmarks]==0.2.20rc2'
 ```
 
 ```python

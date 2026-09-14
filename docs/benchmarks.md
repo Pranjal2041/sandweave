@@ -4,10 +4,10 @@ A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a [pool](pools.md) to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.
 
-Available in the `0.2.20rc1` preview:
+Available in the `0.2.20rc2` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc1'
+uv pip install 'sandweave[benchmarks]==0.2.20rc2'
 ```
 
 ## Run tasks
@@ -140,6 +140,10 @@ observation. Original application prompts, such as a color-profile choice, are
 left for the agent to answer. OSWorld scores are returned on the reference's
 0–100 scale; a pass requires canonical reward 1. The representative split pins all 50 task JSON
 checksums. A screenshot/setup audit is not an agent accuracy measurement.
+
+The OSWorld template enables the engine support used by the original Avahi,
+console palette and sysctl services. It does not modify the shared base image or
+mask these units. These settings also survive live snapshots.
 
 Full VM parity is not claimed. The reference selects Modal's VM runtime;
 Sandweave uses its no-KVM gVisor engine. The tested desktop and verifier paths

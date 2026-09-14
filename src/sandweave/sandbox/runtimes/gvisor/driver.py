@@ -115,6 +115,9 @@ class Runtime:
             options.append('--nftables')
         if runtime.get('virtual_consoles'):
             options.append('--virtual-consoles')
+        for feature in ('netlink_address_events', 'sysctl_reapply'):
+            if runtime.get(feature):
+                options.append('--' + feature.replace('_', '-'))
         if runtime.get('cgroup'):
             options += ['--cgroup', runtime['cgroup']]
         gpu = self.gpu(resources['gpu'], device_uuid=spec.get('_gpu_uuid'))
@@ -197,6 +200,9 @@ class Runtime:
                 features.append('app-memory-directory')
             if spec['template'].get('runtime_options', {}).get('virtual_consoles'):
                 features.append('virtual-consoles')
+            for feature in ('netlink_address_events', 'sysctl_reapply'):
+                if spec['template'].get('runtime_options', {}).get(feature):
+                    features.append(feature.replace('_', '-'))
             if features:
                 from .engine import feature_runtime
                 options += feature_runtime(self.root, features, snapshot)

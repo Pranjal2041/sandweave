@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.20rc2
+
+- Enable Avahi address notifications, console palette access and fixed desktop
+  sysctl support through the OSWorld template. Its original `avahi-daemon`,
+  `setvtrgb` and `systemd-sysctl` units can run without editing their service files
+  or the shared base image.
+- Preserve the console palette, route-netlink subscriptions and desktop PID
+  range across live snapshots. Other templates retain their existing defaults.
+- Keep unsupported sysctl values rejected. The selected desktop PID range is
+  enforced by the guest allocator; host sysctls are unchanged.
+
 ## 0.2.20rc1
 
 - Add `Benchmark`, with capacity-bounded task leases, instructions, sync/async

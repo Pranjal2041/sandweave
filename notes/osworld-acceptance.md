@@ -1,6 +1,6 @@
 # OSWorld benchmark acceptance
 
-Recorded on 2026-09-14. This qualifies the specified desktop and evaluator paths;
+Initial `0.2.20rc1` acceptance recorded on 2026-09-14. This qualifies the specified desktop and evaluator paths;
 it does not claim that gVisor implements every service of a Linux VM.
 
 ## Inputs
@@ -135,7 +135,9 @@ Observed versions: Ubuntu 22.04.3, GNOME Shell 42.9, GDM 42.0, Chrome
 Scrot 1.7 and Xdotool 3.20160805.1. The display is 1920×1080. GDM autologin,
 GNOME, the session bus, SSH, OSWorld's server and the document portal run.
 
-Five original units fail on this no-KVM engine; they are not masked or replaced:
+Five original units failed in the initial `0.2.20rc1` acceptance below.
+The [service follow-up](osworld-services.md) records the `0.2.20rc2` fixes for
+Avahi, console palettes and sysctls. None of these units was masked or replaced:
 
 | Unit | Observed difference |
 | --- | --- |

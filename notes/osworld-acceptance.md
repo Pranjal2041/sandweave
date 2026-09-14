@@ -80,7 +80,9 @@ run caught background application startup racing the first screenshot: setup had
 returned zero while GIMP and Calc were still loading. That run is not the final
 acceptance record. Sandweave now runs the unchanged setup hook through a wrapper
 that waits for matching normal, mapped application/document windows after GUI
-launches. Non-GUI helpers do not incur this wait. The live regression checks
+launches, or an application-owned dialog requiring input. The GIMP color-profile
+prompt is preserved rather than dismissed during setup. Non-GUI helpers do not
+incur this wait. The live regression checks
 waited 3.03 s for GIMP and 9.55 s for Calc; both first screenshots contained the
 requested files. The replacement audit uses a fixed installed wheel outside the
 source checkout and records window evidence alongside screenshots and scores.

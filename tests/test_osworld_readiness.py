@@ -1,6 +1,6 @@
 import pytest
 
-from sandweave.templates.osworld.readiness import expectation, wait
+from sandweave.templates.osworld.readiness import expectation, ready_window, wait
 
 
 def test_launch_identification_handles_shell_assignments_and_non_gui_helpers():
@@ -37,3 +37,15 @@ def test_missing_application_is_setup_failure_instead_of_an_empty_desktop():
     with pytest.raises(RuntimeError, match='did not become ready'):
         wait({'application': 'gimp', 'document': ''}, lambda: [], timeout=1,
              clock=lambda: ticks[0], sleep=sleep)
+
+
+def test_original_application_dialog_is_exposed_without_answering_it():
+    expected = {'application': 'gimp', 'document': 'dog_with_background'}
+    parent = {'id': 1, 'title': 'GNU Image Manipulation Program',
+              'application': 'gimp.Gimp', 'normal': True, 'visible': True}
+    dialog = {'id': 2, 'title': 'Convert to RGB Working Space?',
+              'application': 'gimp.Gimp', 'normal': False, 'visible': True,
+              'dialog': True, 'parent': 1}
+    assert ready_window([parent, dialog], expected) == dialog
+    assert ready_window([parent, {**dialog, 'parent': 3}], expected) is None
+    assert ready_window([parent, {**dialog, 'visible': False}], expected) is None

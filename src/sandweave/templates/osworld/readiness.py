@@ -70,12 +70,30 @@ def windows(display):
                 value = value.decode('utf-8', errors='replace')
             types = window.get_full_property(atom('_NET_WM_WINDOW_TYPE'), X.AnyPropertyType)
             normal = types is None or atom('_NET_WM_WINDOW_TYPE_NORMAL') in types.value
+            transient = window.get_wm_transient_for()
             result.append({'id': int(identity), 'title': str(value),
                 'application': ' '.join(window.get_wm_class() or ()),
-                'normal': normal, 'visible': window.get_attributes().map_state == X.IsViewable})
+                'normal': normal, 'visible': window.get_attributes().map_state == X.IsViewable,
+                'dialog': types is not None and atom('_NET_WM_WINDOW_TYPE_DIALOG') in types.value,
+                'parent': transient.id if transient is not None else None})
         except error.XError:
             continue  # A splash window can disappear during enumeration.
     return result
+
+
+def ready_window(observed, expected):
+    ready = next((window for window in observed if matches(window, expected)), None)
+    if ready is not None:
+        return ready
+    # An original application prompt may intentionally precede document loading
+    # (e.g. GIMP's color-profile choice). Expose it to the agent unchanged.
+    # Require a visible application parent, not an unrelated desktop dialog.
+    if expected['application']:
+        parents = {window['id'] for window in observed if matches(
+            window, {**expected, 'document': ''})}
+        return next((window for window in observed if window['visible']
+                     and window.get('dialog') and window.get('parent') in parents), None)
+    return None
 
 
 def wait(expected, observe, *, timeout=180, clock=time.monotonic, sleep=time.sleep):
@@ -84,7 +102,7 @@ def wait(expected, observe, *, timeout=180, clock=time.monotonic, sleep=time.sle
     observed = []
     while clock() - started < timeout:
         observed = observe()
-        ready = next((window for window in observed if matches(window, expected)), None)
+        ready = ready_window(observed, expected)
         if ready is not None and ready == stable:
             return {'expected': expected, 'window': ready, 'seconds': clock() - started}
         stable = ready

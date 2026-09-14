@@ -134,7 +134,8 @@ in place. They contribute to elapsed time.
 Task setup and scoring use the pinned upstream hooks and canonical OSWorld
 evaluator. After GUI launch and document-open commands, Sandweave waits for the
 matching application window before continuing setup or exposing the first
-observation. OSWorld scores are returned on the reference's 0–100 scale; a pass
+observation. Original application prompts, such as a color-profile choice, are
+left for the agent to answer. OSWorld scores are returned on the reference's 0–100 scale; a pass
 requires canonical reward 1. The representative split pins all 50 task JSON
 checksums. A screenshot/setup audit is not an agent accuracy measurement.
 

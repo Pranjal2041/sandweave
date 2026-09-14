@@ -49,3 +49,8 @@ def test_original_application_dialog_is_exposed_without_answering_it():
     assert ready_window([parent, dialog], expected) == dialog
     assert ready_window([parent, {**dialog, 'parent': 3}], expected) is None
     assert ready_window([parent, {**dialog, 'visible': False}], expected) is None
+    # GIMP's color dialog has no WM_TRANSIENT_FOR; both windows carry its PID.
+    parent['pid'] = 42
+    dialog.update(parent=None, pid=42)
+    assert ready_window([parent, dialog], expected) == dialog
+    assert ready_window([parent, {**dialog, 'pid': 43}], expected) is None

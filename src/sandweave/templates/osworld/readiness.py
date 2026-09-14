@@ -71,11 +71,13 @@ def windows(display):
             types = window.get_full_property(atom('_NET_WM_WINDOW_TYPE'), X.AnyPropertyType)
             normal = types is None or atom('_NET_WM_WINDOW_TYPE_NORMAL') in types.value
             transient = window.get_wm_transient_for()
+            pid = window.get_full_property(atom('_NET_WM_PID'), X.AnyPropertyType)
             result.append({'id': int(identity), 'title': str(value),
                 'application': ' '.join(window.get_wm_class() or ()),
                 'normal': normal, 'visible': window.get_attributes().map_state == X.IsViewable,
                 'dialog': types is not None and atom('_NET_WM_WINDOW_TYPE_DIALOG') in types.value,
-                'parent': transient.id if transient is not None else None})
+                'parent': transient.id if transient is not None else None,
+                'pid': int(pid.value[0]) if pid is not None and len(pid.value) else None})
         except error.XError:
             continue  # A splash window can disappear during enumeration.
     return result
@@ -89,10 +91,13 @@ def ready_window(observed, expected):
     # (e.g. GIMP's color-profile choice). Expose it to the agent unchanged.
     # Require a visible application parent, not an unrelated desktop dialog.
     if expected['application']:
-        parents = {window['id'] for window in observed if matches(
-            window, {**expected, 'document': ''})}
+        parents = [window for window in observed if matches(
+            window, {**expected, 'document': ''})]
+        identities = {window['id'] for window in parents}
+        processes = {window['pid'] for window in parents if window.get('pid')}
         return next((window for window in observed if window['visible']
-                     and window.get('dialog') and window.get('parent') in parents), None)
+                     and window.get('dialog') and (window.get('parent') in identities
+                     or window.get('pid') in processes)), None)
     return None
 
 

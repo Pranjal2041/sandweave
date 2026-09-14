@@ -184,3 +184,7 @@ screenshots and JSONL. Final audit evidence is also retained in the ignored
 `runs/osworld-acceptance/20260914` directory of this checkout.
 Documentation screenshots and the final result summary are committed separately;
 downloads, credentials, worker state and private reference source are not.
+
+A subsequent [five-task random audit](osworld-random5.md) checks fresh setups
+on `0.2.20rc2`, retaining setup stdout/stderr and a visual review of each initial
+desktop. The acceptance script supports `--sample` and a reproducible `--seed`.

@@ -4,13 +4,54 @@ A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a [pool](pools.md) to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.
 
-Available in the `0.2.20rc2` preview:
+Available in the `0.2.20rc3` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc2'
+uv pip install 'sandweave[benchmarks]==0.2.20rc3'
 ```
 
 ## Run tasks
+
+Create a benchmark once, then pull a task whenever your client needs a sandbox:
+
+```python
+from sandweave import Benchmark
+
+with Benchmark("osworld-energy50-representative", capacity=8) as bench:
+    task = bench.next(timeout=60)
+    with task as env:
+        run_agent(env, task.instruction)
+        result = task.evaluate()
+```
+
+`bench.next()` returns after acquiring a sandbox and completing task setup.
+`next(bench)` is equivalent without a timeout. When every slot is leased, the
+call waits for one to be released. A positive timeout limits checkout waiting,
+including time queued behind other async acquisitions; it excludes initial pool
+preparation and task setup. A timed-out checkout leaves the task available for
+another pull. Exhaustion raises `StopIteration`.
+
+Your client decides when to evaluate and what to do with the result. It also
+controls concurrency. Pass `target=cluster_url`, using the complete join URL
+printed by `sandweave cluster start`, to place sandboxes through Weave. Without
+a target, they run on the local worker.
+
+Outside a task context, access `task.env` and release the lease explicitly:
+
+```python
+task = bench.next()
+try:
+    run_agent(task.env, task.instruction)
+    result = task.evaluate()
+finally:
+    task.close()
+```
+
+Closing `task.env` releases the same lease. Repeated closes are safe. Closing the
+benchmark cancels pending acquisitions and closes its remaining task leases;
+running setup and evaluator calls finish before their environments are released.
+
+Sequential iteration is also supported:
 
 ```python
 from sandweave import Benchmark
@@ -40,12 +81,31 @@ observation with `.image`. OSWorld records these actions for its evaluator.
 Use `env.desktop.action("FAIL")` when an agent declares a task infeasible;
 `"DONE"` records ordinary completion. Declaring completion does not award a pass.
 
-Evaluate inside the task context. Leaving it releases the sandbox even if setup,
+Evaluate while the task is leased. Leaving its context releases the sandbox even if setup,
 the agent, or evaluation raises. Setup and adapter failures raise exceptions.
 The canonical evaluator retains its upstream handling of missing results and
 getter failures, which can return zero.
 
 ## Run agents concurrently
+
+Multiple threads in your client can call `bench.next()` on the same benchmark.
+Each gets a different task; at most `capacity` task sandboxes are leased at once.
+An async client pulls with `await bench.next.aio(timeout=60)`:
+
+```python
+async def episode(bench):
+    task = await bench.next.aio(timeout=60)
+    async with task as env:
+        await run_agent_async(env, task.instruction)
+        return await task.evaluate.aio()
+```
+
+Async exhaustion raises `StopAsyncIteration`. Cancelling a pull releases any
+acquired sandbox and leaves that task available. If setup is already running,
+cleanup waits for it to finish. Capacity waiters use a separate bounded executor
+so they cannot occupy the threads used by cleanup or other SDK operations.
+
+For clients that prefer callbacks, `map` performs acquisition and evaluation:
 
 ```python
 with Benchmark("osworld-energy50-representative", capacity=4) as bench:

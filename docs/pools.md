@@ -46,6 +46,11 @@ with Pool(target="lab", size=8, warm=2) as pool:
 `target="lab"` uses [Weave](clusters.md) to place work across registered workers.
 A printed cluster address works too. A local pool needs no controller setup.
 
+In the 0.2.20rc3 preview, `pool.acquire(timeout=60)` limits the wait for a free
+lease, excluding initial pool preparation. `timeout=None` waits without a
+checkout deadline. When omitted, local pools wait indefinitely and cluster
+pools use their configured `wait_timeout`.
+
 ## Distribute proxies
 
 To distribute proxies across a pool, pass

@@ -10,6 +10,18 @@ from sandweave.benchmarks import Evaluation, TaskSpec
 from sandweave.sandbox.pool import Pool as LocalPool
 from sandweave.sandbox.pool import Lease
 from sandweave.sandbox.asyncio import dualmethod
+from sandweave.sandbox.sandbox import Sandbox
+
+
+class FakeEnv(dict):
+    close = Sandbox.__dict__['close']
+
+    def __init__(self):
+        self.connection_closes = 0
+
+    def _close_connection(self):
+        if not self.connection_closes:
+            self.connection_closes += 1
 
 
 class Suite:
@@ -41,23 +53,32 @@ class FakePool:
     def start(self):
         return self
 
-    def acquire(self):
-        return Lease(self._acquire(), threading.Event())
+    def acquire(self, *, timeout=None):
+        cancelled = threading.Event()
+        return Lease(self._acquire(cancelled, timeout), cancelled)
 
     @contextmanager
-    def _acquire(self):
-        with self.slots:
+    def _acquire(self, cancelled, timeout):
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while not self.slots.acquire(timeout=.01):
+            if cancelled.is_set():
+                raise InterruptedError('checkout cancelled')
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError('capacity is in use')
+        try:
             assert not self.closed
             with self.lock:
                 self.created += 1
                 self.active += 1
                 self.peak = max(self.peak, self.active)
             try:
-                yield {}
+                yield FakeEnv()
             finally:
                 with self.lock:
                     self.active -= 1
                     self.released += 1
+        finally:
+            self.slots.release()
 
     map = LocalPool.__dict__['map']
 
@@ -80,7 +101,7 @@ def test_iteration_leases_clean_state_and_keeps_latest_evaluation(pools):
                 assert task.evaluate().score == 0
                 env['solved'] = True
                 assert task.evaluate().passed
-            with pytest.raises(RuntimeError, match='inside'):
+            with pytest.raises(RuntimeError, match='active sandbox'):
                 task.evaluate()
     assert len(bench.results) == 12
     assert all(result.passed for result in bench.results)
@@ -272,3 +293,238 @@ def test_evaluator_close_drains_inflight_initialization_and_calls(monkeypatch):
     close.join(3)
     assert not run.is_alive() and not close.is_alive()
     assert result == [{'score': 100}] and stopped == [process]
+
+
+def test_pull_acquires_before_return_and_close_releases_capacity(pools):
+    with Benchmark(Suite(), capacity=1) as bench:
+        task = next(bench)
+        env = task.env
+        assert env['task'] == task.id == '0'
+        assert pools[0].active == 1 and not bench.results
+        env['solved'] = True
+        assert task.evaluate().passed
+        env.close()
+        task.close()
+        env.close()
+        assert pools[0].active == 0 and pools[0].released == 1
+        assert env.connection_closes == 1
+        with pytest.raises(RuntimeError, match='active'):
+            task.env
+        second = bench.next()
+        with second as env:
+            assert env['task'] == '1'
+        assert pools[0].released == 2
+
+
+def test_pull_timeout_does_not_consume_task(pools):
+    with Benchmark(Suite()) as bench:
+        first = bench.next()
+        with pytest.raises(TimeoutError):
+            bench.next(timeout=.03)
+        assert pools[0].active == 1
+        first.close()
+        with bench.next(timeout=1) as env:
+            assert env['task'] == '1'
+        assert pools[0].created == pools[0].released == 2
+
+
+def test_concurrent_pullers_share_cursor_and_capacity(pools):
+    from concurrent.futures import ThreadPoolExecutor
+    suite = Suite()
+    suite.tasks = tuple(TaskSpec(str(i), str(i)) for i in range(64))
+    barrier = threading.Barrier(8)
+    with Benchmark(suite, capacity=8) as bench:
+        def client(_):
+            task = bench.next(timeout=10)
+            env = task.env
+            try:
+                barrier.wait(5)
+                assert env['task'] == task.id
+                env['solved'] = True
+                return task.evaluate()
+            finally:
+                if int(task.id) % 2:
+                    env.close()
+                task.close()
+        with ThreadPoolExecutor(16) as executor:
+            results = list(executor.map(client, range(64)))
+        assert {r.task_id for r in results} == {str(i) for i in range(64)}
+        assert all(r.passed for r in results)
+        assert pools[0].peak == 8
+        assert pools[0].created == pools[0].released == 64
+        with pytest.raises(StopIteration):
+            next(bench)
+
+
+def test_concurrent_task_and_env_close_release_once(pools):
+    from concurrent.futures import ThreadPoolExecutor
+    with Benchmark(Suite()) as bench:
+        task = bench.next()
+        env = task.env
+        barrier = threading.Barrier(16)
+        def close(index):
+            barrier.wait(3)
+            (task.close if index % 2 else env.close)()
+        with ThreadPoolExecutor(16) as executor:
+            list(executor.map(close, range(16)))
+        assert pools[0].released == 1 and pools[0].active == 0
+        assert env.connection_closes == 1
+
+
+def test_benchmark_close_cancels_waiter_and_releases_manual_tasks(pools):
+    from concurrent.futures import ThreadPoolExecutor
+    bench = Benchmark(Suite())
+    first = bench.next()
+    with ThreadPoolExecutor(1) as executor:
+        pending = executor.submit(bench.next)
+        deadline = time.monotonic() + 3
+        while len(bench._attempts) < 2 and time.monotonic() < deadline:
+            time.sleep(.005)
+        assert len(bench._attempts) == 2
+        bench.close()
+        with pytest.raises((InterruptedError, RuntimeError)):
+            pending.result(3)
+    first.close()
+    assert not bench._attempts
+    assert pools[0].active == 0 and pools[0].created == pools[0].released
+
+
+def test_close_waits_for_inflight_evaluation(pools):
+    from concurrent.futures import ThreadPoolExecutor
+    started, finish = threading.Event(), threading.Event()
+    class Slow(Suite):
+        def evaluate(self, env, task):
+            started.set()
+            assert finish.wait(3)
+            assert pools[0].active == 1
+            return super().evaluate(env, task)
+    with Benchmark(Slow()) as bench, ThreadPoolExecutor(2) as executor:
+        task = bench.next()
+        env = task.env
+        pending = executor.submit(task.evaluate)
+        assert started.wait(3)
+        closed = executor.submit(env.close)
+        time.sleep(.02)
+        assert not closed.done() and pools[0].active == 1
+        finish.set()
+        pending.result(3)
+        closed.result(3)
+        assert pools[0].active == 0
+
+
+def test_pull_setup_failure_releases_and_identified_retry_remains_possible(pools):
+    class Broken(Suite):
+        def setup(self, env, task):
+            if task.id == '0':
+                raise OSError('setup unavailable')
+            super().setup(env, task)
+    with Benchmark(Broken()) as bench:
+        with pytest.raises(OSError, match='setup unavailable'):
+            bench.next()
+        assert pools[0].active == 0
+        with bench.next() as env:
+            assert env['task'] == '1'
+        with pytest.raises(OSError):
+            with bench.task('0'):
+                pass
+
+
+def test_async_pull_cancellation_does_not_leak_or_consume_waiting_task(pools):
+    async def run():
+        async with Benchmark(Suite()) as bench:
+            first = await bench.next.aio()
+            pending = asyncio.create_task(bench.next.aio())
+            await asyncio.sleep(.03)
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(pending, 1)
+            assert pools[0].active == 1
+            await first.env.close.aio()
+            task = await bench.next.aio(timeout=1)
+            assert task.id == '1'
+            await task.close.aio()
+            assert pools[0].created == pools[0].released == 2
+    asyncio.run(run())
+
+
+def test_async_pull_cancel_during_setup_drains_and_returns_task(pools):
+    started, finish = threading.Event(), threading.Event()
+    class Slow(Suite):
+        def setup(self, env, task):
+            started.set()
+            assert finish.wait(3)
+            assert pools[0].active == 1
+            super().setup(env, task)
+    async def run():
+        async with Benchmark(Slow()) as bench:
+            pending = asyncio.create_task(bench.next.aio())
+            assert await asyncio.to_thread(started.wait, 3)
+            pending.cancel()
+            await asyncio.sleep(.02)
+            pending.cancel()
+            assert pools[0].active == 1
+            finish.set()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert pools[0].active == 0
+            task = await bench.next.aio()
+            assert task.id == '0'
+            await task.close.aio()
+    asyncio.run(run())
+
+
+def test_async_pull_exhaustion(pools):
+    suite = Suite()
+    suite.tasks = suite.tasks[:1]
+    async def run():
+        async with Benchmark(suite) as bench:
+            task = await bench.next.aio()
+            async with task as env:
+                assert env['task'] == '0'
+            with pytest.raises(StopAsyncIteration):
+                await bench.next.aio()
+    asyncio.run(run())
+
+
+def test_async_waiters_cannot_starve_close_or_unrelated_calls(pools):
+    suite = Suite()
+    suite.tasks = tuple(TaskSpec(str(i), str(i)) for i in range(80))
+    async def run():
+        async with Benchmark(suite) as bench:
+            first = await bench.next.aio()
+            pending = [asyncio.create_task(bench.next.aio()) for _ in range(64)]
+            await asyncio.sleep(.03)
+            # More waiters than asyncio's default thread count; these operations
+            # must still execute while the benchmark is at capacity.
+            assert await asyncio.wait_for(asyncio.to_thread(lambda: 'independent'), 1) == 'independent'
+            await asyncio.wait_for(first.env.close.aio(), 1)
+            second = await asyncio.wait_for(pending[0], 1)
+            assert second.id == '1'
+            for future in pending[1:]:
+                future.cancel()
+            await asyncio.wait_for(asyncio.gather(*pending[1:], return_exceptions=True), 2)
+            assert pools[0].active == 1
+            await second.close.aio()
+            third = await bench.next.aio()
+            assert third.id == '2'
+            await third.close.aio()
+    asyncio.run(run())
+
+
+def test_async_timeout_includes_acquisition_queue_wait(pools):
+    async def run():
+        async with Benchmark(Suite()) as bench:
+            first = await bench.next.aio()
+            waiting = asyncio.create_task(bench.next.aio())
+            await asyncio.sleep(.02)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(bench.next.aio(timeout=.03), .5)
+            assert pools[0].active == 1
+            waiting.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiting
+            await first.close.aio()
+            second = await bench.next.aio()
+            assert second.id == '1'
+            await second.close.aio()
+    asyncio.run(run())

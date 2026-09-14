@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.20rc3
+
+- Add `next(bench)` and `bench.next(timeout=...)` to acquire prepared tasks from
+  a shared cursor. Concurrent callers respect pool capacity; a timed-out checkout
+  leaves the task available. Evaluation remains explicitly controlled by the client.
+- Add `task.env` and idempotent `task.close()`. Closing a benchmark environment
+  releases its task lease too. Benchmark shutdown drains setup and evaluation
+  before releasing task resources.
+- Add cancellable `bench.next.aio()` with bounded acquisition threads, so
+  capacity waiters cannot occupy the executor used by cleanup and unrelated calls.
+- Support timed checkout on local pools and explicit unlimited checkout on
+  cluster pools. Existing iteration, mapping, worker RPCs and engine are unchanged.
+
 ## 0.2.20rc2
 
 - Enable Avahi address notifications, console palette access and fixed desktop

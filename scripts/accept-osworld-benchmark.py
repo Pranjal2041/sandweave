@@ -105,7 +105,21 @@ def prepare_evaluator(source, output):
         suite.close()
 
 
-def audit(bench, output, task_ids=None, actions=None):
+def attempts(bench, pull):
+    if not pull:
+        for task in bench:
+            yield task, 0
+        return
+    while True:
+        started = time.monotonic()
+        try:
+            task = next(bench)
+        except StopIteration:
+            return
+        yield task, time.monotonic() - started
+
+
+def audit(bench, output, task_ids=None, actions=None, *, pull=False):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     selected = set(task_ids or ())
@@ -115,13 +129,15 @@ def audit(bench, output, task_ids=None, actions=None):
         raise ValueError('unknown task ids: ' + ', '.join(sorted(unknown)))
     errors = 0
     with (output / 'results.jsonl').open('a', buffering=1) as report:
-        for task in bench:
+        for task, acquired_seconds in attempts(bench, pull):
             if selected and task.id not in selected:
+                if pull:
+                    task.close()
                 continue
             directory = output / task.id
             directory.mkdir(exist_ok=True)
             result = {'task': task.id, 'kind': 'untouched-task-smoke-test'}
-            started = time.monotonic()
+            started = time.monotonic() - acquired_seconds
             print('START', task.id, flush=True)
             try:
                 with task as env:
@@ -165,12 +181,13 @@ def main():
     parser.add_argument('--task', action='append')
     parser.add_argument('--sample', type=int, help='randomly select this many tasks without replacement')
     parser.add_argument('--seed', type=int, help='reproduce a random selection; otherwise generate and record a seed')
+    parser.add_argument('--pull', action='store_true', help='acquire prepared tasks through next(bench)')
     parser.add_argument('--cache', help='reuse a previously prepared benchmark baseline')
     parser.add_argument('--actions', type=Path, help='JSON mapping task ids to recorded GUI actions and expected_score')
     parser.add_argument('--prepare-only', action='store_true', help='prepare the client evaluator without starting sandboxes')
     args = parser.parse_args()
     if args.prepare_only:
-        if args.cache or args.actions or args.task or args.sample is not None or args.seed is not None:
+        if args.cache or args.actions or args.task or args.sample is not None or args.seed is not None or args.pull:
             parser.error('--prepare-only cannot be combined with task or sandbox options')
         prepare_evaluator(args.source, args.output)
         return
@@ -189,9 +206,14 @@ def main():
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output / 'selection.json').write_text(json.dumps(selection, indent=2) + '\n')
         print(json.dumps(selection), flush=True)
+    if args.pull and args.task:
+        unknown = set(args.task) - {task.id for task in suite.tasks}
+        if unknown:
+            parser.error('unknown task ids: ' + ', '.join(sorted(unknown)))
+        suite.tasks = tuple(task for task in suite.tasks if task.id in args.task)
     with Benchmark(suite, capacity=1, **options) as bench:
         errors = audit(bench, args.output, args.task,
-                       json.loads(args.actions.read_text()) if args.actions else None)
+                       json.loads(args.actions.read_text()) if args.actions else None, pull=args.pull)
     raise SystemExit(bool(errors))
 
 

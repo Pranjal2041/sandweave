@@ -58,6 +58,10 @@ on exit.
 after you disconnect. `terminate()` stops it; the dashboard can retain its record
 as terminated history.
 
+For an environment acquired from a [benchmark task](benchmarks.md), `env.close()`
+also releases its task lease and pool capacity. `task.close()` does the same;
+both are safe to repeat. A task context performs this cleanup on exit.
+
 ## Reconnect
 
 ```python

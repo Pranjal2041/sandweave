@@ -64,6 +64,9 @@ parser.add_argument('--base-image', type=Path, help='guest EROFS image below thi
 parser.add_argument('--mounts', type=Path, help='validated external mount JSON; sources are worker paths')
 parser.add_argument('--build-output', type=Path, help='receive installer artifacts into a new host directory')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
+parser.add_argument('--virtual-consoles', action='store_true', help='private headless consoles for guest display managers')
+parser.add_argument('--netlink-address-events', action='store_true', help='guest IPv4/IPv6 address notifications')
+parser.add_argument('--sysctl-reapply', action='store_true', help='use the Linux desktop PID range and reapply enforced sysctl values')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
 runtime_choice = parser.add_mutually_exclusive_group()
 runtime_choice.add_argument('--filesystem-runtime-current', action='store_true', help='explicitly test a cold filesystem snapshot with the currently staged runtime')
@@ -216,6 +219,9 @@ else:
 runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore) or args.filesystem_runtime_current)
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
+settings['virtual_consoles'] = args.virtual_consoles
+settings['netlink_address_events'] = args.netlink_address_events
+settings['sysctl_reapply'] = args.sysctl_reapply
 launch_settings = {'settings': settings, 'runtime': runtime}
 if args.network_policy == 'proxy':
     settings.update(proxy_endpoints=args.proxy_endpoints, proxy_index=args.proxy_index)
@@ -436,6 +442,12 @@ try:
                f'--debug={str(args.runtime_debug).lower()}', f'--debug-log=/lab/runs/gvisor/{args.name}/%COMMAND%.log']
     if args.nftables:
         command.append('--TESTONLY-nftables')
+    if args.virtual_consoles:
+        command.append('--virtual-consoles=headless')
+    if args.netlink_address_events:
+        command.append('--netlink-address-events=enabled')
+    if args.sysctl_reapply:
+        command.append('--sysctl-reapply=fixed')
     if args.profile:
         command.append('--profile')
     if args.guest_gs:

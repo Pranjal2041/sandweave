@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.2.20rc3
+
+- Add `next(bench)` and `bench.next(timeout=...)` to acquire prepared tasks from
+  a shared cursor. Concurrent callers respect pool capacity; a timed-out checkout
+  leaves the task available. Evaluation remains explicitly controlled by the client.
+- Add `task.env` and idempotent `task.close()`. Closing a benchmark environment
+  releases its task lease too. Benchmark shutdown drains setup and evaluation
+  before releasing task resources.
+- Add cancellable `bench.next.aio()` with bounded acquisition threads, so
+  capacity waiters cannot occupy the executor used by cleanup and unrelated calls.
+- Support timed checkout on local pools and explicit unlimited checkout on
+  cluster pools. Existing iteration, mapping, worker RPCs and engine are unchanged.
+
+## 0.2.20rc2
+
+- Enable Avahi address notifications, console palette access and fixed desktop
+  sysctl support through the OSWorld template. Its original `avahi-daemon`,
+  `setvtrgb` and `systemd-sysctl` units can run without editing their service files
+  or the shared base image.
+- Preserve the console palette, route-netlink subscriptions and desktop PID
+  range across live snapshots. Other templates retain their existing defaults.
+- Keep unsupported sysctl values rejected. The selected desktop PID range is
+  enforced by the guest allocator; host sysctls are unchanged.
+
+## 0.2.20rc1
+
+- Add `Benchmark`, with capacity-bounded task leases, instructions, sync/async
+  agent mapping, and evaluations. Use the existing pool lifecycle for cleanup
+  and independent starting state.
+- Add the OSWorld integration using the pinned `cua-speed-run` desktop recipe,
+  task setup and canonical verifier. Prepare the original Ubuntu disk directly;
+  keep private reference dependencies and verifier code outside the public package
+  and agent sandbox. The representative split requires reference repository access.
+- Wait for task application/document windows after GUI launch commands so agents
+  receive a loaded desktop instead of racing background application startup.
+- Add opt-in headless virtual consoles, user keyrings and FUSE truncate support
+  to the engine so the original GDM and GNOME session can start. Preserve console
+  state across live snapshots and enforce guest console permissions.
+- Share fallback engine builds across workers and reuse disk-image verification
+  receipts across pool/worker staging. Existing desktop and command APIs remain
+  unchanged. Full VM parity is not claimed; see the OSWorld acceptance record.
+
 ## 0.2.19
 
 - Release a pool lease even when its checkout acknowledgement is lost. Retry

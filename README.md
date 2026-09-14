@@ -345,6 +345,51 @@ the used sandbox and replaces it from the baseline. The callback runs in your
 Python process, and results preserve input order. Use `cache=baseline` for a
 prepared environment or `targets=[...]` to distribute tasks across workers.
 
+## Run a benchmark
+
+`Benchmark` pairs each task's instructions with a clean sandbox and its evaluator.
+The OSWorld integration is available in the `0.2.20rc3` preview:
+
+```bash
+uv pip install 'sandweave[benchmarks]==0.2.20rc3'
+```
+
+```python
+from sandweave import Benchmark
+
+with Benchmark("osworld-energy50-representative", capacity=4) as bench:
+    for task in bench:
+        with task as env:
+            run_agent(env, task.instruction)
+            print(task.evaluate())
+```
+
+`run_agent` is your agent loop; it uses `env.desktop.screenshot()`, keyboard and
+mouse controls. The loop above runs sequentially. Use `bench.map(run_agent)` to
+run up to `capacity` tasks concurrently and receive evaluations in task order.
+
+Your own client loop can pull a prepared task when it needs one:
+
+```python
+with Benchmark("osworld-energy50-representative", capacity=8) as bench:
+    task = bench.next(timeout=60)  # next(bench) also works, without a timeout.
+    with task as env:
+        run_agent(env, task.instruction)
+        print(task.evaluate())
+```
+
+Concurrent callers share the task stream and pool capacity. A full pool waits
+for a released slot; a checkout timeout leaves the task available. Exhaustion
+raises `StopIteration`. Leaving the task context, calling `task.close()`, or
+closing its `env` releases that lease. Outside a context, use `task.env` and
+close the task in `finally`. Evaluation happens only when your client calls it.
+Pass `target=` with a complete cluster join URL to schedule through Weave.
+
+This split requires read access to the pinned `cua-speed-run` repository through
+`gh`, or a checkout passed as `source=`. First use downloads the original OSWorld
+Ubuntu image and prepares its desktop. See [benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/)
+for setup, resource requirements and the measured limits of VM parity.
+
 ## Manage workers with Weave
 
 Start a controller with a local worker:

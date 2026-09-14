@@ -113,6 +113,11 @@ class Runtime:
         runtime = spec['template'].get('runtime_options', {})
         if runtime.get('nftables'):
             options.append('--nftables')
+        if runtime.get('virtual_consoles'):
+            options.append('--virtual-consoles')
+        for feature in ('netlink_address_events', 'sysctl_reapply'):
+            if runtime.get(feature):
+                options.append('--' + feature.replace('_', '-'))
         if runtime.get('cgroup'):
             options += ['--cgroup', runtime['cgroup']]
         gpu = self.gpu(resources['gpu'], device_uuid=spec.get('_gpu_uuid'))
@@ -190,9 +195,17 @@ class Runtime:
             selected_proxy, proxy_options = proxy.bind(self.root, identity, spec['resources']['network'], snapshot,
                                                        spec.get('_proxy_assignment'))
             options += proxy_options
+            features = []
             if spec['resources']['memory'].get('disk') is not None:
-                from .engine import disk_runtime
-                options += disk_runtime(self.root, snapshot)
+                features.append('app-memory-directory')
+            if spec['template'].get('runtime_options', {}).get('virtual_consoles'):
+                features.append('virtual-consoles')
+            for feature in ('netlink_address_events', 'sysctl_reapply'):
+                if spec['template'].get('runtime_options', {}).get(feature):
+                    features.append(feature.replace('_', '-'))
+            if features:
+                from .engine import feature_runtime
+                options += feature_runtime(self.root, features, snapshot)
             if snapshot:
                 manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
                 self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),

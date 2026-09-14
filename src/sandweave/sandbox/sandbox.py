@@ -359,12 +359,22 @@ class Sandbox:
 
     @dualmethod
     def close(self):
+        release = self.__dict__.get('_lease_close')
+        if release is not None:
+            return release()
+        self._close_connection()
+
+    def _close_connection(self):
+        """Finish connection cleanup after an owning task releases its lease."""
         if not self._closed:
             self._connection.close()
             self._closed = True
 
     @close.async_impl
     async def _close_async(self):
+        release = self.__dict__.get('_lease_close')
+        if release is not None:
+            return await release.aio()
         if not self._closed:
             if hasattr(self._connection, 'aclose'):
                 await self._connection.aclose()

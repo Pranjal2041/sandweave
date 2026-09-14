@@ -82,7 +82,8 @@ def cluster(tmp_path_factory):
                 bridges.append(Bridge({'url': cluster.info['connection']['address'],
                     'token': cluster.connection.token}, endpoint['relay']).start())
             cluster.add_worker({'endpoint': endpoint},
-                               slots=2, memory='4GiB', name='acceptance-' + str(index))
+                               slots=int(os.environ.get('SANDWEAVE_WEAVE_SLOTS', '2')),
+                               memory='4GiB', name='acceptance-' + str(index))
         cluster.test_workers = connections
         yield cluster
     finally:

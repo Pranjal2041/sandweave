@@ -18,6 +18,7 @@
 - [Async Python](https://pranjal2041.github.io/sandweave/async/)
 
 ## Workloads and clusters
+- [Benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/)
 - [Desktop agents](https://pranjal2041.github.io/sandweave/desktop/)
 - [VR games](https://pranjal2041.github.io/sandweave/vr/)
 - [Templates](https://pranjal2041.github.io/sandweave/templates/)

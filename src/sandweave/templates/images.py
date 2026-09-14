@@ -23,6 +23,9 @@ FORMAT = 1
 
 
 def validate(image):
+    if isinstance(image, dict):
+        from .disk_image import validate as validate_disk
+        return validate_disk(image)
     reference(image)
     return image
 
@@ -98,6 +101,9 @@ def metadata(config):
 
 def prepare(image, root, *, refresh=False, pool=None):
     """Return a pinned descriptor; a cached tag performs no registry requests."""
+    if isinstance(image, dict):
+        from .disk_image import prepare as prepare_disk
+        return prepare_disk(image, root, pool=pool)
     from ..bootstrap import Builder, download
     from ..setup_progress import Stage
     root = Path(root)

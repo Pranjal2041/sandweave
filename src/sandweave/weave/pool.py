@@ -16,6 +16,8 @@ from ..sandbox import proxy
 from . import scheduler
 from .lifecycle import lifecycle, rpc
 
+_DEFAULT_TIMEOUT = object()
+
 
 def _poll_wait(deadline, cancelled=None):
     delay = .05 if deadline is None else min(.05, max(0, deadline - time.monotonic()))
@@ -131,9 +133,9 @@ class ManagedPool(LocalPool):
         # Reuse the established cancellation/drain behavior of local pools.
         return await LocalPool._start_async(self)
 
-    def acquire(self, *, timeout=None):
+    def acquire(self, *, timeout=_DEFAULT_TIMEOUT):
         cancelled = threading.Event()
-        return Lease(self._lease(cancelled, self.wait_timeout if timeout is None else timeout), cancelled)
+        return Lease(self._lease(cancelled, self.wait_timeout if timeout is _DEFAULT_TIMEOUT else timeout), cancelled)
 
     @contextmanager
     def _lease(self, cancelled, timeout):

@@ -48,8 +48,9 @@ def preflight(root):
     run('git', 'diff', '--exit-code', '--quiet', 'HEAD', cwd=root)
     project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
     version = project['version']
-    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise ValueError('Use a stable X.Y.Z project.version for this release command')
+    if not re.fullmatch(r'\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?', version):
+        raise ValueError('Use X.Y.Z or a numbered a/b/rc prerelease for project.version')
+    prerelease = re.search(r'(?:a|b|rc)\d+$', version) is not None
     repository = project['urls']['Repository'].removeprefix('https://github.com/').removesuffix('.git')
     origin = run('git', 'remote', 'get-url', '--push', 'origin', cwd=root, capture=True).strip()
     if origin not in (f'https://github.com/{repository}', f'https://github.com/{repository}.git',
@@ -66,7 +67,7 @@ def preflight(root):
     if not notes:
         raise ValueError('Add this version to CHANGELOG.md before releasing')
     return dict(name=project['name'], version=version, repository=repository, commit=commit,
-                branch=branch, tag=tag, notes=notes)
+                branch=branch, tag=tag, notes=notes, prerelease=prerelease)
 
 
 def wheel_contents(path):
@@ -201,7 +202,8 @@ def publish(directory, release, files):
     notes.write_text(release['notes'] + '\n')
     if existing is None:
         run('gh', 'release', 'create', tag, *files, '--repo', repo, '--verify-tag', '--draft',
-            '--title', 'Sandweave ' + release['version'], '--notes-file', notes)
+            '--title', 'Sandweave ' + release['version'], '--notes-file', notes,
+            *(['--prerelease'] if release.get('prerelease') else []))
     else:
         present = {a['name'] for a in existing['assets']}
         missing = [p for p in files if p.name not in present]
@@ -217,11 +219,12 @@ def publish(directory, release, files):
         time.sleep(5)
     else:
         raise ValueError('PyPI has not exposed both matching files yet; rerun ./deploy')
-    run('gh', 'release', 'edit', tag, '--repo', repo, '--draft=false', '--latest')
+    run('gh', 'release', 'edit', tag, '--repo', repo, '--draft=false',
+        *(['--prerelease', '--latest=false'] if release.get('prerelease') else ['--prerelease=false', '--latest']))
     published = json.loads(run('gh', 'api', f'repos/{repo}/releases/tags/{tag}', capture=True))
     expected = {p.name: 'sha256:' + digest(p) for p in files}
     actual = {a['name']: a.get('digest') for a in published['assets']}
-    if published['draft'] or actual != expected:
+    if published['draft'] or published['prerelease'] != release.get('prerelease', False) or actual != expected:
         raise ValueError('GitHub release verification failed; rerun ./deploy')
     (directory / 'published.json').write_text(json.dumps({**release, 'files': {p.name: digest(p) for p in files}}, indent=2) + '\n')
     print(f'Published https://pypi.org/project/{release["name"]}/{release["version"]}/', flush=True)

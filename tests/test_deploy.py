@@ -97,6 +97,17 @@ def test_old_tag_and_wrong_origin_are_rejected(deploy, repo):
         deploy.preflight(root)
 
 
+@pytest.mark.parametrize('version,preview', [('1.2.3', False), ('1.2.4rc1', True), ('1.2.4b2', True)])
+def test_preview_release_is_distinguished_from_stable(deploy, repo, version, preview):
+    root, git = repo
+    path = root / 'pyproject.toml'
+    path.write_text(path.read_text().replace('1.2.3', version))
+    (root / 'CHANGELOG.md').write_text('# Changelog\n\n## ' + version + '\n\nA change.\n')
+    git('add', 'pyproject.toml', 'CHANGELOG.md')
+    git('commit', '--allow-empty', '-m', 'version')
+    assert deploy.preflight(root)['prerelease'] is preview
+
+
 def test_check_mode_does_not_push_or_publish(deploy, repo, monkeypatch):
     root, _ = repo
     monkeypatch.setattr(deploy, 'ROOT', root)

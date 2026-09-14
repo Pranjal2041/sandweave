@@ -94,6 +94,17 @@ def ensure(recipe):
     print('Preparing ' + profile + ' in ' + str(selected) + ' (first use)...', file=sys.stderr, flush=True)
     _install(profile, selected)
     importlib.invalidate_caches()
+    # A custom template may add controls to a smaller installation profile.
+    # Install those Python dependencies as well, before choosing its worker.
+    from ..onboarding import python_packages, install_packages
+    missing = [package for module, package in python_packages(recipe)
+               if importlib.util.find_spec(module) is None]
+    if missing:
+        with workspace.locked(selected / 'downloads/python-packages.lock'):
+            missing = [package for module, package in python_packages(recipe)
+                       if importlib.util.find_spec(module) is None]
+            if missing:
+                install_packages(missing)
     candidate = available(recipe, selected)
     if candidate is None:
         raise SetupError('Installation did not provide all files required by ' + recipe['name'] +

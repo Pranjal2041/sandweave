@@ -1395,7 +1395,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/lifecycle.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/feat/osworld-benchmarks/docs/lifecycle.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1470,6 +1470,9 @@ on exit.</p>
 <p><code>close()</code> is why an environment can still appear as running in the dashboard
 after you disconnect. <code>terminate()</code> stops it; the dashboard can retain its record
 as terminated history.</p>
+<p>For an environment acquired from a <a href="../benchmarks/">benchmark task</a>, <code>env.close()</code>
+also releases its task lease and pool capacity. <code>task.close()</code> does the same;
+both are safe to repeat. A task context performs this cleanup on exit.</p>
 <h2 id="reconnect">Reconnect<a class="headerlink" href="#reconnect" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>

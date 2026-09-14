@@ -1539,7 +1539,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/python-api.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/feat/osworld-benchmarks/docs/python-api.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1781,7 +1781,7 @@ with streams, <code>wait</code>, <code>poll</code>, <code>result</code>, <code>t
 </tr>
 <tr>
 <td><code>env.close()</code></td>
-<td>Disconnect the handle.</td>
+<td>Disconnect the handle; a benchmark-owned handle also releases its task lease.</td>
 </tr>
 <tr>
 <td><code>env.recording.info</code></td>
@@ -1900,7 +1900,7 @@ creation; the other placement settings can be updated for future assignments.
 <code>Pool.connect(name, target=...)</code> borrows a named cluster pool.
 See <a href="../pools/">pools and evaluation</a> for ownership and cleanup.</p>
 <h2 id="benchmark">Benchmark<a class="headerlink" href="#benchmark" title="Permanent link">&para;</a></h2>
-<p>Available in <code>0.2.20rc1</code>. See <a href="../benchmarks/">benchmarks</a> for installation and OSWorld parity.</p>
+<p>Available in the <code>0.2.20rc3</code> preview. See <a href="../benchmarks/">benchmarks</a> for installation and OSWorld parity.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"osworld-energy50-representative"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
 </code></pre></div>
 <p><code>capacity</code> limits concurrent tasks; <code>preload</code> sets the initial ready reserve and
@@ -1919,12 +1919,24 @@ through to the pool, including <code>target</code>, resources and <code>shared_c
 <td>Prepare or release the pool and evaluator resources.</td>
 </tr>
 <tr>
+<td><code>next(bench)</code> / <code>bench.next(timeout=None)</code></td>
+<td>Acquire the next prepared task; wait for capacity, or raise <code>StopIteration</code> at exhaustion.</td>
+</tr>
+<tr>
 <td><code>for task in bench</code></td>
 <td>Iterate over task attempts.</td>
 </tr>
 <tr>
 <td><code>with task as env</code></td>
 <td>Acquire and prepare a clean sandbox; release it on exit.</td>
+</tr>
+<tr>
+<td><code>task.env</code></td>
+<td>Access an already acquired task's sandbox.</td>
+</tr>
+<tr>
+<td><code>task.close()</code></td>
+<td>Release the sandbox and pool lease; safe to repeat.</td>
 </tr>
 <tr>
 <td><code>task.id</code> / <code>task.instruction</code></td>
@@ -1949,7 +1961,14 @@ through to the pool, including <code>target</code>, resources and <code>shared_c
 </tbody>
 </table>
 <p><code>Evaluation</code> contains <code>task_id</code>, <code>score</code>, <code>passed</code> and <code>feedback</code>.
-Async contexts and <code>.aio</code> methods follow the same lifecycle.</p>
+Async contexts and <code>.aio</code> methods follow the same lifecycle.
+<code>await bench.next.aio()</code> raises <code>StopAsyncIteration</code> at exhaustion.
+A positive <code>timeout</code> bounds checkout waiting, including an async acquisition
+queue; it excludes initial pool preparation and task setup. A timed-out or
+cancelled checkout is available for a later pull. Setup failures release the
+lease and propagate; use <code>bench.task(id)</code> for an explicit retry. The pull cursor
+is shared between concurrent callers. Existing lazy iteration and <code>map</code> each
+continue to traverse the full task list independently.</p>
 <h2 id="job">Job<a class="headerlink" href="#job" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">job</span> <span class="o">=</span> <span class="n">Job</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="s2">"python -c 'print(42)'"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">detached</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>

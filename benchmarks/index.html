@@ -1373,7 +1373,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/feat/osworld-benchmarks/docs/benchmarks.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/benchmarks.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1385,8 +1385,8 @@
 <p>A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a <a href="../pools/">pool</a> to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.</p>
-<p>Available in the <code>0.2.20rc1</code> preview:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.20rc1'</span>
+<p>Available in the <code>0.2.20rc2</code> preview:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.20rc2'</span>
 </code></pre></div>
 <h2 id="run-tasks">Run tasks<a class="headerlink" href="#run-tasks" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
@@ -1488,6 +1488,9 @@ observation. Original application prompts, such as a color-profile choice, are
 left for the agent to answer. OSWorld scores are returned on the reference's
 0–100 scale; a pass requires canonical reward 1. The representative split pins all 50 task JSON
 checksums. A screenshot/setup audit is not an agent accuracy measurement.</p>
+<p>The OSWorld template enables the engine support used by the original Avahi,
+console palette and sysctl services. It does not modify the shared base image or
+mask these units. These settings also survive live snapshots.</p>
 <p>Full VM parity is not claimed. The reference selects Modal's VM runtime;
 Sandweave uses its no-KVM gVisor engine. The tested desktop and verifier paths
 work, but Linux hardware, real-time scheduling and some service behavior differ.

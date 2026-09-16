@@ -22,7 +22,10 @@ class Harbor:
         try:
             records = self.loop.call(self._load(source))
             self.paths = [path for path, _ in records]
-            definitions = [Task(task_dir=path) for path in self.paths]
+            # Discovery reads metadata. Trial validates verifier inputs after
+            # applying the caller's native Harbor configuration (including
+            # verifier.disable and a separate verifier environment).
+            definitions = [Task(task_dir=path, disable_verification=True) for path in self.paths]
             names = Counter(task.name for task in definitions)
             self.definitions, self.task_configs, tasks = {}, {}, []
             for task, (path, config) in zip(definitions, records, strict=True):
@@ -84,7 +87,7 @@ class Harbor:
         # Harbor owns discovery, registry selection, filtering and package
         # resolution. In particular, its package registry is distinct from
         # the legacy registry selected by RegistryClientFactory.create().
-        configs = await dataset.get_task_configs()
+        configs = await dataset.get_task_configs(disable_verification=True)
         if not configs:
             raise ValueError('Harbor dataset contains no tasks')
         result = await TaskClient().download_tasks(

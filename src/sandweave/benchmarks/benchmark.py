@@ -57,6 +57,7 @@ class Evaluation:
     passed: bool | None = None
     feedback: str = ''
     rewards: dict[str, float] = field(default_factory=dict)
+    skipped: bool = False
 
 
 def load(name, source):
@@ -264,7 +265,7 @@ class Benchmark:
         result = self._suite.evaluate(env, spec)
         if not isinstance(result, Evaluation) or result.task_id != spec.id:
             raise ValueError('evaluator must return an Evaluation for ' + spec.id)
-        if result.score is None and not result.rewards:
+        if result.score is None and not result.rewards and not result.skipped:
             raise ValueError('evaluation must contain a score or native rewards')
         if result.score is not None and (not isinstance(result.score, (int, float)) or not math.isfinite(result.score)):
             raise ValueError('evaluation score must be finite')

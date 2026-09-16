@@ -12,6 +12,7 @@ import time
 import inspect
 
 from harbor.agents.base import BaseAgent
+from harbor.agents.capabilities import AgentCapabilities
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
 from harbor.trial.hooks import TrialEvent
 from harbor.trial.trial import Trial
@@ -63,9 +64,16 @@ class AgentInputs:
     skills_dir: str | None
     context: object
     logs_dir: str
+    trajectory: Path | None = None
+    resume: bool = False
+    previous_context: object = None
 
 
 class PullAgent(BaseAgent):
+    # The caller is the agent. Preserve native/ATIF inputs and continuation
+    # state at the pull boundary instead of rejecting trajectory-bearing tasks.
+    capabilities = AgentCapabilities(resume=True, load_native_trajectory=True, load_atif_trajectory=True)
+
     @staticmethod
     def name():
         return 'sandweave-client'
@@ -78,6 +86,15 @@ class PullAgent(BaseAgent):
         pass
 
     async def run(self, instruction, environment, context):
+        await self._pull(instruction, environment, context)
+
+    async def load(self, instruction, environment, context):
+        await self._pull(instruction, environment, context, trajectory=self.load_trajectory)
+
+    async def resume(self, instruction, environment, context):
+        await self._pull(instruction, environment, context, resume=True)
+
+    async def _pull(self, instruction, environment, context, *, trajectory=None, resume=False):
         session = current_session.get()
         if session is None:
             raise RuntimeError('PullAgent requires a Sandweave benchmark')
@@ -86,11 +103,15 @@ class PullAgent(BaseAgent):
             session.env = environment.agent_view()
         session.env.defaults = dict(user=environment._resolve_user(None),
                                     cwd=environment.task_env_config.workdir,
-                                    env=environment._merge_env(None))
+                                    env=dict(environment._persistent_env))
+        session.env.scoped_env = {key: value for overlay in environment._exec_env_overlays.get()
+                                 for key, value in overlay.items()}
         session.env._task_instruction = instruction
         phase.instruction = instruction
+        previous = getattr(session.env, 'harbor', None)
         session.env.harbor = AgentInputs(tuple(self.mcp_servers), self.skills_dir,
-            context, str(self.environment_logs_dir))
+            context, str(self.environment_logs_dir), trajectory=trajectory, resume=resume,
+            previous_context=previous.context if previous is not None and resume else None)
         phase.started.set()
         await phase.finish.wait()
 
@@ -190,14 +211,22 @@ class Session:
         phase.finish.set()
         await self.phase(self.index + 1)
         result = self.trial.result
+        # MultiStepTrial records failures on the step, not necessarily on the
+        # trial. Aggregating earlier rewards must not hide a failed last step.
+        for step in (result.step_results or [])[self.index:]:
+            if step.exception_info:
+                detail = step.exception_info
+                raise RuntimeError(f'{detail.exception_type}: {detail.exception_message}; '
+                                   f'logs: {self.trial.paths.trial_dir}')
         if result.step_results and not self.run.done():
             result = result.step_results[self.index]
         if result.exception_info:
             raise RuntimeError(result.exception_info.exception_message)
         rewards = result.verifier_result.rewards if result.verifier_result else None
-        if rewards is None:
+        skipped = self.trial.config.verifier.disable
+        if rewards is None and not skipped:
             raise RuntimeError('Harbor verifier returned no rewards')
-        phase.evaluation = Evaluation(self.spec.id, rewards=dict(rewards),
+        phase.evaluation = Evaluation(self.spec.id, rewards=dict(rewards or {}), skipped=skipped,
                                       feedback=str(self.trial.paths.trial_dir))
         return phase.evaluation
 
@@ -355,6 +384,7 @@ class TaskPool:
         deadline = None if timeout is None else time.monotonic() + timeout
         session = None
         while session is None:
+            unused = None
             async with self.condition:
                 if self.closed or cancelled.is_set():
                     raise InterruptedError('Harbor checkout cancelled')
@@ -364,17 +394,22 @@ class TaskPool:
                 if session is None:
                     if self.warm:
                         _, unused = self.warm.popitem()
-                        # Retain the capacity reservation until cleanup finishes.
-                        await unused.close()
-                        self.live.discard(unused)
-                        continue
-                    remaining = None if deadline is None else deadline - time.monotonic()
-                    if remaining is not None and remaining <= 0:
-                        raise TimeoutError('benchmark checkout is waiting for capacity')
-                    try:
-                        await asyncio.wait_for(self.condition.wait(), min(.1, remaining) if remaining is not None else .1)
-                    except asyncio.TimeoutError:
-                        pass
+                    else:
+                        remaining = None if deadline is None else deadline - time.monotonic()
+                        if remaining is not None and remaining <= 0:
+                            raise TimeoutError('benchmark checkout is waiting for capacity')
+                        try:
+                            await asyncio.wait_for(self.condition.wait(), min(.1, remaining) if remaining is not None else .1)
+                        except asyncio.TimeoutError:
+                            pass
+            if unused is not None:
+                # Keep its reservation until teardown completes, but never
+                # hold the capacity condition across a worker/network wait.
+                # Other leases must still be able to release or check out.
+                await unused.close()
+                async with self.condition:
+                    self.live.discard(unused)
+                    self.condition.notify_all()
         try:
             pending = asyncio.create_task(session.begin())
             while not pending.done():

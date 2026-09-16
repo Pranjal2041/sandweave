@@ -160,12 +160,14 @@ def validate(directory, release):
         live / 'test_fifo_restart_live.py', cwd=live, env=env)
     if sys.version_info >= (3, 12):
         for relative in ('tests/test_harbor.py', 'tests/integration/test_harbor_live.py',
+                         'tests/test_harbor_contract.py', 'tests/integration/test_harbor_contract_live.py',
                          'tests/integration/test_harbor_services_live.py',
                          'tests/integration/test_weave_live.py'):
             shutil.copyfile(source / relative, live / Path(relative).name)
         env['SANDWEAVE_HARBOR_INTEGRATION'] = '1'
         run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
             live / 'test_harbor.py', live / 'test_harbor_live.py',
+            live / 'test_harbor_contract.py', live / 'test_harbor_contract_live.py',
             live / 'test_harbor_services_live.py', cwd=live, env=env)
     # Copy artifacts only after every check passes. A receipt is never partial.
     for path in files:

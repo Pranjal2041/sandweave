@@ -1,8 +1,10 @@
 # Harbor adapter
 
-Sandweave 0.2.20rc6 integrates Harbor 0.23.0 through its dataset, task,
-environment and trial protocols. It has no dispatch rules based on benchmark
-names. This replaces the prebuilt-image restriction in rc4.
+Sandweave 0.2.20rc7 integrates Harbor 0.23.0 through its dataset, task,
+environment and trial protocols. The [contract review](harbor-contract-review.md)
+records requirements, interaction tests and runtime boundaries. Passing one
+benchmark, or avoiding benchmark names in code, does not establish general
+compatibility. This replaces the prebuilt-image restriction in rc4.
 
 ## Client contract
 

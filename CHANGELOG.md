@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.20rc7
+
+- Match Harbor's environment precedence at the client command boundary and
+  isolate sidecar execution from the main agent's user, working directory and
+  scoped variables. Minimal sidecars use their POSIX shell.
+- Apply Harbor's resource-policy Compose overlay in the upstream order. Keep
+  internal service networks offline across later phase policy changes, honor
+  absent optional dependencies, and retry timed-out service health probes.
+- Give intermediate separate verifiers independent lease capacity so they can
+  use the agent's image while the agent remains alive. Image preparation stays
+  deduplicated. Slow warm-task cleanup no longer holds the capacity lock.
+- Pass native and ATIF trajectory inputs and multi-step continuation context to
+  the client through `task.env.harbor`.
+- Propagate multi-step verifier failures instead of returning an earlier reward.
+  Honor disabled verification during task discovery and execution; evaluations
+  explicitly report `skipped=True` without inventing a reward.
+- Include contract-based Harbor tests in installed-wheel release acceptance,
+  covering cross-feature interactions and Harbor's own Oracle agent.
+
 ## 0.2.20rc6
 
 - Support deeply nested and multibyte storage paths for Unix sockets during

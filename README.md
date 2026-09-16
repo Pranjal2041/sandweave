@@ -348,10 +348,10 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 ## Run a benchmark
 
 `Benchmark` pairs each task's instructions with a clean sandbox and its evaluator.
-The OSWorld integration is available in the `0.2.20rc6` preview:
+The OSWorld integration is available in the `0.2.20rc7` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc6'
+uv pip install 'sandweave[benchmarks]==0.2.20rc7'
 ```
 
 ```python
@@ -392,7 +392,7 @@ for setup, resource requirements and the measured limits of VM parity.
 
 ### Harbor
 
-Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20rc6` with
+Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20rc7` with
 Python 3.12+, then select a dataset or a local task directory:
 
 ```python

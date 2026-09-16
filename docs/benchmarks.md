@@ -4,10 +4,10 @@ A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a [pool](pools.md) to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.
 
-Available in the `0.2.20rc6` preview:
+Available in the `0.2.20rc7` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc6'
+uv pip install 'sandweave[benchmarks]==0.2.20rc7'
 ```
 
 ## Run tasks
@@ -137,7 +137,7 @@ the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:
 
 ```bash
-uv pip install 'sandweave[harbor]==0.2.20rc6'
+uv pip install 'sandweave[harbor]==0.2.20rc7'
 ```
 
 ```python
@@ -189,6 +189,10 @@ runs shared or separate verifiers, and writes its trial results and logs.
 to a percentage or invent a pass threshold; `score` and `passed` are `None` for
 Harbor. `result.feedback` gives the trial directory. Infrastructure and verifier
 errors raise exceptions instead of returning a zero reward.
+
+With `harbor={"verifier": {"disable": True}}`, verifier files are not required.
+`task.evaluate()` completes the agent phase and returns `skipped=True` with no
+reward. This also works for local dataset directories and multi-step tasks.
 
 Evaluation completes the current Harbor agent phase. On the final step, Harbor
 stops the environment after collecting its outputs. Call `task.close()` to return
@@ -248,6 +252,9 @@ The client receives Harbor's agent inputs alongside the sandbox:
 inputs = task.env.harbor
 print(inputs.mcp_servers)
 print(inputs.skills_dir)
+# A task's prior trajectory and continuation state, when present.
+print(inputs.trajectory, inputs.resume)
+previous_context = inputs.previous_context
 # Record usage or other agent results in Harbor's native context.
 context = inputs.context
 ```
@@ -255,6 +262,10 @@ context = inputs.context
 Your agent decides how to use MCP servers and skills. The pull interface does
 not install a model or run an agent for you. Harbor's installed agents and
 agent-specific protocols use the same environment provider through its CLI.
+For a task with a prior trajectory, `inputs.trajectory` is the original local
+file. If `harbor={"agent": {"resume_trajectory": True}}` requests continuation,
+later phases expose `resume=True` and the previous native result context.
+Your client loads that trajectory and retains its own model conversation.
 
 To use Harbor's own agents with the same environment provider:
 

@@ -1,6 +1,7 @@
 """Harbor's environment protocol backed by direct Sandweave sandboxes."""
 import asyncio
 import copy
+from contextvars import ContextVar
 from dataclasses import asdict
 import hashlib
 from functools import partial
@@ -42,11 +43,13 @@ def pack_inputs(source, archive):
 class AgentSandbox(Sandbox):
     """An independent client handle carrying the current Harbor agent defaults."""
     defaults = None
+    scoped_env = None
 
     def _defaults(self, kwargs):
         merged = {**(self.defaults or {}), **{key: value for key, value in kwargs.items()
                   if value is not None or key not in ('user', 'cwd')}}
-        merged['env'] = {**((self.defaults or {}).get('env') or {}), **(kwargs.get('env') or {})}
+        merged['env'] = {**((self.defaults or {}).get('env') or {}), **(kwargs.get('env') or {}),
+                         **(self.scoped_env or {})}
         return merged
 
     @dualmethod
@@ -59,6 +62,8 @@ class AgentSandbox(Sandbox):
 
 
 class SandweaveEnvironment(BaseEnvironment):
+    _exec_shell = '/bin/bash'
+
     def __init__(self, *args, target=None, **kwargs):
         self.sandbox = None
         self.lease = None
@@ -74,6 +79,10 @@ class SandweaveEnvironment(BaseEnvironment):
     @staticmethod
     def type():
         return 'sandweave'
+
+    @property
+    def _uses_compose(self):
+        return (self.environment_dir / 'docker-compose.yaml').exists() or bool(self.extra_docker_compose_paths)
 
     @property
     def capabilities(self):
@@ -97,7 +106,8 @@ class SandweaveEnvironment(BaseEnvironment):
         if self.sandbox is not None:
             network = self.network(network_policy)
             sandboxes = self.project.views.values() if self.project else [self.sandbox]
-            await asyncio.gather(*(drained(partial(sandbox._call, 'network_policy', network=asdict(network)))
+            await asyncio.gather(*(drained(partial(sandbox._call, 'network_policy',
+                                   network=asdict(Network('offline') if sandbox.spec.get('_service_internal') else network)))
                                    for sandbox in sandboxes))
 
     @staticmethod
@@ -123,7 +133,7 @@ class SandweaveEnvironment(BaseEnvironment):
     async def start(self, force_build=False):
         if self.sandbox is not None:
             return
-        if (self.environment_dir / 'docker-compose.yaml').exists() or self.extra_docker_compose_paths:
+        if self._uses_compose:
             from .compose import Project, render
             try:
                 self.project = Project(self, await drained(partial(render, self, force_build)))
@@ -157,7 +167,11 @@ class SandweaveEnvironment(BaseEnvironment):
                 # into each pristine lease, never into a shared task baseline.
                 identity = json.dumps(options, sort_keys=True, default=asdict)
                 key = hashlib.sha256(identity.encode()).hexdigest()
-                pool = await self.session.pool.environment_pool(key, options)
+                # An intermediate separate verifier runs while the agent keeps
+                # its lease. Its capacity cannot depend on the agent releasing
+                # that same image pool. Images still share the build/pin cache.
+                role = 'agent' if self is self.session.trial.agent_environment else 'verifier'
+                pool = await self.session.pool.environment_pool((role, key), options)
                 lease = pool.acquire()
                 pending = asyncio.create_task(self.session.pool.blocking(lease.__enter__))
                 try:
@@ -234,6 +248,8 @@ class SandweaveEnvironment(BaseEnvironment):
         provider.sandbox = self.project.views[service]
         provider.default_user = None
         provider._persistent_env = {}
+        provider._exec_env_overlays = ContextVar('harbor_service_env', default=())
+        provider._exec_shell = '/bin/sh'
         provider.task_env_config = self.task_env_config.model_copy(update={'env': {}, 'workdir': None})
         return provider
 
@@ -270,7 +286,7 @@ class SandweaveEnvironment(BaseEnvironment):
         if self.sandbox is None:
             raise RuntimeError('Harbor environment has not started')
         process = await self.sandbox.exec.aio(command, cwd=cwd or self.task_env_config.workdir,
-            env=self._merge_env(env), user=self._resolve_user(user), timeout=timeout_sec, shell='/bin/bash',
+            env=self._merge_env(env), user=self._resolve_user(user), timeout=timeout_sec, shell=self._exec_shell,
             _maintenance=_maintenance or getattr(self, '_file_transfer', False))
         try:
             await process.stdin.close.aio()
@@ -296,7 +312,10 @@ class SandweaveEnvironment(BaseEnvironment):
             stdout, stderr = await asyncio.gather(process.stdout.read.aio(), process.stderr.read.aio())
             return ExecResult(stdout=stdout, stderr=stderr, return_code=await process.poll.aio())
         except BaseException:
-            await process.terminate.aio()
+            try:
+                await process.terminate.aio()
+            except Exception:
+                pass  # Preserve timeout/callback errors after stopping the command.
             raise
 
     async def _checked(self, command):

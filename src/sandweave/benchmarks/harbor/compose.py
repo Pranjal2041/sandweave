@@ -13,11 +13,14 @@ import time
 from functools import partial
 
 from harbor.environments.definition import should_use_prebuilt_docker_image
-from harbor.environments.docker import COMPOSE_BUILD_PATH, COMPOSE_PREBUILT_PATH, write_env_compose_file, write_mounts_compose_file
+from harbor.environments.docker import (COMPOSE_BUILD_PATH, COMPOSE_PREBUILT_PATH,
+    write_env_compose_file, write_mounts_compose_file, write_resources_compose_file)
 from harbor.environments.docker.compose_env import ComposeInfraEnvVars, legacy_log_mount_env_vars, merge_compose_env
+from harbor.models.trial.config import ResourceMode
 
 from ...sandbox.workspace import home
 from ...sandbox.resources import CPU, Memory
+from ...sandbox.errors import CommandTimeout
 from ..benchmark import drained, settled
 
 
@@ -84,6 +87,13 @@ def render(environment, force_build=False):
     values = merge_compose_env(base_env=os.environ, user_env=environment._startup_env(),
                                infra_env=infra, logger=environment.logger)
     with tempfile.TemporaryDirectory(prefix='sandweave-compose-') as temporary:
+        # Harbor places resource policy defaults first, so a task's explicit
+        # Compose settings can override them. Use the same upstream renderer.
+        paths.insert(0, write_resources_compose_file(Path(temporary) / 'resources.json',
+            cpu_request=environment._resource_request_value('cpu', auto_mode=ResourceMode.LIMIT),
+            cpu_limit=environment._resource_limit_value('cpu', auto_mode=ResourceMode.LIMIT),
+            memory_request_mb=environment._resource_request_value('memory', auto_mode=ResourceMode.LIMIT),
+            memory_limit_mb=environment._resource_limit_value('memory', auto_mode=ResourceMode.LIMIT)))
         paths.append(write_env_compose_file(Path(temporary) / 'environment.json', environment._startup_env()))
         if environment._mounts:
             paths.append(write_mounts_compose_file(Path(temporary) / 'mounts.json', environment._mounts))
@@ -268,6 +278,8 @@ class Project:
             visiting.add(name)
             service = definitions[name]
             for other, dependency in service.get('depends_on', {}).items():
+                if other not in definitions and not dependency.get('required', True):
+                    continue
                 await start_service(other)
                 condition = dependency.get('condition', 'service_started')
                 if condition == 'service_healthy':
@@ -344,7 +356,10 @@ class Project:
             else:
                 arguments = [*(settings.get('shell') or ['/bin/sh', '-c']), test[1]]
             process = await self.views[name].exec.aio(argv=arguments, timeout=timeout)
-            await process.wait.aio()
+            try:
+                await process.wait.aio()
+            except CommandTimeout:
+                pass  # A timed-out probe is a failed check, subject to retries.
             result = await process.result.aio()
             if result.returncode == 0:
                 self.healthy.add(name)

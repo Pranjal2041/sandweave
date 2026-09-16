@@ -348,10 +348,10 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 ## Run a benchmark
 
 `Benchmark` pairs each task's instructions with a clean sandbox and its evaluator.
-The OSWorld integration is available in the `0.2.20rc3` preview:
+The OSWorld integration is available in the `0.2.20rc4` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc3'
+uv pip install 'sandweave[benchmarks]==0.2.20rc4'
 ```
 
 ```python
@@ -389,6 +389,27 @@ This split requires read access to the pinned `cua-speed-run` repository through
 `gh`, or a checkout passed as `source=`. First use downloads the original OSWorld
 Ubuntu image and prepares its desktop. See [benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/)
 for setup, resource requirements and the measured limits of VM parity.
+
+### Harbor
+
+Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20rc4` with
+Python 3.12+, then select a dataset or a local task directory:
+
+```python
+bench = Benchmark("harbor", source="terminal-bench@2.0", capacity=8)
+task = bench.next()
+try:
+    run_agent(task.env, task.instruction)
+    print(task.evaluate().rewards)
+finally:
+    task.close()
+    bench.close()
+```
+
+Harbor runs the task's original verifier. Images and prepared filesystems are
+reused across independent attempts; `capacity` applies across all task images.
+See [Harbor benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/#harbor)
+for installation, multi-step tasks and supported environment definitions.
 
 ## Manage workers with Weave
 

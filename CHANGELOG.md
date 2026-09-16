@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.20rc4
+
+- Add Harbor datasets and local task directories through `Benchmark("harbor",
+  source=...)`. Keep Harbor's task loader, trial lifecycle, verifier scripts,
+  timeouts, artifacts and native reward metrics.
+- Share one capacity and warm-reserve budget across different task images. Pin
+  each image once per benchmark and deduplicate baseline preparation. Keep launch
+  waits separate from file transfers and cleanup.
+- Support explicit multi-step pulls with `task.next_step()`, preserving the guest
+  between steps. `task.evaluate()` returns Harbor metrics in `result.rewards`.
+- Add a Harbor environment provider using direct Sandweave guests, including
+  separate verifier environments and archive-based file transfer. Initial support
+  requires prebuilt public Linux amd64 images; see the documented runtime limits.
+- Preserve the existing OSWorld task and evaluation API.
+
 ## 0.2.20rc3
 
 - Add `next(bench)` and `bench.next(timeout=...)` to acquire prepared tasks from

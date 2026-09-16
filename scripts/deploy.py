@@ -121,7 +121,8 @@ def validate(directory, release):
         raise ValueError('Source distribution does not reproduce the wheel contents')
     python = work / 'venv/bin/python'
     run('uv', 'venv', '--python', sys.executable, python.parents[1], cwd=work, env=env)
-    run('uv', 'pip', 'install', '--python', python, str(wheel) + '[test,vr]', cwd=work, env=env)
+    extras = '[test,vr,harbor]' if sys.version_info >= (3, 12) else '[test,vr]'
+    run('uv', 'pip', 'install', '--python', python, str(wheel) + extras, cwd=work, env=env)
     run(python, '-m', 'pytest', '-q', '-m', 'not integration and not gpu',
         '--confcutdir=' + str(source), cwd=source, env=env)
     run(python, '-c', 'import sandweave; from importlib.metadata import version; '
@@ -138,6 +139,13 @@ def validate(directory, release):
     env['SANDWEAVE_TRANSFER_ASSETS'] = json.loads((work / 'worker/config.json').read_text())['assets']
     run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
         live / 'test_build_transfer.py', cwd=live, env=env)
+    if sys.version_info >= (3, 12):
+        for relative in ('tests/test_harbor.py', 'tests/integration/test_harbor_live.py',
+                         'tests/integration/test_weave_live.py'):
+            shutil.copyfile(source / relative, live / Path(relative).name)
+        env['SANDWEAVE_HARBOR_INTEGRATION'] = '1'
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_harbor.py', live / 'test_harbor_live.py', cwd=live, env=env)
     # Copy artifacts only after every check passes. A receipt is never partial.
     for path in files:
         shutil.copyfile(path, directory / path.name)

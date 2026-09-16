@@ -53,9 +53,10 @@ class TaskSpec:
 @dataclass(frozen=True)
 class Evaluation:
     task_id: str
-    score: float
-    passed: bool
+    score: float | None = None
+    passed: bool | None = None
     feedback: str = ''
+    rewards: dict[str, float] = field(default_factory=dict)
 
 
 def load(name, source):
@@ -66,6 +67,11 @@ def load(name, source):
     entries = list(metadata.entry_points(group='sandweave.benchmarks.v1', name=name))
     if len(entries) > 1:
         raise ValueError('duplicate benchmark integration: ' + name)
+    if name == 'harbor':
+        if entries:
+            raise ValueError('duplicate benchmark integration: ' + name)
+        from .harbor import Harbor
+        return Harbor(source=source)
     if name in ('osworld', 'osworld-energy50-representative'):
         if entries:
             raise ValueError('duplicate benchmark integration: ' + name)
@@ -126,8 +132,12 @@ class Benchmark:
                 raise RuntimeError('benchmark is closed')
             if self._pool is not None:
                 return self
-            options = {**self._suite.prepare(), **self._options}
-            pool = Pool(size=self.capacity, warm=self.preload, **options)
+            factory = getattr(self._suite, 'pool', None)
+            if factory is not None:
+                pool = factory(capacity=self.capacity, preload=self.preload, **self._options)
+            else:
+                options = {**self._suite.prepare(), **self._options}
+                pool = Pool(size=self.capacity, warm=self.preload, **options)
             try:
                 pool.start()
             except BaseException:
@@ -254,8 +264,13 @@ class Benchmark:
         result = self._suite.evaluate(env, spec)
         if not isinstance(result, Evaluation) or result.task_id != spec.id:
             raise ValueError('evaluator must return an Evaluation for ' + spec.id)
-        if not isinstance(result.score, (int, float)) or not math.isfinite(result.score):
+        if result.score is None and not result.rewards:
+            raise ValueError('evaluation must contain a score or native rewards')
+        if result.score is not None and (not isinstance(result.score, (int, float)) or not math.isfinite(result.score)):
             raise ValueError('evaluation score must be finite')
+        if any(not isinstance(key, str) or not isinstance(value, (int, float)) or not math.isfinite(value)
+               for key, value in result.rewards.items()):
+            raise ValueError('evaluation rewards must be named finite numbers')
         with self._lock:
             self._results[spec.id] = result
         return result
@@ -377,7 +392,9 @@ class Task:
                     raise RuntimeError('benchmark is closed')
                 self.benchmark._attempts.add(self)
             try:
-                lease = self.benchmark._pool.acquire(timeout=timeout)
+                acquire_task = getattr(self.benchmark._pool, 'acquire_task', None)
+                lease = (acquire_task(self.spec, timeout=timeout) if acquire_task is not None
+                         else self.benchmark._pool.acquire(timeout=timeout))
                 self._lease = lease
                 if self._cancelled.is_set():
                     lease.cancelled.set()
@@ -389,6 +406,9 @@ class Task:
                     raise InterruptedError('benchmark checkout cancelled')
                 self._setup_started = True
                 self.benchmark._suite.setup(env, self.spec)
+                instruction = getattr(env, '_task_instruction', None)
+                if instruction is not None:
+                    self.instruction = instruction
             except BaseException:
                 self.__exit__(*sys.exc_info())
                 raise
@@ -409,6 +429,31 @@ class Task:
             if self._env is None:
                 raise RuntimeError('evaluate while the task has an active sandbox')
             return self.benchmark._evaluate(self._env, self.spec)
+
+    @dualmethod
+    def next_step(self):
+        """Advance a multi-step task after evaluating its current step."""
+        with self._lock:
+            if self._env is None:
+                raise RuntimeError('task has no active sandbox')
+            advance = getattr(self.benchmark._suite, 'next_step', None)
+            instruction = advance(self._env, self.spec) if advance else None
+            if instruction is None:
+                raise StopIteration
+            self.instruction = instruction
+            return self
+
+    @next_step.async_impl
+    async def _next_step_async(self):
+        def advance():
+            try:
+                return self.next_step()
+            except StopIteration:
+                return None
+        result = await drained(advance)
+        if result is None:
+            raise StopAsyncIteration
+        return result
 
     def __exit__(self, *args):
         self._cancel()

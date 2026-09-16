@@ -4,10 +4,10 @@ A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a [pool](pools.md) to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.
 
-Available in the `0.2.20rc3` preview:
+Available in the `0.2.20rc4` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc3'
+uv pip install 'sandweave[benchmarks]==0.2.20rc4'
 ```
 
 ## Run tasks
@@ -129,6 +129,98 @@ async with Benchmark("osworld-energy50-representative", capacity=4) as bench:
 For an individual retry, use `bench.task(task_id)` as a context manager.
 `bench.tasks` lists task specifications. `bench.results` contains the latest
 completed evaluation for each task, in benchmark order.
+
+## Harbor
+
+Use a Harbor dataset name or an existing Harbor task directory. The adapter reads
+the original task definitions and runs their verifier through Harbor 0.23.0.
+It requires Python 3.12 or newer:
+
+```bash
+uv pip install 'sandweave[harbor]==0.2.20rc4'
+```
+
+```python
+from sandweave import Benchmark
+
+bench = Benchmark("harbor", source="terminal-bench@2.0", capacity=8)
+task = bench.next()
+try:
+    env = task.env
+    instruction = task.instruction
+    run_agent(env, instruction)
+    result = task.evaluate()
+    print(result.rewards)
+finally:
+    task.close()
+    bench.close()
+```
+
+Pass `target=cluster_url` to use Weave. `source="./my-task"` loads one task;
+`source="./my-dataset"` loads its immediate task subdirectories. Downloaded tasks
+and trial logs use the selected Sandweave data directory. Pass `output="./results"`
+to choose another location for trial logs and artifacts.
+
+Each task can use a different image. `capacity` limits active task attempts across
+all images, and `preload` bounds the ready reserve within that capacity. Images
+are pinned to a digest once per benchmark. Matching environments share a prepared
+filesystem; every attempt receives fresh writable state. Warm tasks do not use
+their agent timeout until checkout.
+
+The client uses `env.run`, `env.exec` and `env.files` as usual. Commands inherit
+the task's shell, working directory, user and environment. Grading tests are
+uploaded only when verification begins. Harbor collects configured artifacts,
+runs shared or separate verifiers, and writes its trial results and logs.
+
+`result.rewards` preserves the verifier's named metrics. It does not convert them
+to a percentage or invent a pass threshold; `score` and `passed` are `None` for
+Harbor. `result.feedback` gives the trial directory. Infrastructure and verifier
+errors raise exceptions instead of returning a zero reward.
+
+Evaluation completes the current Harbor agent phase. On the final step, Harbor
+stops the environment after collecting its outputs. Call `task.close()` to return
+the task's capacity. Repeating `evaluate()` for the same step returns its saved
+evaluation.
+
+For a multi-step task, evaluate each step before asking for the next instruction:
+
+```python
+task = bench.next()
+try:
+    while True:
+        run_agent(task.env, task.instruction)
+        print(task.evaluate().rewards)
+        try:
+            task.next_step()
+        except StopIteration:
+            break
+finally:
+    task.close()
+```
+
+The sandbox persists between steps. Harbor's step setup, verification and early
+stop thresholds still apply. Intermediate evaluations report the current step's
+rewards; the final evaluation reports Harbor's configured aggregate rewards.
+Async clients use `.aio()` on these methods;
+async exhaustion raises `StopAsyncIteration`.
+
+The provider currently accepts **prebuilt public Linux amd64 images** with public
+or offline networking. Dockerfile-only builds, Compose service groups, private
+image authentication, Windows, network allowlists and network changes between
+phases need additional runtime support. Unsupported requirements are rejected.
+CPU values are reservations rather than hard quotas; guest memory is bounded,
+and runtime overhead is admitted separately. Storage quotas are not enforced.
+MCP/skills-driven agents and simulated-user bridges are not part of this client
+pull API. A task image cannot supply missing kernel features or host devices.
+
+To use Harbor's own agents with the same environment provider:
+
+```bash
+harbor run -d terminal-bench@2.0 --env sandweave.benchmarks.harbor.provider:SandweaveEnvironment
+```
+
+The [acceptance record](https://github.com/Pranjal2041/sandweave/blob/feat/osworld-benchmarks/notes/harbor-adapter.md)
+lists the tasks and lifecycle checks exercised. Existing OSWorld behavior is unchanged.
 
 ## OSWorld setup
 

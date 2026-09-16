@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sandweave"
-version = "0.2.20rc3"
+version = "0.2.20rc4"
 description = "Fast, modular sandboxes for AI agents"
 readme = "README.md"
 license-files = ["LICENSES/*"]
@@ -22,6 +22,7 @@ desktop = ["Pillow", "numpy", "pycryptodome>=3.20,<4", "imageio-ffmpeg>=0.6,<0.7
 vr = ["Pillow", "numpy", "zstandard", "pycryptodome>=3.20,<4", "imageio-ffmpeg>=0.6,<0.7"]
 test = ["pytest", "pyte>=0.8,<0.9"]
 benchmarks = ["Pillow", "PyYAML", "paramiko>=3.4", "dissect.extfs==3.15", "dissect.hypervisor==3.21", "dissect.volume==3.18"]
+harbor = ["harbor==0.23.0; python_version >= '3.12'"]
 
 [project.scripts]
 sandweave = "sandweave.cli:main"
@@ -34,5 +35,5 @@ sandweave = ["engine-files.txt", "runtime-release.json", "templates/**/*.toml", 
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 markers = ["integration: requires an explicitly configured sandbox worker", "gpu: requires an allocated GPU"]

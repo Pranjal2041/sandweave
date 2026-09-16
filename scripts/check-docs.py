@@ -136,6 +136,14 @@ def check_browser(site, output, url=None):
                 expect(page.locator('article')).to_contain_text('private')
                 expect(page.locator('article')).to_contain_text('Full VM parity is not claimed')
                 page.screenshot(path=str(output / 'benchmarks-desktop.png'), animations='disabled')
+                page.goto(url + 'benchmarks/#harbor')
+                section = page.locator('#harbor')
+                example = section.locator('xpath=following-sibling::div[2]')
+                example.get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'Benchmark("harbor"' in copied
+                assert 'result.rewards' in copied and 'task.close()' in copied
+                page.screenshot(path=str(output / 'harbor-desktop.png'), animations='disabled')
                 page.goto(url + 'installation/')
                 page.get_by_text('pip', exact=True).click()
                 expect(page.locator('.tabbed-block:visible')).to_contain_text('python -m pip install sandweave')
@@ -162,6 +170,9 @@ def check_browser(site, output, url=None):
                 page.goto(url + 'benchmarks/')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'benchmarks-mobile.png'), animations='disabled')
+                page.goto(url + 'benchmarks/#harbor')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.screenshot(path=str(output / 'harbor-mobile.png'), animations='disabled')
                 assert not errors, errors
                 assert not failed, failed
                 context.close()

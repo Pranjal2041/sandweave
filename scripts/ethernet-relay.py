@@ -9,6 +9,7 @@ import socketserver
 from pathlib import Path
 
 from network_policy import NetworkPolicy
+import _unix_sockets
 
 MAX_FRAME = 9014
 
@@ -17,7 +18,8 @@ class PolicyServer(socketserver.UnixStreamServer):
     """Worker-only control socket; packet forwarding never polls the filesystem."""
     def __init__(self, path, policy, config):
         self.policy, self.config = policy, config
-        super().__init__(str(path), PolicyRequest)
+        with _unix_sockets.Address(path) as address:
+            super().__init__(address, PolicyRequest)
 
 
 class PolicyRequest(socketserver.StreamRequestHandler):
@@ -112,11 +114,11 @@ def main():
     policy = NetworkPolicy(config)
     os.umask(0o077)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as listener:
-        listener.bind(args.listen)
+        _unix_sockets.bind(listener, args.listen)
         try:
             listener.listen(1)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
-                stream.connect(args.passt)
+                _unix_sockets.connect(stream, args.passt)
                 packet, _ = listener.accept()
                 control = args.listen + '.control'
                 try:

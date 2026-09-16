@@ -1,6 +1,6 @@
 # Harbor adapter
 
-Sandweave 0.2.20rc5 integrates Harbor 0.23.0 through its dataset, task,
+Sandweave 0.2.20rc6 integrates Harbor 0.23.0 through its dataset, task,
 environment and trial protocols. It has no dispatch rules based on benchmark
 names. This replaces the prebuilt-image restriction in rc4.
 
@@ -49,7 +49,15 @@ Harbor's own agents can use the environment provider through its CLI.
 - `templates/build.py` builds original Dockerfiles using an isolated BuildKit
   sandbox and imports the OCI result into a portable Sandweave filesystem base.
 - `sandbox/services.py` owns group placement, admission, private networking,
-  volumes and cleanup. Each service has a separate gVisor sandbox.
+volumes and cleanup. Each service has a separate gVisor sandbox.
+
+BuildKit uses an owned worker volume for its context, overlay snapshots and OCI
+output. Image size therefore does not consume the builder's guest RAM allowance,
+and adding a layer does not copy every file from its parent. Completed archives
+are imported directly from that volume and hashed once during the copy. The
+volume reader rejects path traversal, symlinks and non-regular files. It cannot
+open arbitrary host paths. Build volumes are removed after success or failure;
+the ordinary image/snapshot retention policy applies to imported results.
 
 Builds accept local/remote contexts, inline Dockerfiles, arguments, stages,
 additional contexts, secret mounts and network settings. Registry authentication
@@ -67,6 +75,9 @@ Service volumes carry guest UID/GID metadata independently of the host user's
 UID. This engine feature is opt-in for SDK-owned volumes; ordinary host mounts
 retain their semantics. The backing filesystem must provide statx inode birth
 times. Volumes and ownership metadata are removed with their service group.
+Device nodes retain guest type and device numbers on inert host files. Trusted
+guest attributes, including overlay directory markers, use private metadata;
+they do not require host privileges. Guest capability checks still apply.
 The guest mount helper is freestanding and has no libc dependency.
 
 ## Capacity and cleanup

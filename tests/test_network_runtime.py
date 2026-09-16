@@ -50,3 +50,14 @@ def test_network_launcher_ignores_host_passt(runtime_files, monkeypatch):
     (runtime_files / 'tools/network/passt').unlink()
     with pytest.raises(RuntimeError, match='passt is missing'):
         runtime_tools.command(runtime_files, runtime_files / 'local', 'passt')
+
+
+def test_network_helper_uses_private_working_directory(runtime_files, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / 'scripts'))
+    import runtime_tools
+    monkeypatch.setattr(runtime_tools.shutil, 'which', lambda name: '/host/' + name)
+    network = runtime_files / 'local' / ('long-directory-' * 12)
+    command = runtime_tools.command(runtime_files, runtime_files / 'local', 'passt',
+                                    '-s', 'passt.sock', cwd=network)
+    assert command[command.index('--pwd') + 1] == str(network)
+    assert command[-2:] == ['-s', 'passt.sock']

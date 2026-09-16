@@ -84,7 +84,7 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
                      for name, value in (build_args or {}).items()}
         settings = {'context': checksum, 'dockerfile': hashlib.sha256(recipe).hexdigest() if recipe else dockerfile, 'args': arguments,
                     'ignore': hashlib.sha256(ignore).hexdigest() if ignore is not None else None,
-                    'stage': stage, 'builder': BUILDER_IMAGE, 'template': template, 'format': 3,
+                    'stage': stage, 'builder': BUILDER_IMAGE, 'template': template, 'format': 4,
                     'extra': extra_checksums, 'secrets': {name: hashlib.sha256(value).hexdigest() for name, value in secret_data.items()},
                     'network': network, 'labels': labels, 'platform': platform}
         key = 'image-build-' + hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
@@ -108,6 +108,11 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
         # The importer briefly boots the resulting filesystem to capture a
         # portable base. Admit that runtime with the builder, before placement.
         request['spec']['_image_import_memory'] = 384 * 1024**2
+        # Layers, overlay snapshots and OCI output can exceed the builder's RAM
+        # budget. Use an owned worker volume with guest UID/GID semantics; the
+        # normal service-group lifecycle removes it on success or failure.
+        request['spec'].update(service_group=True, services={},
+            service_volumes={'build': {}}, service_mounts=[{'name': 'build', 'target': '/build'}])
         builder = Sandbox._from_definition(request, target)
         try:
             from .credentials import build_configuration
@@ -118,22 +123,22 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
                 builder.run('chmod 600 /root/.docker/config.json', check=True)
             builder.run('mkdir -p /build/context /build/recipe /build/secrets && chmod 700 /build/secrets', check=True)
             if directory is not None:
-                builder.files.upload(context, '/tmp/context.tar')
-                builder.run('tar -xf /tmp/context.tar -C /build/context', check=True)
+                builder.files.upload(context, '/build/context.tar')
+                builder.run('tar -xf /build/context.tar -C /build/context && rm /build/context.tar', check=True)
                 builder.files.write_bytes('/build/recipe/Dockerfile', recipe)
             if ignore is not None:
                 builder.files.write_bytes('/build/recipe/Dockerfile.dockerignore', ignore)
-            process = builder.exec('buildkitd --root /var/lib/buildkit --oci-worker-snapshotter=native '
-                '--oci-worker-net=host --containerd-worker=false --allow-insecure-entitlement network.host > /tmp/buildkit.log 2>&1')
+            process = builder.exec('buildkitd --root /build/state --oci-worker-snapshotter=overlayfs '
+                '--oci-worker-net=host --containerd-worker=false --allow-insecure-entitlement network.host > /build/buildkit.log 2>&1')
             while builder.run('buildctl debug workers >/dev/null 2>&1').returncode:
                 if process.poll() is not None:
-                    raise RuntimeError('BuildKit exited: ' + builder.files.read_text('/tmp/buildkit.log'))
+                    raise RuntimeError('BuildKit exited: ' + builder.files.read_text('/build/buildkit.log'))
                 if time.monotonic() - started > timeout:
                     raise TimeoutError('BuildKit startup exceeded the image build timeout')
                 time.sleep(.1)
             command = ['buildctl', 'build', '--frontend=dockerfile.v0',
                 '--opt', 'filename=' + (dockerfile if remote else 'Dockerfile'), '--opt', 'platform=' + platform,
-                '--output', 'type=oci,dest=/tmp/image.tar', '--progress=plain']
+                '--output', 'type=oci,dest=/build/image.tar', '--progress=plain']
             if remote:
                 command += ['--opt', 'context=' + remote]
             else:
@@ -141,9 +146,10 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
             for name, value in extra.items():
                 if isinstance(value, Path):
                     destination = '/build/extra-' + name
-                    builder.files.upload(value, '/tmp/extra.tar')
+                    builder.files.upload(value, '/build/extra.tar')
                     builder.run(shlex.join(['mkdir', '-p', destination]) + ' && ' +
-                        shlex.join(['tar', '-xf', '/tmp/extra.tar', '-C', destination]), check=True)
+                        shlex.join(['tar', '-xf', '/build/extra.tar', '-C', destination]) +
+                        ' && rm /build/extra.tar', check=True)
                     command += ['--local', 'extra-' + name + '=' + destination, '--opt', 'context:' + name + '=local:extra-' + name]
                 else:
                     command += ['--opt', 'context:' + name + '=' + value]
@@ -178,7 +184,8 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
             remaining = timeout - (time.monotonic() - started)
             if remaining <= 0:
                 raise TimeoutError('Image build timeout expired before import')
-            saved = builder._call('image_capture', path='/tmp/image.tar', template=template, timeout=remaining)
+            saved = builder._call('image_capture', path='image.tar', volume='build',
+                                  template=template, timeout=remaining)
             # Registering an alias happens through the ordinary snapshot API,
             # including the controller's compare-and-swap publication rules.
             # The immutable revision remains usable independently of the alias.

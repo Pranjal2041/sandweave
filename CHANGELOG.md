@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.20rc6
+
+- Support deeply nested and multibyte storage paths for Unix sockets during
+  first-use installation, networking, service routing, command connections,
+  CPU control and desktop I/O. Socket files remain in their original storage.
+- Launch the network helper from its private socket directory, so a long
+  `TMPDIR` does not prevent runtime setup. No benchmark-specific paths or rules.
+- Exercise long temporary paths during installed-package release acceptance,
+  including automatic setup, Dockerfile builds and cached-image reuse.
+- Store BuildKit layers, build contexts and OCI output on an owned worker
+  volume instead of consuming guest RAM. Remove build storage on completion
+  and failed builds through the existing sandbox cleanup lifecycle.
+- Use overlay snapshots during Dockerfile builds instead of copying the whole
+  filesystem for every layer. Preserve guest device metadata and trusted
+  directory attributes on private volumes without creating host devices.
+- Preserve character and block device numbers when importing EROFS images.
+- Keep unrelated sandbox admission working while an image import is starting.
+- Import completed build archives directly from their owned worker volume,
+  avoiding a full-image copy through the guest network connection.
+- Recheck pool state before capturing its baseline so a stale reconciliation
+  cannot capture an already-stopped builder or reopen a closing pool.
+
 ## 0.2.20rc5
 
 - Resolve Harbor datasets through its native registry and package protocols,

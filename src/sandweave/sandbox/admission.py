@@ -105,8 +105,12 @@ def live(worker, record, *, records=None):
     identities = {record['id'], *record.get('image_imports', []),
                   *(item['identity'] for item in record.get('services', {}).values())}
     def status(identity):
-        if records is not None and identity in records:
-            return records[identity]['runtime_status']['status']
+        if records is not None:
+            return records.get(identity, {}).get('runtime_status', {}).get('status', 'absent')
+        # An image importer is recorded on its parent before image preparation
+        # creates the child's record. The parent already reserves its memory.
+        if identity != record['id'] and not worker.path(identity).exists():
+            return 'absent'
         return worker.runtime.status(identity)['status']
     return any(status(identity) in ('starting', 'running', 'paused')
                for identity in identities)

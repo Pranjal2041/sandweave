@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import struct
 import threading
+import _unix_sockets
 
 
 def packet(sock, expected, rights=False):
@@ -41,7 +42,7 @@ def relay(client, upstream):
         client.sendall(b'OUTBHELL\0')
         packet(client, b'OUTBCRED\0')
         packet(client, struct.pack('<I', 2))
-        server.connect(str(upstream))
+        _unix_sockets.connect(server, upstream)
         packet(server, b'OUTBHELL\0')
         server.sendmsg([b'OUTBCRED\0'], [(socket.SOL_SOCKET, socket.SCM_CREDENTIALS,
                        struct.pack('3i', os.getpid(), os.getuid(), os.getgid()))])
@@ -70,7 +71,7 @@ def serve(path, upstream):
             slots.release()
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as listener:
-        listener.bind(str(path))
+        _unix_sockets.bind(listener, path)
         listener.listen(16)
         # The parent service directory is host-user-private. Guest UIDs map to
         # this host user, but see imported file ownership as overflow UID.

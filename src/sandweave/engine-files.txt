@@ -1,4 +1,5 @@
 scripts/run-gvisor.py
+scripts/_unix_sockets.py
 scripts/disk_memory.py
 scripts/build_artifacts.py
 scripts/make-gvisor-bundle.py

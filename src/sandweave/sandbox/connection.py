@@ -8,6 +8,7 @@ import ssl
 
 from . import errors
 from .wire import decode, encode, MAX_BODY
+from .. import _unix_sockets
 
 
 class UnixHTTPConnection(http.client.HTTPConnection):
@@ -18,7 +19,12 @@ class UnixHTTPConnection(http.client.HTTPConnection):
     def connect(self):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
-        self.sock.connect(self.path)
+        try:
+            _unix_sockets.connect(self.sock, self.path)
+        except BaseException:
+            self.sock.close()
+            self.sock = None
+            raise
 
 
 class Connection:

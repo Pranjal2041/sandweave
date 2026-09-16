@@ -316,8 +316,8 @@ done
             self.vr_inputs(root, profile)
         mounts = [{'source': str(root / 'input'), 'destination': '/sandweave-input', 'read_only': True}]
         workspace.atomic_json(root / 'mounts.json', mounts)
-        # Socket paths stay short. Large downloads, compiler output and rootfs
-        # exports are all in selected storage, not this node-local directory.
+        # Large downloads, compiler output and rootfs exports stay in selected
+        # storage. Socket addressing also supports deeply nested TMPDIR paths.
         with tempfile.TemporaryDirectory(prefix='sw-build-') as active:
             (root / 'runs/local-path.txt').write_text(active + '\n')
             command = [sys.executable, str(root / 'scripts/run-gvisor.py'), '--guest-gs',

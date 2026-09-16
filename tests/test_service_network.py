@@ -40,9 +40,10 @@ def test_routing_preserves_valid_checksums(protocol, payload):
     assert result.endswith(payload)
 
 
-def test_concurrent_groups_with_identical_private_ips_do_not_cross():
+@pytest.mark.parametrize('nested', ['', 'nested-' * 25, '文' * 60])
+def test_concurrent_groups_with_identical_private_ips_do_not_cross(nested):
     with tempfile.TemporaryDirectory(prefix='sw-net-') as temporary:
-        root = Path(temporary)
+        root = Path(temporary) / nested
         hub = Hub(root)
         peers, guests, packets = [], [], []
         try:
@@ -85,9 +86,10 @@ def test_service_dns_is_answered_without_public_dns():
     assert dns_reply(request, {'different': '10.231.0.3'}) is None
 
 
-def test_router_restart_preserves_existing_guest_connections():
+@pytest.mark.parametrize('nested', ['', 'nested-' * 25, '文' * 60])
+def test_router_restart_preserves_existing_guest_connections(nested):
     with tempfile.TemporaryDirectory(prefix='sw-net-') as temporary:
-        root = Path(temporary)
+        root = Path(temporary) / nested
         members = [{'address': '10.231.0.' + str(index + 2),
                     'socket': str(root / f'{index}.sock'), 'networks': ['default']}
                    for index in range(2)]

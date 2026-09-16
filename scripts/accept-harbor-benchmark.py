@@ -18,12 +18,16 @@ def main():
     parser.add_argument('source', help='dataset name, task path, or JSON dataset configuration')
     parser.add_argument('--task', action='append', help='Harbor task filter; repeat to select several')
     parser.add_argument('--oracle', action='store_true', help='run each original solution/solve.sh')
+    parser.add_argument('--startup-only', action='store_true', help='inspect ready environments without running a solution or verifier')
+    parser.add_argument('--check-command', action='append', default=[], help='run an acceptance command in each task before evaluation')
     parser.add_argument('--target')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--expect-reward', type=float)
     parser.add_argument('--reward-name', default='reward')
     parser.add_argument('--guest-tools-sha256', help='verify the guest helper selected for a service task')
     args = parser.parse_args()
+    if args.startup_only and (args.oracle or args.expect_reward is not None):
+        parser.error('--startup-only cannot be combined with an oracle or expected reward')
     source = json.loads(args.source) if args.source.startswith('{') else args.source
     if args.task:
         if isinstance(source, dict):
@@ -49,6 +53,25 @@ def main():
                 env = task.env
                 row['description'] = task.instruction
                 row['environment'] = env.run('uname -a; cat /etc/os-release; pwd').stdout
+                row['processes'] = env.run('ps -eo pid,ppid,comm').stdout
+                row['state'] = 'ready'
+                row['checks'] = []
+                for command in args.check_command:
+                    result = env.run(command, timeout=120)
+                    row['checks'].append({'command': command, 'returncode': result.returncode,
+                                          'stdout': result.stdout, 'stderr': result.stderr})
+                    if result.returncode:
+                        raise RuntimeError('Startup acceptance command failed: ' + command)
+                provider = bench._pool.sessions[env.id].trial.agent_environment
+                if provider.project is not None:
+                    project = provider.project
+                    row['services'] = {}
+                    for name, process in project.processes.items():
+                        row['services'][name] = {'returncode': process.poll(),
+                            'healthcheck_passed': name in project.healthy,
+                            **{stream: process.sandbox._call('process_output', process_id=process.id,
+                                stream=stream, offset=0, size=65536).decode(errors='replace')
+                               for stream in ('stdout', 'stderr')}}
                 if args.guest_tools_sha256:
                     row['guest_tools_sha256'] = hashlib.sha256(
                         env.files.read_bytes('/.sandweave-runtime/tools/guest-tools')).hexdigest()
@@ -67,7 +90,8 @@ def main():
                                        'stdout': result.stdout, 'stderr': result.stderr}
                     if result.returncode:
                         raise RuntimeError('Original solution failed: ' + result.stderr)
-                row['evaluation'] = asdict(task.evaluate())
+                if not args.startup_only:
+                    row['evaluation'] = asdict(task.evaluate())
                 if args.expect_reward is not None:
                     assert row['evaluation']['rewards'][args.reward_name] == args.expect_reward, row['evaluation']
                 print(json.dumps(row), flush=True)
@@ -75,8 +99,14 @@ def main():
                 task.close()
                 row['total_seconds'] = time.monotonic() - started
                 args.output.write_text(json.dumps(report, indent=2) + '\n')
+    except BaseException as error:
+        report['error'] = {'type': type(error).__name__, 'message': str(error)}
+        raise
     finally:
-        bench.close()
+        try:
+            bench.close()
+        finally:
+            args.output.write_text(json.dumps(report, indent=2) + '\n')
 
 
 if __name__ == '__main__':

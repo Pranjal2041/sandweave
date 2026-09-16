@@ -346,10 +346,10 @@ policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.
 mark('network_setup_seconds')
 
 
-def spawn(command, logfile):
+def spawn(command, logfile, *, cwd=None):
     output = logfile.open('wb')
     files.append(output)
-    child = subprocess.Popen(command, cwd=lab, stdout=output, stderr=subprocess.STDOUT,
+    child = subprocess.Popen(command, cwd=cwd or lab, stdout=output, stderr=subprocess.STDOUT,
                              start_new_session=True)
     children.append(child)
     record_children()
@@ -432,9 +432,13 @@ try:
         forwards.extend(['-t', f'127.0.0.1/{host_port}:{guest_port}'])
     for reservation in reservations:
         reservation.close()
-    passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', str(passt_socket),
+    # passt drops privileges, so it cannot dereference the launcher's /proc FD.
+    # Its private working directory gives it a short, relative socket address
+    # in both host and Apptainer execution, without changing the parent cwd.
+    passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', passt_socket.name,
                    '-a', '10.0.2.15', '-n', '24', '-g', '10.0.2.2', '-m', '1500',
-                   '--dns-forward', '10.0.2.3', *forwards, memory_limit=True), logs / 'passt.log')
+                   '--dns-forward', '10.0.2.3', *forwards, memory_limit=True, cwd=netdir),
+                  logs / 'passt.log', cwd=netdir)
     wait_socket(passt_socket, passt)
     relay = spawn(runtime_tools.limited([sys.executable, str(lab / 'scripts/ethernet-relay.py'),
                    '--listen', str(ethernet_socket), '--passt', str(passt_socket),
@@ -471,7 +475,7 @@ try:
     if mounts:
         command[1:1] = ['--mounts', str(mount_file)]
         if any(mount.get('_private_volume') for mount in mounts):
-            command.append('--private-volumes=enabled')
+            command += ['--private-volumes=enabled', '--private-volume-devices=enabled']
     if args.disk_path:
         command[1:1] = ['--disk-memory', str(args.disk_memory_inner)]
         command += ['--app-memory-directory=/disk-memory']

@@ -10,6 +10,7 @@ from pathlib import Path
 import socket
 import struct
 import threading
+from _unix_sockets import Address
 
 GUEST = ipaddress.IPv4Address('10.0.2.15').packed
 DNS = ipaddress.IPv4Address('10.0.2.3').packed
@@ -115,9 +116,18 @@ class Hub:
         self.path = self.directory / 'mesh.sock'
         self.path.unlink(missing_ok=True)
         self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self.socket.bind(str(self.path))
+        self.address = None
+        try:
+            self.address = Address(self.path)
+            self.socket.bind(self.address.path)
+        except BaseException:
+            self.socket.close()
+            if self.address:
+                self.address.close()
+            raise
         self.socket.settimeout(.2)
         self.members, self.groups = {}, {}
+        self.origins = {}
         self.lock = threading.Lock()
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self.run, name='sandweave-service-network', daemon=True)
@@ -128,20 +138,30 @@ class Hub:
             if identity in self.groups:
                 raise ValueError('service network is already registered')
             routes = {}
-            for entry in members:
-                address = ipaddress.IPv4Address(entry['address']).packed
-                path = str(entry['socket'])
-                if path in self.members or address in routes:
-                    raise ValueError('duplicate service network member')
-                routes[address] = (path, frozenset(entry['networks']))
+            paths = set()
+            try:
+                for entry in members:
+                    address = ipaddress.IPv4Address(entry['address']).packed
+                    path = str(Path(entry['socket']).resolve())
+                    if path in self.members or path in paths or address in routes:
+                        raise ValueError('duplicate service network member')
+                    paths.add(path)
+                    Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    routes[address] = (path, frozenset(entry['networks']), Address(path))
+            except BaseException:
+                for _, _, endpoint in routes.values():
+                    endpoint.close()
+                raise
             self.groups[identity] = routes
-            for address, (path, networks) in routes.items():
+            for address, (path, networks, _) in routes.items():
                 self.members[path] = (identity, address, networks)
 
     def unregister(self, identity):
         with self.lock:
-            for path, _ in self.groups.pop(identity, {}).values():
+            for path, _, endpoint in self.groups.pop(identity, {}).values():
                 self.members.pop(path, None)
+                endpoint.close()
+            self.origins.clear()
 
     def run(self):
         while not self.stopping.is_set():
@@ -150,18 +170,27 @@ class Hub:
                 if flags & socket.MSG_TRUNC or len(frame) < 34:
                     continue
                 with self.lock:
-                    member = self.members.get(origin)
+                    # Resolve a descriptor address once per sender, never for
+                    # every packet. Cache only currently registered members.
+                    path = self.origins.get(origin, origin)
+                    member = self.members.get(path)
+                    if member is None and origin and origin not in self.origins:
+                        path = str(Path(origin).resolve())
+                        member = self.members.get(path)
+                        if member is not None:
+                            self.origins = {key: value for key, value in self.origins.items() if value != path}
+                            self.origins[origin] = path
                     if member is None:
                         continue
                     group, address, networks = member
                     target = self.groups[group].get(frame[30:34])
                     if target is None or not networks.intersection(target[1]):
                         continue
-                translated = route(frame, address, GUEST)
-                if translated is not None:
-                    # A stopped or backpressured receiver drops packets exactly
-                    # as a network would; unrelated groups keep forwarding.
-                    self.socket.sendto(translated, socket.MSG_DONTWAIT, target[0])
+                    translated = route(frame, address, GUEST)
+                    if translated is not None:
+                        # Keep the endpoint descriptor alive through sendto;
+                        # unregister cannot close/reuse it in another thread.
+                        self.socket.sendto(translated, socket.MSG_DONTWAIT, target[2].path)
             except socket.timeout:
                 continue
             except OSError:
@@ -174,6 +203,9 @@ class Hub:
         self.stopping.set()
         self.thread.join()
         self.socket.close()
+        self.address.close()
+        for identity in list(self.groups):
+            self.unregister(identity)
         self.path.unlink(missing_ok=True)
 
 
@@ -183,7 +215,20 @@ class Peer:
         self.path = config['socket']
         self.addresses = {ipaddress.IPv4Address(value).packed for value in config['peers'].values()}
         self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self.socket.bind(self.path)
+        self.address = self.hub = None
+        self.hub_path = str(Path(config['hub']).resolve())
+        self.hub_origin = None
+        try:
+            self.address = Address(self.path)
+            self.hub = Address(config['hub'])
+            self.socket.bind(self.address.path)
+        except BaseException:
+            self.socket.close()
+            if self.address:
+                self.address.close()
+            if self.hub:
+                self.hub.close()
+            raise
         self.socket.settimeout(.2)
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self.run, name='sandweave-service-peer', daemon=True)
@@ -200,7 +245,7 @@ class Peer:
         if len(frame) < 34 or frame[12:14] != b'\x08\x00' or frame[30:34] not in self.addresses:
             return False
         try:
-            self.socket.sendto(frame, socket.MSG_DONTWAIT, self.config['hub'])
+            self.socket.sendto(frame, socket.MSG_DONTWAIT, self.hub.path)
         except OSError:
             # A worker restart may briefly remove the router. Do not take down
             # the guest's public network while the service router reconnects.
@@ -211,7 +256,9 @@ class Peer:
         while not self.stopping.is_set():
             try:
                 frame, origin = self.socket.recvfrom(MAX_FRAME)
-                if frame and origin == self.config['hub']:
+                if origin and origin != self.hub_origin and str(Path(origin).resolve()) == self.hub_path:
+                    self.hub_origin = origin
+                if frame and origin == self.hub_origin:
                     self.packet.send(frame, socket.MSG_DONTWAIT)
             except BlockingIOError:
                 continue
@@ -224,4 +271,6 @@ class Peer:
         self.stopping.set()
         self.thread.join()
         self.socket.close()
+        self.address.close()
+        self.hub.close()
         Path(self.path).unlink(missing_ok=True)

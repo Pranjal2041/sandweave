@@ -536,6 +536,7 @@ def test_http_compose_group_reserves_and_releases_all_services(tmp_path, cluster
 
 
 @pytest.mark.skipif(not os.environ.get('SANDWEAVE_WEAVE_INTEGRATION'), reason='explicit cluster required')
+@pytest.mark.parametrize('cluster', ['8GiB'], indirect=True)
 def test_http_build_transfers_to_another_worker_before_trial(tmp_path, cluster):
     from sandweave.templates.build import build
     from test_weave_live import wait_for

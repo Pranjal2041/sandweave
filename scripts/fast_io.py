@@ -21,6 +21,7 @@ import time
 import uuid
 
 import environment_control as control
+import _unix_sockets
 
 FRAME_BYTES = 64 + 64 * 1024 * 1024
 MAX_MESSAGE = 1024 * 1024
@@ -211,13 +212,13 @@ def _rpc(manager, name, request, *, start=False):
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(15)
         try:
-            connection.connect(str(_socket_path(manager, name)))
+            _unix_sockets.connect(connection, _socket_path(manager, name))
         except (FileNotFoundError, ConnectionRefusedError):
             if start or request['op'] in ('ping', 'detach', 'stop'):
                 raise
             # Nothing has been sent: reconnecting here cannot replay an action.
             ensure_service(manager, name)
-            connection.connect(str(_socket_path(manager, name)))
+            _unix_sockets.connect(connection, _socket_path(manager, name))
         connection.sendall(json.dumps(request, separators=(',', ':')).encode() + b'\n')
         with connection.makefile('rb') as stream:
             reply = _read_json(stream)
@@ -505,7 +506,7 @@ def serve(manager, name):
     fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
     path.unlink(missing_ok=True)
     with socket.socket(socket.AF_UNIX) as listener:
-        listener.bind(str(path)); os.chmod(path, 0o600); listener.listen(16); listener.settimeout(1)
+        _unix_sockets.bind(listener, path); os.chmod(path, 0o600); listener.listen(16); listener.settimeout(1)
         try:
             while not stopped:
                 try:

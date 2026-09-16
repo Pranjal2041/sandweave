@@ -15,7 +15,7 @@ from sandweave.sandbox.sandbox import definition
 from sandweave.sandbox.wire import decode, encode
 from sandweave.weave.controller import Controller
 from sandweave.weave.dashboard import Dashboard
-from sandweave.weave.pool import _claim, dispatch
+from sandweave.weave.pool import _capture, _claim, dispatch
 from sandweave.weave.server import RPC
 
 
@@ -51,6 +51,58 @@ def seed(controller, endpoint, count, action):
             controller.state.put('lease', dict(id='lease-' + str(i), parent='pool-test', owner=None,
                 state='claiming' if claiming else 'pending', sandbox=identity if claiming else None,
                 generation=2 if claiming else 1))
+
+
+@pytest.mark.parametrize('close_during_capture', [False, True])
+@pytest.mark.parametrize('failed_reply', [False, True])
+def test_capture_rechecks_completed_or_closed_pool(tmp_path, monkeypatch, close_during_capture, failed_reply):
+    controller = Controller(tmp_path / 'controller')
+    endpoint = dict(hostname='worker', port=1, workspace='/worker', token='token')
+    seed(controller, endpoint, 1, 'create')
+    pool = controller.state.get('pool', 'pool-test')
+    controller.state.put('pool', {**pool, 'state': 'preparing', 'builder': 'sw-0', 'baseline': None})
+    record = controller.state.get('allocation', 'sw-0')
+    controller.state.put('allocation', {**record, 'state': 'ready', 'role': 'builder'})
+    calls = Counter()
+    class Connection:
+        def call(self, operation, **parameters):
+            calls[operation] += 1
+            if operation == 'capture':
+                assert calls[operation] == 1, 'stale reconciliation captured a stopped builder'
+                if close_during_capture:
+                    dispatch(controller, 'pool_close', {'identity': 'pool-test'})
+                if failed_reply:
+                    raise RuntimeError('injected capture failure')
+                return {'id': 'snap-test'}
+            if operation == 'snapshot_verify':
+                return {'status': 'passed'}
+            if operation == 'snapshot_spec':
+                return {'reference': 'snap-test', 'spec': record['spec']}
+            if operation == 'snapshot_info':
+                return {'id': 'snap-test'}
+            raise AssertionError(operation)
+
+        def close(self):
+            pass
+    monkeypatch.setattr(controller, 'connection', lambda *a, **kw: Connection())
+    try:
+        _capture(controller, 'pool-test', 'sw-0')
+        finished = controller.state.get('pool', 'pool-test')
+        # A queued reconciliation based on a stale pre-capture view must be a
+        # no-op even after its previous lifecycle future has already completed.
+        _capture(controller, 'pool-test', 'sw-0')
+        assert controller.state.get('pool', 'pool-test') == finished
+        assert calls['capture'] == 1
+        if close_during_capture:
+            assert finished['desired'] == 'closed' and finished['state'] != 'failed'
+            assert finished['baseline'] is None
+        elif failed_reply:
+            assert finished['state'] == 'failed'
+            assert finished['error'] == 'injected capture failure'
+        else:
+            assert finished['state'] == 'ready' and finished['baseline'] == 'snap-test'
+    finally:
+        controller.close()
 
 
 @pytest.mark.parametrize('action', ['create', 'claim', 'terminate'])

@@ -16,6 +16,7 @@ from ...errors import ResourceUnavailable, UnsupportedFeature
 from ...resources import memory_bytes, gpu_matches
 from ...workspace import locked, atomic_json
 from ...timings import measure
+from .... import _unix_sockets
 
 AGENT_PORT = 23799
 
@@ -205,6 +206,8 @@ class Runtime:
             features = []
             if spec.get('_guest_tools') or any(mount.get('_private_volume') for mount in spec.get('mounts', [])):
                 features.append('private-volumes')
+            if any(mount.get('_private_volume') for mount in spec.get('mounts', [])):
+                features.append('private-volume-devices')
             if spec['resources']['memory'].get('disk') is not None:
                 features.append('app-memory-directory')
             if spec['template'].get('runtime_options', {}).get('virtual_consoles'):
@@ -278,7 +281,7 @@ class Runtime:
                   'proxy_endpoints': [], 'allowed_hosts': network.get('allowed_hosts', [])}
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
             channel.settimeout(10)
-            channel.connect(str(endpoint))
+            _unix_sockets.connect(channel, endpoint)
             channel.sendall(json.dumps(update).encode() + b'\n')
             with channel.makefile('rb') as stream:
                 result = json.loads(stream.readline(65537))

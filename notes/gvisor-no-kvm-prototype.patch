@@ -80,7 +80,7 @@ index 00645a2..5acb9b4 100644
 +    deps = ["//pkg/errors/linuxerr"],
  )
 diff --git a/pkg/erofs/erofs.go b/pkg/erofs/erofs.go
-index 193781c..21b708e 100644
+index 193781c..7202fea 100644
 --- a/pkg/erofs/erofs.go
 +++ b/pkg/erofs/erofs.go
 @@ -416,6 +416,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
@@ -117,7 +117,7 @@ index 193781c..21b708e 100644
  		rawBlockAddr = ino.RawBlockAddr
  		inodeSize = ino.SizeBytes()
  
-@@ -468,6 +461,13 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
+@@ -468,19 +461,27 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
  		return Inode{}, linuxerr.ENOTSUP
  	}
  
@@ -130,8 +130,14 @@ index 193781c..21b708e 100644
 +	}
  	blockSize := uint64(i.BlockSize())
  	inode.blocks = (inode.size + (blockSize - 1)) / blockSize
++	if inode.IsCharDev() || inode.IsBlockDev() {
++		// The on-disk union stores new_encode_dev(rdev), not a data address.
++		inode.rdev = rawBlockAddr
++		return inode, nil
++	}
  
-@@ -476,11 +476,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
+ 	switch dataLayout := inode.DataLayout(); dataLayout {
+ 	case InodeDataLayoutFlatInline:
  		// Inline data follows the inode and must fit within the block that holds
  		// it. The inode itself may straddle a block boundary, so measure the room
  		// from idataOff's offset within its block, not from blockSize-inodeSize.
@@ -144,7 +150,7 @@ index 193781c..21b708e 100644
  		tailSize := inode.size & (blockSize - 1)
  		if tailSize == 0 || (idataOff&(blockSize-1))+tailSize > blockSize {
  			log.Warningf("Inline data not found or cross block boundary at inode (nid=%v)", nid)
-@@ -515,6 +511,10 @@ type Inode struct {
+@@ -515,6 +516,10 @@ type Inode struct {
  	// if it's not zero in the metadata block.
  	idataOff uint64
  
@@ -155,6 +161,65 @@ index 193781c..21b708e 100644
  	// blocks indicates the count of blocks that store the data associated
  	// with this inode. It will count in the metadata block that includes
  	// the inline data as well.
+@@ -532,6 +537,12 @@ type Inode struct {
+ 	uid       uint32
+ 	gid       uint32
+ 	nlink     uint32
++	rdev      uint32
++}
++
++// DeviceID returns the Linux-encoded device number for a special file.
++func (i *Inode) DeviceID() uint32 {
++	return i.rdev
+ }
+ 
+ // bitRange returns the bits within the range [bit, bit+bits) in value.
+diff --git a/pkg/erofs/erofs_test.go b/pkg/erofs/erofs_test.go
+index 0ece14f..1c04e72 100644
+--- a/pkg/erofs/erofs_test.go
++++ b/pkg/erofs/erofs_test.go
+@@ -16,10 +16,41 @@ package erofs
+ 
+ import (
+ 	"bytes"
++	"fmt"
+ 	"os"
+ 	"testing"
+ )
+ 
++func TestDeviceNumbers(t *testing.T) {
++	for _, extended := range []bool{false, true} {
++		for _, mode := range []uint16{0020600, 0060600, 0100644} {
++			for _, encoded := range []uint32{0, 0xaaf, 0x800, 0xfffabc12} {
++				t.Run(fmt.Sprintf("extended=%t/mode=%o/device=%x", extended, mode, encoded), func(t *testing.T) {
++					img := &Image{bytes: make([]byte, 4096), sb: SuperBlock{BlockSizeBits: 12}}
++					if extended {
++						ino := InodeExtended{Format: InodeLayoutExtended, Mode: mode, RawBlockAddr: encoded, Nlink: 1}
++						ino.MarshalUnsafe(img.bytes[2048:])
++					} else {
++						ino := InodeCompact{Mode: mode, RawBlockAddr: encoded, Nlink: 1}
++						ino.MarshalUnsafe(img.bytes[2048:])
++					}
++					inode, err := img.Inode(64)
++					if err != nil {
++						t.Fatal(err)
++					}
++					want := encoded
++					if inode.IsRegular() {
++						want = 0
++					}
++					if got := inode.DeviceID(); got != want {
++						t.Fatalf("DeviceID = %#x, want %#x", got, want)
++					}
++				})
++			}
++		}
++	}
++}
++
+ func TestOnDiskStructureSizes(t *testing.T) {
+ 	if sb := new(SuperBlock); sb.SizeBytes() != SuperBlockSize {
+ 		t.Errorf("wrong superblock size: want %d, got %d", SuperBlockSize, sb.SizeBytes())
 diff --git a/pkg/erofs/xattr.go b/pkg/erofs/xattr.go
 new file mode 100644
 index 0000000..1deaee6
@@ -1437,7 +1502,7 @@ index f567b63..0fb439c 100644
  		defer d.c.mu.Unlock()
  		d.c.max = pidLimitUnlimited
 diff --git a/pkg/sentry/fsimpl/erofs/erofs.go b/pkg/sentry/fsimpl/erofs/erofs.go
-index 7dfbe76..5b19977 100644
+index 7dfbe76..3171af6 100644
 --- a/pkg/sentry/fsimpl/erofs/erofs.go
 +++ b/pkg/sentry/fsimpl/erofs/erofs.go
 @@ -28,6 +28,7 @@ import (
@@ -1569,7 +1634,31 @@ index 7dfbe76..5b19977 100644
  }
  
  func (i *inode) statTo(stat *linux.Statx) {
-@@ -829,12 +908,12 @@ func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
+@@ -406,6 +485,8 @@ func (i *inode) statTo(stat *linux.Statx) {
+ 	stat.Ctime = stat.Mtime
+ 	stat.DevMajor = linux.UNNAMED_MAJOR
+ 	stat.DevMinor = i.fs.devMinor
++	major, minor := linux.DecodeDeviceID(i.DeviceID())
++	stat.RdevMajor, stat.RdevMinor = uint32(major), minor
+ }
+ 
+ func (i *inode) fileType() uint16 {
+@@ -780,6 +861,14 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
+ 		}
+ 		return &fd.vfsfd, nil
+ 
++	case linux.S_IFCHR, linux.S_IFBLK:
++		kind := vfs.CharDevice
++		if d.inode.IsBlockDev() {
++			kind = vfs.BlockDevice
++		}
++		major, minor := linux.DecodeDeviceID(d.inode.DeviceID())
++		return d.inode.fs.vfsfs.VirtualFilesystem().OpenDeviceSpecialFile(ctx, rp.Mount(), &d.vfsd, kind, uint32(major), minor, opts)
++
+ 	case linux.S_IFLNK:
+ 		// Can't open symlinks without O_PATH, which is handled at the VFS layer.
+ 		return nil, linuxerr.ELOOP
+@@ -829,12 +918,12 @@ func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
  
  // ListXattr implements vfs.FileDescriptionImpl.ListXattr.
  func (fd *fileDescription) ListXattr(ctx context.Context, size uint64) ([]string, error) {
@@ -1652,6 +1741,30 @@ index 67f336f..7f5e244 100644
  
  	// An INIT response needs to be at least this long.
  	minInitSize = 24
+diff --git a/pkg/sentry/fsimpl/gofer/gofer.go b/pkg/sentry/fsimpl/gofer/gofer.go
+index 7cfad68..2d14d49 100644
+--- a/pkg/sentry/fsimpl/gofer/gofer.go
++++ b/pkg/sentry/fsimpl/gofer/gofer.go
+@@ -446,6 +446,10 @@ const (
+ //
+ // +stateify savable
+ type InternalFilesystemOptions struct {
++	// PrivateXattrs keeps trusted xattrs in SDK-owned metadata rather than
++	// applying them to host files. Only an internal mount can opt into this.
++	PrivateXattrs bool
++
+ 	// If UniqueID is non-empty, it is used to reassociate the filesystem with
+ 	// a new server FD during restoration from checkpoint.
+ 	UniqueID checkpoint.ResourceID
+@@ -1575,7 +1579,7 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
+ 	// Disallow the "trusted" namespace because neither the gofer nor the sentry
+ 	// processes have the capability to set these. It requires CAP_SYS_ADMIN in
+ 	// the host's root user namespace.
+-	if strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
++	if !d.inode.fs.iopts.PrivateXattrs && strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
+ 		return linuxerr.EOPNOTSUPP
+ 	}
+ 	// Do not allow writes to the "security" namespace on the host filesystem.
 diff --git a/pkg/sentry/fsimpl/proc/task.go b/pkg/sentry/fsimpl/proc/task.go
 index 69c94a6..1b24a49 100644
 --- a/pkg/sentry/fsimpl/proc/task.go
@@ -7008,7 +7121,7 @@ index 0000000..a9deb96
 +	}
 +}
 diff --git a/runsc/boot/vfs.go b/runsc/boot/vfs.go
-index f320cd9..84e5225 100644
+index f320cd9..a4c6b71 100644
 --- a/runsc/boot/vfs.go
 +++ b/runsc/boot/vfs.go
 @@ -188,6 +188,11 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
@@ -7023,7 +7136,15 @@ index f320cd9..84e5225 100644
  	tunSupported := tundev.IsNetTunSupported(inet.StackFromContext(ctx))
  	if tunSupported {
  		if err := tundev.Register(vfsObj); err != nil {
-@@ -1542,14 +1547,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
+@@ -1143,6 +1148,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
+ 		}
+ 		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf, m.hint != nil && m.hint.SuppressDirectFS)...)
+ 		internalData = gofer.InternalFilesystemOptions{
++			PrivateXattrs: conf.PrivateVolumes == "enabled" && spec.Annotations["dev.sandweave.private-volume."+m.mount.Destination] == "true",
+ 			UniqueID: checkpoint.ResourceID{
+ 				ContainerName: containerName,
+ 				Path:          m.mount.Destination,
+@@ -1542,14 +1548,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
  	return l.k.VFS().RmdirAt(ctx, creds, &pop)
  }
  
@@ -7044,7 +7165,7 @@ index f320cd9..84e5225 100644
  			if defaults := cgroupfsCPUDefaults(l.cpuQuota, l.cpuPeriod); defaults != nil {
  				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
  				log.Infof("Setting cgroupfs cpu defaults: quota=%d, period=%d (raw quota=%d, raw period=%d)", defaults["cpu.cfs_quota_us"], defaults["cpu.cfs_period_us"], l.cpuQuota, l.cpuPeriod)
-@@ -1618,7 +1627,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1618,7 +1628,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  
  	// Mount all the cgroup controllers in the container's mount namespace.
  	mountCtx := vfs.WithRoot(vfs.WithMountNamespace(ctx, mns), root)
@@ -7053,7 +7174,7 @@ index f320cd9..84e5225 100644
  		ctrlName := string(ctrl)
  		cgroupMnt := c.l.k.GetCgroupMount(ctrlName)
  		if cgroupMnt == nil {
-@@ -1655,6 +1664,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1655,6 +1665,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  			log.Infof("error in bind mounting %v", err)
  			return err
  		}
@@ -7068,7 +7189,7 @@ index f320cd9..84e5225 100644
  	}
  	c.cgroupsMounted = true
  	return nil
-@@ -1976,10 +1993,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
+@@ -1976,10 +1994,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
  	if err != nil {
  		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
  	}
@@ -7085,10 +7206,10 @@ index f320cd9..84e5225 100644
  		UseDevGofer:            true,
  	})
 diff --git a/runsc/cmd/gofer.go b/runsc/cmd/gofer.go
-index bde091e..440c8a6 100644
+index bde091e..b42f9b7 100644
 --- a/runsc/cmd/gofer.go
 +++ b/runsc/cmd/gofer.go
-@@ -499,6 +499,14 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
+@@ -499,6 +499,15 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
  			if cfg.devGofer {
  				connConf = &devGoferConf
  			}
@@ -7098,6 +7219,7 @@ index bde091e..440c8a6 100644
 +				}
 +				privateConf := *connConf
 +				privateConf.PrivateVolume = true
++				privateConf.PrivateVolumeDevices = conf.PrivateVolumeDevices == "enabled"
 +				connConf = &privateConf
 +			}
  			connImpl = fsgofer.NewConnectionImpl(connConf)
@@ -7253,20 +7375,22 @@ index 640d01f..094d8b4 100644
  	}
  	return subcommands.ExitSuccess
 diff --git a/runsc/config/config.go b/runsc/config/config.go
-index 0fbf027..0b6078f 100644
+index 0fbf027..e16cbc4 100644
 --- a/runsc/config/config.go
 +++ b/runsc/config/config.go
-@@ -50,6 +50,9 @@ import (
+@@ -50,6 +50,11 @@ import (
  //     if it is no longer needed at all.
  //  2. Add the flag to flags_graveyard.go and remove it from flags.go.
  type Config struct {
 +	// PrivateVolumes enables SDK-owned volumes with virtual guest ownership.
 +	PrivateVolumes string `flag:"private-volumes"`
++	// PrivateVolumeDevices stores guest device nodes without host devices.
++	PrivateVolumeDevices string `flag:"private-volume-devices"`
 +
  	// RootDir is the runtime root directory.
  	RootDir string `flag:"root"`
  
-@@ -124,6 +127,10 @@ type Config struct {
+@@ -124,6 +129,10 @@ type Config struct {
  	// Network indicates what type of network to use.
  	Network NetworkType `flag:"network"`
  
@@ -7277,7 +7401,7 @@ index 0fbf027..0b6078f 100644
  	// GoferNetworkNamespace controls the network namespace used by gofer
  	// processes. The default is the shared empty "null" network namespace.
  	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
-@@ -321,6 +328,27 @@ type Config struct {
+@@ -321,6 +330,27 @@ type Config struct {
  	// Don't configure cgroups.
  	IgnoreCgroups bool `flag:"ignore-cgroups"`
  
@@ -7305,7 +7429,7 @@ index 0fbf027..0b6078f 100644
  	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
  	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
  
-@@ -381,6 +409,10 @@ type Config struct {
+@@ -381,6 +411,10 @@ type Config struct {
  	// unsupported driver version.
  	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
  
@@ -7316,12 +7440,15 @@ index 0fbf027..0b6078f 100644
  	// TPUProxy enables support for TPUs.
  	TPUProxy bool `flag:"tpuproxy"`
  
-@@ -493,6 +525,30 @@ type Config struct {
+@@ -493,6 +527,33 @@ type Config struct {
  // Config.Override does not validate, so callers must call Validate once they
  // are done overriding.
  func (c *Config) Validate() error {
 +	if c.PrivateVolumes != "" && c.PrivateVolumes != "disabled" && c.PrivateVolumes != "enabled" {
 +		return fmt.Errorf("invalid private-volumes mode %q", c.PrivateVolumes)
++	}
++	if c.PrivateVolumeDevices != "" && c.PrivateVolumeDevices != "disabled" && c.PrivateVolumeDevices != "enabled" {
++		return fmt.Errorf("invalid private-volume-devices mode %q", c.PrivateVolumeDevices)
 +	}
 +	if c.VirtualConsoles != "" && c.VirtualConsoles != "disabled" && c.VirtualConsoles != "headless" {
 +		return fmt.Errorf("virtual-consoles must be disabled or headless")
@@ -7347,7 +7474,7 @@ index 0fbf027..0b6078f 100644
  	if c.Overlay && c.Overlay2.Enabled() {
  		// Deprecated flag was used together with flag that replaced it.
  		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
-@@ -539,6 +595,9 @@ func (c *Config) Validate() error {
+@@ -539,6 +600,9 @@ func (c *Config) Validate() error {
  	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
  		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
  	}
@@ -7357,7 +7484,7 @@ index 0fbf027..0b6078f 100644
  	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
  	if err != nil {
  		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: %w", c.NVProxyAllowedDriverCapabilities, err)
-@@ -1649,3 +1708,28 @@ func (xd *XDP) Set(input string) error {
+@@ -1649,3 +1713,28 @@ func (xd *XDP) Set(input string) error {
  	}
  	return nil
  }
@@ -7417,18 +7544,19 @@ index 710cb07..3e73af3 100644
 +	}
 +}
 diff --git a/runsc/config/flags.go b/runsc/config/flags.go
-index f4852a7..bd18e91 100644
+index f4852a7..17d67f4 100644
 --- a/runsc/config/flags.go
 +++ b/runsc/config/flags.go
-@@ -58,6 +58,7 @@ const (
+@@ -58,6 +58,8 @@ const (
  
  // RegisterFlags registers flags used to populate Config.
  func RegisterFlags(flagSet *flag.FlagSet) {
 +	flagSet.String("private-volumes", "disabled", "private volume data/ownership wrappers: disabled (default) or enabled; requires directfs=false")
++	flagSet.String("private-volume-devices", "disabled", "device metadata in private volumes: disabled (default) or enabled; never opens host devices")
  	// Although these flags are not part of the OCI spec, they are used by
  	// Docker, and thus should not be changed.
  	flagSet.String("root", "", fmt.Sprintf("root directory for storage of container state, defaults are $%s/runsc, %s.", xdgRuntimeDirEnvVar, defaultRootDir))
-@@ -148,6 +149,13 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -148,6 +150,13 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
  
  	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
@@ -7442,7 +7570,7 @@ index f4852a7..bd18e91 100644
  	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
  	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
  	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
-@@ -156,6 +164,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -156,6 +165,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("TESTONLY-nftables", false, "TEST ONLY; Enables nftables support in the sentry.")
  
  	// Flags that control sandbox runtime behavior: network related.
@@ -7450,7 +7578,7 @@ index f4852a7..bd18e91 100644
  	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
  	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
  	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-@@ -184,6 +193,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -184,6 +194,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
  	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
  	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
@@ -7518,20 +7646,21 @@ index 8453f96..3184a98 100644
  	unix.SYS_FUTEX: seccomp.Or{
  		seccomp.PerArg{
 diff --git a/runsc/fsgofer/lisafs.go b/runsc/fsgofer/lisafs.go
-index d57e54e..93d4941 100644
+index d57e54e..0f9bf86 100644
 --- a/runsc/fsgofer/lisafs.go
 +++ b/runsc/fsgofer/lisafs.go
-@@ -51,6 +51,9 @@ const (
+@@ -51,6 +51,10 @@ const (
  
  // Config holds configuration options for the fsgofer server.
  type Config struct {
 +	// PrivateVolume exports only the data directory and virtualizes guest IDs.
-+	PrivateVolume bool
++	PrivateVolume        bool
++	PrivateVolumeDevices bool
 +
  	// HostUDS signals whether the gofer can connect to host unix domain sockets.
  	HostUDS config.HostUDS
  
-@@ -111,6 +114,7 @@ func NewConnectionImpl(config *Config) lisafs.ConnectionImpl {
+@@ -111,6 +115,7 @@ func NewConnectionImpl(config *Config) lisafs.ConnectionImpl {
  type connectionImpl struct {
  	// config is the global configuration for the gofer.
  	config *Config
@@ -7539,7 +7668,7 @@ index d57e54e..93d4941 100644
  }
  
  var _ lisafs.ConnectionImpl = (*connectionImpl)(nil)
-@@ -118,6 +122,29 @@ var _ lisafs.ConnectionImpl = (*connectionImpl)(nil)
+@@ -118,6 +123,29 @@ var _ lisafs.ConnectionImpl = (*connectionImpl)(nil)
  // Mount implements lisafs.ConnectionImpl.Mount.
  func (i *connectionImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
  	mountPath := mountNode.FilePath()
@@ -7569,7 +7698,7 @@ index d57e54e..93d4941 100644
  	rootHostFD, err := tryOpen(func(flags int) (int, error) {
  		return unix.Open(mountPath, flags, 0)
  	})
-@@ -129,7 +156,7 @@ func (i *connectionImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*l
+@@ -129,7 +157,7 @@ func (i *connectionImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*l
  	})
  	defer cu.Clean()
  
@@ -7578,7 +7707,7 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, -1, err
  	}
-@@ -308,7 +335,7 @@ func (fd *controlFDLisa) Close() {
+@@ -308,7 +336,7 @@ func (fd *controlFDLisa) Close() {
  
  // Stat implements lisafs.ControlFDImpl.Stat.
  func (fd *controlFDLisa) Stat() (lisafs.Statx, error) {
@@ -7587,7 +7716,7 @@ index d57e54e..93d4941 100644
  }
  
  // SetStat implements lisafs.ControlFDImpl.SetStat.
-@@ -415,7 +442,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
+@@ -415,7 +443,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
  		if stat.Mask&unix.STATX_GID != 0 {
  			gid = stat.GID
  		}
@@ -7596,7 +7725,7 @@ index d57e54e..93d4941 100644
  			log.Warningf("SetStat fchown failed %q, err: %v", fd.Node().FilePath(), err)
  			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
  			failureErr = err
-@@ -434,7 +461,7 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, err
+@@ -434,7 +462,7 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, err
  		return nil, lisafs.Statx{}, err
  	}
  
@@ -7605,7 +7734,7 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		_ = unix.Close(childHostFD)
  		return nil, lisafs.Statx{}, err
-@@ -465,7 +492,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
+@@ -465,7 +493,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
  	defer closeCurDirFD()
  	if len(path) > 0 && len(path[0]) == 0 {
  		// Write stat results for dirFD if the first path component is "".
@@ -7614,7 +7743,7 @@ index d57e54e..93d4941 100644
  		if err != nil {
  			return err
  		}
-@@ -490,7 +517,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
+@@ -490,7 +518,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
  		closeCurDirFD()
  		curDirFD = curFD
  
@@ -7623,7 +7752,27 @@ index d57e54e..93d4941 100644
  		if err != nil {
  			return err
  		}
-@@ -597,12 +624,12 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
+@@ -539,12 +567,19 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
+ 			return nil, -1, unix.EPERM
+ 		}
+ 	case unix.S_IFCHR:
++		if impl.owners != nil {
++			// Owned volumes contain placeholders, never host devices. Known
++			// character devices are opened by the sentry's device registry.
++			return nil, -1, unix.ENXIO
++		}
+ 		if !impl.config.CharDevicePolicy.AllowsPassthrough() {
+ 			logRejectedCharDevOpenOnce.Do(func() {
+ 				log.Warningf("Rejecting attempt to open character device from host filesystem: %q. If you want to allow this, set flag --character-device-policy=prefer-emulated or --character-device-policy=passthrough", fd.ControlFD.Node().FilePath())
+ 			})
+ 			return nil, -1, unix.EPERM
+ 		}
++	case unix.S_IFBLK:
++		return nil, -1, unix.ENXIO
+ 	}
+ 	flags |= openFlags
+ 	openHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
+@@ -597,12 +632,12 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
  	defer cu.Clean()
  
  	// Set the owners as requested by the client.
@@ -7638,7 +7787,7 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, nil, -1, err
  	}
-@@ -650,13 +677,13 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+@@ -650,13 +685,13 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
@@ -7654,7 +7803,36 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		unix.Close(childDirFd)
  		return nil, lisafs.Statx{}, err
-@@ -703,13 +730,13 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+@@ -668,13 +703,18 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+ 
+ // Mknod implements lisafs.ControlFDImpl.Mknod.
+ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (*lisafs.ControlFD, lisafs.Statx, error) {
++	hostMode := mode
++	virtualDevice := fd.connection().owners != nil && fd.connection().config.PrivateVolumeDevices && (mode.FileType() == linux.S_IFCHR || mode.FileType() == linux.S_IFBLK)
++	if virtualDevice {
++		hostMode = mode&^linux.S_IFMT | linux.S_IFREG
++	}
+ 	// Only allow creating regular files or overlayfs whiteouts. Linux's
+ 	// vfs_mknod() exempts whiteouts from the CAP_MKNOD check, so we do not need
+ 	// CAP_MKNOD on the gofer process. This enables using gofer as an overlay
+ 	// upper layer. Return EPERM otherwise; from mknod(2) man page:
+ 	// "EPERM: [...] if the filesystem containing pathname does not support
+ 	// the type of node requested."
+-	switch mode.FileType() {
++	switch hostMode.FileType() {
+ 	case linux.S_IFREG:
+ 	case linux.S_IFCHR:
+ 		if minor == 0 && major == 0 {
+@@ -685,7 +725,7 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+ 		return nil, lisafs.Statx{}, unix.EPERM
+ 	}
+ 
+-	if err := unix.Mknodat(fd.hostFD, name, uint32(mode), 0); err != nil {
++	if err := unix.Mknodat(fd.hostFD, name, uint32(hostMode), 0); err != nil {
+ 		return nil, lisafs.Statx{}, err
+ 	}
+ 	cu := cleanup.Make(func() {
+@@ -703,17 +743,23 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
@@ -7670,7 +7848,17 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		unix.Close(childFD)
  		return nil, lisafs.Statx{}, err
-@@ -737,12 +764,12 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
+ 	}
++	if virtualDevice {
++		if err := fd.connection().owners.accessNode(&childStat, uid, gid, uint32(mode.FileType()), major, minor); err != nil {
++			unix.Close(childFD)
++			return nil, lisafs.Statx{}, err
++		}
++	}
+ 	cu.Release()
+ 
+ 	return newControlFDLisa(childFD, fd, name, mode).FD(), childStat, nil
+@@ -737,12 +783,12 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
@@ -7685,7 +7873,7 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		unix.Close(symlinkFD)
  		return nil, lisafs.Statx{}, err
-@@ -781,7 +808,7 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
+@@ -781,7 +827,7 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
  		return nil, lisafs.Statx{}, err
  	}
  
@@ -7694,7 +7882,7 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
-@@ -991,12 +1018,12 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
+@@ -991,12 +1037,12 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
  		_ = unix.Close(sockFileFD)
  	})
  
@@ -7709,7 +7897,90 @@ index d57e54e..93d4941 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, nil, -1, err
  	}
-@@ -1156,7 +1183,7 @@ func (fd *openFDLisa) Close() {
+@@ -1046,6 +1092,15 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
+ 		size = linux.XATTR_SIZE_MAX
+ 	}
+ 	data := getValueBuf(size)
++	if owners := fd.connection().owners; owners != nil && privateXattrName(name) != "" {
++		meta, err := owners.xattrFD(fd.hostFD, false)
++		if err != nil {
++			return 0, err
++		}
++		defer unix.Close(meta)
++		n, err := unix.Fgetxattr(meta, privateXattrName(name), data)
++		return uint16(n), err
++	}
+ 	if fd.IsSocket() || fd.IsSymlink() {
+ 		// Sockets and symlinks use O_PATH host FDs. However, fgetxattr(2) fails
+ 		// with EBADF for O_PATH FDs. Use lgetxattr(2) instead.
+@@ -1058,6 +1113,14 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
+ 
+ // SetXattr implements lisafs.ControlFDImpl.SetXattr.
+ func (fd *controlFDLisa) SetXattr(name string, value string, flags uint32) error {
++	if owners := fd.connection().owners; owners != nil && privateXattrName(name) != "" {
++		meta, err := owners.xattrFD(fd.hostFD, true)
++		if err != nil {
++			return err
++		}
++		defer unix.Close(meta)
++		return unix.Fsetxattr(meta, privateXattrName(name), []byte(value), int(flags))
++	}
+ 	if fd.IsSocket() || fd.IsSymlink() {
+ 		// Sockets and symlinks use O_PATH host FDs. However, fsetxattr(2) fails
+ 		// with EBADF for O_PATH FDs. Use lsetxattr(2) instead.
+@@ -1104,14 +1167,50 @@ func (fd *controlFDLisa) ListXattr(size uint64) (lisafs.StringArray, error) {
+ 		if i < 0 {
+ 			break
+ 		}
+-		names = append(names, string(data[:i]))
++		name := string(data[:i])
++		if fd.connection().owners == nil || privateXattrName(name) == "" {
++			names = append(names, name)
++		}
+ 		data = data[i+1:]
+ 	}
++	if owners := fd.connection().owners; owners != nil {
++		meta, err := owners.xattrFD(fd.hostFD, false)
++		if err != nil && err != unix.ENODATA {
++			return nil, err
++		}
++		if err == nil {
++			defer unix.Close(meta)
++			n, err := unix.Flistxattr(meta, *bPtr)
++			if err != nil {
++				return nil, err
++			}
++			for _, raw := range bytes.Split((*bPtr)[:n], []byte{0}) {
++				if name := guestXattrName(string(raw)); name != "" {
++					names = append(names, name)
++				}
++			}
++		}
++		var length uint64
++		for _, name := range names {
++			length += uint64(len(name) + 1)
++		}
++		if length > size {
++			return nil, unix.ERANGE
++		}
++	}
+ 	return names, nil
+ }
+ 
+ // RemoveXattr implements lisafs.ControlFDImpl.RemoveXattr.
+ func (fd *controlFDLisa) RemoveXattr(name string) error {
++	if owners := fd.connection().owners; owners != nil && privateXattrName(name) != "" {
++		meta, err := owners.xattrFD(fd.hostFD, false)
++		if err != nil {
++			return err
++		}
++		defer unix.Close(meta)
++		return unix.Fremovexattr(meta, privateXattrName(name))
++	}
+ 	if fd.IsSocket() || fd.IsSymlink() {
+ 		// Sockets and symlinks use O_PATH host FDs. However, fremovexattr(2) fails
+ 		// with EBADF for O_PATH FDs. Use lremovexattr(2) instead.
+@@ -1156,7 +1255,7 @@ func (fd *openFDLisa) Close() {
  
  // Stat implements lisafs.OpenFDImpl.Stat.
  func (fd *openFDLisa) Stat() (lisafs.Statx, error) {
@@ -7718,12 +7989,61 @@ index d57e54e..93d4941 100644
  }
  
  // Sync implements lisafs.OpenFDImpl.Sync.
+@@ -1232,6 +1331,25 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
+ 			// The client also wants the device ID, which annoyingly incurs an
+ 			// additional syscall per dirent.
+ 			// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
++			connection := fd.ControlFD().(*controlFDLisa).connection()
++			if connection.owners != nil && connection.config.PrivateVolumeDevices {
++				// Reuse the required per-entry stat to report the guest node
++				// type. DT_UNKNOWN breaks overlay snapshotter feature probes.
++				stat, err := statAtTo(fd.hostFD, name, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
++				if err == nil && stat.Mode&unix.S_IFMT == unix.S_IFREG {
++					err = connection.owners.access(&stat, lisafs.NoUID, lisafs.NoGID)
++				}
++				if err != nil {
++					log.Warningf("Getdent64: skipping private file %q: %v", name, err)
++					return
++				}
++				dirent.Type = primitive.Uint8((stat.Mode & unix.S_IFMT) >> 12)
++				dirent.DevMinor = primitive.Uint32(stat.DevMinor)
++				dirent.DevMajor = primitive.Uint32(stat.DevMajor)
++				recordDirent(dirent)
++				bytesRead += int(reclen)
++				return
++			}
+ 			stat, err := fsutil.StatAt(fd.hostFD, name)
+ 			if err != nil {
+ 				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(fd.ControlFD().FD().Node().FilePath(), name), err)
+@@ -1333,8 +1451,12 @@ func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
+ }
+ 
+ func fstatTo(hostFD int) (lisafs.Statx, error) {
++	return statAtTo(hostFD, "", unix.AT_EMPTY_PATH)
++}
++
++func statAtTo(hostFD int, name string, flags int) (lisafs.Statx, error) {
+ 	var stat unix.Statx_t
+-	if err := unix.Statx(hostFD, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat); err != nil {
++	if err := unix.Statx(hostFD, name, flags, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat); err != nil {
+ 		return lisafs.Statx{}, err
+ 	}
+ 	return lisafs.Statx{
+@@ -1372,7 +1494,7 @@ func fstatTo(hostFD int) (lisafs.Statx, error) {
+ 
+ func checkSupportedFileType(mode uint32) error {
+ 	switch mode & unix.S_IFMT {
+-	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK, unix.S_IFCHR, unix.S_IFSOCK, unix.S_IFIFO:
++	case unix.S_IFREG, unix.S_IFDIR, unix.S_IFLNK, unix.S_IFCHR, unix.S_IFBLK, unix.S_IFSOCK, unix.S_IFIFO:
+ 		return nil
+ 
+ 	default:
 diff --git a/runsc/fsgofer/private_owners.go b/runsc/fsgofer/private_owners.go
 new file mode 100644
-index 0000000..d763c4d
+index 0000000..fd9b5c1
 --- /dev/null
 +++ b/runsc/fsgofer/private_owners.go
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,188 @@
 +// Copyright 2026 The gVisor Authors.
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
@@ -7745,6 +8065,7 @@ index 0000000..d763c4d
 +	"fmt"
 +	"os"
 +	"runtime"
++	"strings"
 +
 +	"golang.org/x/sys/unix"
 +	"gvisor.dev/gvisor/pkg/lisafs"
@@ -7765,6 +8086,44 @@ index 0000000..d763c4d
 +	dir *os.File
 +}
 +
++// Trusted guest xattrs live on the hidden ownership record as ordinary user
++// xattrs. The shorter prefix preserves Linux's maximum name length. Kernel
++// xattr operations provide atomic create/replace and independent-inode access.
++func privateXattrName(name string) string {
++	if strings.HasPrefix(name, "trusted.") {
++		return "user.t." + strings.TrimPrefix(name, "trusted.")
++	}
++	return ""
++}
++
++func guestXattrName(name string) string {
++	if strings.HasPrefix(name, "user.t.") {
++		return "trusted." + strings.TrimPrefix(name, "user.t.")
++	}
++	return ""
++}
++
++func (owners *privateOwners) xattrFD(hostFD int, create bool) (int, error) {
++	defer runtime.KeepAlive(owners)
++	stat, err := fstatTo(hostFD)
++	if err != nil {
++		return -1, err
++	}
++	key, err := ownerKey(stat)
++	if err != nil {
++		return -1, err
++	}
++	flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_CLOEXEC
++	if create {
++		flags = unix.O_RDWR | unix.O_CREAT | unix.O_NOFOLLOW | unix.O_CLOEXEC
++	}
++	fd, err := unix.Openat(int(owners.dir.Fd()), key, flags, 0600)
++	if err == unix.ENOENT {
++		err = unix.ENODATA
++	}
++	return fd, err
++}
++
 +func ownerKey(stat lisafs.Statx) (string, error) {
 +	if stat.Mask&unix.STATX_BTIME == 0 {
 +		return "", fmt.Errorf("private volumes require a filesystem with inode birth times: %w", unix.EOPNOTSUPP)
@@ -7773,12 +8132,19 @@ index 0000000..d763c4d
 +}
 +
 +func (owners *privateOwners) access(stat *lisafs.Statx, uid lisafs.UID, gid lisafs.GID) error {
++	return owners.accessNode(stat, uid, gid, 0, 0, 0)
++}
++
++// accessNode also preserves device-node metadata on a regular host placeholder.
++// Guest mknod must not require host CAP_MKNOD or create a usable host device.
++// A zero kind retains the existing node type during stat/chown operations.
++func (owners *privateOwners) accessNode(stat *lisafs.Statx, uid lisafs.UID, gid lisafs.GID, kind, major, minor uint32) error {
 +	defer runtime.KeepAlive(owners)
 +	key, err := ownerKey(*stat)
 +	if err != nil {
 +		return err
 +	}
-+	write := uid.Ok() || gid.Ok()
++	write := uid.Ok() || gid.Ok() || kind != 0
 +	flags, lock := unix.O_RDONLY, unix.LOCK_SH
 +	if write {
 +		flags, lock = unix.O_RDWR|unix.O_CREAT, unix.LOCK_EX
@@ -7797,16 +8163,29 @@ index 0000000..d763c4d
 +	if err := unix.Flock(fd, lock); err != nil {
 +		return err
 +	}
-+	var data [8]byte
++	var data [20]byte
 +	n, err := unix.Pread(fd, data[:], 0)
 +	if err != nil {
 +		return err
 +	}
-+	if n != 0 && n != len(data) {
++	if n != 0 && n != 8 && n != len(data) {
 +		return unix.EIO
 +	}
 +	if n != 0 {
 +		stat.UID, stat.GID = binary.LittleEndian.Uint32(data[:4]), binary.LittleEndian.Uint32(data[4:])
++	}
++	if kind != 0 {
++		binary.LittleEndian.PutUint32(data[8:12], kind)
++		binary.LittleEndian.PutUint32(data[12:16], major)
++		binary.LittleEndian.PutUint32(data[16:20], minor)
++	}
++	if storedKind := binary.LittleEndian.Uint32(data[8:12]); storedKind != 0 {
++		if storedKind != unix.S_IFCHR && storedKind != unix.S_IFBLK {
++			return unix.EIO
++		}
++		stat.Mode = stat.Mode&^unix.S_IFMT | uint16(storedKind)
++		stat.RdevMajor = binary.LittleEndian.Uint32(data[12:16])
++		stat.RdevMinor = binary.LittleEndian.Uint32(data[16:20])
 +	}
 +	if !write {
 +		return nil
@@ -7855,13 +8234,14 @@ index 0000000..d763c4d
 +}
 diff --git a/runsc/fsgofer/private_owners_test.go b/runsc/fsgofer/private_owners_test.go
 new file mode 100644
-index 0000000..9f3da57
+index 0000000..1866696
 --- /dev/null
 +++ b/runsc/fsgofer/private_owners_test.go
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,195 @@
 +package fsgofer
 +
 +import (
++	"bytes"
 +	"os"
 +	"path/filepath"
 +	"sync"
@@ -7870,6 +8250,70 @@ index 0000000..9f3da57
 +	"golang.org/x/sys/unix"
 +	"gvisor.dev/gvisor/pkg/lisafs"
 +)
++
++func TestPrivateTrustedXattrs(t *testing.T) {
++	dir := t.TempDir()
++	metaDir, err := os.Open(dir)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer metaDir.Close()
++	owners := &privateOwners{dir: metaDir}
++	file, err := os.Create(filepath.Join(dir, "guest"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer file.Close()
++	if _, err := owners.xattrFD(int(file.Fd()), false); err != unix.ENODATA {
++		t.Fatalf("absent metadata: %v", err)
++	}
++	meta, err := owners.xattrFD(int(file.Fd()), true)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer unix.Close(meta)
++	name := "trusted.overlay.opaque"
++	value := []byte{'y', 0, 255}
++	if err := unix.Fsetxattr(meta, privateXattrName(name), value, unix.XATTR_CREATE); err != nil {
++		t.Fatal(err)
++	}
++	if err := unix.Fsetxattr(meta, privateXattrName(name), value, unix.XATTR_CREATE); err != unix.EEXIST {
++		t.Fatalf("duplicate: %v", err)
++	}
++	reader, err := owners.xattrFD(int(file.Fd()), false)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer unix.Close(reader)
++	buf := make([]byte, 256)
++	n, err := unix.Fgetxattr(reader, privateXattrName(name), buf)
++	if err != nil || !bytes.Equal(buf[:n], value) {
++		t.Fatalf("read: %q %v", buf[:n], err)
++	}
++	if _, err := unix.Fgetxattr(int(file.Fd()), name, buf); err != unix.ENODATA {
++		t.Fatalf("host xattr changed: %v", err)
++	}
++	if guestXattrName(privateXattrName(name)) != name || privateXattrName("user.t.overlay.opaque") != "" {
++		t.Fatal("namespace collision")
++	}
++	// Chown updates the ownership payload without discarding xattrs.
++	stat, err := fstatTo(int(file.Fd()))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := owners.access(&stat, 1234, 5678); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := unix.Fgetxattr(reader, privateXattrName(name), buf); err != nil {
++		t.Fatal(err)
++	}
++	if err := unix.Fremovexattr(meta, privateXattrName(name)); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := unix.Fgetxattr(reader, privateXattrName(name), buf); err != unix.ENODATA {
++		t.Fatalf("removed xattr: %v", err)
++	}
++}
 +
 +func TestPrivateOwnersAcrossConnections(t *testing.T) {
 +	dir := t.TempDir()
@@ -7946,6 +8390,47 @@ index 0000000..9f3da57
 +func TestPrivateOwnersRequireStableIdentity(t *testing.T) {
 +	if _, err := ownerKey(lisafs.Statx{Mask: unix.STATX_INO}); err == nil {
 +		t.Fatal("accepted an inode without generation identity")
++	}
++}
++
++func TestPrivateDeviceMetadata(t *testing.T) {
++	dir := t.TempDir()
++	meta, err := os.Open(dir)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer meta.Close()
++	connection := &connectionImpl{owners: &privateOwners{dir: meta}}
++	for _, kind := range []uint32{unix.S_IFCHR, unix.S_IFBLK} {
++		file, err := os.CreateTemp(dir, "node-")
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer file.Close()
++		host, err := fstatTo(int(file.Fd()))
++		if err != nil {
++			t.Fatal(err)
++		}
++		if err := connection.owners.accessNode(&host, 1234, 5678, kind, 10, 175); err != nil {
++			t.Fatal(err)
++		}
++		if err := connection.chown(int(file.Fd()), 4321, lisafs.NoGID); err != nil {
++			t.Fatal(err)
++		}
++		// Metadata survives another connection and ownership updates.
++		reader := &connectionImpl{owners: &privateOwners{dir: meta}}
++		stat, err := reader.stat(int(file.Fd()))
++		if err != nil || uint32(stat.Mode)&unix.S_IFMT != kind || stat.RdevMajor != 10 || stat.RdevMinor != 175 || stat.UID != 4321 || stat.GID != 5678 {
++			t.Fatalf("stat=%+v err=%v", stat, err)
++		}
++		actual, err := fstatTo(int(file.Fd()))
++		if err != nil || actual.Mode&unix.S_IFMT != unix.S_IFREG || actual.RdevMajor != 0 || actual.RdevMinor != 0 {
++			t.Fatalf("host device was created: %+v err=%v", actual, err)
++		}
++		actual.Btime.Nsec++
++		if err := reader.owners.access(&actual, lisafs.NoUID, lisafs.NoGID); err != nil || actual.Mode&unix.S_IFMT != unix.S_IFREG {
++			t.Fatalf("reused inode inherited a device: %+v err=%v", actual, err)
++		}
 +	}
 +}
 diff --git a/runsc/guesttools/BUILD b/runsc/guesttools/BUILD

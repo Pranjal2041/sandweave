@@ -1,5 +1,6 @@
 """A Dockerfile build can be the first operation in an empty installation."""
 import os
+import tempfile
 
 import pytest
 
@@ -11,6 +12,12 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(
 
 
 def test_build_before_setup_and_reuse(tmp_path, monkeypatch):
+    # First-use setup and later worker launches must both accept a TMPDIR whose
+    # socket paths exceed sockaddr_un, including multibyte directory names.
+    temporary = tmp_path / ('long-runtime-directory-' * 6) / ('文' * 40)
+    temporary.mkdir(parents=True)
+    monkeypatch.setenv('TMPDIR', str(temporary))
+    monkeypatch.setattr(tempfile, 'tempdir', str(temporary))
     installation = tmp_path / 'installation'
     monkeypatch.setenv('SANDWEAVE_HOME', str(installation))
     monkeypatch.delenv('SANDWEAVE_ASSETS', raising=False)

@@ -298,6 +298,24 @@ exit code 0, yielding reward 1; a separate fresh unsolved attempt yields reward
 timeout was edited. The final engine patch applies to the pinned upstream
 source and reproduces all 158 changed engine files.
 
+The final engine also passed a forced rebuild of both original CyberGym
+Dockerfiles: startup took 1,385.31 seconds, within the original 1,800-second
+limit, and the original solution again earned reward 1. Base-image downloads
+were already cached. A fresh unsolved attempt using the rebuilt images started
+in 5.42 seconds and earned reward 0. These measurements are from this host;
+they do not include a fresh download of every base layer.
+
+SDK `0.2.20rc6` was published from `448c421d368b0938c82f8f3dec7be32376d42979`
+with runtime `2026.09.16.5`. The committed wheel and source distribution have
+matching contents. Installed-package release checks passed 564 host tests
+(four skips), the core SDK checks, first-use builds, large-image integrity,
+firewall packets, ownership/ACL transfers, concurrent byte transfers, mounts,
+FIFO signal restart, and 34 Harbor checks (four optional skips). Three additional
+HTTP worker checks passed. An earlier release-check attempt failed during a
+host DNS lookup while pulling the builder image; a direct pull succeeded, and
+the unchanged full validation then passed. Both logs are retained. GitHub and
+PyPI artifact hashes match the validated release files.
+
 Concurrent regression tests also exposed a stale pool reconciliation starting
 a second baseline capture after the first capture had stopped its builder.
 Capture now rechecks current pool state before its RPC and checks assignment

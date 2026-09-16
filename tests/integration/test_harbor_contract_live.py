@@ -36,6 +36,9 @@ collect = [{service = "sidecar", command = "printf $ROLE > /evidence"}]
         task = bench.next()
         assert task.env.run('printf "$ROLE"', env={'ROLE': 'call'}).stdout == 'main-agent'
         provider = bench._pool.sessions[task.env.id].trial.agent_environment
+        for service in provider.project.views.values():
+            image = service.spec['image']
+            assert image['reference'].endswith('@' + image['digest'])
         async def check():
             with provider.scoped_exec_env({'ROLE': 'main-scope'}):
                 return await provider.service_exec('printf "$ROLE"; test ! -e /bin/bash', service='sidecar')

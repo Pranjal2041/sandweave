@@ -176,6 +176,8 @@ class Project:
             else:
                 image = service['image']
                 options['image'] = image if image.startswith('docker://') else 'docker://' + image
+                if self.environment.session:
+                    options['image'] = await self.environment.session.pool.pin(options['image'])
             requests[name] = await drained(partial(definition, **options))
             networks = service_network(name, service)['networks']
             if not networks or all(self.config.get('networks', {}).get(network, {}).get('internal') for network in networks):

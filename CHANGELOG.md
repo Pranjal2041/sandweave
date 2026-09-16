@@ -7,6 +7,8 @@
   scoped variables. Minimal sidecars use their POSIX shell.
 - Apply Harbor's resource-policy Compose overlay in the upstream order, honor
   absent optional dependencies, and retry timed-out service health probes.
+- Pin Compose service image tags through the benchmark's shared resolver so
+  different workers receive the same immutable image revision.
 - Give intermediate separate verifiers independent lease capacity so they can
   use the agent's image while the agent remains alive. Image preparation stays
   deduplicated. Slow warm-task cleanup no longer holds the capacity lock.

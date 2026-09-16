@@ -18,7 +18,7 @@ Compose translation, service groups, image build/import and command/file APIs.
 | --- | --- |
 | Local task, local dataset, native TaskConfig/DatasetConfig, registry, package, repository; versions, filters and download settings | Harbor's DatasetConfig and TaskClient resolve sources. Native source configurations, content digests and Git revisions survive discovery. `test_harbor.py` covers local discovery and duplicate task names; earlier registry/package acceptance is recorded in `harbor-adapter.md`. |
 | Task metadata, instructions, extra instructions, canaries, configuration migration | Original Harbor Task and Trial perform these operations. Discovery reads metadata; Trial validates verifier inputs using the actual trial configuration. |
-| Prebuilt image, Dockerfile, Compose and additional overlays | Harbor definition selection and its Compose parser/overlays; BuildKit builds original recipes. Existing live tests cover multistage, inline, remote Git, additional contexts, secrets and build reuse. |
+| Prebuilt image, Dockerfile, Compose and additional overlays | Harbor definition selection and its Compose parser/overlays; BuildKit builds original recipes. Plain and Compose service image tags use the same benchmark-wide pinning futures; service definitions contain the selected digest. Existing live tests cover multistage, inline, remote Git, additional contexts, secrets and build reuse. |
 | CPU and memory policies, overrides, image user/environment/workdir | BaseEnvironment resolves policies; provider maps CPU limits and guest memory. Compose applies upstream resource defaults before task overrides. Resource-mode host tests and live rendering checks verify order. Guest memory still has a finite Sandweave ceiling. |
 | Main exec: shell, user, cwd, persistent/command/scoped environment, callbacks, timeout, complete streams | Provider uses Bash and Harbor defaults, and returns the native ExecResult. Persistent < command < scoped environment precedence also applies through the pull handle. Transfer/output live checks include streams over 1 MiB. |
 | Sidecar exec and artifact operations | Per-service views use POSIX sh and their own image defaults. Main agent scope/user/cwd do not leak into them. The minimal-sidecar test uses an image without Bash, a collect hook and artifact export. |
@@ -38,7 +38,7 @@ Compose translation, service groups, image build/import and command/file APIs.
 
 The rc7 changes fix sidecar shell/scope leakage, pull-command scoped environment
 precedence, missing upstream resource overlays, health-probe timeout handling,
-absent optional dependencies, same-image
+absent optional dependencies, benchmark-wide Compose image pinning, same-image
 intermediate verifier deadlock, capacity locking during warm eviction, trajectory
 and continuation inputs, disabled-verifier discovery, and hidden multi-step
 failures. Command cleanup also preserves the original failure if termination fails.

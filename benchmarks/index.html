@@ -1395,7 +1395,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/benchmarks.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/feat/osworld-benchmarks/docs/benchmarks.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1407,8 +1407,8 @@
 <p>A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a <a href="../pools/">pool</a> to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.</p>
-<p>Available in the <code>0.2.20rc6</code> preview:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.20rc6'</span>
+<p>Available in the <code>0.2.20rc7</code> preview:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.20rc7'</span>
 </code></pre></div>
 <h2 id="run-tasks">Run tasks<a class="headerlink" href="#run-tasks" title="Permanent link">&para;</a></h2>
 <p>Create a benchmark once, then pull a task whenever your client needs a sandbox:</p>
@@ -1503,7 +1503,7 @@ completed evaluation for each task, in benchmark order.</p>
 <p>Use a Harbor dataset name or an existing Harbor task directory. The adapter reads
 the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[harbor]==0.2.20rc6'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[harbor]==0.2.20rc7'</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
@@ -1546,6 +1546,9 @@ runs shared or separate verifiers, and writes its trial results and logs.</p>
 to a percentage or invent a pass threshold; <code>score</code> and <code>passed</code> are <code>None</code> for
 Harbor. <code>result.feedback</code> gives the trial directory. Infrastructure and verifier
 errors raise exceptions instead of returning a zero reward.</p>
+<p>With <code>harbor={"verifier": {"disable": True}}</code>, verifier files are not required.
+<code>task.evaluate()</code> completes the agent phase and returns <code>skipped=True</code> with no
+reward. This also works for local dataset directories and multi-step tasks.</p>
 <p>Evaluation completes the current Harbor agent phase. On the final step, Harbor
 stops the environment after collecting its outputs. Call <code>task.close()</code> to return
 the task's capacity. Repeating <code>evaluate()</code> for the same step returns its saved
@@ -1593,12 +1596,19 @@ Host namespace and host-device access are not supplied by a task image.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">inputs</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">harbor</span>
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">inputs</span><span class="o">.</span><span class="n">mcp_servers</span><span class="p">)</span>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">inputs</span><span class="o">.</span><span class="n">skills_dir</span><span class="p">)</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Record usage or other agent results in Harbor's native context.</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="n">context</span> <span class="o">=</span> <span class="n">inputs</span><span class="o">.</span><span class="n">context</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># A task's prior trajectory and continuation state, when present.</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">inputs</span><span class="o">.</span><span class="n">trajectory</span><span class="p">,</span> <span class="n">inputs</span><span class="o">.</span><span class="n">resume</span><span class="p">)</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="n">previous_context</span> <span class="o">=</span> <span class="n">inputs</span><span class="o">.</span><span class="n">previous_context</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="c1"># Record usage or other agent results in Harbor's native context.</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="n">context</span> <span class="o">=</span> <span class="n">inputs</span><span class="o">.</span><span class="n">context</span>
 </code></pre></div>
 <p>Your agent decides how to use MCP servers and skills. The pull interface does
 not install a model or run an agent for you. Harbor's installed agents and
-agent-specific protocols use the same environment provider through its CLI.</p>
+agent-specific protocols use the same environment provider through its CLI.
+For a task with a prior trajectory, <code>inputs.trajectory</code> is the original local
+file. If <code>harbor={"agent": {"resume_trajectory": True}}</code> requests continuation,
+later phases expose <code>resume=True</code> and the previous native result context.
+Your client loads that trajectory and retains its own model conversation.</p>
 <p>To use Harbor's own agents with the same environment provider:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>harbor<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>terminal-bench@2.0<span class="w"> </span>--env<span class="w"> </span>sandweave.benchmarks.harbor.provider:SandweaveEnvironment
 </code></pre></div>

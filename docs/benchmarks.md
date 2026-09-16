@@ -4,10 +4,10 @@ A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a [pool](pools.md) to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.
 
-Available in the `0.2.20rc5` preview:
+Available in the `0.2.20rc6` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc5'
+uv pip install 'sandweave[benchmarks]==0.2.20rc6'
 ```
 
 ## Run tasks
@@ -137,7 +137,7 @@ the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:
 
 ```bash
-uv pip install 'sandweave[harbor]==0.2.20rc5'
+uv pip install 'sandweave[harbor]==0.2.20rc6'
 ```
 
 ```python

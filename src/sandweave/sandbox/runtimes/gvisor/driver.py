@@ -208,6 +208,8 @@ class Runtime:
                 features.append('private-volumes')
             if any(mount.get('_private_volume') for mount in spec.get('mounts', [])):
                 features.append('private-volume-devices')
+            if any(mount.get('_exclusive') for mount in spec.get('mounts', [])):
+                features.append('private-volume-cache')
             if spec['resources']['memory'].get('disk') is not None:
                 features.append('app-memory-directory')
             if spec['template'].get('runtime_options', {}).get('virtual_consoles'):

@@ -139,6 +139,9 @@ def validate(directory, release):
     shutil.copyfile(source / 'tests/integration/test_build_disk_storage.py', live / 'test_build_disk_storage.py')
     run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
         live / 'test_build_disk_storage.py', cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_iptables_state_live.py', live / 'test_iptables_state_live.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_iptables_state_live.py', cwd=live, env=env)
     # Exercise host/guest ownership independently of the default temporary
     # directory's group, using the runtime built by the installed package.
     shutil.copyfile(source / 'tests/integration/test_build_transfer.py', live / 'test_build_transfer.py')

@@ -1765,6 +1765,37 @@ index 7cfad68..2d14d49 100644
  		return linuxerr.EOPNOTSUPP
  	}
  	// Do not allow writes to the "security" namespace on the host filesystem.
+diff --git a/pkg/sentry/fsimpl/overlay/overlay.go b/pkg/sentry/fsimpl/overlay/overlay.go
+index dabaee8..768b487 100644
+--- a/pkg/sentry/fsimpl/overlay/overlay.go
++++ b/pkg/sentry/fsimpl/overlay/overlay.go
+@@ -248,12 +248,20 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
+ 			}
+ 		}
+ 		if upperFSName == "9p" && !userXattr {
+-			// Neither the gofer nor sentry processes have the capabilities to set
+-			// trusted xattrs on the host filesystem. Setting `trusted.overlay.*`
+-			// xattrs requires CAP_SYS_ADMIN in the root user namespace. So enable
+-			// `userxattr` mount option as a workaround.
+-			ctx.Infof("overlay.FilesystemType.GetFilesystem: gofer filesystem used as overlay upper layer; enabling userxattr")
+-			userXattr = true
++			// Ordinary host mounts cannot store trusted attributes. SDK-owned
++			// volumes can, using private metadata. Do not silently switch those
++			// to userxattr: a subsequent read-only overlay would use trusted
++			// attributes and merge entries hidden by an opaque directory.
++			_, err := vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{
++				Root: upperRoot, Start: upperRoot,
++			}, &vfs.GetXattrOptions{Name: linux.XATTR_TRUSTED_PREFIX + "overlay.opaque"})
++			if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
++				ctx.Infof("overlay.FilesystemType.GetFilesystem: upper layer lacks trusted xattrs; enabling userxattr")
++				userXattr = true
++			} else if err != nil && !linuxerr.Equals(linuxerr.ENODATA, err) {
++				upperRoot.DecRef(ctx)
++				return nil, nil, err
++			}
+ 		}
+ 		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
+ 		upperRoot.DecRef(ctx)
 diff --git a/pkg/sentry/fsimpl/proc/task.go b/pkg/sentry/fsimpl/proc/task.go
 index 69c94a6..1b24a49 100644
 --- a/pkg/sentry/fsimpl/proc/task.go
@@ -3886,6 +3917,150 @@ index 7cb8c23..d6c8d57 100644
  func stackPointer(r *arch.Registers) uintptr {
  	return uintptr(r.Rsp)
  }
+diff --git a/pkg/sentry/socket/netfilter/BUILD b/pkg/sentry/socket/netfilter/BUILD
+index 21c625e..0fb0cb1 100644
+--- a/pkg/sentry/socket/netfilter/BUILD
++++ b/pkg/sentry/socket/netfilter/BUILD
+@@ -20,6 +20,7 @@ go_library(
+         "owner_matcher.go",
+         "owner_matcher_v1.go",
+         "snat.go",
++        "state_matcher.go",
+         "targets.go",
+         "tcp_matcher.go",
+         "udp_matcher.go",
+@@ -62,11 +63,13 @@ go_test(
+     name = "netfilter_test",
+     srcs = [
+         "mark_matcher_test.go",
++        "state_matcher_test.go",
+         "netfilter_test.go",
+     ],
+     library = ":netfilter",
+     deps = [
+         "//pkg/abi/linux",
++        "//pkg/hostarch",
+         "//pkg/marshal",
+         "//pkg/syserr",
+         "//pkg/tcpip/stack",
+diff --git a/pkg/sentry/socket/netfilter/state_matcher.go b/pkg/sentry/socket/netfilter/state_matcher.go
+new file mode 100644
+index 0000000..704825d
+--- /dev/null
++++ b/pkg/sentry/socket/netfilter/state_matcher.go
+@@ -0,0 +1,58 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package netfilter
++
++import (
++	"fmt"
++
++	"gvisor.dev/gvisor/pkg/hostarch"
++	"gvisor.dev/gvisor/pkg/tcpip/stack"
++)
++
++func init() { registerMatchMaker(stateMarshaler{}) }
++
++// xt_state_info is one native-endian uint32 statemask (Linux xt_state.h).
++type stateMarshaler struct{}
++
++func (stateMarshaler) name() string    { return "state" }
++func (stateMarshaler) revision() uint8 { return 0 }
++func (stateMarshaler) marshal(m matcher) []byte {
++	data := make([]byte, 4)
++	hostarch.ByteOrder.PutUint32(data, m.(*StateMatcher).mask)
++	return marshalEntryMatch("state", data)
++}
++func (stateMarshaler) unmarshal(_ IDMapper, data []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
++	if len(data) < 4 {
++		return nil, fmt.Errorf("buf has insufficient size for state match: %d", len(data))
++	}
++	return &StateMatcher{mask: hostarch.ByteOrder.Uint32(data)}, nil
++}
++
++// StateMatcher implements the IPv4 and IPv6 xt_state match using the stack's
++// existing connection tracker. No second flow table or packet scan is needed.
++//
++// +stateify savable
++type StateMatcher struct{ mask uint32 }
++
++func (*StateMatcher) name() string    { return "state" }
++func (*StateMatcher) revision() uint8 { return 0 }
++func (m *StateMatcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
++	state := pkt.ConnectionState()
++	bit := uint32(1) // XT_STATE_INVALID
++	if state >= 0 {
++		bit = 1 << (uint32(state) + 1)
++	}
++	return m.mask&bit != 0, false
++}
+diff --git a/pkg/sentry/socket/netfilter/state_matcher_test.go b/pkg/sentry/socket/netfilter/state_matcher_test.go
+new file mode 100644
+index 0000000..6ce65e6
+--- /dev/null
++++ b/pkg/sentry/socket/netfilter/state_matcher_test.go
+@@ -0,0 +1,48 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package netfilter
++
++import (
++	"testing"
++
++	"gvisor.dev/gvisor/pkg/abi/linux"
++	"gvisor.dev/gvisor/pkg/hostarch"
++	"gvisor.dev/gvisor/pkg/tcpip/stack"
++)
++
++func TestStateMatcherABI(t *testing.T) {
++	maker := stateMarshaler{}
++	for _, mask := range []uint32{0, 1, 2 | 4, 8, 64, 0xffffffff} {
++		data := make([]byte, 8) // xtables alignment padding.
++		hostarch.ByteOrder.PutUint32(data, mask)
++		m, err := maker.unmarshal(nil, data, stack.IPHeaderFilter{})
++		if err != nil {
++			t.Fatal(err)
++		}
++		out := maker.marshal(m.(*StateMatcher))
++		if got := hostarch.ByteOrder.Uint32(out[linux.SizeOfXTEntryMatch:]); got != mask {
++			t.Fatalf("mask changed: %#x -> %#x", mask, got)
++		}
++		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
++		matches, drop := m.Match(stack.Output, pkt, "", "")
++		pkt.DecRef()
++		if matches != (mask&1 != 0) || drop {
++			t.Fatalf("invalid packet: matches=%v drop=%v", matches, drop)
++		}
++	}
++	if _, err := maker.unmarshal(nil, []byte{1, 2, 3}, stack.IPHeaderFilter{}); err == nil {
++		t.Fatal("accepted a truncated state mask")
++	}
++}
 diff --git a/pkg/sentry/socket/netlink/netfilter/protocol.go b/pkg/sentry/socket/netlink/netfilter/protocol.go
 index 2105a92..37109a9 100644
 --- a/pkg/sentry/socket/netlink/netfilter/protocol.go
@@ -6159,10 +6334,80 @@ index fa7fd56..302fd8d 100644
  	port *bridgePort
  }
 diff --git a/pkg/tcpip/stack/conntrack.go b/pkg/tcpip/stack/conntrack.go
-index f96c147..1430964 100644
+index f96c147..f3f8445 100644
 --- a/pkg/tcpip/stack/conntrack.go
 +++ b/pkg/tcpip/stack/conntrack.go
-@@ -972,14 +972,68 @@ func NewConnTrack(clock tcpip.Clock, rng connTrackRNG, seed *uint32) *ConnTrack
+@@ -52,6 +52,8 @@ const (
+ 	ConnTrackStateInvalid ConnTrackState = -1
+ 	// ConnTrackStateEstablished represents an established connection.
+ 	ConnTrackStateEstablished ConnTrackState = 0
++	// ConnTrackStateRelated represents an ICMP error for a tracked flow.
++	ConnTrackStateRelated ConnTrackState = 1
+ 	// ConnTrackStateNew represents a new connection.
+ 	ConnTrackStateNew ConnTrackState = 2
+ 	// ConnTrackStateEstablishedReply represents an established connection
+@@ -233,7 +235,7 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
+ 
+ 	// Mark the connection as having been used recently so it isn't reaped.
+ 	cn.lastUsed = cn.ct.clock.NowMonotonic()
+-	if reply {
++	if reply && !isConnTrackICMPError(pkt) {
+ 		cn.replySeen = true
+ 	}
+ 
+@@ -258,6 +260,51 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
+ 	}
+ }
+ 
++// isConnTrackICMPError identifies the error messages handled by getTupleID.
++// An error is related to its quoted flow; it is not a reply establishing that
++// flow. The tuple must already have been validated by connection tracking.
++func isConnTrackICMPError(pkt *PacketBuffer) bool {
++	switch pkt.TransportProtocolNumber {
++	case header.ICMPv4ProtocolNumber:
++		icmp := header.ICMPv4(pkt.TransportHeader().Slice())
++		if len(icmp) >= header.ICMPv4MinimumSize {
++			switch icmp.Type() {
++			case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
++				return true
++			}
++		}
++	case header.ICMPv6ProtocolNumber:
++		icmp := header.ICMPv6(pkt.TransportHeader().Slice())
++		if len(icmp) >= header.ICMPv6MinimumSize {
++			switch icmp.Type() {
++			case header.ICMPv6DstUnreachable, header.ICMPv6PacketTooBig, header.ICMPv6TimeExceeded, header.ICMPv6ParamProblem:
++				return true
++			}
++		}
++	}
++	return false
++}
++
++// ConnectionState returns the packet state used by the legacy iptables state
++// match. A first reply (including a SYN-ACK) is ESTABLISHED without waiting for
++// TCP's handshake to finish. Packets without a tracked tuple are INVALID.
++func (pkt *PacketBuffer) ConnectionState() ConnTrackState {
++	t := pkt.tuple
++	if t == nil || t.conn == nil {
++		return ConnTrackStateInvalid
++	}
++	if isConnTrackICMPError(pkt) {
++		return ConnTrackStateRelated
++	}
++	t.conn.stateMu.RLock()
++	replySeen := t.conn.replySeen
++	t.conn.stateMu.RUnlock()
++	if t.reply || replySeen {
++		return ConnTrackStateEstablished
++	}
++	return ConnTrackStateNew
++}
++
+ type connTrackRNG interface {
+ 	Uint32() uint32
+ }
+@@ -972,14 +1019,68 @@ func NewConnTrack(clock tcpip.Clock, rng connTrackRNG, seed *uint32) *ConnTrack
  // Reaper garbage collects unused connections.
  func NewConnTrackWithReaper(clock tcpip.Clock, rng connTrackRNG, seed *uint32) (*ConnTrack, tcpip.Timer) {
  	ct := NewConnTrack(clock, rng, seed)
@@ -6239,6 +6484,69 @@ index f96c147..1430964 100644
  }
  
  // NfConnTrackPriority returns the priority of the conntrack hook.
+diff --git a/pkg/tcpip/stack/conntrack_test.go b/pkg/tcpip/stack/conntrack_test.go
+index 283186b..cf97327 100644
+--- a/pkg/tcpip/stack/conntrack_test.go
++++ b/pkg/tcpip/stack/conntrack_test.go
+@@ -279,6 +279,58 @@ type genTCPOpts struct {
+ 	dstPort     *uint16
+ }
+ 
++func TestPacketConnectionStateFirstReply(t *testing.T) {
++	ct := &ConnTrack{clock: faketime.NewManualClock()}
++	ct.init()
++	first := genTCPPacket(genTCPOpts{})
++	defer first.DecRef()
++	ct.GetConnAndUpdatePkt(first, true)
++	if got := first.ConnectionState(); got != ConnTrackStateNew {
++		t.Fatalf("SYN: %v", got)
++	}
++	if !first.FinalizeConnTrack() {
++		t.Fatal("finalize SYN failed")
++	}
++	flags := header.TCPFlagSyn | header.TCPFlagAck
++	src, dst := testutil.MustParse4("1.0.0.2"), testutil.MustParse4("1.0.0.1")
++	sport, dport := uint16(6666), uint16(5555)
++	reply := genTCPPacket(genTCPOpts{srcAddr: &src, dstAddr: &dst, srcPort: &sport, dstPort: &dport, flags: &flags})
++	defer reply.DecRef()
++	ct.GetConnAndUpdatePkt(reply, true)
++	if got := reply.ConnectionState(); got != ConnTrackStateEstablished {
++		t.Fatalf("first SYN-ACK: %v", got)
++	}
++	if got := first.ConnectionState(); got != ConnTrackStateEstablished {
++		t.Fatalf("original after reply: %v", got)
++	}
++}
++
++func TestPacketConnectionStateRelated(t *testing.T) {
++	for _, v6 := range []bool{false, true} {
++		pkt := NewPacketBuffer(PacketBufferOptions{ReserveHeaderBytes: 8})
++		if v6 {
++			pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
++			header.ICMPv6(pkt.TransportHeader().Push(8)).SetType(header.ICMPv6DstUnreachable)
++		} else {
++			pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
++			header.ICMPv4(pkt.TransportHeader().Push(8)).SetType(header.ICMPv4DstUnreachable)
++		}
++		if pkt.ConnectionState() != ConnTrackStateInvalid {
++			t.Fatal("untracked error was accepted as related")
++		}
++		cn := &conn{ct: &ConnTrack{clock: faketime.NewManualClock()}}
++		pkt.tuple = &tuple{conn: cn, reply: true}
++		cn.update(pkt, true)
++		if pkt.ConnectionState() != ConnTrackStateRelated {
++			t.Fatal("tracked error was not related")
++		}
++		if cn.replySeen {
++			t.Fatal("ICMP error incorrectly established the original flow")
++		}
++		pkt.DecRef()
++	}
++}
++
+ // genTCPPacket returns an initialized IPv4 TCP packet.
+ func genTCPPacket(opts genTCPOpts) *PacketBuffer {
+ 	// Get values from opts.
 diff --git a/pkg/tcpip/stack/iptables.go b/pkg/tcpip/stack/iptables.go
 index 8dded8a..3d8368d 100644
 --- a/pkg/tcpip/stack/iptables.go
@@ -7121,7 +7429,7 @@ index 0000000..a9deb96
 +	}
 +}
 diff --git a/runsc/boot/vfs.go b/runsc/boot/vfs.go
-index f320cd9..a4c6b71 100644
+index f320cd9..4a4ab7a 100644
 --- a/runsc/boot/vfs.go
 +++ b/runsc/boot/vfs.go
 @@ -188,6 +188,11 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
@@ -7136,15 +7444,38 @@ index f320cd9..a4c6b71 100644
  	tunSupported := tundev.IsNetTunSupported(inet.StackFromContext(ctx))
  	if tunSupported {
  		if err := tundev.Register(vfsObj); err != nil {
-@@ -1143,6 +1148,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
+@@ -565,6 +570,19 @@ func getMountAccessType(conf *config.Config, hint *MountHint) config.FileAccessT
+ 	return conf.FileAccessMounts
+ }
+ 
++// privateVolumeAccess permits metadata caching only when the SDK gives one
++// sandbox exclusive mutation authority over its owned volume. A mount sharing
++// hint would also add a self-overlay, which changes the backing storage; only
++// the gofer's cache policy should change here.
++func privateVolumeAccess(spec *specs.Spec, conf *config.Config, m *mountInfo) config.FileAccessType {
++	if conf.PrivateVolumes == "enabled" && conf.PrivateVolumeCache == "enabled" &&
++		spec.Annotations["dev.sandweave.private-volume."+m.mount.Destination] == "true" &&
++		spec.Annotations["dev.sandweave.private-volume-exclusive."+m.mount.Destination] == "true" {
++		return config.FileAccessExclusive
++	}
++	return getMountAccessType(conf, m.hint)
++}
++
+ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Credentials, spec *specs.Spec, conf *config.Config, rootProcArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
+ 	log.Infof("Configuring container's file system")
+ 
+@@ -1141,8 +1159,9 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
+ 		if err != nil {
+ 			return "", nil, err
  		}
- 		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf, m.hint != nil && m.hint.SuppressDirectFS)...)
+-		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf, m.hint != nil && m.hint.SuppressDirectFS)...)
++		data = append(data, goferMountData(m.goferFD.Release(), privateVolumeAccess(spec, conf, m), conf, m.hint != nil && m.hint.SuppressDirectFS)...)
  		internalData = gofer.InternalFilesystemOptions{
 +			PrivateXattrs: conf.PrivateVolumes == "enabled" && spec.Annotations["dev.sandweave.private-volume."+m.mount.Destination] == "true",
  			UniqueID: checkpoint.ResourceID{
  				ContainerName: containerName,
  				Path:          m.mount.Destination,
-@@ -1542,14 +1548,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
+@@ -1542,14 +1561,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
  	return l.k.VFS().RmdirAt(ctx, creds, &pop)
  }
  
@@ -7165,7 +7496,7 @@ index f320cd9..a4c6b71 100644
  			if defaults := cgroupfsCPUDefaults(l.cpuQuota, l.cpuPeriod); defaults != nil {
  				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
  				log.Infof("Setting cgroupfs cpu defaults: quota=%d, period=%d (raw quota=%d, raw period=%d)", defaults["cpu.cfs_quota_us"], defaults["cpu.cfs_period_us"], l.cpuQuota, l.cpuPeriod)
-@@ -1618,7 +1628,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1618,7 +1641,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  
  	// Mount all the cgroup controllers in the container's mount namespace.
  	mountCtx := vfs.WithRoot(vfs.WithMountNamespace(ctx, mns), root)
@@ -7174,7 +7505,7 @@ index f320cd9..a4c6b71 100644
  		ctrlName := string(ctrl)
  		cgroupMnt := c.l.k.GetCgroupMount(ctrlName)
  		if cgroupMnt == nil {
-@@ -1655,6 +1665,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1655,6 +1678,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  			log.Infof("error in bind mounting %v", err)
  			return err
  		}
@@ -7189,7 +7520,7 @@ index f320cd9..a4c6b71 100644
  	}
  	c.cgroupsMounted = true
  	return nil
-@@ -1976,10 +1994,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
+@@ -1976,10 +2007,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
  	if err != nil {
  		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
  	}
@@ -7205,6 +7536,47 @@ index f320cd9..a4c6b71 100644
  		HostSettings:           info.nvidiaHostSettings,
  		UseDevGofer:            true,
  	})
+diff --git a/runsc/boot/vfs_test.go b/runsc/boot/vfs_test.go
+index 6d4bddc..791673d 100644
+--- a/runsc/boot/vfs_test.go
++++ b/runsc/boot/vfs_test.go
+@@ -98,6 +98,36 @@ func TestGetMountAccessType(t *testing.T) {
+ 	}
+ }
+ 
++func TestPrivateVolumeAccess(t *testing.T) {
++	for _, tc := range []struct {
++		name, enabled, cache, owned, exclusive string
++		want                                   config.FileAccessType
++	}{
++		{"owned exclusive", "enabled", "enabled", "true", "true", config.FileAccessExclusive},
++		{"shared", "enabled", "enabled", "true", "", config.FileAccessShared},
++		{"ordinary bind", "enabled", "enabled", "", "true", config.FileAccessShared},
++		{"disabled", "disabled", "enabled", "true", "true", config.FileAccessShared},
++		{"cache disabled", "enabled", "disabled", "true", "true", config.FileAccessShared},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			spec := &specs.Spec{Annotations: map[string]string{
++				"dev.sandweave.private-volume./build":           tc.owned,
++				"dev.sandweave.private-volume-exclusive./build": tc.exclusive,
++			}}
++			conf := &config.Config{PrivateVolumes: tc.enabled, PrivateVolumeCache: tc.cache, FileAccessMounts: config.FileAccessShared}
++			mount := &mountInfo{mount: &specs.Mount{Destination: "/build", Type: Bind}}
++			if got := privateVolumeAccess(spec, conf, mount); got != tc.want {
++				t.Fatalf("privateVolumeAccess: got %v, want %v", got, tc.want)
++			}
++			// Cache policy must not opt the bind into a self-overlay.
++			hints, err := NewPodMountHints(spec)
++			if err != nil || len(hints.Mounts) != 0 {
++				t.Fatalf("unexpected mount hints: %v, %v", hints, err)
++			}
++		})
++	}
++}
++
+ func TestGoferMountDataDirectFS(t *testing.T) {
+ 	for _, tc := range []struct {
+ 		name             string
 diff --git a/runsc/cmd/gofer.go b/runsc/cmd/gofer.go
 index bde091e..b42f9b7 100644
 --- a/runsc/cmd/gofer.go
@@ -7375,10 +7747,10 @@ index 640d01f..094d8b4 100644
  	}
  	return subcommands.ExitSuccess
 diff --git a/runsc/config/config.go b/runsc/config/config.go
-index 0fbf027..e16cbc4 100644
+index 0fbf027..d9dd7f4 100644
 --- a/runsc/config/config.go
 +++ b/runsc/config/config.go
-@@ -50,6 +50,11 @@ import (
+@@ -50,6 +50,13 @@ import (
  //     if it is no longer needed at all.
  //  2. Add the flag to flags_graveyard.go and remove it from flags.go.
  type Config struct {
@@ -7386,11 +7758,13 @@ index 0fbf027..e16cbc4 100644
 +	PrivateVolumes string `flag:"private-volumes"`
 +	// PrivateVolumeDevices stores guest device nodes without host devices.
 +	PrivateVolumeDevices string `flag:"private-volume-devices"`
++	// PrivateVolumeCache permits exclusive metadata caching on annotated volumes.
++	PrivateVolumeCache string `flag:"private-volume-cache"`
 +
  	// RootDir is the runtime root directory.
  	RootDir string `flag:"root"`
  
-@@ -124,6 +129,10 @@ type Config struct {
+@@ -124,6 +131,10 @@ type Config struct {
  	// Network indicates what type of network to use.
  	Network NetworkType `flag:"network"`
  
@@ -7401,7 +7775,7 @@ index 0fbf027..e16cbc4 100644
  	// GoferNetworkNamespace controls the network namespace used by gofer
  	// processes. The default is the shared empty "null" network namespace.
  	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
-@@ -321,6 +330,27 @@ type Config struct {
+@@ -321,6 +332,27 @@ type Config struct {
  	// Don't configure cgroups.
  	IgnoreCgroups bool `flag:"ignore-cgroups"`
  
@@ -7429,7 +7803,7 @@ index 0fbf027..e16cbc4 100644
  	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
  	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
  
-@@ -381,6 +411,10 @@ type Config struct {
+@@ -381,6 +413,10 @@ type Config struct {
  	// unsupported driver version.
  	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
  
@@ -7440,7 +7814,7 @@ index 0fbf027..e16cbc4 100644
  	// TPUProxy enables support for TPUs.
  	TPUProxy bool `flag:"tpuproxy"`
  
-@@ -493,6 +527,33 @@ type Config struct {
+@@ -493,6 +529,36 @@ type Config struct {
  // Config.Override does not validate, so callers must call Validate once they
  // are done overriding.
  func (c *Config) Validate() error {
@@ -7449,6 +7823,9 @@ index 0fbf027..e16cbc4 100644
 +	}
 +	if c.PrivateVolumeDevices != "" && c.PrivateVolumeDevices != "disabled" && c.PrivateVolumeDevices != "enabled" {
 +		return fmt.Errorf("invalid private-volume-devices mode %q", c.PrivateVolumeDevices)
++	}
++	if c.PrivateVolumeCache != "" && c.PrivateVolumeCache != "disabled" && c.PrivateVolumeCache != "enabled" {
++		return fmt.Errorf("invalid private-volume-cache mode %q", c.PrivateVolumeCache)
 +	}
 +	if c.VirtualConsoles != "" && c.VirtualConsoles != "disabled" && c.VirtualConsoles != "headless" {
 +		return fmt.Errorf("virtual-consoles must be disabled or headless")
@@ -7474,7 +7851,7 @@ index 0fbf027..e16cbc4 100644
  	if c.Overlay && c.Overlay2.Enabled() {
  		// Deprecated flag was used together with flag that replaced it.
  		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
-@@ -539,6 +600,9 @@ func (c *Config) Validate() error {
+@@ -539,6 +605,9 @@ func (c *Config) Validate() error {
  	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
  		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
  	}
@@ -7484,7 +7861,7 @@ index 0fbf027..e16cbc4 100644
  	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
  	if err != nil {
  		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: %w", c.NVProxyAllowedDriverCapabilities, err)
-@@ -1649,3 +1713,28 @@ func (xd *XDP) Set(input string) error {
+@@ -1649,3 +1718,28 @@ func (xd *XDP) Set(input string) error {
  	}
  	return nil
  }
@@ -7544,19 +7921,20 @@ index 710cb07..3e73af3 100644
 +	}
 +}
 diff --git a/runsc/config/flags.go b/runsc/config/flags.go
-index f4852a7..17d67f4 100644
+index f4852a7..5cf1e29 100644
 --- a/runsc/config/flags.go
 +++ b/runsc/config/flags.go
-@@ -58,6 +58,8 @@ const (
+@@ -58,6 +58,9 @@ const (
  
  // RegisterFlags registers flags used to populate Config.
  func RegisterFlags(flagSet *flag.FlagSet) {
 +	flagSet.String("private-volumes", "disabled", "private volume data/ownership wrappers: disabled (default) or enabled; requires directfs=false")
 +	flagSet.String("private-volume-devices", "disabled", "device metadata in private volumes: disabled (default) or enabled; never opens host devices")
++	flagSet.String("private-volume-cache", "disabled", "exclusive metadata caching for annotated single-owner private volumes: disabled (default) or enabled")
  	// Although these flags are not part of the OCI spec, they are used by
  	// Docker, and thus should not be changed.
  	flagSet.String("root", "", fmt.Sprintf("root directory for storage of container state, defaults are $%s/runsc, %s.", xdgRuntimeDirEnvVar, defaultRootDir))
-@@ -148,6 +150,13 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -148,6 +151,13 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
  
  	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
@@ -7570,7 +7948,7 @@ index f4852a7..17d67f4 100644
  	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
  	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
  	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
-@@ -156,6 +165,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -156,6 +166,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("TESTONLY-nftables", false, "TEST ONLY; Enables nftables support in the sentry.")
  
  	// Flags that control sandbox runtime behavior: network related.
@@ -7578,7 +7956,7 @@ index f4852a7..17d67f4 100644
  	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
  	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
  	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-@@ -184,6 +194,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -184,6 +195,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
  	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
  	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")

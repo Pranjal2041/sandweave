@@ -27,12 +27,18 @@ def test_large_image_and_failed_build_release_storage(tmp_path):
         dockerfile = context / 'Dockerfile'
         # A second layer modifies a parent larger than the 4 GiB RAM budget.
         # Zeros keep the network archive small without making this a sparse file.
-        dockerfile.write_text('FROM alpine:3.22\n'
+        dockerfile.write_text('FROM alpine:3.22 AS source\n'
             'RUN dd if=/dev/zero of=/large bs=1048576 count=4608 && chown 1234:5678 /large '
             '&& mknod /char-node c 10 175 && mknod /block-node b 8 0 && mknod /null-node c 1 3 '
             '&& mkdir /replaced && touch /replaced/old\n'
             'RUN chmod 640 /large && ln /large /hardlink && echo complete > /built '
-            '&& rm -rf /replaced && mkdir /replaced && touch /replaced/new\n')
+            '&& rm -rf /replaced && mkdir /replaced && touch /replaced/new\n'
+            # BuildKit's pinned fsutil clears S_IFSOCK unconditionally in
+            # copyDevice(), changing block nodes into character nodes. Keep
+            # those nodes in their original layer while exercising cross-stage
+            # copying of the large file and an opaque replacement directory.
+            'FROM source\nCOPY --from=source /large /large-copy\n'
+            'COPY --from=source /replaced /copied\n')
         with ThreadPoolExecutor(1) as executor:
             building = executor.submit(build, context, timeout=600)
             # The parent reserves the importer before it has a sandbox record.
@@ -58,6 +64,10 @@ def test_large_image_and_failed_build_release_storage(tmp_path):
                     'character special file a af\nblock special file 8 0\n')
                 assert env.run('cat /null-node', check=True).stdout == ''
                 env.run('test ! -e /replaced/old && test -e /replaced/new', check=True)
+                env.run('test ! -e /copied/old && test -e /copied/new '
+                        '&& test "$(stat -c %s /large-copy)" = 4831838208 '
+                        '&& test "$(sha256sum /large | cut -d\' \' -f1)" = '
+                        '"$(sha256sum /large-copy | cut -d\' \' -f1)"', timeout=120, check=True)
         finally:
             reference._connection.close()
         assert set(storage.iterdir()) == before

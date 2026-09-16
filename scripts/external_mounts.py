@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 def normalize(values):
     result, destinations = [], []
     for value in values:
-        if set(value) - {'source', 'destination', 'read_only', 'snapshot', '_private_volume'}:
+        if set(value) - {'source', 'destination', 'read_only', 'snapshot', '_private_volume', '_exclusive'}:
             raise ValueError('unknown mount fields')
         source = Path(value['source'])
         destination = PurePosixPath(value['destination'])
@@ -31,11 +31,19 @@ def normalize(values):
             if not (source / 'data').exists() or not (source / 'owners').is_dir():
                 raise ValueError('private volume wrapper is incomplete')
             result[-1]['_private_volume'] = True
+        if value.get('_exclusive'):
+            if not value.get('_private_volume'):
+                raise ValueError('exclusive access requires an owned private volume')
+            result[-1]['_exclusive'] = True
     return result
 
 
 def configure(spec, values):
     previous = json.loads(spec.get('annotations', {}).get('dev.sandweave.external-mounts', '[]'))
+    for value in previous:
+        annotations = spec.get('annotations', {})
+        annotations.pop('dev.sandweave.private-volume.' + value['destination'], None)
+        annotations.pop('dev.sandweave.private-volume-exclusive.' + value['destination'], None)
     remove = {v['destination'] for v in previous}
     spec['mounts'] = [m for m in spec['mounts'] if m['destination'] not in remove]
     occupied = {m['destination'] for m in spec['mounts']}
@@ -48,6 +56,8 @@ def configure(spec, values):
                                'type': 'bind', 'options': ['bind', 'ro' if value['read_only'] else 'rw']})
         if value.get('_private_volume'):
             spec.setdefault('annotations', {})['dev.sandweave.private-volume.' + destination] = 'true'
+        if value.get('_exclusive'):
+            spec.setdefault('annotations', {})['dev.sandweave.private-volume-exclusive.' + destination] = 'true'
     spec.setdefault('annotations', {})['dev.sandweave.external-mounts'] = json.dumps(values)
 
 

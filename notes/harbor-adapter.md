@@ -234,6 +234,76 @@ Detailed local logs and original-task reports are under
 installation's `data/benchmarks/harbor/trials`. Release receipts are retained
 under `runs/deploy`. These paths are evidence, not required installation inputs.
 
+## Generic build corrections in 0.2.20rc6
+
+A fresh CyberGym attempt exposed a runtime setup failure before any task had
+started: an ordinary long `TMPDIR` produced a Unix socket address beyond the
+kernel's 107-byte limit. Socket users now address the same inode through a
+scoped directory descriptor. The privilege-dropping network helper uses its
+own private working directory. Neither mechanism relocates user storage.
+
+Continuing the unchanged task exposed assumptions in the common Dockerfile
+builder. Its writable in-memory filesystem was unsuitable for large images,
+and native snapshots copied a whole filesystem for each layer. Builds now use
+disk-backed private volumes and overlay snapshots. The engine preserves device
+numbers and trusted overlay metadata on those volumes without creating host
+devices or granting host privileges. Import reads the completed archive from
+the owned volume instead of copying it through the guest network.
+
+The initial disk-backed candidate still exceeded the original cold-start
+timeout. A trace during a cross-stage copy showed a full metadata scan spending
+about 6 ms per file on a many-layer image. The single-owner build volume was
+using the same host revalidation policy as shared service storage. An explicit
+engine option now permits exclusive metadata caching for that owned mount.
+The SDK rejects multiple mounts and host-side imports into an exclusive volume,
+and flushes completed output before reading it on the worker. Ordinary service
+volumes keep shared coherency. An initial attempt to use gVisor's container
+sharing hint was discarded because that hint also adds a self-overlay.
+
+The extended multistage test found a separate overlay bug: writable gofer-backed
+mounts implicitly selected `user.overlay.*` attributes while later read-only
+mounts expected `trusted.overlay.*`. A deleted and recreated directory therefore
+regained old entries during `COPY`. Private volumes now use their supported
+trusted metadata consistently; ordinary host mounts retain the existing fallback.
+Build-cache keys were advanced so previously built images are not reused.
+
+The next original startup failure was the legacy iptables `state` matcher,
+which gVisor did not implement. The engine now matches IPv4 and IPv6 state rules
+against its existing connection tracker. The first reply is established even
+before a TCP handshake completes; tracked ICMP errors are related traffic and
+do not establish the original flow. No task firewall script is changed.
+The full netfilter and connection-tracking unit suites passed. An installed
+wheel also passed concurrent IPv4/IPv6 TCP and UDP exchanges, rejection of
+unlisted new flows, and removal/reinstatement of the reply rule. The initial
+live test incorrectly expected nonzero legacy rule counters; it was replaced
+with that direct traffic check because the engine does not maintain them.
+
+Concurrent regression tests also exposed a stale pool reconciliation starting
+a second baseline capture after the first capture had stopped its builder.
+Capture now rechecks current pool state before its RPC and checks assignment
+generation before committing a result. Cancellation and pool closure remain
+effective while the RPC is pending.
+
+The initial direct-volume candidate passed large-image acceptance in 119.5 seconds:
+a Dockerfile creates 4.5 GiB with a 4 GiB builder RAM budget, modifies another
+layer, preserves hard links and guest device numbers, starts an unrelated
+sandbox during import, and removes build volumes after success and failure.
+An earlier invocation failed resolving Docker Hub; the unchanged rerun passed.
+That candidate also passed the HTTP test that builds on one worker and
+runs the resulting snapshot on another. The lifecycle suite exercises 256
+concurrent requests and closure during both successful and failed capture.
+
+The extended large-image test passed in 264.74 seconds after the overlay marker
+fix. It also compares full SHA-256 hashes after a cross-stage copy and checks
+that deleted directory entries stay absent. The final state-matcher engine
+passed 564 host tests (four skips) and all three HTTP worker acceptance tests
+in 105.04 seconds, including image transfer before a trial, concurrent pulls,
+and service-group resource cleanup.
+
+Local reports and logs for these corrections are under
+`/scratch/pranjala/sw-socket-fix-20260916`; the unchanged CyberGym task and trial
+records are under `/scratch/pranjala/sw-cybergym-check-20260916-zM0fWT`.
+
 ## Runtime and agent boundaries
 
 The environment supports Linux amd64; an image cannot supply a missing kernel
@@ -246,6 +316,16 @@ Compose host namespaces/devices and external host services are not equivalent
 to sandbox-local services. The adapter does not claim every Docker Compose
 extension or privileged workload is portable. IPv6 allowlists are not supported.
 Hostname policies allow resolved IPs, not HTTP Host/TLS SNI enforcement.
+
+BuildKit 0.25.1's pinned fsutil has an upstream device-copy limitation:
+`copyDevice` clears `S_IFSOCK` without first checking the source type, turning
+block devices into character devices during Dockerfile `COPY`. A live
+cross-stage root copy reproduced it. The original layer retains the correct
+block-device type in Sandweave. The large-image regression therefore tests
+device preservation in original layers and cross-stage copying of ordinary
+files and directories separately. The affected upstream implementation is
+[`copy_nowindows.go`](https://github.com/tonistiigi/fsutil/blob/586307ad452f/copy/copy_nowindows.go).
+No task recipe is rewritten to hide this limitation.
 
 MCP clients, model calls, agent resume/trajectory support and simulated-user
 bridge protocols belong to the selected agent. The pull agent exposes task

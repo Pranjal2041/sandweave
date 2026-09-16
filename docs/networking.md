@@ -54,7 +54,7 @@ with Sandbox(network=network) as env:
 
 The policy permits IPs returned by DNS for those names. It does not check HTTP
 Host or TLS SNI names when sites share an IP. Unlisted destinations are blocked;
-IPv4 addresses and CIDRs are also accepted. This requires the `0.2.20rc5` preview
+IPv4 addresses and CIDRs are also accepted. This requires the `0.2.20rc6` preview
 on the client, controller and workers. Harbor tasks apply their phase policies
 automatically.
 

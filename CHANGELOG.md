@@ -19,6 +19,13 @@
 - Keep unrelated sandbox admission working while an image import is starting.
 - Import completed build archives directly from their owned worker volume,
   avoiding a full-image copy through the guest network connection.
+- Cache metadata for builder-owned volumes, avoiding repeated host filesystem
+  checks across image layers. Flush output before import; service volumes shared
+  by different sandboxes retain shared access.
+- Keep overlay directory markers consistent between writable build steps and
+  read-only multistage copies, so deleted files cannot reappear in copied trees.
+- Support legacy IPv4 and IPv6 iptables state rules using the existing
+  connection tracker, including first replies and related ICMP errors.
 - Recheck pool state before capturing its baseline so a stale reconciliation
   cannot capture an already-stopped builder or reopen a closing pool.
 

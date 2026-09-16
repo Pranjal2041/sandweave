@@ -69,6 +69,14 @@ class Services:
             if service['request']['spec']['runtime'] != 'gvisor':
                 raise UnsupportedFeature('service groups require the gVisor runtime')
         spec = copy.deepcopy(record['spec'])
+        for name, settings in spec.get('service_volumes', {}).items():
+            if settings.get('exclusive'):
+                users = [member for member, mounts in [
+                    ('main', spec.get('service_mounts', [])),
+                    *((member, definition.get('volumes', [])) for member, definition in definitions.items())]
+                    for mount in mounts if mount['name'] == name]
+                if len(users) != 1:
+                    raise ValueError('an exclusive volume must have exactly one mount')
         # Persist group ownership before allocating anything. Failed preparation
         # and worker recovery use the same idempotent cleanup path as termination.
         record['service_group'] = True
@@ -125,7 +133,8 @@ class Services:
                 staged.add(destination)
                 current['mounts'].append({'source': volumes[mount['name']], 'destination': mount.get('staging', mount['target']),
                     'read_only': mount.get('read_only', False) and 'staging' not in mount,
-                    'snapshot': 'reject', '_private_volume': True})
+                    'snapshot': 'reject', '_private_volume': True,
+                    **({'_exclusive': True} if spec['service_volumes'][mount['name']].get('exclusive') else {})})
         record['spec'], record['services'], record['service_volumes'] = spec, services, volumes
         self.worker.write(record)
         self.hub.register(record['id'], services.values())
@@ -173,6 +182,8 @@ class Services:
 
     def import_volume(self, identity, name, path):
         record = self.worker.read(identity)
+        if record['spec']['service_volumes'][name].get('exclusive'):
+            raise ValueError('exclusive volumes are written only by their owning sandbox')
         destination = Path(record.get('service_volumes', {})[name]) / 'data'
         agent = self.worker.agent(identity)
         handle = uuid.uuid4().hex

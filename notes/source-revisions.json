@@ -4,12 +4,12 @@
     "upstream": "https://github.com/google/gvisor.git",
     "branch": "feat/osworld-runtime",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "78f5f9da2db4823c3a372b3c9a146c4a8845e7ef",
+    "commit": "ef4cda1c8aee540249a5e7219eaf0f3f0e93ef23",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/97079f4f832e0cfa396eab66d99b9a75b7c35e8d0448caa1d06663152ae673ba",
+    "runtime_build": "tools/runtime-builds/507a99d46ccd76de8d48087e24993e54e02df6c66ef048c579049dd24d5c350a",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "78f5f9da2db4823c3a372b3c9a146c4a8845e7ef",
+    "runtime_commit": "ef4cda1c8aee540249a5e7219eaf0f3f0e93ef23",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
@@ -18,7 +18,7 @@
     "osworld_status": "All 50 representative tasks completed setup/screenshots/canonical evaluation in rc1; rc2 adds template-selected Avahi, console palette and fixed desktop sysctl support. RealtimeKit and physical GPU detection remain outside that support.",
     "osworld_runtime_release": "2026.09.14.2",
     "harbor_runtime_release": "2026.09.16.4",
-    "harbor_status": "Private-volume device metadata and overlay directory attributes; EROFS device numbers. See notes/harbor-adapter.md for acceptance."
+    "harbor_status": "Private-volume overlay metadata and exclusive caching; legacy stateful IPv4/IPv6 firewall matching. See notes/harbor-adapter.md for acceptance."
   },
   "passt": {
     "upstream": "https://passt.top/passt",

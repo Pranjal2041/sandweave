@@ -84,7 +84,7 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
                      for name, value in (build_args or {}).items()}
         settings = {'context': checksum, 'dockerfile': hashlib.sha256(recipe).hexdigest() if recipe else dockerfile, 'args': arguments,
                     'ignore': hashlib.sha256(ignore).hexdigest() if ignore is not None else None,
-                    'stage': stage, 'builder': BUILDER_IMAGE, 'template': template, 'format': 4,
+                    'stage': stage, 'builder': BUILDER_IMAGE, 'template': template, 'format': 5,
                     'extra': extra_checksums, 'secrets': {name: hashlib.sha256(value).hexdigest() for name, value in secret_data.items()},
                     'network': network, 'labels': labels, 'platform': platform}
         key = 'image-build-' + hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
@@ -112,7 +112,7 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
         # budget. Use an owned worker volume with guest UID/GID semantics; the
         # normal service-group lifecycle removes it on success or failure.
         request['spec'].update(service_group=True, services={},
-            service_volumes={'build': {}}, service_mounts=[{'name': 'build', 'target': '/build'}])
+            service_volumes={'build': {'exclusive': True}}, service_mounts=[{'name': 'build', 'target': '/build'}])
         builder = Sandbox._from_definition(request, target)
         try:
             from .credentials import build_configuration
@@ -181,6 +181,12 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
                 Path(log).write_text(result.stdout + result.stderr)
             if result.returncode:
                 raise RuntimeError('Dockerfile build failed: ' + result.stderr)
+            # Only this sandbox mutates the build volume. Flush its cached
+            # writes before the worker reads the completed archive directly.
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= 0:
+                raise TimeoutError('Image build timeout expired before flushing output')
+            builder.run('sync', timeout=remaining, check=True)
             remaining = timeout - (time.monotonic() - started)
             if remaining <= 0:
                 raise TimeoutError('Image build timeout expired before import')

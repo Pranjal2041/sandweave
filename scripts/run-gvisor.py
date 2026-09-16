@@ -476,6 +476,8 @@ try:
         command[1:1] = ['--mounts', str(mount_file)]
         if any(mount.get('_private_volume') for mount in mounts):
             command += ['--private-volumes=enabled', '--private-volume-devices=enabled']
+        if any(mount.get('_exclusive') for mount in mounts):
+            command.append('--private-volume-cache=enabled')
     if args.disk_path:
         command[1:1] = ['--disk-memory', str(args.disk_memory_inner)]
         command += ['--app-memory-directory=/disk-memory']

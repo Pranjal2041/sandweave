@@ -13,11 +13,22 @@ import time
 from sandweave import Benchmark
 
 
+def service_logs(bench, env):
+    project = bench._pool.sessions[env.id].trial.agent_environment.project
+    if project is None:
+        return {}
+    return {name: {'returncode': process.poll(), 'healthcheck_passed': name in project.healthy,
+        **{stream: process.sandbox._call('process_output', process_id=process.id,
+            stream=stream, offset=0, size=65536).decode(errors='replace')
+           for stream in ('stdout', 'stderr')}} for name, process in project.processes.items()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', help='dataset name, task path, or JSON dataset configuration')
     parser.add_argument('--task', action='append', help='Harbor task filter; repeat to select several')
     parser.add_argument('--oracle', action='store_true', help='run each original solution/solve.sh')
+    parser.add_argument('--force-build', action='store_true', help='rebuild original images through Harbor instead of reusing built snapshots')
     parser.add_argument('--startup-only', action='store_true', help='inspect ready environments without running a solution or verifier')
     parser.add_argument('--check-command', action='append', default=[], help='run an acceptance command in each task before evaluation')
     parser.add_argument('--target')
@@ -37,8 +48,9 @@ def main():
             source = {'name': name, 'task_names': args.task}
             if ref:
                 source['ref' if '/' in name else 'version'] = ref
-    bench = Benchmark('harbor', source=source, target=args.target, capacity=1)
-    report = {'source': source, 'oracle': args.oracle, 'tasks': []}
+    bench = Benchmark('harbor', source=source, target=args.target, capacity=1,
+                      harbor={'environment': {'force_build': args.force_build}})
+    report = {'source': source, 'oracle': args.oracle, 'force_build': args.force_build, 'tasks': []}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
         while True:
@@ -62,16 +74,7 @@ def main():
                                           'stdout': result.stdout, 'stderr': result.stderr})
                     if result.returncode:
                         raise RuntimeError('Startup acceptance command failed: ' + command)
-                provider = bench._pool.sessions[env.id].trial.agent_environment
-                if provider.project is not None:
-                    project = provider.project
-                    row['services'] = {}
-                    for name, process in project.processes.items():
-                        row['services'][name] = {'returncode': process.poll(),
-                            'healthcheck_passed': name in project.healthy,
-                            **{stream: process.sandbox._call('process_output', process_id=process.id,
-                                stream=stream, offset=0, size=65536).decode(errors='replace')
-                               for stream in ('stdout', 'stderr')}}
+                row['services'] = service_logs(bench, env)
                 if args.guest_tools_sha256:
                     row['guest_tools_sha256'] = hashlib.sha256(
                         env.files.read_bytes('/.sandweave-runtime/tools/guest-tools')).hexdigest()
@@ -96,6 +99,11 @@ def main():
                     assert row['evaluation']['rewards'][args.reward_name] == args.expect_reward, row['evaluation']
                 print(json.dumps(row), flush=True)
             finally:
+                if 'services' not in row:
+                    try:
+                        row['services'] = service_logs(bench, task.env)
+                    except Exception as error:
+                        row['service_log_error'] = str(error)
                 task.close()
                 row['total_seconds'] = time.monotonic() - started
                 args.output.write_text(json.dumps(report, indent=2) + '\n')

@@ -106,8 +106,7 @@ class SandweaveEnvironment(BaseEnvironment):
         if self.sandbox is not None:
             network = self.network(network_policy)
             sandboxes = self.project.views.values() if self.project else [self.sandbox]
-            await asyncio.gather(*(drained(partial(sandbox._call, 'network_policy',
-                                   network=asdict(Network('offline') if sandbox.spec.get('_service_internal') else network)))
+            await asyncio.gather(*(drained(partial(sandbox._call, 'network_policy', network=asdict(network)))
                                    for sandbox in sandboxes))
 
     @staticmethod

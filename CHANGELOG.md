@@ -5,8 +5,7 @@
 - Match Harbor's environment precedence at the client command boundary and
   isolate sidecar execution from the main agent's user, working directory and
   scoped variables. Minimal sidecars use their POSIX shell.
-- Apply Harbor's resource-policy Compose overlay in the upstream order. Keep
-  internal service networks offline across later phase policy changes, honor
+- Apply Harbor's resource-policy Compose overlay in the upstream order, honor
   absent optional dependencies, and retry timed-out service health probes.
 - Give intermediate separate verifiers independent lease capacity so they can
   use the agent's image while the agent remains alive. Image preparation stays

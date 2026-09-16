@@ -29,7 +29,7 @@ Compose translation, service groups, image build/import and command/file APIs.
 | Multi-step state, setup, per-step policies, thresholds, reward aggregation | Original MultiStepTrial owns progression. Intermediate results retain their native metrics; final result uses native aggregation. A later step exception is checked before aggregate rewards are returned. |
 | Verification disabled | Discovery permits absent verifier files. Original Trial skips verification. Evaluation explicitly records skipped=True and no reward. Live checks cover individual/dataset discovery and one/multiple steps. |
 | Native agents and the pull client | Both use the same environment provider. Live checks run Harbor's own Oracle agent through native Trial, for single- and multi-step fixtures. The pull interface reserves task/trial selection and does not execute a second model agent. |
-| Phase network policy and service topology | Public/offline/IPv4 allowlists use native network policy operations. Internal/none service networks stay offline when a later phase becomes public. Existing live checks cover allowlist and phase transitions; contract checks cover the internal-network intersection. |
+| Phase network policy and service topology | Public/offline/IPv4 allowlists use native network policy operations. The existing worker network_policy dispatch already keeps internal/none service networks offline when a later phase becomes public; no duplicate adapter enforcement is needed. Existing live checks cover allowlist and phase transitions. |
 | Service dependencies, health, restart and termination | Native groups preserve commands, entrypoints, resource admission and service APIs. Timed-out health probes consume retries instead of aborting startup. Existing lifecycle tests cover restart, groups, limits, custom signals and detached descendants. |
 | Service volumes, read-only root/inputs, configs/secrets, tmpfs and image metadata | Native groups own private worker volumes. Existing live tests exercise populated shared volumes, non-root ownership, read-only filesystems, secrets, hostname and extra hosts. Client bind inputs are transferred copies, not host filesystem mounts. |
 | Capacity, warm reserve, cancellation, failed startup, shutdown | Task attempts share one capacity budget. Blocking worker operations do not hold the capacity condition. Reservations survive slow teardown. Existing local/HTTP multi-worker tests cover concurrent acquisition, cancellation, failures and group admission; a deterministic check holds one teardown open while releasing another lease. |
@@ -37,8 +37,8 @@ Compose translation, service groups, image build/import and command/file APIs.
 ## Corrections from this review
 
 The rc7 changes fix sidecar shell/scope leakage, pull-command scoped environment
-precedence, missing upstream resource overlays, public-policy changes to internal
-services, health-probe timeout handling, absent optional dependencies, same-image
+precedence, missing upstream resource overlays, health-probe timeout handling,
+absent optional dependencies, same-image
 intermediate verifier deadlock, capacity locking during warm eviction, trajectory
 and continuation inputs, disabled-verifier discovery, and hidden multi-step
 failures. Command cleanup also preserves the original failure if termination fails.
@@ -75,7 +75,9 @@ new contract suite passed 12 live checks. The tests are in
 `scripts/deploy.py` includes both in its installed-wheel acceptance alongside the
 existing Harbor, build, network, lifecycle and core SDK checks. Release acceptance
 must complete before publication; the receipt records the exact commit and both
-distribution hashes.
+distribution hashes. Review then removed one redundant internal-network adapter
+check and its mock test: the worker already enforces that constraint. The final
+host suite therefore contains 569 tests plus the same four optional skips.
 
 Local evidence for this review is under
 `/scratch/pranjala/sw-harbor-contract-20260916`; durable test implementations and

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 pytest.importorskip('harbor')
-from harbor.models.task.config import EnvironmentConfig, NetworkPolicy
+from harbor.models.task.config import EnvironmentConfig
 from sandweave.benchmarks.harbor.provider import AgentSandbox
 from test_harbor import provider
 
@@ -50,23 +50,6 @@ def test_compose_task_environment_is_startup_state_not_exec_overlay(tmp_path, ex
         persistent_env={'TRIAL': 'persistent'}, extra_docker_compose=[compose] if extra else None)
     assert env._startup_env() == {'TASK': 'startup', 'TRIAL': 'persistent'}
     assert env._merge_env(None) == {'TRIAL': 'persistent'}
-
-
-def test_dynamic_policy_cannot_enable_an_internal_compose_network(tmp_path):
-    async def run():
-        env = provider(tmp_path)
-        calls = []
-        def guest(internal):
-            return SimpleNamespace(spec={'_service_internal': internal},
-                _call=lambda operation, **kwargs: calls.append((internal, kwargs['network']['mode'])))
-        env.sandbox = guest(False)
-        env.project = SimpleNamespace(views={'main': env.sandbox, 'internal': guest(True)})
-        await env.set_network_policy(NetworkPolicy(network_mode='no-network'))
-        await env.set_network_policy(NetworkPolicy(network_mode='public'))
-        assert calls.count((True, 'offline')) == 2
-        assert (False, 'internet') in calls
-        assert (True, 'internet') not in calls
-    asyncio.run(run())
 
 
 def test_slow_warm_eviction_does_not_hold_other_lease_releases(tmp_path):

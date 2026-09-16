@@ -1,4 +1,4 @@
-"""Legacy state rules allow TCP/UDP replies and reject unlisted new flows."""
+"""Exercise legacy firewall state matching and real ICMP rejection packets."""
 import os
 import textwrap
 
@@ -19,7 +19,7 @@ def test_stateful_ipv4_ipv6_firewalls(tmp_path):
     try:
         with Sandbox(cache=reference, memory='512MiB') as env:
             result = env.run(argv=['python3', '-c', textwrap.dedent('''
-                import concurrent.futures, socket, subprocess, threading
+                import concurrent.futures, socket, struct, subprocess, threading
                 for family, address, command in [(socket.AF_INET, '127.0.0.1', 'iptables-legacy'),
                                                   (socket.AF_INET6, '::1', 'ip6tables-legacy')]:
                     def rule(*args):
@@ -93,9 +93,50 @@ def test_stateful_ipv4_ipv6_firewalls(tmp_path):
                             if thread.ident is not None: thread.join(12)
                         tcp.close(); udp.close(); blocked.close()
                     assert not failures, failures
+                    modes = ([('icmp-net-unreachable', 0), ('icmp-host-unreachable', 1),
+                              ('icmp-proto-unreachable', 2), ('icmp-port-unreachable', 3),
+                              ('icmp-net-prohibited', 9), ('icmp-host-prohibited', 10),
+                              ('icmp-admin-prohibited', 13)] if family == socket.AF_INET else
+                             [('icmp6-no-route', 0), ('icmp6-adm-prohibited', 1),
+                              ('icmp6-addr-unreachable', 3),
+                              ('icmp6-port-unreachable', 4), ('icmp6-policy-fail', 5),
+                              ('icmp6-reject-route', 6)])
+                    # ip6tables does not expose the obsolete NOT_NEIGHBOUR
+                    # ABI value; the engine's parser tests cover that value.
+                    protocol = socket.IPPROTO_ICMP if family == socket.AF_INET else socket.IPPROTO_ICMPV6
+                    for mode, code in modes:
+                        with socket.socket(family, socket.SOCK_DGRAM) as sink, \\
+                             socket.socket(family, socket.SOCK_DGRAM) as sender, \\
+                             socket.socket(family, socket.SOCK_RAW, protocol) as capture:
+                            sink.bind((address, 0)); sink.setblocking(False)
+                            capture.settimeout(3)
+                            port = sink.getsockname()[1]
+                            args = ['OUTPUT', '-o', 'lo', '-p', 'udp', '--dport', str(port),
+                                    '-j', 'REJECT', '--reject-with', mode]
+                            rule('-A', *args)
+                            try:
+                                sender.sendto(b'reject-probe', sink.getsockname())
+                                while True:
+                                    packet = capture.recv(4096)
+                                    offset = (packet[0] & 15) * 4 if family == socket.AF_INET else 0
+                                    icmp = packet[offset:]
+                                    quote_size = (icmp[8] & 15) * 4 if family == socket.AF_INET else 40
+                                    quoted_port = struct.unpack_from('!H', icmp, 8 + quote_size + 2)[0]
+                                    if quoted_port == port:
+                                        assert icmp[0] == (3 if family == socket.AF_INET else 1), (mode, icmp[:2])
+                                        assert icmp[1] == code, (mode, icmp[:2])
+                                        break
+                                try: sink.recv(64)
+                                except BlockingIOError: pass
+                                else: raise AssertionError('rejected payload reached its destination')
+                            finally:
+                                rule('-D', *args)
+                    print(command, len(modes), 'ICMP rejection codes verified on the wire', flush=True)
             ''')], timeout=60)
-            assert result.returncode == 0, (result.stdout, result.stderr)
+            assert result.returncode == 0, result.stdout + '\n' + result.stderr
             assert 'iptables-legacy 8 TCP' in result.stdout
             assert 'ip6tables-legacy 8 TCP' in result.stdout
+            assert 'iptables-legacy 7 ICMP rejection codes verified on the wire' in result.stdout
+            assert 'ip6tables-legacy 6 ICMP rejection codes verified on the wire' in result.stdout
     finally:
         reference._connection.close()

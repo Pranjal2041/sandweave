@@ -108,6 +108,7 @@ KVM. User desktops were not used.
 | TB3 `terminal-bench/interleaved-vigenere` | reward 1 | reward 0 |
 | QuixBugs `quixbugs-python-detect_cycle` | reward 1 | reward 0 |
 | Harbor `examples/tasks/sidecar-artifacts` | reward 1 | reward 0 |
+| CyberGym `cybergym_arvo_10013` | reward 1 | reward 0 |
 
 These ran through public `Benchmark`, including original Dockerfile builds,
 separate verifiers and sidecar collect hooks. The authored acceptance runner is
@@ -277,6 +278,25 @@ wheel also passed concurrent IPv4/IPv6 TCP and UDP exchanges, rejection of
 unlisted new flows, and removal/reinstatement of the reply rule. The initial
 live test incorrectly expected nonzero legacy rule counters; it was replaced
 with that direct traffic check because the engine does not maintain them.
+
+The original firewall then exposed unsupported legacy rejection modes. The
+engine now accepts the standard IPv4/IPv6 modes and emits their corresponding
+ICMP errors. Engine tests cover valid/invalid ABI values and reject TCP reset
+for non-TCP rules. The installed-wheel test checks actual packets for all seven
+IPv4 and six IPv6 modes exposed by iptables, alongside concurrent TCP/UDP state
+matching. It passed in 43.19 seconds. An initial test used the obsolete IPv6
+NOT_NEIGHBOUR CLI spelling, which ip6tables itself does not expose; that ABI
+value remains covered by the engine parser test.
+
+CyberGym's unchanged startup now installs both firewall rule sets, reports its
+27 allowed hosts, keeps its main process running and passes the task server's
+health check. Its original solution produces vulnerable exit code 77 and fixed
+exit code 0, yielding reward 1; a separate fresh unsolved attempt yields reward
+0. All 11 task files match upstream commit
+`37db108843a49bb31a592e37a75e2c40dc3f9749` in
+`harbor-framework/harbor-datasets`. No task script, verifier, image recipe or
+timeout was edited. The final engine patch applies to the pinned upstream
+source and reproduces all 158 changed engine files.
 
 Concurrent regression tests also exposed a stale pool reconciliation starting
 a second baseline capture after the first capture had stopped its builder.

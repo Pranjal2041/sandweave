@@ -26,6 +26,8 @@
   read-only multistage copies, so deleted files cannot reappear in copied trees.
 - Support legacy IPv4 and IPv6 iptables state rules using the existing
   connection tracker, including first replies and related ICMP errors.
+- Support standard IPv4 and IPv6 firewall rejection modes, including network
+  unreachable and administrative denial, with the corresponding ICMP replies.
 - Recheck pool state before capturing its baseline so a stale reconciliation
   cannot capture an already-stopped builder or reopen a closing pool.
 

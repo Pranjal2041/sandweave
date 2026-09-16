@@ -3918,7 +3918,7 @@ index 7cb8c23..d6c8d57 100644
  	return uintptr(r.Rsp)
  }
 diff --git a/pkg/sentry/socket/netfilter/BUILD b/pkg/sentry/socket/netfilter/BUILD
-index 21c625e..0fb0cb1 100644
+index 21c625e..697a133 100644
 --- a/pkg/sentry/socket/netfilter/BUILD
 +++ b/pkg/sentry/socket/netfilter/BUILD
 @@ -20,6 +20,7 @@ go_library(
@@ -3929,12 +3929,12 @@ index 21c625e..0fb0cb1 100644
          "targets.go",
          "tcp_matcher.go",
          "udp_matcher.go",
-@@ -62,11 +63,13 @@ go_test(
-     name = "netfilter_test",
+@@ -63,10 +64,13 @@ go_test(
      srcs = [
          "mark_matcher_test.go",
-+        "state_matcher_test.go",
          "netfilter_test.go",
++        "reject_test.go",
++        "state_matcher_test.go",
      ],
      library = ":netfilter",
      deps = [
@@ -3943,6 +3943,82 @@ index 21c625e..0fb0cb1 100644
          "//pkg/marshal",
          "//pkg/syserr",
          "//pkg/tcpip/stack",
+diff --git a/pkg/sentry/socket/netfilter/reject_test.go b/pkg/sentry/socket/netfilter/reject_test.go
+new file mode 100644
+index 0000000..c5e009e
+--- /dev/null
++++ b/pkg/sentry/socket/netfilter/reject_test.go
+@@ -0,0 +1,70 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package netfilter
++
++import (
++	"testing"
++
++	"gvisor.dev/gvisor/pkg/abi/linux"
++	"gvisor.dev/gvisor/pkg/hostarch"
++	"gvisor.dev/gvisor/pkg/tcpip/stack"
++)
++
++func TestRejectModesRoundTrip(t *testing.T) {
++	maker := rejectTargetMaker{}
++	filter := stack.IPHeaderFilter{Protocol: 6}
++	for _, mode := range []stack.RejectIPv4WithICMPType{
++		stack.RejectIPv4WithICMPNetUnreachable, stack.RejectIPv4WithICMPHostUnreachable,
++		stack.RejectIPv4WithICMPProtUnreachable, stack.RejectIPv4WithICMPPortUnreachable,
++		stack.RejectIPv4WithICMPNetProhibited, stack.RejectIPv4WithICMPHostProhibited,
++		stack.RejectIPv4WithICMPAdminProhibited, stack.RejectIPv4WithTCPReset,
++	} {
++		encoded := maker.marshalIPv4(&rejectIPv4Target{stack.RejectIPv4Target{RejectWith: mode}})
++		got, err := maker.unmarshalIPv4(encoded, filter)
++		if err != nil || got.(*rejectIPv4Target).RejectWith != mode {
++			t.Fatalf("IPv4 mode %v: got %v, %v", mode, got, err)
++		}
++		if mode == stack.RejectIPv4WithTCPReset {
++			if _, err := maker.unmarshalIPv4(encoded, stack.IPHeaderFilter{Protocol: 17}); err == nil {
++				t.Fatal("accepted TCP reset for UDP")
++			}
++		}
++		hostarch.ByteOrder.PutUint32(encoded[linux.SizeOfXTEntryTarget:], 0xffffffff)
++		if _, err := maker.unmarshalIPv4(encoded, filter); err == nil {
++			t.Fatal("accepted an invalid IPv4 reject mode")
++		}
++	}
++	for _, mode := range []stack.RejectIPv6WithICMPType{
++		stack.RejectIPv6WithICMPNoRoute, stack.RejectIPv6WithICMPAdminProhibited,
++		stack.RejectIPv6WithICMPNotNeighbour, stack.RejectIPv6WithICMPAddrUnreachable,
++		stack.RejectIPv6WithICMPPortUnreachable, stack.RejectIPv6WithICMPPolicyFail,
++		stack.RejectIPv6WithICMPRejectRoute, stack.RejectIPv6WithTCPReset,
++	} {
++		encoded := maker.marshalIPv6(&rejectIPv6Target{stack.RejectIPv6Target{RejectWith: mode}})
++		got, err := maker.unmarshalIPv6(encoded, filter)
++		if err != nil || got.(*rejectIPv6Target).RejectWith != mode {
++			t.Fatalf("IPv6 mode %v: got %v, %v", mode, got, err)
++		}
++		if mode == stack.RejectIPv6WithTCPReset {
++			if _, err := maker.unmarshalIPv6(encoded, stack.IPHeaderFilter{Protocol: 17}); err == nil {
++				t.Fatal("accepted TCP reset for UDP")
++			}
++		}
++		hostarch.ByteOrder.PutUint32(encoded[linux.SizeOfXTEntryTarget:], 0xffffffff)
++		if _, err := maker.unmarshalIPv6(encoded, filter); err == nil {
++			t.Fatal("accepted an invalid IPv6 reject mode")
++		}
++	}
++}
 diff --git a/pkg/sentry/socket/netfilter/state_matcher.go b/pkg/sentry/socket/netfilter/state_matcher.go
 new file mode 100644
 index 0000000..704825d
@@ -4061,6 +4137,67 @@ index 0000000..6ce65e6
 +		t.Fatal("accepted a truncated state mask")
 +	}
 +}
+diff --git a/pkg/sentry/socket/netfilter/targets.go b/pkg/sentry/socket/netfilter/targets.go
+index 7be4a27..a1dfbc1 100644
+--- a/pkg/sentry/socket/netfilter/targets.go
++++ b/pkg/sentry/socket/netfilter/targets.go
+@@ -599,6 +599,8 @@ func (rm *rejectTargetMaker) marshalIPv4(tgt target) []byte {
+ 		with = linux.IPT_ICMP_HOST_UNREACHABLE
+ 	case stack.RejectIPv4WithICMPPortUnreachable:
+ 		with = linux.IPT_ICMP_PORT_UNREACHABLE
++	case stack.RejectIPv4WithICMPProtUnreachable:
++		with = linux.IPT_ICMP_PROT_UNREACHABLE
+ 	case stack.RejectIPv4WithICMPNetProhibited:
+ 		with = linux.IPT_ICMP_NET_PROHIBITED
+ 	case stack.RejectIPv4WithICMPHostProhibited:
+@@ -690,11 +692,18 @@ func (rm *rejectTargetMaker) unmarshalIPv4(buf []byte, filter stack.IPHeaderFilt
+ 			return nil, syserr.ErrInvalidArgument
+ 		}
+ 		rejectWith = stack.RejectIPv4WithTCPReset
+-	case linux.IPT_ICMP_HOST_UNREACHABLE, linux.IPT_ICMP_NET_UNREACHABLE,
+-		linux.IPT_ICMP_HOST_PROHIBITED, linux.IPT_ICMP_NET_PROHIBITED, linux.IPT_ICMP_ADMIN_PROHIBITED:
+-
+-		nflog("rejectTargetMaker: unsupported reject type %d", info.With)
+-		return nil, syserr.ErrNotSupported
++	case linux.IPT_ICMP_NET_UNREACHABLE:
++		rejectWith = stack.RejectIPv4WithICMPNetUnreachable
++	case linux.IPT_ICMP_HOST_UNREACHABLE:
++		rejectWith = stack.RejectIPv4WithICMPHostUnreachable
++	case linux.IPT_ICMP_PROT_UNREACHABLE:
++		rejectWith = stack.RejectIPv4WithICMPProtUnreachable
++	case linux.IPT_ICMP_NET_PROHIBITED:
++		rejectWith = stack.RejectIPv4WithICMPNetProhibited
++	case linux.IPT_ICMP_HOST_PROHIBITED:
++		rejectWith = stack.RejectIPv4WithICMPHostProhibited
++	case linux.IPT_ICMP_ADMIN_PROHIBITED:
++		rejectWith = stack.RejectIPv4WithICMPAdminProhibited
+ 	default:
+ 		nflog("rejectTargetMaker: unknown reject type %d", info.With)
+ 		return nil, syserr.ErrInvalidArgument
+@@ -724,11 +733,18 @@ func (rm *rejectTargetMaker) unmarshalIPv6(buf []byte, filter stack.IPHeaderFilt
+ 			return nil, syserr.ErrInvalidArgument
+ 		}
+ 		rejectWith = stack.RejectIPv6WithTCPReset
+-	case linux.IP6T_ICMP6_NO_ROUTE, linux.IP6T_ICMP6_ADM_PROHIBITED, linux.IP6T_ICMP6_NOT_NEIGHBOUR,
+-		linux.IP6T_ICMP6_ADDR_UNREACH, linux.IP6T_ICMP6_POLICY_FAIL, linux.IP6T_ICMP6_REJECT_ROUTE:
+-
+-		nflog("rejectTargetMaker: unsupported reject type %d", info.With)
+-		return nil, syserr.ErrNotSupported
++	case linux.IP6T_ICMP6_NO_ROUTE:
++		rejectWith = stack.RejectIPv6WithICMPNoRoute
++	case linux.IP6T_ICMP6_ADM_PROHIBITED:
++		rejectWith = stack.RejectIPv6WithICMPAdminProhibited
++	case linux.IP6T_ICMP6_NOT_NEIGHBOUR:
++		rejectWith = stack.RejectIPv6WithICMPNotNeighbour
++	case linux.IP6T_ICMP6_ADDR_UNREACH:
++		rejectWith = stack.RejectIPv6WithICMPAddrUnreachable
++	case linux.IP6T_ICMP6_POLICY_FAIL:
++		rejectWith = stack.RejectIPv6WithICMPPolicyFail
++	case linux.IP6T_ICMP6_REJECT_ROUTE:
++		rejectWith = stack.RejectIPv6WithICMPRejectRoute
+ 	default:
+ 		nflog("rejectTargetMaker: unknown reject type %d", info.With)
+ 		return nil, syserr.ErrInvalidArgument
 diff --git a/pkg/sentry/socket/netlink/netfilter/protocol.go b/pkg/sentry/socket/netlink/netfilter/protocol.go
 index 2105a92..37109a9 100644
 --- a/pkg/sentry/socket/netlink/netfilter/protocol.go
@@ -5038,6 +5175,62 @@ index c466d92..54b168e 100644
 +		t.Fatal("restored veth did not deliver its queued packet")
 +	}
 +}
+diff --git a/pkg/tcpip/network/ipv4/ipv4.go b/pkg/tcpip/network/ipv4/ipv4.go
+index 416cbe7..b5d9f2b 100644
+--- a/pkg/tcpip/network/ipv4/ipv4.go
++++ b/pkg/tcpip/network/ipv4/ipv4.go
+@@ -1984,6 +1984,8 @@ func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.
+ 		return p.returnError(&icmpReasonHostUnreachable{}, pkt, inputHook)
+ 	case stack.RejectIPv4WithICMPPortUnreachable:
+ 		return p.returnError(&icmpReasonPortUnreachable{}, pkt, inputHook)
++	case stack.RejectIPv4WithICMPProtUnreachable:
++		return p.returnError(&icmpReasonProtoUnreachable{}, pkt, inputHook)
+ 	case stack.RejectIPv4WithICMPNetProhibited:
+ 		return p.returnError(&icmpReasonNetworkProhibited{}, pkt, inputHook)
+ 	case stack.RejectIPv4WithICMPHostProhibited:
+diff --git a/pkg/tcpip/network/ipv6/icmp.go b/pkg/tcpip/network/ipv6/icmp.go
+index 00f48cc..8dd7be0 100644
+--- a/pkg/tcpip/network/ipv6/icmp.go
++++ b/pkg/tcpip/network/ipv6/icmp.go
+@@ -1008,6 +1008,12 @@ func (p *icmpReasonParameterProblem) respondsToMulticast() bool {
+ 	return p.respondToMulticast
+ }
+ 
++// icmpReasonReject carries a Destination Unreachable code selected by a firewall.
++type icmpReasonReject struct{ code header.ICMPv6Code }
++
++func (*icmpReasonReject) isICMPReason()             {}
++func (*icmpReasonReject) respondsToMulticast() bool { return false }
++
+ // icmpReasonAdministrativelyProhibited is an error where the destination is
+ // administratively prohibited.
+ type icmpReasonAdministrativelyProhibited struct{}
+@@ -1160,6 +1166,8 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
+ 			return header.ICMPv6ParamProblem, reason.code, sent.paramProblem, reason.pointer
+ 		case *icmpReasonAdministrativelyProhibited:
+ 			return header.ICMPv6DstUnreachable, header.ICMPv6Prohibited, sent.dstUnreachable, 0
++		case *icmpReasonReject:
++			return header.ICMPv6DstUnreachable, reason.code, sent.dstUnreachable, 0
+ 		case *icmpReasonPortUnreachable:
+ 			return header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, sent.dstUnreachable, 0
+ 		case *icmpReasonNetUnreachable:
+diff --git a/pkg/tcpip/network/ipv6/ipv6.go b/pkg/tcpip/network/ipv6/ipv6.go
+index 714c1ad..3ea39db 100644
+--- a/pkg/tcpip/network/ipv6/ipv6.go
++++ b/pkg/tcpip/network/ipv6/ipv6.go
+@@ -2853,6 +2853,12 @@ func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.
+ 		return p.returnError(&icmpReasonPortUnreachable{}, pkt, inputHook)
+ 	case stack.RejectIPv6WithICMPAdminProhibited:
+ 		return p.returnError(&icmpReasonAdministrativelyProhibited{}, pkt, inputHook)
++	case stack.RejectIPv6WithICMPNotNeighbour:
++		return p.returnError(&icmpReasonReject{code: header.ICMPv6BeyondScope}, pkt, inputHook)
++	case stack.RejectIPv6WithICMPPolicyFail:
++		return p.returnError(&icmpReasonReject{code: header.ICMPv6Policy}, pkt, inputHook)
++	case stack.RejectIPv6WithICMPRejectRoute:
++		return p.returnError(&icmpReasonReject{code: header.ICMPv6RejectRoute}, pkt, inputHook)
+ 	case stack.RejectIPv6WithTCPReset:
+ 		return ip.RejectWithTCPReset(pkt, ProtocolNumber, p.stack, inputHook)
+ 	default:
 diff --git a/pkg/tcpip/nftables/BUILD b/pkg/tcpip/nftables/BUILD
 index f390167..923970b 100644
 --- a/pkg/tcpip/nftables/BUILD

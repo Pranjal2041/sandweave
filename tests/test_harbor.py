@@ -25,23 +25,28 @@ def test_provider_preserves_settings_and_declares_actual_resource_modes(tmp_path
         docker_image='ubuntu:22.04', workdir='/work', cpus=3, memory_mb=4096,
         env={'TASK_SETTING': 'present'}))
     options = env.options()
-    assert options['cpu'].vcpus == 3 and options['cpu'].quota is None
+    assert options['cpu'].vcpus == 3 and options['cpu'].quota == 3
     assert options['memory'].guest == '4096MiB'
     assert options['template']['workdir'] == '/work'
     assert options['template']['command_shell'] == '/bin/bash'
     assert options['env'] == {'TASK_SETTING': 'present'}
     with pytest.raises(ValueError):
-        provider(tmp_path, cpu_enforcement_policy=ResourceMode.LIMIT)
+        provider(tmp_path, cpu_enforcement_policy=ResourceMode.REQUEST)
+    with pytest.raises(ValueError):
+        provider(tmp_path, memory_enforcement_policy=ResourceMode.REQUEST)
+    assert provider(tmp_path, cpu_enforcement_policy=ResourceMode.LIMIT, override_cpus=2).options()['cpu'].quota == 2
+    assert provider(tmp_path, cpu_enforcement_policy=ResourceMode.IGNORE).options()['cpu'].quota is None
 
 
-def test_provider_does_not_silently_replace_unsupported_environments(tmp_path):
-    with pytest.raises(ValueError, match='prebuilt'):
+def test_provider_accepts_harbors_environment_definition_forms(tmp_path):
+    with pytest.raises(FileNotFoundError, match='no environment definition'):
         provider(tmp_path, task_env_config=EnvironmentConfig())
     directory = tmp_path / 'environment'
     directory.mkdir()
-    (directory / 'docker-compose.yaml').write_text('services: {}')
-    with pytest.raises(ValueError, match='Compose'):
-        provider(tmp_path)
+    (directory / 'Dockerfile').write_text('FROM ubuntu:22.04\n')
+    assert provider(tmp_path, task_env_config=EnvironmentConfig()).options()['image'] is None
+    (directory / 'docker-compose.yaml').write_text('services: {main: {image: ubuntu:22.04}}')
+    assert provider(tmp_path).capabilities.docker_compose
 
 
 def test_named_rewards_do_not_invent_score_or_pass_threshold():
@@ -49,6 +54,14 @@ def test_named_rewards_do_not_invent_score_or_pass_threshold():
     result = Evaluation('task', rewards={'accuracy': .5, 'cost': 7})
     assert result.score is None and result.passed is None
     assert result.rewards == {'accuracy': .5, 'cost': 7}
+
+
+def test_compose_rendered_values_preserve_shell_dollars_and_file_modes():
+    from sandweave.benchmarks.harbor.compose import rendered_values, file_mode
+    assert rendered_values({'command': ['sh', '-c', 'echo $$VALUE $$(date) $$$$'],
+                            'environment': {'LITERAL': '$$VALUE'}}) == {
+        'command': ['sh', '-c', 'echo $VALUE $(date) $$'], 'environment': {'LITERAL': '$VALUE'}}
+    assert file_mode('0440') == file_mode(0o440) == 0o440
 
 
 def test_agent_handle_preserves_phase_defaults_when_run_passes_none():
@@ -61,8 +74,12 @@ def test_agent_handle_preserves_phase_defaults_when_run_passes_none():
 
 def test_network_policy_cannot_be_silently_weakened(tmp_path):
     from harbor.models.task.config import NetworkPolicy
-    with pytest.raises(ValueError, match='allowlist'):
-        provider(tmp_path, network_policy=NetworkPolicy(network_mode='allowlist', allowed_hosts=['example.com']))
+    network = provider(tmp_path, network_policy=NetworkPolicy(network_mode='allowlist',
+        allowed_hosts=['example.com', '*.example.org', '1.1.1.1'])).options()['network']
+    assert network.mode == 'allowlist'
+    assert network.allowed_hosts == ('example.com', '*.example.org', '1.1.1.1')
+    with pytest.raises(ValueError, match='IPv6'):
+        provider(tmp_path, network_policy=NetworkPolicy(network_mode='allowlist', allowed_hosts=['::1']))
     env = provider(tmp_path, network_policy=NetworkPolicy(network_mode='no-network'))
     assert env.options()['network'].mode == 'offline'
 
@@ -99,6 +116,10 @@ else
   printf '{"correct": 0, "cost": 0.25}' > /logs/verifier/reward.json
 fi
 ''')
+        # Git checkouts have readable source files irrespective of the test
+        # runner's restrictive host umask. Preserve those permissions explicitly.
+        tests.chmod(0o755)
+        (tests / 'test.sh').chmod(0o644)
     return task
 
 
@@ -134,3 +155,55 @@ def test_failed_image_resolution_can_retry_without_losing_deduplication(tmp_path
         finally:
             await pool._close()
     asyncio.run(run())
+
+
+def test_task_sources_with_duplicate_names_keep_distinct_native_configs(tmp_path):
+    from harbor.models.trial.config import TaskConfig
+    from sandweave import Benchmark
+    first = make_task(tmp_path / 'a', 'same')
+    second = make_task(tmp_path / 'b', 'same')
+    bench = Benchmark('harbor', source=[TaskConfig(path=first), TaskConfig(path=second)])
+    try:
+        assert len(bench.tasks) == 2
+        assert len({task.id for task in bench.tasks}) == 2
+        assert {config.path for config in bench._suite.task_configs.values()} == {first, second}
+    finally:
+        bench.close()
+
+
+def test_harbor_cleanup_drains_after_trial_cancellation(tmp_path):
+    async def exercise():
+        env = provider(tmp_path)
+        started, finish = asyncio.Event(), asyncio.Event()
+        class Guest:
+            closed = False
+            async def terminate(self):
+                started.set()
+                await finish.wait()
+            def _close_connection(self):
+                self.closed = True
+        from types import SimpleNamespace
+        guest = Guest()
+        guest.terminate = SimpleNamespace(aio=guest.terminate)
+        env.sandbox = guest
+        cleanup = asyncio.create_task(env.stop())
+        await started.wait()
+        cleanup.cancel()
+        await asyncio.sleep(0)
+        assert not guest.closed
+        finish.set()
+        await asyncio.gather(cleanup, return_exceptions=True)
+        await env.stop()
+        assert guest.closed
+    asyncio.run(exercise())
+
+
+def test_harbor_gpu_types_preserve_all_acceptable_models(tmp_path):
+    from sandweave.sandbox.resources import gpu_matches, normalize
+    request = provider(tmp_path, task_env_config=EnvironmentConfig(docker_image='ubuntu:22.04',
+                       gpus=1, gpu_types=['H100', 'A100'])).options()['gpu']
+    serialized = normalize(gpu=request)['gpu']
+    assert serialized['model'] == ('H100', 'A100')
+    assert gpu_matches(serialized, 'NVIDIA A100-SXM4-80GB')
+    assert gpu_matches(serialized, 'NVIDIA H100 80GB HBM3')
+    assert not gpu_matches(serialized, 'NVIDIA L40S')

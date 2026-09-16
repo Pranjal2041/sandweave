@@ -11,6 +11,7 @@ import uuid
 
 import pytest
 
+
 from sandweave.sandbox.errors import CacheMiss, OperationUnknown, ResourceUnavailable
 from sandweave.sandbox.management import Management
 from sandweave.sandbox.ownership import Owners, process_identity
@@ -20,6 +21,20 @@ from sandweave.weave.controller import Controller
 from sandweave.weave import providers, scheduler, artifacts
 from sandweave.weave.pool import dispatch as pool_call
 from sandweave.weave.state import State
+
+
+def test_service_gpu_alternatives_find_a_complete_assignment():
+    from sandweave.weave.scheduler import match_gpus
+    def request(models):
+        return {'resources': {'gpu': {'model': models}}}
+    spec = request(('Model-1', 'Model-2'))
+    spec['services'] = {name: {'request': {'spec': request(('Model-1', 'Model-3'))}}
+                        for name in ('service-a', 'service-b')}
+    devices = [{'uuid': str(index), 'model': 'Model-' + str(index)} for index in (1, 2, 3)]
+    selected = match_gpus(spec, devices, set())
+    assert selected['main'] == '2'
+    assert {selected['service-a'], selected['service-b']} == {'1', '3'}
+    assert match_gpus(spec, devices, {'2'}) is None
 
 
 class Executor(Worker):
@@ -313,6 +328,23 @@ def test_gpu_placement_reserves_specific_matching_devices():
     assignments, waiting = scheduler.plan(requests[:1], [worker], allocations, {})
     assert not assignments
     assert 'GPU' in waiting['0']
+
+
+def test_service_group_gpus_are_reserved_atomically_and_remain_charged():
+    spec = definition(detached=True, gpu=True)['spec']
+    service = definition(detached=True, gpu='RTX')
+    spec['services'] = {'render': {'request': service}}
+    worker = dict(id='w', state='ready', capacity={'slots': 4, 'memory': 100*1024**3, 'gpu': 2},
+                  gpus=[{'uuid': 'first', 'model': 'RTX'}, {'uuid': 'second', 'model': 'L40S'}])
+    requests = [dict(id=str(i), spec=copy.deepcopy(spec), created=i) for i in range(2)]
+    assignments, waiting = scheduler.plan(requests, [worker], [], {})
+    assert assignments == [('0', 'w', {'render': 'first', 'main': 'second'})]
+    assert '1' in waiting
+    scheduler.assign_gpus(spec, assignments[0][2])
+    assert spec['_gpu_uuid'] == 'second'
+    assert spec['services']['render']['request']['spec']['_gpu_uuid'] == 'first'
+    allocation = dict(id='old', worker='w', spec=spec, released=False)
+    assert scheduler.plan(requests, [worker], [allocation], {})[0] == []
 
 
 def test_unreachable_worker_keeps_charge_and_does_not_replace_episode(lab, monkeypatch):

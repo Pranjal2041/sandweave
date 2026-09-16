@@ -24,6 +24,9 @@ FORMAT = 1
 
 def validate(image):
     if isinstance(image, dict):
+        if image.get('format') == 'oci':
+            from .oci_archive import validate as validate_archive
+            return validate_archive(image)
         from .disk_image import validate as validate_disk
         return validate_disk(image)
     reference(image)
@@ -96,12 +99,15 @@ def metadata(config):
         if not isinstance(command, list) or any(not isinstance(v, str) or '\0' in v for v in command):
             raise ValueError('image ' + key + ' must be an argument list')
         commands[key.lower()] = command
-    return {'env': environment, 'workdir': working_dir, 'user': user, **commands}
+    return {'env': environment, 'workdir': working_dir, 'user': user, **commands,
+            'healthcheck': copy.deepcopy(values.get('Healthcheck')),
+            'shell': list(values.get('Shell') or ['/bin/sh', '-c'])}
 
 
 def prepare(image, root, *, refresh=False, pool=None):
     """Return a pinned descriptor; a cached tag performs no registry requests."""
-    if isinstance(image, dict):
+    is_archive = isinstance(image, dict) and image.get('format') == 'oci'
+    if isinstance(image, dict) and not is_archive:
         from .disk_image import prepare as prepare_disk
         return prepare_disk(image, root, pool=pool)
     from ..bootstrap import Builder, download
@@ -113,9 +119,13 @@ def prepare(image, root, *, refresh=False, pool=None):
         from ..sandbox.retention import validate
         directory = directory / 'pools' / validate(pool)
     directory.mkdir(parents=True, exist_ok=True)
-    alias = directory / 'references' / (fingerprint(reference(image)) + '.json')
+    alias = directory / 'references' / (fingerprint(image if is_archive else reference(image)) + '.json')
     with locked(alias.with_suffix('.lock')):
-        registry = Registry(image, directory / 'blobs')
+        if is_archive:
+            from .oci_archive import Archive
+            registry = Archive(image, directory / 'blobs')
+        else:
+            registry = Registry(image, directory / 'blobs')
         cached_alias = alias
         if pool and not cached_alias.is_file():
             cached_alias = shared / 'references' / alias.name
@@ -143,7 +153,7 @@ def prepare(image, root, *, refresh=False, pool=None):
                 atomic_json(receipt, recorded)
                 valid = True
             if not valid:
-                with Stage('Prepare ' + image, unit='layers', detail='Downloading image') as progress:
+                with Stage('Prepare ' + ('built image' if is_archive else image), unit='layers', detail='Reading image') as progress:
                     layers = selected['manifest']['layers']
                     progress.update(total=len(layers) + 2)
                     # The builder needs its trusted helper files in /lab. Only

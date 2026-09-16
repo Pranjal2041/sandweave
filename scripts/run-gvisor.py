@@ -41,7 +41,9 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--detach', action='store_true', help='keep a desktop running independently of the terminal/chat command')
 parser.add_argument('--cpus', default=','.join(map(str, sorted(os.sched_getaffinity(0)))),
                     help='shared eligible CPU pool; defaults to the inherited Slurm allocation')
-parser.add_argument('--network-policy', choices=['internet', 'offline', 'proxy'], default='internet')
+parser.add_argument('--network-policy', choices=['internet', 'offline', 'proxy', 'allowlist'], default='internet')
+parser.add_argument('--allowed-hosts', type=json.loads, default=[])
+parser.add_argument('--service-network', type=Path, help=argparse.SUPPRESS)
 parser.add_argument('--proxy-endpoint', dest='proxy_endpoints', action='append')
 parser.add_argument('--proxy-index', type=int)
 parser.add_argument('--clear-proxy', action='store_true', help=argparse.SUPPRESS)
@@ -220,6 +222,7 @@ runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 settings['virtual_consoles'] = args.virtual_consoles
+settings['allowed_hosts'] = args.allowed_hosts
 settings['netlink_address_events'] = args.netlink_address_events
 settings['sysctl_reapply'] = args.sysctl_reapply
 launch_settings = {'settings': settings, 'runtime': runtime}
@@ -332,7 +335,8 @@ policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.
           'dns': '10.0.2.3', 'forwarded_tcp_ports': list(map(int, ports)),
           'host_addresses': [address['local'] for interface in host_interfaces
                              for address in interface['addr_info'] if address['family'] == 'inet'],
-          'allow_cidrs': args.allow_cidr, 'proxy_endpoints': args.proxy_endpoints or []}
+          'allow_cidrs': args.allow_cidr, 'proxy_endpoints': args.proxy_endpoints or [],
+          'allowed_hosts': args.allowed_hosts}
 (bundle / 'network-policy.json').write_text(json.dumps(policy, indent=2) + '\n')
 mark('network_setup_seconds')
 
@@ -429,7 +433,8 @@ try:
     wait_socket(passt_socket, passt)
     relay = spawn(runtime_tools.limited([sys.executable, str(lab / 'scripts/ethernet-relay.py'),
                    '--listen', str(ethernet_socket), '--passt', str(passt_socket),
-                   '--policy', str(bundle / 'network-policy.json')]), logs / 'relay.log')
+                   '--policy', str(bundle / 'network-policy.json'),
+                   *(['--service-network', str(args.service_network)] if args.service_network else [])]), logs / 'relay.log')
     wait_socket(ethernet_socket, relay)
     mark('helpers_seconds')
     command = [str(lab / 'scripts/gvisor-host.sh'),
@@ -460,6 +465,8 @@ try:
             command += mps.flags()
     if mounts:
         command[1:1] = ['--mounts', str(mount_file)]
+        if any(mount.get('_private_volume') for mount in mounts):
+            command.append('--private-volumes=enabled')
     if args.disk_path:
         command[1:1] = ['--disk-memory', str(args.disk_memory_inner)]
         command += ['--app-memory-directory=/disk-memory']

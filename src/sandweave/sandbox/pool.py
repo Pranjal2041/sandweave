@@ -40,6 +40,7 @@ class Pool:
             raise ValueError('pool requires at least one target')
         self.condition = threading.Condition()
         self.idle, self.active, self.all = deque(), set(), set()
+        self.waiters = deque()
         self.pending, self.cursor = 0, 0
         self.proxy_network, self.proxy_state = None, {}
         self.started, self.closed, self.failure = False, False, None
@@ -192,27 +193,34 @@ class Pool:
         deadline = None if timeout is None else time.monotonic() + timeout
         create = False
         with self.condition:
-            while True:
-                if cancelled.is_set():
-                    raise InterruptedError('pool checkout cancelled')
-                if self.closed:
-                    raise RuntimeError('pool is closed')
-                if self.failure:
-                    raise self.failure
-                if self.idle:
-                    env = self.idle.popleft()
-                    self.active.add(env)
-                    self._refill()
-                    break
-                if len(self.all) + self.pending < self.size:
-                    self.pending += 1
-                    target = self._target()
-                    create = True
-                    break
-                remaining = None if deadline is None else deadline - time.monotonic()
-                if remaining is not None and remaining <= 0:
-                    raise TimeoutError('pool checkout is waiting for capacity')
-                self.condition.wait(.1 if remaining is None else min(.1, remaining))
+            waiter = object()
+            self.waiters.append(waiter)
+            try:
+                while True:
+                    if cancelled.is_set():
+                        raise InterruptedError('pool checkout cancelled')
+                    if self.closed:
+                        raise RuntimeError('pool is closed')
+                    if self.failure:
+                        raise self.failure
+                    first = self.waiters[0] is waiter
+                    if first and self.idle:
+                        env = self.idle.popleft()
+                        self.active.add(env)
+                        self._refill()
+                        break
+                    if first and len(self.all) + self.pending < self.size:
+                        self.pending += 1
+                        target = self._target()
+                        create = True
+                        break
+                    remaining = None if deadline is None else deadline - time.monotonic()
+                    if remaining is not None and remaining <= 0:
+                        raise TimeoutError('pool checkout is waiting for capacity')
+                    self.condition.wait(.1 if remaining is None else min(.1, remaining))
+            finally:
+                self.waiters.remove(waiter)
+                self.condition.notify_all()
         if create:
             try:
                 env = self._sandbox(target)

@@ -200,7 +200,7 @@ git apply /lab/engine.patch
 bazel --batch --output_user_root=/lab/build-tmp/bazel build --jobs="$1" \\
   //runsc:runsc //runsc/cmd/sentry:gvisor_sentry \\
   //runsc/checkpointgofer:checkpointgofer_binary //runsc/prewarmer:gvisor-sentry-prewarmer \\
-  //runsc/cmd/metricserver:runsc-metric-server
+  //runsc/cmd/metricserver:runsc-metric-server //runsc/guesttools:sandweave-guest-tools
 mkdir -p /lab/artifacts/gvisor-bin
 cp LICENSE /lab/artifacts/LICENSE
 cp bazel-bin/runsc/runsc_/runsc /lab/artifacts/runsc
@@ -208,6 +208,7 @@ cp bazel-bin/runsc/cmd/sentry/gvisor_sentry_/gvisor_sentry /lab/artifacts/gvisor
 cp bazel-bin/runsc/checkpointgofer/checkpointgofer_binary_/checkpointgofer_binary /lab/artifacts/gvisor-bin/checkpointgofer
 cp bazel-bin/runsc/prewarmer/gvisor-sentry-prewarmer /lab/artifacts/gvisor-bin/gvisor-sentry-prewarmer
 cp bazel-bin/runsc/cmd/metricserver/runsc-metric-server_/runsc-metric-server /lab/artifacts/gvisor-bin/runsc-metric-server
+cp bazel-bin/runsc/guesttools/sandweave-guest-tools /lab/artifacts/gvisor-bin/sandweave-guest-tools
 for name in bench seccomp-trap gs-base-probe; do
   cc -O2 -static "/lab/input/$name.c" -o "/lab/tools/$name" -pthread
 done

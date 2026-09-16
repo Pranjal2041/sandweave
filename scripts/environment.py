@@ -92,9 +92,14 @@ class EnvironmentManager:
                 except FileNotFoundError:
                     matches, argv = False, []
                 if not matches or f'--bundle=/local/gvisor/bundles/{name}'.encode() not in argv:
-                    raise RuntimeError(f'{name}: saved runtime PID does not identify this environment')
-                result.update(status=state['status'], sentry={'pid': pid, 'start': info['start']},
-                              gpu=bool(settings.get('gpu')))
+                    # Runtime state can outlive its process, and Linux reuses
+                    # PIDs. An unrelated process is not a live sandbox. During
+                    # launch, exec may also not have installed the Sentry yet;
+                    # the verified launcher keeps this attempt in "starting".
+                    result['stale_runtime_pid'] = pid
+                else:
+                    result.update(status=state['status'], sentry={'pid': pid, 'start': info['start']},
+                                  gpu=bool(settings.get('gpu')))
         if not bundle.exists() and launcher is None:
             result['status'] = 'missing'
         for filename, key in [('ports.json', 'ports'), ('stopped.json', 'last_stop'),

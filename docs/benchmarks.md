@@ -4,10 +4,10 @@ A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a [pool](pools.md) to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.
 
-Available in the `0.2.20rc4` preview:
+Available in the `0.2.20rc5` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc4'
+uv pip install 'sandweave[benchmarks]==0.2.20rc5'
 ```
 
 ## Run tasks
@@ -137,13 +137,13 @@ the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:
 
 ```bash
-uv pip install 'sandweave[harbor]==0.2.20rc4'
+uv pip install 'sandweave[harbor]==0.2.20rc5'
 ```
 
 ```python
 from sandweave import Benchmark
 
-bench = Benchmark("harbor", source="terminal-bench@2.0", capacity=8)
+bench = Benchmark("harbor", source="terminal-bench/terminal-bench@3.0.0", capacity=8)
 task = bench.next()
 try:
     env = task.env
@@ -154,6 +154,19 @@ try:
 finally:
     task.close()
     bench.close()
+```
+
+Dataset discovery uses Harbor's registries, including its package registry for
+Terminal-Bench 3. Dataset names are not hard-coded in Sandweave. You can pass a
+Harbor `DatasetConfig`, `TaskConfig`, or dataset configuration dictionary to
+select a repository, version and task filters:
+
+```python
+bench = Benchmark("harbor", source={
+    "name": "quixbugs",
+    "version": "1.0",
+    "task_names": ["quixbugs-python-detect_cycle"],
+}, capacity=8, preload=2)
 ```
 
 Pass `target=cluster_url` to use Weave. `source="./my-task"` loads one task;
@@ -204,14 +217,44 @@ rewards; the final evaluation reports Harbor's configured aggregate rewards.
 Async clients use `.aio()` on these methods;
 async exhaustion raises `StopAsyncIteration`.
 
-The provider currently accepts **prebuilt public Linux amd64 images** with public
-or offline networking. Dockerfile-only builds, Compose service groups, private
-image authentication, Windows, network allowlists and network changes between
-phases need additional runtime support. Unsupported requirements are rejected.
-CPU values are reservations rather than hard quotas; guest memory is bounded,
-and runtime overhead is admitted separately. Storage quotas are not enforced.
-MCP/skills-driven agents and simulated-user bridges are not part of this client
-pull API. A task image cannot supply missing kernel features or host devices.
+Task environments can use prebuilt Linux amd64 images, Dockerfiles or Compose
+services. BuildKit builds the original Dockerfile inside an isolated builder;
+the resulting task and its services run directly in Sandweave. A Docker daemon
+is not required. Builds support local and remote contexts, stages, arguments,
+additional contexts and secret mounts. Registry authentication reads Docker's
+credential configuration; remote workers need credentials for private image pulls.
+
+Compose services share placement and admission. Service names resolve on their
+shared networks. Dependencies, health checks, entrypoints, named volumes,
+read-only inputs, secrets, tmpfs mounts and graceful shutdown remain part of the
+task definition. Sidecar artifacts are collected through Harbor's service API.
+Bind inputs are copied to the worker; they are not live mounts of the client's
+filesystem. Ephemeral volumes use worker-local storage and are removed with the
+group.
+
+Public, offline and IPv4 allowlist policies can change between setup, agent and
+verifier phases. Hostname allowlists follow DNS answers, including wildcard
+names. They permit those destination IPs; they do not enforce HTTP Host or TLS
+SNI names when several sites share an address.
+
+Harbor's CPU limit policy maps to a CPU quota. Guest memory has a hard ceiling,
+and its runtime overhead is admitted separately. Storage quotas, Windows, TPUs,
+and multiple GPUs in a single sandbox are outside this runtime's capabilities.
+Host namespace and host-device access are not supplied by a task image.
+
+The client receives Harbor's agent inputs alongside the sandbox:
+
+```python
+inputs = task.env.harbor
+print(inputs.mcp_servers)
+print(inputs.skills_dir)
+# Record usage or other agent results in Harbor's native context.
+context = inputs.context
+```
+
+Your agent decides how to use MCP servers and skills. The pull interface does
+not install a model or run an agent for you. Harbor's installed agents and
+agent-specific protocols use the same environment provider through its CLI.
 
 To use Harbor's own agents with the same environment provider:
 

@@ -87,10 +87,29 @@ def cgroup_limit(proc=Path('/proc')):
 
 def reservation(spec):
     memory = spec['resources']['memory']
+    services = sum(reservation(service['request']['spec']) for service in spec.get('services', {}).values())
+    extra = spec.get('_image_import_memory', 0)
+    if type(extra) is not int or extra < 0:
+        raise ValueError('invalid image import memory reservation')
+    services += extra
     if memory.get('disk') is not None:
-        return sum(((memory_bytes(memory[key]) + 1024**2 - 1) // 1024**2) * 1024**2
+        return services + sum(((memory_bytes(memory[key]) + 1024**2 - 1) // 1024**2) * 1024**2
                    for key in ('guest', 'runtime'))
-    return memory_bytes(memory['guest']) + memory_bytes(memory['runtime'])
+    return services + memory_bytes(memory['guest']) + memory_bytes(memory['runtime'])
+
+
+def live(worker, record, *, records=None):
+    """A group retains its reservation until its last runtime is gone."""
+    if record['state'] in ('creating', 'preparing'):
+        return True
+    identities = {record['id'], *record.get('image_imports', []),
+                  *(item['identity'] for item in record.get('services', {}).values())}
+    def status(identity):
+        if records is not None and identity in records:
+            return records[identity]['runtime_status']['status']
+        return worker.runtime.status(identity)['status']
+    return any(status(identity) in ('starting', 'running', 'paused')
+               for identity in identities)
 
 
 def admit(worker, spec):
@@ -98,11 +117,12 @@ def admit(worker, spec):
     reserved = 0
     for path in worker.records.glob('*.bin'):
         record = worker.read(path.stem)
+        if record.get('service_parent'):
+            continue  # The parent reserved the entire group before launch.
         if record['state'] in ('terminated', 'stopped'):
             continue
-        if record['state'] not in ('creating', 'preparing'):
-            if worker.runtime.status(record['id'])['status'] not in ('starting', 'running', 'paused'):
-                continue
+        if not live(worker, record):
+            continue
         if spec.get('name') and record.get('name') == spec['name']:
             raise FileExistsError('a live sandbox already has this name: ' + spec['name'])
         reserved += reservation(record['spec'])

@@ -123,7 +123,16 @@ def worker_code(code, *, timeout=30):
     from sandweave.sandbox.launcher import _server
     with tempfile.NamedTemporaryFile() as image:
         def image_handles(pid):
-            return [p for p in Path(f'/proc/{pid}/fd').iterdir() if p.exists() and os.path.samefile(p, image.name)]
+            identity = os.fstat(image.fileno())
+            result = []
+            for path in Path(f'/proc/{pid}/fd').iterdir():
+                try:
+                    current = path.stat()
+                except FileNotFoundError:
+                    continue  # Transient descriptors can close during /proc inspection.
+                if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
+                    result.append(path)
+            return result
         assert image_handles(os.getpid())
         assert not image_handles(_server.process.pid)
         with subprocess.Popen(['sleep', '10']) as child:

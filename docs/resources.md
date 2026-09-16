@@ -163,6 +163,11 @@ with Sandbox(template="cuda", gpu="L40S") as env:
 The worker must already have access to that GPU. Weave currently reserves whole
 GPUs for cluster admission; fractional GPU admission is not implemented.
 
+In the `0.2.20rc5` preview, accept any of several models with
+`GPU(model=("H100", "A100"))`. Import `GPU` from `sandweave` and pass it as
+the `gpu` argument. Model matching is case-insensitive and accepts substrings
+of the device name. This still requests one GPU.
+
 ## Inspect configuration
 
 ```python

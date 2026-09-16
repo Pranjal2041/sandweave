@@ -4,13 +4,15 @@ import ipaddress
 import struct
 import threading
 import time
+from network_allowlist import Allowlist
 
 
 class NetworkPolicy:
     def __init__(self, config):
         self.mode = config['mode']
-        if self.mode not in ('internet', 'offline', 'proxy'):
-            raise ValueError('network mode must be internet, offline or proxy')
+        if self.mode not in ('internet', 'offline', 'proxy', 'allowlist'):
+            raise ValueError('invalid network mode')
+        self.allowlist = Allowlist(config.get('allowed_hosts', []))
         self.guest = ipaddress.IPv4Address(config['guest']).packed
         self.gateway = ipaddress.IPv4Address(config['gateway']).packed
         self.dns = ipaddress.IPv4Address(config['dns']).packed
@@ -29,6 +31,13 @@ class NetworkPolicy:
         self.flows = collections.OrderedDict()
         self.counts = collections.Counter()
         self.lock = threading.Lock()
+
+    def update(self, config):
+        """Replace egress rules without interrupting the authenticated control port."""
+        replacement = NetworkPolicy(config)
+        with self.lock:
+            for name in ('mode', 'allowed', 'proxies', 'allowlist'):
+                setattr(self, name, getattr(replacement, name))
 
     @staticmethod
     def ipv4(frame):
@@ -74,6 +83,18 @@ class NetworkPolicy:
                             return False, 'flow_limit'
                         self.flows[key] = now + 3600
                         self.flows.move_to_end(key)
+                    if dport in self.ports:
+                        return True, 'forward'
+                if self.mode == 'offline':
+                    return False, 'offline'
+                if self.mode == 'allowlist':
+                    if src == self.dns and proto in (6, 17) and struct.unpack_from('!H', payload)[0] == 53:
+                        if proto == 17:
+                            self.allowlist.observe(payload[8:], struct.unpack_from('!H', payload, 2)[0], response=True)
+                        else:
+                            self.allowlist.observe_tcp(payload, struct.unpack_from('!H', payload, 2)[0], response=True)
+                        return True, 'dns'
+                    return self.allowlist.allows(src), 'allowlist'
             return True, 'inbound'
         if len(frame) >= 42 and frame[12:14] == b'\x08\x06':
             # Only resolve the configured gateway/DNS. ARP never opens a host socket.
@@ -98,7 +119,11 @@ class NetworkPolicy:
                     self.flows[key] = now + 3600
                     self.flows.move_to_end(key)
                     return True, 'forward_reply'
-            if self.mode == 'internet' and dst == self.dns and dport == 53:
+            if self.mode in ('internet', 'allowlist') and dst == self.dns and dport == 53:
+                if self.mode == 'allowlist' and proto == 17:
+                    self.allowlist.observe(payload[8:], sport, response=False)
+                elif self.mode == 'allowlist':
+                    self.allowlist.observe_tcp(payload, sport, response=False)
                 return True, 'dns'
         if self.mode == 'offline':
             return False, 'offline'
@@ -107,7 +132,9 @@ class NetworkPolicy:
         addr = ipaddress.IPv4Address(dst)
         if dst in self.hosts or dst in (self.gateway, self.dns, self.guest) or addr.is_loopback or addr.is_link_local:
             return False, 'host'
-        if not addr.is_global and not any(addr in network for network in self.allowed):
+        if self.mode == 'allowlist' and not self.allowlist.allows(dst):
+            return False, 'allowlist'
+        if self.mode != 'allowlist' and not addr.is_global and not any(addr in network for network in self.allowed):
             return False, 'nonpublic'
         if addr.is_multicast or addr.is_unspecified or addr.is_reserved:
             return False, 'special'

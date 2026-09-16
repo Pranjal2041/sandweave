@@ -60,7 +60,7 @@ def cluster(tmp_path_factory):
             logs.append(log)
             environment = {**os.environ, 'SANDWEAVE_HOME': str(worker_home),
                            'SANDWEAVE_ASSETS': os.environ.get('SANDWEAVE_ASSETS', str(Path.cwd())),
-                           'SANDWEAVE_MEMORY_BUDGET': '4GiB',
+                           'SANDWEAVE_MEMORY_BUDGET': os.environ.get('SANDWEAVE_WEAVE_MEMORY', '4GiB'),
                            'PYTHONPATH': os.environ.get('SANDWEAVE_WEAVE_WORKER_PACKAGE', package_path())}
             child = subprocess.Popen(['taskset', '-c', ','.join(map(str, cpus[index*2:index*2+2])),
                 sys.executable, '-m', 'sandweave.sandbox.worker', '--metadata', str(marker)],
@@ -83,7 +83,7 @@ def cluster(tmp_path_factory):
                     'token': cluster.connection.token}, endpoint['relay']).start())
             cluster.add_worker({'endpoint': endpoint},
                                slots=int(os.environ.get('SANDWEAVE_WEAVE_SLOTS', '2')),
-                               memory='4GiB', name='acceptance-' + str(index))
+                               memory=os.environ.get('SANDWEAVE_WEAVE_MEMORY', '4GiB'), name='acceptance-' + str(index))
         cluster.test_workers = connections
         yield cluster
     finally:

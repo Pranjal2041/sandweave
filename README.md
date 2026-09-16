@@ -348,10 +348,10 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 ## Run a benchmark
 
 `Benchmark` pairs each task's instructions with a clean sandbox and its evaluator.
-The OSWorld integration is available in the `0.2.20rc4` preview:
+The OSWorld integration is available in the `0.2.20rc5` preview:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc4'
+uv pip install 'sandweave[benchmarks]==0.2.20rc5'
 ```
 
 ```python
@@ -392,11 +392,11 @@ for setup, resource requirements and the measured limits of VM parity.
 
 ### Harbor
 
-Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20rc4` with
+Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20rc5` with
 Python 3.12+, then select a dataset or a local task directory:
 
 ```python
-bench = Benchmark("harbor", source="terminal-bench@2.0", capacity=8)
+bench = Benchmark("harbor", source="terminal-bench/terminal-bench@3.0.0", capacity=8)
 task = bench.next()
 try:
     run_agent(task.env, task.instruction)
@@ -406,7 +406,9 @@ finally:
     bench.close()
 ```
 
-Harbor runs the task's original verifier. Images and prepared filesystems are
+Harbor resolves datasets, builds their Dockerfiles, starts Compose services and
+runs the original verifier. The integration uses Harbor's task protocol, so it
+does not need a separate adapter for each dataset. Images and prepared filesystems are
 reused across independent attempts; `capacity` applies across all task images.
 See [Harbor benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/#harbor)
 for installation, multi-step tasks and supported environment definitions.

@@ -10,6 +10,7 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from ..sandbox.workspace import locked
+from .credentials import credentials
 
 ACCEPT = ', '.join(('application/vnd.oci.image.index.v1+json',
                     'application/vnd.oci.image.manifest.v1+json',
@@ -71,18 +72,27 @@ class Registry:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.base = 'https://' + self.host + '/v2/' + self.repository
         self.token = None
+        self.credentials = None
+        self.basic = None
         self.opener = build_opener(RegistryRedirect())
 
     def open(self, suffix, accept=None, *, authenticated=False):
         headers = {'User-Agent': 'sandweave', **({'Accept': accept} if accept else {})}
         if self.token:
             headers['Authorization'] = 'Bearer ' + self.token
+        elif self.basic:
+            headers['Authorization'] = 'Basic ' + self.basic
         try:
             return self.opener.open(Request(self.base + suffix, headers=headers), timeout=60)
         except HTTPError as error:
             if error.code != 401 or authenticated:
                 raise
             challenge = error.headers.get('WWW-Authenticate', '')
+            if self.credentials is None:
+                self.credentials = credentials(self.host)
+            if challenge.lower().startswith('basic ') and self.credentials.get('auth'):
+                self.basic = self.credentials['auth']
+                return self.open(suffix, accept, authenticated=True)
             if not challenge.lower().startswith('bearer '):
                 raise ValueError('image registry requires unsupported authentication') from error
             fields = dict(re.findall(r'(\w+)="([^"]*)"', challenge[7:]))
@@ -92,9 +102,17 @@ class Registry:
                 raise ValueError('invalid image registry authentication endpoint') from error
             query = urlencode({'service': fields.get('service', self.host),
                                'scope': 'repository:' + self.repository + ':pull'})
-            # Anonymous pull tokens only. Never send host credentials to a
-            # registry-provided authentication endpoint or a blob redirect.
-            with urlopen(realm + ('&' if parsed.query else '?') + query, timeout=60) as response:
+            headers, data = {}, None
+            if self.credentials.get('auth'):
+                headers['Authorization'] = 'Basic ' + self.credentials['auth']
+            if self.credentials.get('identitytoken'):
+                data = urlencode({'grant_type': 'refresh_token', 'client_id': 'sandweave',
+                    'service': fields.get('service', self.host),
+                    'scope': 'repository:' + self.repository + ':pull',
+                    'refresh_token': self.credentials['identitytoken']}).encode()
+                headers['Content-Type'] = 'application/x-www-form-urlencoded'
+            request = Request(realm + ('&' if parsed.query else '?') + query, data=data, headers=headers)
+            with self.opener.open(request, timeout=60) as response:
                 token = json.loads(response.read(1024*1024))
             self.token = token.get('token') or token.get('access_token')
             if not self.token:

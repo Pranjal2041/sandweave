@@ -1,5 +1,6 @@
 """Suspend Harbor at its agent boundary while the caller owns a task lease."""
 import asyncio
+import copy
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -55,6 +56,15 @@ class Phase:
     evaluation: Evaluation | None = None
 
 
+@dataclass(frozen=True)
+class AgentInputs:
+    """Harbor-provided agent inputs and the native result context for this phase."""
+    mcp_servers: tuple
+    skills_dir: str | None
+    context: object
+    logs_dir: str
+
+
 class PullAgent(BaseAgent):
     @staticmethod
     def name():
@@ -78,6 +88,9 @@ class PullAgent(BaseAgent):
                                     cwd=environment.task_env_config.workdir,
                                     env=environment._merge_env(None))
         session.env._task_instruction = instruction
+        phase.instruction = instruction
+        session.env.harbor = AgentInputs(tuple(self.mcp_servers), self.skills_dir,
+            context, str(self.environment_logs_dir))
         phase.started.set()
         await phase.finish.wait()
 
@@ -86,6 +99,7 @@ class Session:
     def __init__(self, pool, spec):
         self.pool, self.spec = pool, spec
         self.trial = self.env = None
+        self.environments = set()
         self.phases = []
         self.index = 0
         self.error = None
@@ -116,11 +130,16 @@ class Session:
     async def _run(self):
         token = current_session.set(self)
         try:
+            options = copy.deepcopy(self.pool.trial_options)
+            agent = options.pop('agent', {})
+            environment = options.pop('environment', {})
             config = TrialConfig(
-                task=TaskConfig(path=Path(self.spec.metadata['path'])),
-                agent=AgentConfig(import_path=__name__ + ':PullAgent'),
-                environment=EnvironmentConfig(import_path='sandweave.benchmarks.harbor.provider:SandweaveEnvironment'),
+                task=self.pool.suite.task_configs[self.spec.id].model_copy(deep=True),
+                agent=AgentConfig(**{**agent, 'name': None, 'import_path': __name__ + ':PullAgent'}),
+                environment=EnvironmentConfig(**{**environment, 'type': None,
+                    'import_path': 'sandweave.benchmarks.harbor.provider:SandweaveEnvironment'}),
                 trials_dir=self.pool.output,
+                **options,
             )
             self.trial = await Trial.create(config)
             self.trial.add_hook(TrialEvent.AGENT_START, self._boundary)
@@ -196,12 +215,21 @@ class Session:
         if not self.run.done():
             self.run.cancel()
         await asyncio.gather(self.run, return_exceptions=True)
+        cleanup = await asyncio.gather(*(environment.stop(delete=True) for environment in self.environments),
+                                       return_exceptions=True)
         if self.env is not None:
             self.env._close_connection()
+        failures = [error for error in cleanup if isinstance(error, Exception)]
+        if failures:
+            raise ExceptionGroup('Harbor environment cleanup failed', failures)
 
 
 class TaskPool:
-    def __init__(self, suite, *, capacity, preload, output=None, **options):
+    def __init__(self, suite, *, capacity, preload, output=None, harbor=None, **options):
+        self.trial_options = copy.deepcopy(harbor or {})
+        reserved = {'task', 'trials_dir', 'install_only', 'source_trial'} & self.trial_options.keys()
+        if reserved:
+            raise ValueError('The benchmark pull interface owns these Harbor settings: ' + ', '.join(sorted(reserved)))
         conflicts = {'image', 'template', 'setup', 'cache', 'snapshot', 'cache_key', 'env', 'mounts', 'network', 'runtime'} & options.keys()
         if conflicts:
             raise ValueError('Harbor task definitions own these settings: ' + ', '.join(sorted(conflicts)))
@@ -213,6 +241,7 @@ class TaskPool:
         self.live = set()
         self.prepared = {}
         self.images = {}
+        self.builds = {}
         # Capacity/launch waits must never occupy the executor used by command
         # transfers and cleanup. The number of launch waits is capacity-bounded.
         self.launches = ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='sandweave-harbor-launch')
@@ -293,6 +322,21 @@ class TaskPool:
         except Exception:
             if self.images.get(image) is pending:
                 self.images.pop(image)
+            raise
+
+    async def build(self, directory, settings):
+        from ...templates.build import build, remote_context
+        from ...templates.resolve import fingerprint
+        key = fingerprint({'directory': str(directory) if remote_context(directory) else str(Path(directory).resolve()), **settings})
+        if key not in self.builds:
+            self.builds[key] = asyncio.create_task(self.blocking(lambda: build(directory,
+                target=self.options.get('target'), log=self.output / 'builds' / (key + '.log'), **settings)))
+        pending = self.builds[key]
+        try:
+            return await asyncio.shield(pending)
+        except Exception:
+            if self.builds.get(key) is pending:
+                self.builds.pop(key)
             raise
 
     def acquire_task(self, spec, *, timeout=None):
@@ -433,14 +477,18 @@ class TaskPool:
         async with self.condition:
             self.closed = True
             self.condition.notify_all()
-        await asyncio.gather(*(session.close() for session in self.live))
+        results = await asyncio.gather(*(session.close() for session in self.live), return_exceptions=True)
         self.live.clear()
         self.sessions.clear()
         self.warm.clear()
         prepared = await asyncio.gather(*self.prepared.values(), return_exceptions=True)
-        results = await asyncio.gather(*(pool.close.aio() for pool in prepared if not isinstance(pool, BaseException)),
-                                       return_exceptions=True)
+        results += await asyncio.gather(*(pool.close.aio() for pool in prepared if not isinstance(pool, BaseException)),
+                                        return_exceptions=True)
         await asyncio.gather(*self.images.values(), return_exceptions=True)
+        builds = await asyncio.gather(*self.builds.values(), return_exceptions=True)
+        for snapshot in builds:
+            if not isinstance(snapshot, BaseException):
+                snapshot._connection.close()
         self.launches.shutdown(wait=True)
         errors = [error for error in results if isinstance(error, Exception)]
         if errors:

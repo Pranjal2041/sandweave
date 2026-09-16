@@ -70,14 +70,19 @@ class Memory:
 
 @dataclass(frozen=True)
 class GPU:
-    model: str | None = None
+    model: str | tuple[str, ...] | None = None
     sm_chunks: int | None = None
     client_memory: str | int | None = None
     experimental: bool = False
 
     def __post_init__(self):
-        if self.model is not None and (not isinstance(self.model, str) or not self.model.strip()):
-            raise ValueError('GPU model must be a nonempty string')
+        if self.model is not None:
+            models = [self.model] if isinstance(self.model, str) else self.model
+            if (not isinstance(models, (list, tuple)) or not models or
+                    any(not isinstance(model, str) or not model.strip() for model in models)):
+                raise ValueError('GPU model must be a nonempty string or sequence of model names')
+            if not isinstance(self.model, str):
+                object.__setattr__(self, 'model', tuple(models))
         if self.sm_chunks is not None:
             positive(self.sm_chunks, 'sm_chunks', integer=True)
         if self.client_memory is not None:
@@ -88,20 +93,43 @@ class GPU:
             raise ValueError('client_memory requires an MPS sm_chunks partition')
 
 
+def gpu_matches(request, model):
+    selected = request.get('model')
+    choices = (selected,) if isinstance(selected, str) else selected
+    return not choices or any(choice.lower() in model.lower() for choice in choices)
+
+
 @dataclass(frozen=True)
 class Network:
     mode: str = 'internet'
     allow_cidrs: tuple[str, ...] = ()
     proxy: str | tuple[str, ...] | dict[str, tuple[str, ...]] | None = field(default=None, repr=False)
     policy: ProxyPolicy | None = None
+    allowed_hosts: tuple[str, ...] = ()
 
     def __post_init__(self):
         import ipaddress
-        if self.mode not in ('internet', 'offline', 'proxy'):
-            raise ValueError('network mode must be internet, offline or proxy')
+        if self.mode not in ('internet', 'offline', 'proxy', 'allowlist'):
+            raise ValueError('network mode must be internet, offline, proxy or allowlist')
+        if self.allowed_hosts and self.mode != 'allowlist':
+            raise ValueError('allowed_hosts requires allowlist mode')
+        object.__setattr__(self, 'allowed_hosts', tuple(self.allowed_hosts))
+        for host in self.allowed_hosts:
+            if not isinstance(host, str) or not host or any(c in host for c in ('\0', '\n', '\r')):
+                raise ValueError('invalid network allowlist entry')
+            try:
+                address = ipaddress.ip_network(host)
+            except ValueError:
+                name = host[2:] if host.startswith('*.') else host
+                if not all(re.fullmatch(r'[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?', label)
+                           for label in name.rstrip('.').split('.')):
+                    raise ValueError('invalid network allowlist hostname: ' + host)
+            else:
+                if address.version != 4:
+                    raise ValueError('only IPv4 network allowlists are currently supported')
         if self.proxy is not None:
             from .proxy import catalog, candidates
-            if self.mode == 'offline' or self.allow_cidrs:
+            if self.mode in ('offline', 'allowlist') or self.allow_cidrs:
                 raise ValueError('proxy networking cannot be combined with offline mode or allow_cidrs')
             policy = self.policy
             if isinstance(policy, dict):
@@ -136,7 +164,8 @@ def normalize(cpu=1, memory='1GiB', gpu=False, network='internet'):
     network = network if isinstance(network, Network) else Network(**network) if isinstance(network, dict) else Network(network)
     return {'cpu': asdict(cpu), 'memory': {k: v for k, v in asdict(memory).items() if v is not None},
             'gpu': asdict(gpu) if isinstance(gpu, GPU) else None,
-            'network': {k: v for k, v in asdict(network).items() if v is not None}}
+            'network': {k: v for k, v in asdict(network).items()
+                        if v is not None and (k != 'allowed_hosts' or v or network.mode == 'allowlist')}}
 
 
 def restore_resources(resources):

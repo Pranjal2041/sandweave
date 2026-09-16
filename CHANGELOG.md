@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.20rc5
+
+- Resolve Harbor datasets through its native registry and package protocols,
+  including Terminal-Bench 3. Preserve source revisions, task filters, original
+  setup, multi-step verification, artifacts and named rewards.
+- Build original Dockerfiles with isolated BuildKit, including remote and inline
+  contexts, build arguments, stages, additional contexts and secret mounts.
+  Read registry credentials from Docker configuration and credential helpers.
+- Run Compose service groups directly in Sandweave, with service DNS, health
+  checks, dependencies, private shared volumes, guest file ownership, secrets,
+  read-only roots, restart policies and graceful artifact-preserving shutdown.
+- Apply phase-specific public, offline and IPv4 allowlist networking. Expose
+  Harbor MCP definitions, skills paths and agent result context to client loops.
+- Drain cancelled trial cleanup before returning capacity. Keep image build and
+  import reservations, group placement and failed-launch cleanup coordinated.
+- Grant local pool capacity to waiting callers in arrival order, so a later
+  checkout cannot hold the available slot while an earlier caller waits.
+- Honor Harbor CPU quotas and acceptable GPU model lists. Preserve image ENV
+  when restoring with additional environment values.
+- Include the engine support for private service volumes. Upgrade clients,
+  controllers and workers together for the new worker operations.
+
 ## 0.2.20rc4
 
 - Add Harbor datasets and local task directories through `Benchmark("harbor",

@@ -50,6 +50,8 @@ artifacts deliberately covered by `.gitignore`. Apply this habit on every task.
 - Inspect Git status before editing and again before finishing. Preserve unrelated
   user changes. Stage the files belonging to the task explicitly and review the
   staged diff before committing.
+- Do not ask for permission merely because the checkout is dirty. Track authored
+  project files and ignore local or generated artifacts, including local transcripts.
 - Commit lab scripts, tests, documentation, configurations, patches and source
   probes in this repository. Keep downloaded dependencies, binaries, images,
   snapshots, recovery archives, logs and local credentials ignored. Do not hide

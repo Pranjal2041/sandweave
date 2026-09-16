@@ -1395,7 +1395,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/feat/osworld-benchmarks/docs/resources.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/resources.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1547,7 +1547,7 @@ baseline; random access across 20 GiB cost about 260 times as much. See the
 </code></pre></div>
 <p>The worker must already have access to that GPU. Weave currently reserves whole
 GPUs for cluster admission; fractional GPU admission is not implemented.</p>
-<p>In the <code>0.2.20rc5</code> preview, accept any of several models with
+<p>In the <code>0.2.20rc6</code> preview, accept any of several models with
 <code>GPU(model=("H100", "A100"))</code>. Import <code>GPU</code> from <code>sandweave</code> and pass it as
 the <code>gpu</code> argument. Model matching is case-insensitive and accepts substrings
 of the device name. This still requests one GPU.</p>

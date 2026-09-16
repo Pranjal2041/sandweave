@@ -825,6 +825,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#harbor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Harbor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#osworld-setup" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1324,6 +1335,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#harbor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Harbor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#osworld-setup" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1385,8 +1407,8 @@
 <p>A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a <a href="../pools/">pool</a> to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.</p>
-<p>Available in the <code>0.2.20rc3</code> preview:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.20rc3'</span>
+<p>Available in the <code>0.2.20rc4</code> preview:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.20rc4'</span>
 </code></pre></div>
 <h2 id="run-tasks">Run tasks<a class="headerlink" href="#run-tasks" title="Permanent link">&para;</a></h2>
 <p>Create a benchmark once, then pull a task whenever your client needs a sandbox:</p>
@@ -1477,6 +1499,78 @@ first failed result. Worker resource admission still applies.</p>
 <p>For an individual retry, use <code>bench.task(task_id)</code> as a context manager.
 <code>bench.tasks</code> lists task specifications. <code>bench.results</code> contains the latest
 completed evaluation for each task, in benchmark order.</p>
+<h2 id="harbor">Harbor<a class="headerlink" href="#harbor" title="Permanent link">&para;</a></h2>
+<p>Use a Harbor dataset name or an existing Harbor task directory. The adapter reads
+the original task definitions and runs their verifier through Harbor 0.23.0.
+It requires Python 3.12 or newer:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[harbor]==0.2.20rc4'</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"harbor"</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="s2">"terminal-bench@2.0"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">task</span> <span class="o">=</span> <span class="n">bench</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">env</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">env</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">instruction</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">instruction</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">run_agent</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">instruction</span><span class="p">)</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">evaluate</span><span class="p">()</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">rewards</span><span class="p">)</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>    <span class="n">task</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="n">bench</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p>Pass <code>target=cluster_url</code> to use Weave. <code>source="./my-task"</code> loads one task;
+<code>source="./my-dataset"</code> loads its immediate task subdirectories. Downloaded tasks
+and trial logs use the selected Sandweave data directory. Pass <code>output="./results"</code>
+to choose another location for trial logs and artifacts.</p>
+<p>Each task can use a different image. <code>capacity</code> limits active task attempts across
+all images, and <code>preload</code> bounds the ready reserve within that capacity. Images
+are pinned to a digest once per benchmark. Matching environments share a prepared
+filesystem; every attempt receives fresh writable state. Warm tasks do not use
+their agent timeout until checkout.</p>
+<p>The client uses <code>env.run</code>, <code>env.exec</code> and <code>env.files</code> as usual. Commands inherit
+the task's shell, working directory, user and environment. Grading tests are
+uploaded only when verification begins. Harbor collects configured artifacts,
+runs shared or separate verifiers, and writes its trial results and logs.</p>
+<p><code>result.rewards</code> preserves the verifier's named metrics. It does not convert them
+to a percentage or invent a pass threshold; <code>score</code> and <code>passed</code> are <code>None</code> for
+Harbor. <code>result.feedback</code> gives the trial directory. Infrastructure and verifier
+errors raise exceptions instead of returning a zero reward.</p>
+<p>Evaluation completes the current Harbor agent phase. On the final step, Harbor
+stops the environment after collecting its outputs. Call <code>task.close()</code> to return
+the task's capacity. Repeating <code>evaluate()</code> for the same step returns its saved
+evaluation.</p>
+<p>For a multi-step task, evaluate each step before asking for the next instruction:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">task</span> <span class="o">=</span> <span class="n">bench</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>        <span class="n">run_agent</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">instruction</span><span class="p">)</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">evaluate</span><span class="p">()</span><span class="o">.</span><span class="n">rewards</span><span class="p">)</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>            <span class="n">task</span><span class="o">.</span><span class="n">next_step</span><span class="p">()</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>            <span class="k">break</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>    <span class="n">task</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p>The sandbox persists between steps. Harbor's step setup, verification and early
+stop thresholds still apply. Intermediate evaluations report the current step's
+rewards; the final evaluation reports Harbor's configured aggregate rewards.
+Async clients use <code>.aio()</code> on these methods;
+async exhaustion raises <code>StopAsyncIteration</code>.</p>
+<p>The provider currently accepts <strong>prebuilt public Linux amd64 images</strong> with public
+or offline networking. Dockerfile-only builds, Compose service groups, private
+image authentication, Windows, network allowlists and network changes between
+phases need additional runtime support. Unsupported requirements are rejected.
+CPU values are reservations rather than hard quotas; guest memory is bounded,
+and runtime overhead is admitted separately. Storage quotas are not enforced.
+MCP/skills-driven agents and simulated-user bridges are not part of this client
+pull API. A task image cannot supply missing kernel features or host devices.</p>
+<p>To use Harbor's own agents with the same environment provider:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>harbor<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>terminal-bench@2.0<span class="w"> </span>--env<span class="w"> </span>sandweave.benchmarks.harbor.provider:SandweaveEnvironment
+</code></pre></div>
+<p>The <a href="https://github.com/Pranjal2041/sandweave/blob/feat/osworld-benchmarks/notes/harbor-adapter.md">acceptance record</a>
+lists the tasks and lifecycle checks exercised. Existing OSWorld behavior is unchanged.</p>
 <h2 id="osworld-setup">OSWorld setup<a class="headerlink" href="#osworld-setup" title="Permanent link">&para;</a></h2>
 <p>Both <code>"osworld"</code> and <code>"osworld-energy50-representative"</code> use the desktop recipe
 and evaluation integration from the private
@@ -1486,11 +1580,11 @@ selects the pinned OSWorld task list; the second selects its 50-task representat
 split, including the split's setup patches and source checksums.</p>
 <p>Authenticate <code>gh</code> with an account that can read that repository. Sandweave fetches
 the pinned source automatically. Alternatively, pass an unchanged local checkout:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="s2">"osworld-energy50-representative"</span><span class="p">,</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">source</span><span class="o">=</span><span class="s2">"/path/to/cua-speed-run"</span><span class="p">,</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="s2">"osworld-energy50-representative"</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">source</span><span class="o">=</span><span class="s2">"/path/to/cua-speed-run"</span><span class="p">,</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="p">)</span>
 </code></pre></div>
 <p>The checkout must be at the commit above. Sandweave reads it without editing it.
 Private source files are not included in Sandweave's package or runtime release.
@@ -1511,10 +1605,10 @@ otherwise files stay in the project's <code>.sandweave</code> directory.</p>
 runtime memory. <code>capacity=4</code> therefore requires workers with enough admission
 capacity for four such environments. <code>preload</code> controls the initial ready reserve
 and defaults to <code>capacity</code>. Ordinary pool options pass through:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"osworld-energy50-representative"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">preload</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>               <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">shared_cache</span><span class="o">=</span><span class="s2">"/shared/sandweave"</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"osworld-energy50-representative"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">preload</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>               <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">shared_cache</span><span class="o">=</span><span class="s2">"/shared/sandweave"</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
 </code></pre></div>
 <p>Install the preview SDK on the client, controller and participating workers.
 Changing resource settings changes the benchmark conditions; it does not change
@@ -1546,26 +1640,26 @@ identifies those differences and the tasks exercised.</p>
 <code>evaluate(env, task)</code>. <code>prepare()</code> returns sandbox options for the pool.
 Evaluators return <code>Evaluation</code>; optional <code>close()</code> releases integration-owned
 resources. Keep task-specific setup and evaluation with that integration.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave.benchmarks</span><span class="w"> </span><span class="kn">import</span> <span class="n">Evaluation</span><span class="p">,</span> <span class="n">TaskSpec</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">Arithmetic</span><span class="p">:</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="n">TaskSpec</span><span class="p">(</span><span class="s2">"addition"</span><span class="p">,</span> <span class="s2">"Write 2 + 2 to /workspace/answer.txt."</span><span class="p">)]</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="k">return</span> <span class="p">{</span><span class="s2">"template"</span><span class="p">:</span> <span class="s2">"coding"</span><span class="p">}</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>        <span class="k">pass</span>
-<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>
-<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
-<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"cat /workspace/answer.txt"</span><span class="p">)</span>
-<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>        <span class="n">passed</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"4"</span>
-<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>        <span class="k">return</span> <span class="n">Evaluation</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mf">100.0</span> <span class="k">if</span> <span class="n">passed</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">passed</span><span class="p">)</span>
-<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>
-<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="n">Arithmetic</span><span class="p">(),</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
-<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
-<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave.benchmarks</span><span class="w"> </span><span class="kn">import</span> <span class="n">Evaluation</span><span class="p">,</span> <span class="n">TaskSpec</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">Arithmetic</span><span class="p">:</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>    <span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="n">TaskSpec</span><span class="p">(</span><span class="s2">"addition"</span><span class="p">,</span> <span class="s2">"Write 2 + 2 to /workspace/answer.txt."</span><span class="p">)]</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>        <span class="k">return</span> <span class="p">{</span><span class="s2">"template"</span><span class="p">:</span> <span class="s2">"coding"</span><span class="p">}</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>        <span class="k">pass</span>
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>
+<a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
+<a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"cat /workspace/answer.txt"</span><span class="p">)</span>
+<a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a>        <span class="n">passed</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"4"</span>
+<a id="__codelineno-14-16" name="__codelineno-14-16" href="#__codelineno-14-16"></a>        <span class="k">return</span> <span class="n">Evaluation</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mf">100.0</span> <span class="k">if</span> <span class="n">passed</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">passed</span><span class="p">)</span>
+<a id="__codelineno-14-17" name="__codelineno-14-17" href="#__codelineno-14-17"></a>
+<a id="__codelineno-14-18" name="__codelineno-14-18" href="#__codelineno-14-18"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="n">Arithmetic</span><span class="p">(),</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
+<a id="__codelineno-14-19" name="__codelineno-14-19" href="#__codelineno-14-19"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
+<a id="__codelineno-14-20" name="__codelineno-14-20" href="#__codelineno-14-20"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
 </code></pre></div>
 <p>Installed packages can register a factory under <code>sandweave.benchmarks.v1</code>.
 The entry-point name becomes the first <code>Benchmark</code> argument; its factory

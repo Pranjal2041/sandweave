@@ -88,7 +88,11 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
                     'extra': extra_checksums, 'secrets': {name: hashlib.sha256(value).hexdigest() for name, value in secret_data.items()},
                     'network': network, 'labels': labels, 'platform': platform}
         key = 'image-build-' + hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
-        connection = connect(target)
+        request = definition(image=BUILDER_IMAGE, target=target, cpu=2, memory='4GiB',
+            startup_timeout=timeout, template={'runtime_options': {'nftables': True, 'cgroup': 'v1'}})
+        # Cache lookup precedes sandbox creation. It must prepare the worker
+        # too, otherwise a first-use Dockerfile build bypasses automatic setup.
+        connection = connect(target, template=request['spec']['template'])
         try:
             if not force and not pull and not remote and not any(isinstance(value, str) for value in extra.values()):
                 try:
@@ -101,8 +105,6 @@ def build(directory, *, template=None, target=None, dockerfile='Dockerfile',
         finally:
             connection.close()
         started = time.monotonic()
-        request = definition(image=BUILDER_IMAGE, target=target, cpu=2, memory='4GiB',
-            startup_timeout=timeout, template={'runtime_options': {'nftables': True, 'cgroup': 'v1'}})
         # The importer briefly boots the resulting filesystem to capture a
         # portable base. Admit that runtime with the builder, before placement.
         request['spec']['_image_import_memory'] = 384 * 1024**2

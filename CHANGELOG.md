@@ -27,6 +27,8 @@
 - Allow sandbox cleanup after an external mount source has been removed.
 - Honor SA_RESTART for interrupted blocking opens, preventing intermittent
   FIFO startup failures in image builds.
+- Prepare the runtime automatically when a Dockerfile build is the first
+  operation in a new installation, including Harbor tasks that need a build.
 
 ## 0.2.20rc4
 

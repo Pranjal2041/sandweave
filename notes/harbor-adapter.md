@@ -211,6 +211,13 @@ without SA_RESTART. The final wheel's release checks include the same probe.
 The release patch applies to the pinned upstream source and reproduces all 145
 changed engine files; binaries are built after committing that source.
 
+A separate empty-installation attempt found that Dockerfile cache lookup opened
+a worker before automatic runtime preparation. Build cache lookup now prepares
+the builder's runtime before connecting, through the same path as sandbox
+creation. Release acceptance includes building before setup, running the built
+image and reusing its snapshot in an initially empty installation. This applies
+to the image builder itself, including both single-environment and Compose tasks.
+
 Detailed local logs and original-task reports are under
 `/scratch/pranjala/sw-harbor-20260916`. Trial results remain under that test
 installation's `data/benchmarks/harbor/trials`. Release receipts are retained

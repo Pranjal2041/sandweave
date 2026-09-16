@@ -133,6 +133,9 @@ def validate(directory, release):
     (live / 'pytest.ini').write_text('[pytest]\nmarkers = integration: installed SDK acceptance\n')
     env.update(SANDWEAVE_HOME=str(work / 'worker'), SANDWEAVE_INTEGRATION='1')
     run(python, '-m', 'pytest', '-q', '-s', '--confcutdir=' + str(live), cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_build_first_use.py', live / 'test_build_first_use.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_build_first_use.py', cwd=live, env=env)
     # Exercise host/guest ownership independently of the default temporary
     # directory's group, using the runtime built by the installed package.
     shutil.copyfile(source / 'tests/integration/test_build_transfer.py', live / 'test_build_transfer.py')

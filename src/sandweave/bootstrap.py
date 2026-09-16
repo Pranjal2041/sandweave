@@ -178,7 +178,7 @@ mkdir -p /lab/build-tmp/prepared-helpers /lab/build-tmp/apt/lists/partial /lab/b
 cd /lab/build-tmp/apt
 set -- -o Dir::State::lists=/lab/build-tmp/apt/lists -o Dir::Cache=/lab/build-tmp/apt/cache -o APT::Sandbox::User=root -o Debug::NoLocking=true
 apt-get "$@" update
-apt-get "$@" --download-only --reinstall --no-install-recommends -y install erofs-utils passt iproute2 util-linux x11proto-dev
+apt-get "$@" --download-only --reinstall --no-install-recommends -y install erofs-utils iproute2 util-linux x11proto-dev
 for package in cache/archives/*.deb; do dpkg-deb -x "$package" /lab/build-tmp/prepared-helpers; done
 '''
         self.run(self.container(root, root / 'tools/debian-trixie.sif', 'sh', '-c', script), label='Prepare runtime utilities')
@@ -187,6 +187,8 @@ for package in cache/archives/*.deb; do dpkg-deb -x "$package" /lab/build-tmp/pr
         if (root / 'tools/helpers').exists():
             shutil.rmtree(root / 'tools/helpers')
         (root / 'build-tmp/prepared-helpers').rename(root / 'tools/helpers')
+        from .network_runtime import install
+        install(self, root)
 
     def engine(self, root):
         archive = download('https://codeload.github.com/google/gvisor/tar.gz/' + GVISOR_BASE,
@@ -284,6 +286,10 @@ done
                 descriptor = validate_engine(engine)
                 workspace.stage_tree(Path(engine) / descriptor['path'], root / descriptor['path'])
                 workspace.atomic_json(root / 'tools/gvisor-socket/runtime.json', descriptor)
+                if (Path(engine) / 'tools/network').is_dir():
+                    workspace.stage_tree(Path(engine) / 'tools/network', root / 'tools/network')
+        from .network_runtime import install as install_network
+        install_network(self, root, engine=engine, from_source=base is None and engine is None)
         if not (root / 'tools/gpu/bin/cuda-checkpoint').is_file():
             revision = '00d5cce84c628088d6caa203fc4af40c1538b6f7'
             checkpoint = download('https://raw.githubusercontent.com/NVIDIA/cuda-checkpoint/' + revision +

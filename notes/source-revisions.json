@@ -17,7 +17,18 @@
     "osworld_runtime_build": "tools/runtime-builds/4d72f51230861e63b4385c5c1e7a42a06f7003f3887c6861346f29065626fc7c",
     "osworld_status": "All 50 representative tasks completed setup/screenshots/canonical evaluation in rc1; rc2 adds template-selected Avahi, console palette and fixed desktop sysctl support. RealtimeKit and physical GPU detection remain outside that support.",
     "osworld_runtime_release": "2026.09.14.2",
-    "harbor_runtime_release": "2026.09.16.1",
+    "harbor_runtime_release": "2026.09.16.2",
     "harbor_status": "Native service volumes preserve guest ownership across gofers; freestanding guest helper configures mounts and hostnames. Clean upstream-plus-patch build, service lifecycle and ownership tests passed; see notes/harbor-adapter.md for acceptance."
+  },
+  "passt": {
+    "upstream": "https://passt.top/passt",
+    "source_archive_commit": "4c2bd5720373bf4a6d3e5fc3129cf5ad0dbf8c03",
+    "source_archive_sha256": "0192a6aea35d62b2c262c791a68ac1cbb3ff89d28d64ab405c20c2956b40fbfb",
+    "patch": "notes/passt-backpressure.patch",
+    "regressions": [
+      "sources/passt-backpressure-test.c",
+      "sources/passt-retransmission-test.c"
+    ],
+    "runtime_release": "2026.09.16.2"
   }
 }

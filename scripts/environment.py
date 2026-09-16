@@ -64,6 +64,10 @@ class EnvironmentManager:
         info = cpu_broker.process_table([pid]).get(pid)
         if info is None or info['state'] == 'Z' or (record and info['start'] != record['start']):
             return None
+        if record:
+            # PID plus the kernel start time identifies the launcher we started.
+            # /proc/cmdline can be empty during exec; it is not a liveness test.
+            return {'pid': pid, 'start': info['start']}
         try:
             argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
         except FileNotFoundError:

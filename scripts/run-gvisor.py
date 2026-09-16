@@ -183,6 +183,11 @@ if args.detach:
                                  stdout=output, stderr=subprocess.STDOUT,
                                  start_new_session=True)
     (logs / 'launcher-pid.txt').write_text(str(child.pid) + '\n')
+    identity = cpu_broker.process_table([child.pid]).get(child.pid)
+    if identity is not None:
+        snapshot_store.write_json(logs / 'launcher.json', {
+            'pid': child.pid, 'start': identity['start'], 'hostname': socket.gethostname(),
+            'started_at': time.time()})
     print(f'Starting {args.name}, launcher PID {child.pid}; logs: {logs}; ports: {logs / "ports.json"}', flush=True)
     raise SystemExit(0)
 if args.disk_path:

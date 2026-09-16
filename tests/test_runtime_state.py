@@ -1,5 +1,28 @@
 import fcntl
+import json
+import socket
 from pathlib import Path
+
+
+def test_launcher_identity_does_not_depend_on_transient_cmdline(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / 'scripts'))
+    import environment
+    manager = environment.EnvironmentManager.__new__(environment.EnvironmentManager)
+    manager.lab = manager.local = tmp_path
+    logs = tmp_path / 'runs/gvisor/starting'
+    logs.mkdir(parents=True)
+    (logs / 'launcher.json').write_text(json.dumps({
+        'pid': 12345, 'start': 456, 'hostname': socket.gethostname()}))
+    monkeypatch.setattr(environment.cpu_broker, 'process_table', lambda pids: {
+        12345: {'state': 'S', 'start': 456}})
+    monkeypatch.setattr(Path, 'read_bytes', lambda path: b'')
+    assert manager._launcher('starting') == {'pid': 12345, 'start': 456}
+    monkeypatch.setattr(environment.cpu_broker, 'process_table', lambda pids: {
+        12345: {'state': 'S', 'start': 457}})
+    assert manager._launcher('starting') is None
+    monkeypatch.setattr(environment.cpu_broker, 'process_table', lambda pids: {
+        12345: {'state': 'Z', 'start': 456}})
+    assert manager._launcher('starting') is None
 
 
 def test_group_admission_reuses_inventory_status_without_duplicate_runtime_reads():

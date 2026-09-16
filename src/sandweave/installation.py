@@ -183,17 +183,20 @@ def import_runtime(source, directory, recipe):
 
 def needs_helpers(root, recipe=None):
     from .onboarding import uses_fast_io
+    from .network_runtime import available
+    if not available(root):
+        return True
     helpers = Path(root) / 'tools/helpers'
     if recipe and uses_fast_io(recipe):
         if not all((helpers / 'usr/include/X11' / name).is_file()
                    for name in ('keysymdef.h', 'XF86keysym.h')):
             return True
-    for name in ('ip', 'passt'):
+    if not (helpers / 'usr/bin/prlimit').is_file():
+        return True
+    for name in ('ip',):
         if workspace.tool(name):
             continue
         if not any((helpers / directory / name).is_file() for directory in ('usr/bin', 'usr/sbin', 'bin', 'sbin')):
-            return True
-        if name == 'passt' and not (helpers / 'usr/bin/prlimit').is_file():
             return True
     return False
 

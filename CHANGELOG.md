@@ -21,6 +21,9 @@
   when restoring with additional environment values.
 - Include the engine support for private service volumes. Upgrade clients,
   controllers and workers together for the new worker operations.
+- Fix TCP payload corruption and stalled replies after network backpressure.
+  Install a qualified passt helper automatically, including when the host
+  already has passt. Preserve launcher identity across process execution.
 
 ## 0.2.20rc4
 

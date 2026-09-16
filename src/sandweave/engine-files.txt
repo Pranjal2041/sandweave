@@ -53,6 +53,9 @@ scripts/sdl-gamepad-proxy.c
 scripts/install-sandbox-base.sh
 scripts/install-sandbox-vr.sh
 notes/gvisor-no-kvm-prototype.patch
+notes/passt-backpressure.patch
+sources/passt-backpressure-test.c
+sources/passt-retransmission-test.c
 notes/monado-vr-lab.patch
 notes/primus-vk-visible-rows.patch
 sources/gs-base-probe.c

@@ -123,7 +123,7 @@ Regression coverage includes:
 - Existing SDK, terminal, snapshots, OSWorld adapter and benchmark-pull tests.
   Eight simultaneous leases, cancelled waiters and unrelated commands are covered.
 
-The host suite passed 529 tests with five skips. Engine metadata/config tests
+The host suite passed 537 tests with five skips. Engine metadata/config tests
 passed. A clean build from the pinned upstream source plus the committed patch
 produced runtime `2026.09.16.1`. A fresh installed wheel outside the checkout
 passed automatic installation, exact engine hashes, no compiler, CPU settings,
@@ -151,9 +151,42 @@ Docs were built strictly, their examples and links checked, and their navigation
 and copy controls exercised in Chromium. Harbor desktop/mobile renders were
 opened and inspected.
 
-An earlier broad run encountered a Git/OpenSSL TLS bad-record-MAC while BuildKit
-fetched GitHub. The unchanged remote-context test passed on rerun. Its cause was
-not isolated; the failed log is retained, not counted as a successful check.
+Repeated final-wheel service tests exposed a Git/OpenSSL TLS bad-record-MAC
+while BuildKit fetched a full Git repository. Investigation found differing
+payloads for identical TCP sequence ranges in passt's outgoing packet capture,
+with valid TCP checksums. Its partial output flush rewound the connection's
+sequence after it had prepared the socket discard offset. An instrumented run
+recorded an offset of 106,704 while the connection had rewound to 36,500.
+Recomputing the offset and window after that flush fixes the mismatch.
+
+The deterministic C regression links passt's actual buffering code, forces a
+short flush, and checks the next socket read. It fails on the original source
+and passes with `notes/passt-backpressure.patch`. Full Git transfers failed
+3/15 with the instrumented original helper; the fixed helper passed 15/15,
+followed by 15/15 with the packaged helper inside the runtime's Debian image.
+Disabling SO_PEEK_OFF or OpenSSL assembly did not fix the original failure.
+This fix is independent of Harbor, GitHub and the task dataset.
+
+A concurrent slow-receiver test found a second failure: a queued ACK could be
+dropped by a short flush, but retransmitted payload was ignored because the
+connection remembered the queued ACK as sent. Packet capture showed repeated
+113-byte HTTP headers without an acknowledgement; the response body waited
+behind them. The receive path now acknowledges duplicate payload even when its
+sequence was previously acknowledged. A separate C regression fails on the
+original code and passes with the fix, including sequence-number wraparound
+and an empty segment that must not trigger an ACK loop.
+
+Concurrent startup also exposed a live launcher reported as exited. Liveness
+now uses the recorded PID and kernel start time; an empty `/proc/PID/cmdline`
+during execution cannot invalidate that identity. Reused PIDs and zombies are
+still rejected. The disposable orphan from that failed test was terminated.
+
+The runtime now includes a pinned patched network helper and its corresponding
+source and licenses. Automatic setup upgrades the helper without replacing the
+guest image or existing snapshot engine. The launcher uses this build rather
+than an arbitrary host passt. Release validation also runs concurrent slow
+receivers and the complete Harbor service suite against the installed wheel.
+Runtime `2026.09.16.2` adds this helper to the unchanged `.1` gVisor engine.
 
 Detailed local logs and original-task reports are under
 `/scratch/pranjala/sw-harbor-20260916`. Trial results remain under that test

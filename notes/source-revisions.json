@@ -4,12 +4,12 @@
     "upstream": "https://github.com/google/gvisor.git",
     "branch": "feat/osworld-runtime",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "9d89d0f6fe3714bd5e6e2e66c0868e10b4d5b691",
+    "commit": "953bf9de97624139aed09f34c5baaca8adf1528e",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/f7bcdb1139a1ffaccfdb29846278a49cba6fca952249b0174c2b886865873cfe",
+    "runtime_build": "tools/runtime-builds/4ff0d152e530ae5eea25dc6f67f37258452a0771e9c11706e3f6c994ce2e6cac",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "9d89d0f6fe3714bd5e6e2e66c0868e10b4d5b691",
+    "runtime_commit": "953bf9de97624139aed09f34c5baaca8adf1528e",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
@@ -17,8 +17,8 @@
     "osworld_runtime_build": "tools/runtime-builds/4d72f51230861e63b4385c5c1e7a42a06f7003f3887c6861346f29065626fc7c",
     "osworld_status": "All 50 representative tasks completed setup/screenshots/canonical evaluation in rc1; rc2 adds template-selected Avahi, console palette and fixed desktop sysctl support. RealtimeKit and physical GPU detection remain outside that support.",
     "osworld_runtime_release": "2026.09.14.2",
-    "harbor_runtime_release": "2026.09.16.2",
-    "harbor_status": "Native service volumes preserve guest ownership across gofers; freestanding guest helper configures mounts and hostnames. Clean upstream-plus-patch build, service lifecycle and ownership tests passed; see notes/harbor-adapter.md for acceptance."
+    "harbor_runtime_release": "2026.09.16.3",
+    "harbor_status": "Native service volumes and guest helper accepted; interrupted blocking opens honor SA_RESTART, including FIFO read/write through proc. See notes/harbor-adapter.md."
   },
   "passt": {
     "upstream": "https://passt.top/passt",
@@ -29,6 +29,6 @@
       "sources/passt-backpressure-test.c",
       "sources/passt-retransmission-test.c"
     ],
-    "runtime_release": "2026.09.16.2"
+    "runtime_release": "2026.09.16.3"
   }
 }

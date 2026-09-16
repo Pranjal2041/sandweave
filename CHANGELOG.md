@@ -25,6 +25,8 @@
   Install a qualified passt helper automatically, including when the host
   already has passt. Preserve launcher identity across process execution.
 - Allow sandbox cleanup after an external mount source has been removed.
+- Honor SA_RESTART for interrupted blocking opens, preventing intermittent
+  FIFO startup failures in image builds.
 
 ## 0.2.20rc4
 

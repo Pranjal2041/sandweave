@@ -4314,6 +4314,24 @@ index c9a0472..340a6e8 100644
  // TestSCMSenderBeforeSaveIdempotent verifies that calling beforeSave
  // on an SCMSender whose host file descriptor is already closed (fd < 0)
  // is a safe no-op and does not panic in fdnotifier.RemoveFD.
+diff --git a/pkg/sentry/syscalls/linux/sys_file.go b/pkg/sentry/syscalls/linux/sys_file.go
+index c2f114d..2c71f70 100644
+--- a/pkg/sentry/syscalls/linux/sys_file.go
++++ b/pkg/sentry/syscalls/linux/sys_file.go
+@@ -215,7 +215,12 @@ func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, m
+ 		Mode:  linux.FileMode(mode & (0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX) &^ t.FSContext().Umask()),
+ 	})
+ 	if err != nil {
+-		return 0, nil, err
++		// Blocking open (notably FIFO peer rendezvous) follows SA_RESTART.
++		// tmpfs returns EINTR; host-backed FIFO waits return ErrInterrupted.
++		if linuxerr.Equals(linuxerr.EINTR, err) {
++			err = linuxerr.ERESTARTSYS
++		}
++		return 0, nil, linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
+ 	}
+ 	defer file.DecRef(t)
+ 
 diff --git a/pkg/sentry/syscalls/linux/sys_key.go b/pkg/sentry/syscalls/linux/sys_key.go
 index 3b75aec..24e6ccd 100644
 --- a/pkg/sentry/syscalls/linux/sys_key.go

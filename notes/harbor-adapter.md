@@ -201,6 +201,16 @@ does not need the old mounts or GPU devices. Both orphaned test sandboxes were
 stopped. All six live mount tests passed, including removal before termination
 on gVisor and Apptainer, read-only access, filesystem restore and write policy.
 
+An additional installed-wheel build exposed an interrupted FIFO open in runc.
+The previous engine returned EINTR from a blocking open even when the signal
+handler requested SA_RESTART. Runtime `2026.09.16.3` fixes the syscall's restart
+semantics for both in-memory and host-backed FIFOs. The standalone C comparison
+passes on host Linux, fails on the previous runtime, and passes with the fix.
+It covers read/write opens, direct paths and `/proc/thread-self/fd`, with and
+without SA_RESTART. The final wheel's release checks include the same probe.
+The release patch applies to the pinned upstream source and reproduces all 145
+changed engine files; binaries are built after committing that source.
+
 Detailed local logs and original-task reports are under
 `/scratch/pranjala/sw-harbor-20260916`. Trial results remain under that test
 installation's `data/benchmarks/harbor/trials`. Release receipts are retained

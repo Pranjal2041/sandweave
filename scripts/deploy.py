@@ -142,6 +142,9 @@ def validate(directory, release):
     shutil.copyfile(source / 'tests/integration/test_network_transfer_live.py', live / 'test_network_transfer_live.py')
     run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
         live / 'test_network_transfer_live.py', cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_mounts.py', live / 'test_mounts.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_mounts.py', cwd=live, env=env)
     if sys.version_info >= (3, 12):
         for relative in ('tests/test_harbor.py', 'tests/integration/test_harbor_live.py',
                          'tests/integration/test_harbor_services_live.py',

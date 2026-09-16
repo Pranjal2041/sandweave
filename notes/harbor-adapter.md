@@ -188,6 +188,19 @@ than an arbitrary host passt. Release validation also runs concurrent slow
 receivers and the complete Harbor service suite against the installed wheel.
 Runtime `2026.09.16.2` adds this helper to the unchanged `.1` gVisor engine.
 
+With both network fixes, all 15 full Git transfers succeeded, all five Harbor
+service tests passed, and the concurrent transfer check preserved 16 uploads of
+16 MiB plus 317 bytes each. Eleven snapshot/network/OSWorld checks and all four
+local/HTTP pull tests passed. The HTTP capacity check was rerun with eight
+worker slots after the first invocation mistakenly provided only four.
+
+Final teardown found two older disposable sandboxes whose host input paths had
+already been removed. Runtime deletion incorrectly attempted to bind those
+paths again. Deletion now opens only runtime state and its control socket; it
+does not need the old mounts or GPU devices. Both orphaned test sandboxes were
+stopped. All six live mount tests passed, including removal before termination
+on gVisor and Apptainer, read-only access, filesystem restore and write policy.
+
 Detailed local logs and original-task reports are under
 `/scratch/pranjala/sw-harbor-20260916`. Trial results remain under that test
 installation's `data/benchmarks/harbor/trials`. Release receipts are retained

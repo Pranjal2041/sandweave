@@ -119,13 +119,13 @@ class EnvironmentManager:
         result = [self.status(name) for name in sorted(names)]
         return [s for s in result if s['status'] not in ('missing', 'stopped')] if active_only else result
 
-    def _command(self, name):
+    def _command(self, name, *, bind_resources=True):
         settings = self._settings(name)
         runtime = runtime_store.validate(self.lab, settings['runtime'], verify=False)
         command = [str(self.lab / 'scripts/gvisor-host.sh')]
-        if settings.get('external_mounts'):
+        if bind_resources and settings.get('external_mounts'):
             command += ['--mounts', str(self._bundle(name) / 'external-mounts.json')]
-        if settings.get('gpu'):
+        if bind_resources and settings.get('gpu'):
             command += ['--gpu', str(settings['gpu']['device_minor'])]
         return command + ['/lab/' + str(runtime.relative_to(self.lab)) + '/runsc', '--root=/local/gvisor/state']
 
@@ -277,7 +277,9 @@ class EnvironmentManager:
             launcher = self._launcher(name)
             members = self._owned_members(name, launcher, state.get('sentry'))
             if state.get('sentry'):
-                self._run([*self._command(name), 'delete', '--force', name], timeout=timeout)
+                # Deletion only needs runtime state and its control socket.
+                # A removed host mount or device must not prevent cleanup.
+                self._run([*self._command(name, bind_resources=False), 'delete', '--force', name], timeout=timeout)
             elif launcher:
                 self._signal(launcher['pid'], launcher['start'], signal.SIGTERM)
             deadline = time.monotonic() + timeout

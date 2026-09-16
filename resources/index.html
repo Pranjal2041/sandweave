@@ -1547,6 +1547,10 @@ baseline; random access across 20 GiB cost about 260 times as much. See the
 </code></pre></div>
 <p>The worker must already have access to that GPU. Weave currently reserves whole
 GPUs for cluster admission; fractional GPU admission is not implemented.</p>
+<p>In the <code>0.2.20rc5</code> preview, accept any of several models with
+<code>GPU(model=("H100", "A100"))</code>. Import <code>GPU</code> from <code>sandweave</code> and pass it as
+the <code>gpu</code> argument. Model matching is case-insensitive and accepts substrings
+of the device name. This still requests one GPU.</p>
 <h2 id="inspect-configuration">Inspect configuration<a class="headerlink" href="#inspect-configuration" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pprint</span><span class="w"> </span><span class="kn">import</span> <span class="n">pprint</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>

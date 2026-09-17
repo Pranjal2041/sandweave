@@ -132,6 +132,12 @@ completed evaluation for each task, in benchmark order.
 
 ## Harbor
 
+Harbor support is experimental; full Harbor compatibility is not available.
+Shared service namespaces, external volume drivers, image volumes,
+service-derived build contexts and host-device declarations are not implemented.
+The [compatibility review](https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-contract-review.md)
+records the supported contracts, remaining limits and validation evidence.
+
 Use a Harbor dataset name or an existing Harbor task directory. The adapter reads
 the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:
@@ -273,7 +279,7 @@ To use Harbor's own agents with the same environment provider:
 harbor run -d terminal-bench@2.0 --env sandweave.benchmarks.harbor.provider:SandweaveEnvironment
 ```
 
-The [acceptance record](https://github.com/Pranjal2041/sandweave/blob/feat/osworld-benchmarks/notes/harbor-adapter.md)
+The [acceptance record](https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-adapter.md)
 lists the tasks and lifecycle checks exercised. Existing OSWorld behavior is unchanged.
 
 ## OSWorld setup
@@ -354,7 +360,7 @@ mask these units. These settings also survive live snapshots.
 Full VM parity is not claimed. The reference selects Modal's VM runtime;
 Sandweave uses its no-KVM gVisor engine. The tested desktop and verifier paths
 work, but Linux hardware, real-time scheduling and some service behavior differ.
-The [acceptance record](https://github.com/Pranjal2041/sandweave/blob/feat/osworld-benchmarks/notes/osworld-acceptance.md)
+The [acceptance record](https://github.com/Pranjal2041/sandweave/blob/main/notes/osworld-acceptance.md)
 identifies those differences and the tasks exercised.
 
 ## Add an integration

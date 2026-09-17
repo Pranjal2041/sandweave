@@ -392,6 +392,11 @@ for setup, resource requirements and the measured limits of VM parity.
 
 ### Harbor
 
+Harbor support is experimental; full Harbor compatibility is not available.
+Shared service namespaces, external volume drivers and some other Compose
+features are not implemented. See the [compatibility review](https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-contract-review.md)
+for the current limits and validation evidence.
+
 Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20rc7` with
 Python 3.12+, then select a dataset or a local task directory:
 

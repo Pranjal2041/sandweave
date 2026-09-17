@@ -348,10 +348,10 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 ## Run a benchmark
 
 `Benchmark` pairs each task's instructions with a clean sandbox and its evaluator.
-The OSWorld integration is available in the `0.2.20rc8` preview:
+Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc8'
+uv pip install 'sandweave[benchmarks]==0.2.20'
 ```
 
 ```python
@@ -397,7 +397,7 @@ Shared service namespaces, external volume drivers and some other Compose
 features are not implemented. See the [compatibility review](https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-contract-review.md)
 for the current limits and validation evidence.
 
-Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20rc8` with
+Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20` with
 Python 3.12+, then select a dataset or a local task directory:
 
 ```python

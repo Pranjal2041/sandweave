@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.20
+
+- Publish the tested `0.2.20rc8` implementation as a stable release. Runtime code
+  and dependency requirements are unchanged from that release candidate.
+- Add capacity-bounded benchmark task acquisition, OSWorld setup and evaluation,
+  and experimental Harbor integration. Harbor remains explicitly experimental;
+  this release does not claim full Harbor compatibility or full OSWorld VM parity.
+- Include the image-build, service lifecycle, long-path, networking and FIFO
+  fixes documented in the preceding release candidates.
+- Save directories bind-mounted onto themselves and preserve Docker/containerd
+  storage across checkpoints, including an empty initial store without an archive.
+- Upgrade clients, controllers and workers together for the benchmark and service
+  operations introduced in this release.
+
 ## 0.2.20rc8
 
 - Allow filesystem checkpoints when an application bind-mounts a directory onto

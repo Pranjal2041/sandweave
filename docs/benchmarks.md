@@ -4,10 +4,10 @@ A benchmark supplies a task's instructions, a clean sandbox and an evaluator.
 It uses a [pool](pools.md) to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.
 
-Available in the `0.2.20rc8` preview:
+Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20rc8'
+uv pip install 'sandweave[benchmarks]==0.2.20'
 ```
 
 ## Run tasks
@@ -143,7 +143,7 @@ the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:
 
 ```bash
-uv pip install 'sandweave[harbor]==0.2.20rc8'
+uv pip install 'sandweave[harbor]==0.2.20'
 ```
 
 ```python
@@ -332,7 +332,7 @@ with Benchmark("osworld-energy50-representative", capacity=8, preload=2,
         print(result)
 ```
 
-Install the preview SDK on the client, controller and participating workers.
+Install the same SDK version on the client, controller and participating workers.
 Changing resource settings changes the benchmark conditions; it does not change
 the task instructions or scoring rules.
 

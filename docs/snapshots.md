@@ -30,6 +30,33 @@ with Sandbox(cache=baseline) as env:
 A missing cache raises `CacheMiss`. It does not silently build a replacement.
 On a cluster, use the same cluster target when creating and restoring the cache.
 
+## Save Docker storage
+
+The `docker` template starts with empty Docker and containerd storage. Images,
+containers and named volumes are included when saving its filesystem:
+
+```python
+with Sandbox(template="docker") as env:
+    env.run("docker pull busybox:1.37.0", timeout=180, check=True)
+    baseline = env.cache("docker-ready")
+
+with Sandbox(cache="docker-ready") as env:
+    print(env.run("docker image ls", check=True).stdout)
+```
+
+Each restore has independent storage. A filesystem restore starts fresh
+processes; use `docker start` for saved containers without an automatic restart
+policy. The saved files are crash-consistent: application buffers held only in
+RAM are not included. Memory checkpoints also save supported running processes.
+
+Custom templates can set `runtime_options.docker_data = true` to create the same
+checkpointed storage mounts. The Docker template enables this by default.
+Its `overlay2` driver needs these separate writable filesystems; a custom
+template that disables them must provide compatible storage for its driver.
+`docker_archive` optionally seeds those mounts from an immutable installation
+asset on first launch; restoring a checkpoint uses its saved data and does not
+require or reimport that archive.
+
 ## Reuse setup automatically
 
 ```python

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.20rc8
+
+- Allow filesystem checkpoints when an application bind-mounts a directory onto
+  itself. Save its backing filesystem once, while retaining detection of other
+  writable storage that would be omitted.
+- Honor the template's `runtime_options.docker_data` independently of archive
+  import. The Docker template starts with empty Docker and containerd storage
+  by default; no pre-existing archive is required.
+- Preserve Docker and containerd storage through filesystem and memory
+  checkpoints. Restore uses the saved data without reopening or reimporting
+  the original Docker archive.
+- Add installed-package acceptance for directory self-binds, concurrent
+  checkpoints, empty Docker storage, images, containers, volumes and imports.
+
 ## 0.2.20rc7
 
 - Match Harbor's environment precedence at the client command boundary and

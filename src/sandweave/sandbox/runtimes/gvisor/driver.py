@@ -114,6 +114,13 @@ class Runtime:
         if cpu['quota'] is not None:
             options += ['--cpu-policy', 'quota', '--cpu-quota', str(cpu['quota'])]
         runtime = spec['template'].get('runtime_options', {})
+        docker_data = runtime.get('docker_data', bool(runtime.get('docker_archive')))
+        if not isinstance(docker_data, bool):
+            raise ValueError('docker_data must be a boolean')
+        if runtime.get('docker_archive') and not docker_data:
+            raise ValueError('docker_archive requires docker_data=True')
+        if docker_data:
+            options.append('--docker-data')
         if runtime.get('nftables'):
             options.append('--nftables')
         if runtime.get('virtual_consoles'):
@@ -196,7 +203,7 @@ class Runtime:
             if relative.is_absolute() or '..' in relative.parts:
                 raise ValueError('Docker archive must name a relative immutable asset')
             _immutable(assets() / relative, self.root / relative)
-            options += ['--docker-data', '--docker-archive', str(self.root / relative)]
+            options += ['--docker-archive', str(self.root / relative)]
             command = ['/usr/local/bin/engine-docker', 'init']
         with measure('runtime_launch_seconds'):
             from . import proxy

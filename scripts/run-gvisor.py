@@ -60,7 +60,7 @@ parser.add_argument('--cpu-policy', choices=['shared', 'weighted', 'quota'], def
 parser.add_argument('--cpu-weight', type=int, default=100)
 parser.add_argument('--cpu-quota', type=float, help='experimental average CPU equivalents, enforced by a sampled userspace controller')
 parser.add_argument('--nftables', action='store_true')
-parser.add_argument('--docker-data', action='store_true')
+parser.add_argument('--docker-data', action='store_true', help='create checkpointed Docker and containerd storage; starts empty unless an archive is supplied')
 parser.add_argument('--docker-archive', type=Path, help='previously exported Docker state archive')
 parser.add_argument('--base-image', type=Path, help='guest EROFS image below this runtime workspace')
 parser.add_argument('--mounts', type=Path, help='validated external mount JSON; sources are worker paths')
@@ -197,10 +197,12 @@ if args.disk_path:
 elif args.disk_memory_inner is not None:
     parser.error('disk memory inner launch requires disk-path')
 mark('snapshot_metadata_seconds')
-docker_archive = (args.docker_archive or local / 'gvisor/docker-state.tar').resolve()
 if args.docker_archive and not args.docker_data:
     parser.error('--docker-archive requires --docker-data')
-if args.docker_data:
+if args.docker_archive and args.restore:
+    parser.error('--docker-archive cannot replace saved storage during restore')
+if args.docker_archive:
+    docker_archive = args.docker_archive.resolve()
     if not docker_archive.is_file():
         parser.error('Docker archive does not exist')
     if docker_archive.is_relative_to(local):
@@ -227,6 +229,7 @@ runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 settings['virtual_consoles'] = args.virtual_consoles
+settings['docker_data'] = args.docker_data
 settings['allowed_hosts'] = args.allowed_hosts
 settings['netlink_address_events'] = args.netlink_address_events
 settings['sysctl_reapply'] = args.sysctl_reapply
@@ -493,11 +496,10 @@ try:
         command += ['restore', '--image-path=' + checkpoint_arg]
     else:
         command += ['run']
-    if args.docker_data:
-        if not args.restore:
-            command += ['--pass-fd=3:3']
-            wrapper_end = 1 + (2 if args.gpu is not None else 0) + (2 if mounts else 0) + (2 if args.disk_path else 0)
-            command[wrapper_end:wrapper_end] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
+    if args.docker_archive:
+        command += ['--pass-fd=3:3']
+        wrapper_end = 1 + (2 if args.gpu is not None else 0) + (2 if mounts else 0) + (2 if args.disk_path else 0)
+        command[wrapper_end:wrapper_end] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
     command += [f'--bundle=/local/gvisor/bundles/{args.name}', args.name]
     (logs / 'launch.json').write_text(json.dumps(command, indent=2) + '\n')
     print(f'RUNNING {args.name}; logs: {logs}', flush=True)

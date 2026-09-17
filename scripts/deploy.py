@@ -154,6 +154,11 @@ def validate(directory, release):
     shutil.copyfile(source / 'tests/integration/test_mounts.py', live / 'test_mounts.py')
     run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
         live / 'test_mounts.py', cwd=live, env=env)
+    for name in ('test_snapshots.py', 'test_checkpoint_storage.py', 'test_docker_storage_live.py'):
+        shutil.copyfile(source / 'tests/integration' / name, live / name)
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_snapshots.py', live / 'test_checkpoint_storage.py',
+        live / 'test_docker_storage_live.py', cwd=live, env=env)
     shutil.copyfile(source / 'tests/integration/test_fifo_restart_live.py', live / 'test_fifo_restart_live.py')
     shutil.copyfile(source / 'sources/fifo-signal-test.c', live / 'fifo-signal-test.c')
     run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),

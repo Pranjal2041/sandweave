@@ -1,9 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 test ! -e /dev/kvm
-tar --xattrs --xattrs-include='*' --acls --same-owner -xpf /proc/self/fd/3 -C /var/lib
-exec 3<&-
-echo DOCKER_STORAGE_IMPORTED
+if [ -e /proc/self/fd/3 ]; then
+    tar --xattrs --xattrs-include='*' --acls --same-owner -xpf /proc/self/fd/3 -C /var/lib
+    exec 3<&-
+    echo DOCKER_STORAGE_IMPORTED
+fi
 if [ "${1:-}" = init ]; then
     exec /sbin/init
 fi

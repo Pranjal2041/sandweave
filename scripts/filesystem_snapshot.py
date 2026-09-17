@@ -1,5 +1,5 @@
 """Cold snapshots of the root overlay and persistent tmpfs mounts."""
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import json
@@ -21,6 +21,29 @@ def unescape(value):
     return re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), value)
 
 
+def mount_table(mountinfo):
+    result = {}
+    for line in mountinfo.splitlines():
+        fields, fs = line.split(' - ', 1)
+        fields, fs = fields.split(), fs.split()
+        result[fields[0]] = {'parent': fields[1], 'device': fields[2],
+            'root': unescape(fields[3]), 'destination': unescape(fields[4]),
+            'readonly': 'ro' in fields[5].split(','), 'type': fs[0], 'line': line}
+    return result
+
+
+def self_bind(mount, mounts):
+    """A second view of the same backing directory adds no files to export."""
+    parent = mounts.get(mount['parent'])
+    if parent is None or (mount['device'], mount['type']) != (parent['device'], parent['type']):
+        return False
+    try:
+        relative = PurePosixPath(mount['destination']).relative_to(parent['destination'])
+    except ValueError:
+        return False
+    return PurePosixPath(mount['root']) == PurePosixPath(parent['root']) / relative
+
+
 def inventory(spec, mountinfo):
     """Fail rather than silently omit unrecognized writable storage."""
     configured = {m['destination']: m for m in spec['mounts']}
@@ -30,23 +53,28 @@ def inventory(spec, mountinfo):
     rebound = {m['destination'] for m in external}
     result = []
     seen = set()
-    for line in mountinfo.splitlines():
-        fields, fs = line.split(' - ', 1)
-        fields, fs = fields.split(), fs.split()
-        root, destination = map(unescape, (fields[3], fields[4]))
+    mounts = mount_table(mountinfo)
+    for entry in mounts.values():
+        root, destination = entry['root'], entry['destination']
         if destination == '/' or any(destination == p or destination.startswith(p + '/') for p in VOLATILE):
             continue
-        if 'ro' in fields[5].split(','):
+        if entry['readonly']:
             continue
         if destination in rebound:
             continue
+        # Docker and other applications self-bind directories to change mount
+        # propagation. Their files are already in the backing filesystem's
+        # export. Compare both filesystem identity and the underlying path:
+        # a bind from a different directory must not be mistaken for this.
+        if self_bind(entry, mounts):
+            continue
         # Docker's overlay mounts refer back to data captured in its storage
         # directory. Docker reconstructs these when containers start again.
-        if fs[0] == 'overlay' and destination.startswith('/var/lib/docker/'):
+        if entry['type'] == 'overlay' and root == '/' and destination.startswith('/var/lib/docker/'):
             continue
         mount = configured.get(destination)
-        if mount is None or mount['type'] != 'tmpfs' or fs[0] != 'tmpfs' or root != '/':
-            raise ValueError('unsupported writable mount; snapshot would be incomplete: ' + line)
+        if mount is None or mount['type'] != 'tmpfs' or entry['type'] != 'tmpfs' or root != '/':
+            raise ValueError('unsupported writable mount; snapshot would be incomplete: ' + entry['line'])
         if destination in seen:
             raise ValueError('stacked writable mounts are not qualified: ' + destination)
         seen.add(destination)

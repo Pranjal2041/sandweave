@@ -8,6 +8,7 @@ memory = "8GiB"
 
 [runtime_options]
 init = "docker"
+docker_data = true
 nftables = true
 cgroup = "v1"
 

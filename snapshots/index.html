@@ -697,6 +697,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#save-docker-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save Docker storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reuse-setup-automatically" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1324,6 +1335,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#save-docker-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save Docker storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reuse-setup-automatically" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1425,33 +1447,54 @@ reuse exactly the version you saved:</p>
 </code></pre></div>
 <p>A missing cache raises <code>CacheMiss</code>. It does not silently build a replacement.
 On a cluster, use the same cluster target when creating and restoring the cache.</p>
+<h2 id="save-docker-storage">Save Docker storage<a class="headerlink" href="#save-docker-storage" title="Permanent link">&para;</a></h2>
+<p>The <code>docker</code> template starts with empty Docker and containerd storage. Images,
+containers and named volumes are included when saving its filesystem:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"docker"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"docker pull busybox:1.37.0"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">180</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">baseline</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"docker-ready"</span><span class="p">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="s2">"docker-ready"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"docker image ls"</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+</code></pre></div>
+<p>Each restore has independent storage. A filesystem restore starts fresh
+processes; use <code>docker start</code> for saved containers without an automatic restart
+policy. The saved files are crash-consistent: application buffers held only in
+RAM are not included. Memory checkpoints also save supported running processes.</p>
+<p>Custom templates can set <code>runtime_options.docker_data = true</code> to create the same
+checkpointed storage mounts. The Docker template enables this by default.
+Its <code>overlay2</code> driver needs these separate writable filesystems; a custom
+template that disables them must provide compatible storage for its driver.
+<code>docker_archive</code> optionally seeds those mounts from an immutable installation
+asset on first launch; restoring a checkpoint uses its saved data and does not
+require or reimport that archive.</p>
 <h2 id="reuse-setup-automatically">Reuse setup automatically<a class="headerlink" href="#reuse-setup-automatically" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">setup</span><span class="o">=</span><span class="s2">"./install-tools.sh"</span><span class="p">,</span> <span class="n">cache_key</span><span class="o">=</span><span class="s2">"tools-build"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">setup</span><span class="o">=</span><span class="s2">"./install-tools.sh"</span><span class="p">,</span> <span class="n">cache_key</span><span class="o">=</span><span class="s2">"tools-build"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>Provide your own setup script. <code>cache_key</code> prepares a recipe and reuses its saved
 result when the template, script, and declared inputs match. A change to those
 inputs creates a new revision. <code>cache</code> loads an existing saved state directly.</p>
 <h2 id="pause-and-resume">Pause and resume<a class="headerlink" href="#pause-and-resume" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">env</span><span class="o">.</span><span class="n">pause</span><span class="p">()</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">env</span><span class="o">.</span><span class="n">resume</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">env</span><span class="o">.</span><span class="n">pause</span><span class="p">()</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">env</span><span class="o">.</span><span class="n">resume</span><span class="p">()</span>
 </code></pre></div>
 <p>Pause keeps the same environment resident, including memory and GPU state.
 It does not release the runtime's memory reservation or save a durable checkpoint.</p>
 <h2 id="checkpoint-memory">Checkpoint memory<a class="headerlink" href="#checkpoint-memory" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">env</span><span class="o">.</span><span class="n">files</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="s2">"/workspace/note.txt"</span><span class="p">,</span> <span class="s2">"saved state"</span><span class="p">)</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">checkpoint</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">snapshot</span><span class="p">(</span><span class="n">state</span><span class="o">=</span><span class="s2">"memory"</span><span class="p">)</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="k">if</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">verify</span><span class="p">()[</span><span class="s2">"status"</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">"passed"</span><span class="p">:</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Checkpoint verification failed"</span><span class="p">)</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">snapshot</span><span class="o">=</span><span class="n">checkpoint</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">restored</span><span class="o">.</span><span class="n">files</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="s2">"/workspace/note.txt"</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">env</span><span class="o">.</span><span class="n">files</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="s2">"/workspace/note.txt"</span><span class="p">,</span> <span class="s2">"saved state"</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">checkpoint</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">snapshot</span><span class="p">(</span><span class="n">state</span><span class="o">=</span><span class="s2">"memory"</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="k">if</span> <span class="n">checkpoint</span><span class="o">.</span><span class="n">verify</span><span class="p">()[</span><span class="s2">"status"</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">"passed"</span><span class="p">:</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Checkpoint verification failed"</span><span class="p">)</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">snapshot</span><span class="o">=</span><span class="n">checkpoint</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">restored</span><span class="o">.</span><span class="n">files</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="s2">"/workspace/note.txt"</span><span class="p">))</span>
 </code></pre></div>
 <p>A supported gVisor memory snapshot saves process and kernel state as well as
 files. Verification can run asynchronously; the example checks it before
@@ -1460,12 +1503,12 @@ attempting a restore. External services and shared volumes do not roll back.</p>
 files whose recorded identity and timestamps still match. New copies are checked
 before publication. Calling <code>checkpoint.verify()</code> explicitly rechecks the bytes.</p>
 <h2 id="save-before-stopping">Save before stopping<a class="headerlink" href="#save-before-stopping" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">()</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">saved</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">snapshot</span><span class="o">=</span><span class="n">saved</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">restored</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">()</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">saved</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">snapshot</span><span class="o">=</span><span class="n">saved</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">restored</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p><code>stop()</code> saves before releasing the runtime. A failed save keeps the source
 running. Use <code>terminate()</code> when you want to discard unsaved state instead.</p>

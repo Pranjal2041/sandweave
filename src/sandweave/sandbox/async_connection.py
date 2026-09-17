@@ -8,6 +8,7 @@ from yarl import URL
 from .connection import Connection
 from .errors import OperationUnknown, SandboxError
 from .wire import encode, decode, MAX_BODY
+from .._unix_sockets import Address
 
 
 class AsyncConnection:
@@ -17,20 +18,29 @@ class AsyncConnection:
         self.timeout, self.rpc_path = timeout, rpc_path
         self.url = URL.build(scheme='https' if tls else 'http', host=host, port=int(port), path=rpc_path)
         self.ssl = ssl.create_default_context(cafile=ca_file) if tls else True
-        connector = (aiohttp.UnixConnector(path=unix_path, limit=0) if unix_path else
-                     aiohttp.TCPConnector(limit=0, keepalive_timeout=30))
-        self.session = aiohttp.ClientSession(connector=connector, trust_env=False,
-            timeout=aiohttp.ClientTimeout(total=None), auto_decompress=False)
+        address = Address(unix_path) if unix_path else None
+        try:
+            connector = (aiohttp.UnixConnector(path=address.path, limit=0) if address else
+                         aiohttp.TCPConnector(limit=0, keepalive_timeout=30))
+            self.session = aiohttp.ClientSession(connector=connector, trust_env=False,
+                timeout=aiohttp.ClientTimeout(total=None), auto_decompress=False)
+        except BaseException:
+            if address:
+                address.close()
+            raise
         # asyncio.run() cancels remaining tasks before closing its loop. Close
         # pooled sockets there too when a synchronous handle outlives that loop.
-        self.guard = asyncio.create_task(self._lifetime(self.session))
+        self.address = address
+        self.guard = asyncio.create_task(self._lifetime(self.session, address))
 
     @staticmethod
-    async def _lifetime(session):
+    async def _lifetime(session, address):
         try:
             await asyncio.Future()
         finally:
             await session.close()
+            if address:
+                address.close()
 
     async def call(self, operation, **parameters):
         return await self.request(operation, parameters)
@@ -57,3 +67,5 @@ class AsyncConnection:
         self.guard.cancel()
         await asyncio.gather(self.guard, return_exceptions=True)
         await self.session.close()
+        if self.address:
+            self.address.close()

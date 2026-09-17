@@ -38,6 +38,11 @@ def test_keyboard_input_uses_installed_definitions_without_host_x11(tmp_path, mo
 
 
 def test_desktop_import_installs_key_definitions_even_with_host_network_tools(tmp_path, monkeypatch):
+    from sandweave import network_runtime
+    monkeypatch.setattr(network_runtime, 'available', lambda root: True)
+    limiter = tmp_path / 'tools/helpers/usr/bin/prlimit'
+    limiter.parent.mkdir(parents=True)
+    limiter.touch()
     monkeypatch.setattr(workspace, 'tool', lambda name: '/host/' + name)
     assert not needs_helpers(tmp_path, Template('coding').resolve())
     assert needs_helpers(tmp_path, Template('gnome').resolve())

@@ -130,7 +130,8 @@ def descendants(table, root):
 def control_pause(path, paused):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
         conn.settimeout(2)
-        conn.connect(str(path))
+        from _unix_sockets import connect
+        connect(conn, path)
         conn.sendall(json.dumps({'method': 'containerManager.SetCPUPaused', 'arg': paused}).encode())
         data = b''
         while len(data) < 65536:

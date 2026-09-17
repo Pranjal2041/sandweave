@@ -64,6 +64,10 @@ class EnvironmentManager:
         info = cpu_broker.process_table([pid]).get(pid)
         if info is None or info['state'] == 'Z' or (record and info['start'] != record['start']):
             return None
+        if record:
+            # PID plus the kernel start time identifies the launcher we started.
+            # /proc/cmdline can be empty during exec; it is not a liveness test.
+            return {'pid': pid, 'start': info['start']}
         try:
             argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
         except FileNotFoundError:
@@ -92,9 +96,14 @@ class EnvironmentManager:
                 except FileNotFoundError:
                     matches, argv = False, []
                 if not matches or f'--bundle=/local/gvisor/bundles/{name}'.encode() not in argv:
-                    raise RuntimeError(f'{name}: saved runtime PID does not identify this environment')
-                result.update(status=state['status'], sentry={'pid': pid, 'start': info['start']},
-                              gpu=bool(settings.get('gpu')))
+                    # Runtime state can outlive its process, and Linux reuses
+                    # PIDs. An unrelated process is not a live sandbox. During
+                    # launch, exec may also not have installed the Sentry yet;
+                    # the verified launcher keeps this attempt in "starting".
+                    result['stale_runtime_pid'] = pid
+                else:
+                    result.update(status=state['status'], sentry={'pid': pid, 'start': info['start']},
+                                  gpu=bool(settings.get('gpu')))
         if not bundle.exists() and launcher is None:
             result['status'] = 'missing'
         for filename, key in [('ports.json', 'ports'), ('stopped.json', 'last_stop'),
@@ -110,13 +119,13 @@ class EnvironmentManager:
         result = [self.status(name) for name in sorted(names)]
         return [s for s in result if s['status'] not in ('missing', 'stopped')] if active_only else result
 
-    def _command(self, name):
+    def _command(self, name, *, bind_resources=True):
         settings = self._settings(name)
         runtime = runtime_store.validate(self.lab, settings['runtime'], verify=False)
         command = [str(self.lab / 'scripts/gvisor-host.sh')]
-        if settings.get('external_mounts'):
+        if bind_resources and settings.get('external_mounts'):
             command += ['--mounts', str(self._bundle(name) / 'external-mounts.json')]
-        if settings.get('gpu'):
+        if bind_resources and settings.get('gpu'):
             command += ['--gpu', str(settings['gpu']['device_minor'])]
         return command + ['/lab/' + str(runtime.relative_to(self.lab)) + '/runsc', '--root=/local/gvisor/state']
 
@@ -268,7 +277,9 @@ class EnvironmentManager:
             launcher = self._launcher(name)
             members = self._owned_members(name, launcher, state.get('sentry'))
             if state.get('sentry'):
-                self._run([*self._command(name), 'delete', '--force', name], timeout=timeout)
+                # Deletion only needs runtime state and its control socket.
+                # A removed host mount or device must not prevent cleanup.
+                self._run([*self._command(name, bind_resources=False), 'delete', '--force', name], timeout=timeout)
             elif launcher:
                 self._signal(launcher['pid'], launcher['start'], signal.SIGTERM)
             deadline = time.monotonic() + timeout

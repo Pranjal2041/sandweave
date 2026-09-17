@@ -1,0 +1,59 @@
+--- a/tcp_buf.c
++++ b/tcp_buf.c
+@@ -316,6 +316,7 @@
+ 	uint32_t already_sent, seq;
+ 	struct iovec *iov;
+ 
++retry:
+ 	/* How much have we read/sent since last received ack ? */
+ 	already_sent = conn->seq_to_tap - conn->seq_ack_from_tap;
+ 
+@@ -355,8 +356,11 @@
+ 	if (tcp_payload_used + fill_bufs > TCP_FRAMES_MEM) {
+ 		tcp_payload_flush(c);
+ 
+-		/* Silence Coverity CWE-125 false positive */
+-		tcp_payload_used = 0;
++		/* A short flush may rewind seq_to_tap and the socket peek offset.
++		 * Recompute the discard iov and window from the new sequence before
++		 * reading. Otherwise payload bytes receive the wrong sequence.
++		 */
++		goto retry;
+ 	}
+ 
+ 	for (i = 0, iov = iov_sock + DISCARD_IOV_NUM; i < fill_bufs; i++, iov++) {
+--- a/tcp.c
++++ b/tcp.c
+@@ -1840,6 +1840,7 @@
+ 			     const struct pool *p, int idx)
+ {
+ 	int i, iov_i, ack = 0, fin = 0, retr = 0, keep = -1, partial_send = 0;
++	bool duplicate = false;
+ 	uint16_t max_ack_seq_wnd = conn->wnd_from_tap;
+ 	uint32_t max_ack_seq = conn->seq_ack_from_tap;
+ 	uint32_t seq_from_tap = conn->seq_from_tap;
+@@ -1958,8 +1959,14 @@
+ 		 *          ^ seq
+ 		 *    (offset < 0)
+ 		 */
+-		if (SEQ_GE(seq_offset, 0) && SEQ_LE(seq + len, seq_from_tap))
++		if (SEQ_GE(seq_offset, 0) && SEQ_LE(seq + len, seq_from_tap)) {
++			/* Our previous ACK may have been lost, including during a
++			 * short output flush. ACK_IF_NEEDED only tracks queued ACKs.
++			 * A retransmitted payload needs a fresh acknowledgement.
++			 */
++			duplicate = true;
+ 			continue;
++		}
+ 
+ 		if (SEQ_LT(seq_offset, 0)) {
+ 			if (keep == -1)
+@@ -2054,7 +2061,7 @@
+ 
+ 		conn_event(c, conn, TAP_FIN_RCVD);
+ 	} else {
+-		tcp_send_flag(c, conn, ACK_IF_NEEDED);
++		tcp_send_flag(c, conn, duplicate ? ACK : ACK_IF_NEEDED);
+ 	}
+ 
+ 	return p->count - idx;

@@ -30,6 +30,15 @@ def runtime_files(tmp_path):
     selected = root / 'tools/gvisor-socket/runtime.json'
     selected.parent.mkdir()
     selected.write_text(json.dumps({'path': 'tools/runtime-builds/example', 'sha256': hashes}))
+    from sandweave.network_runtime import revision
+    network = root / 'tools/network'
+    network.mkdir()
+    (network / 'passt').write_bytes(b'qualified test helper')
+    (network / 'passt').chmod(0o755)
+    (network / 'manifest.json').write_text(json.dumps({'revision': revision()}))
+    limiter = root / 'tools/helpers/usr/bin/prlimit'
+    limiter.parent.mkdir(parents=True)
+    limiter.write_bytes(b'test limiter')
     return root
 
 

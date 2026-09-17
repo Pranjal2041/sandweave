@@ -17,6 +17,7 @@ subprocess.run([str(lab / 'scripts/build-gvisor.sh'), 'build', '//runsc:runsc',
                 '//runsc/cmd/sentry:gvisor_sentry',
                 '//runsc/checkpointgofer:checkpointgofer_binary',
                 '//runsc/prewarmer:gvisor-sentry-prewarmer',
+                '//runsc/guesttools:sandweave-guest-tools',
                 '//runsc/cmd/metricserver:runsc-metric-server'], check=True)
 local = (lab / 'runs/local-path.txt').read_text().strip()
 base = Path(str((lab / 'sources/gvisor/bazel-bin').readlink()).replace('/local', local, 1))
@@ -27,6 +28,7 @@ artifacts = [
     ('runsc/cmd/sentry/gvisor_sentry_/gvisor_sentry', 'gvisor-bin/gvisor_sentry'),
     ('runsc/checkpointgofer/checkpointgofer_binary_/checkpointgofer_binary', 'gvisor-bin/checkpointgofer'),
     ('runsc/prewarmer/gvisor-sentry-prewarmer', 'gvisor-bin/gvisor-sentry-prewarmer'),
+    ('runsc/guesttools/sandweave-guest-tools', 'gvisor-bin/sandweave-guest-tools'),
     ('runsc/cmd/metricserver/runsc-metric-server_/runsc-metric-server', 'gvisor-bin/runsc-metric-server'),
 ]
 descriptor = runtime_store.publish(lab, {destination: base / source for source, destination in artifacts})

@@ -19,6 +19,23 @@ def release_idle_test_worker():
 
 
 @pytest.mark.parametrize('runtime', ['gvisor', 'apptainer'])
+def test_cleanup_survives_removed_host_mount(runtime, tmp_path):
+    source = tmp_path / 'ephemeral-input'
+    source.mkdir()
+    env = Sandbox(runtime=runtime, mounts=[Mount(source, '/input')])
+    try:
+        assert env.run('test -d /input', check=True).returncode == 0
+        source.rmdir()
+        env.terminate()
+        assert env.status()['state'] == 'terminated'
+    finally:
+        # If the assertion fails, retain a valid source for teardown itself.
+        source.mkdir(exist_ok=True)
+        env.terminate()
+        env.close()
+
+
+@pytest.mark.parametrize('runtime', ['gvisor', 'apptainer'])
 def test_read_only_mount_rebind_and_remove(runtime, tmp_path):
     (tmp_path / 'value').write_text('dataset')
     with Sandbox(runtime=runtime, mounts=[Mount(tmp_path, '/dataset')]) as env:

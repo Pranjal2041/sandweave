@@ -172,7 +172,7 @@ def validate_assets(root, recipe, *, contents=True):
             if contents and workspace.file_digest(path) != expected:
                 raise ValueError('game base runtime checksum mismatch: ' + name)
     additional = []
-    if 'desktop' in recipe['capabilities']:
+    if uses_fast_io(recipe):
         additional += ['tools/fast-io/bridge', 'tools/fast-io/libxcb-xtest.so.0']
     if workload(recipe).startswith(('vr/', 'games/')):
         additional += ['tools/gpu/virtualgl/opt/VirtualGL/bin/vglrun',
@@ -190,11 +190,18 @@ def validate_assets(root, recipe, *, contents=True):
     return root
 
 
+def uses_fast_io(recipe):
+    desktop = recipe['capabilities'].get('desktop')
+    return desktop is not None and desktop.get('provider', 'desktop') == 'desktop'
+
+
 def python_packages(recipe):
     packages = []
     if {'desktop', 'vr'} & recipe['capabilities'].keys():
-        packages += [('PIL', 'Pillow'), ('numpy', 'numpy')]
-    if 'desktop' in recipe['capabilities']:
+        packages.append(('PIL', 'Pillow'))
+    if uses_fast_io(recipe) or 'vr' in recipe['capabilities']:
+        packages.append(('numpy', 'numpy'))
+    if uses_fast_io(recipe):
         packages += [('Crypto', 'pycryptodome>=3.20,<4'), ('imageio_ffmpeg', 'imageio-ffmpeg>=0.6,<0.7')]
     if 'vr' in recipe['capabilities']:
         packages.append(('zstandard', 'zstandard'))

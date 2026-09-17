@@ -2,17 +2,33 @@
   "gvisor": {
     "path": "sources/gvisor",
     "upstream": "https://github.com/google/gvisor.git",
-    "branch": "experiment/no-kvm-slurm",
+    "branch": "feat/osworld-runtime",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "dd5239ad8db0753e8af7da0ea915df71c5357f7c",
+    "commit": "2265792bb40f541696deeb8070d5b622c28acd08",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/19dfb215bc34b326d948e9ca54e7d8a5d2549e1e016aa008ae265cd67293e657",
+    "runtime_build": "tools/runtime-builds/b13150736d1869efa9e02e04b4f29cb220301a1582c91d82e0d4cd7b7c292e11",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "b3ffebb8a1a1245b3e373f3b25309532804a6bbd",
+    "runtime_commit": "2265792bb40f541696deeb8070d5b622c28acd08",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
-    "disk_memory_release": "2026.09.11.1"
+    "disk_memory_release": "2026.09.11.1",
+    "osworld_runtime_build": "tools/runtime-builds/4d72f51230861e63b4385c5c1e7a42a06f7003f3887c6861346f29065626fc7c",
+    "osworld_status": "All 50 representative tasks completed setup/screenshots/canonical evaluation in rc1; rc2 adds template-selected Avahi, console palette and fixed desktop sysctl support. RealtimeKit and physical GPU detection remain outside that support.",
+    "osworld_runtime_release": "2026.09.14.2",
+    "harbor_runtime_release": "2026.09.16.5",
+    "harbor_status": "Private-volume overlay metadata and exclusive caching; legacy stateful IPv4/IPv6 firewall matching and standard reject modes. See notes/harbor-adapter.md for acceptance."
+  },
+  "passt": {
+    "upstream": "https://passt.top/passt",
+    "source_archive_commit": "4c2bd5720373bf4a6d3e5fc3129cf5ad0dbf8c03",
+    "source_archive_sha256": "0192a6aea35d62b2c262c791a68ac1cbb3ff89d28d64ab405c20c2956b40fbfb",
+    "patch": "notes/passt-backpressure.patch",
+    "regressions": [
+      "sources/passt-backpressure-test.c",
+      "sources/passt-retransmission-test.c"
+    ],
+    "runtime_release": "2026.09.16.5"
   }
 }

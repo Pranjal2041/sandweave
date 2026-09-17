@@ -10,13 +10,16 @@ def limited(command):
     return [sys.executable, str(Path(__file__).resolve()), 'limit', *command]
 
 
-def command(lab, local, name, *arguments, memory_limit=False):
-    executable = shutil.which(name)
+def command(lab, local, name, *arguments, memory_limit=False, cwd=None):
+    # The host's passt may corrupt TCP payloads after a short output flush.
+    # Use the qualified build even when the host provides another version.
+    executable = shutil.which(name) if name != 'passt' else None
     if executable:
         result = [executable, *arguments]
         return limited(result) if memory_limit else result
     helpers = Path(lab) / 'tools/helpers'
-    candidates = [helpers / directory / name for directory in ('usr/bin', 'usr/sbin', 'bin', 'sbin')]
+    candidates = ([Path(lab) / 'tools/network/passt'] if name == 'passt' else
+                  [helpers / directory / name for directory in ('usr/bin', 'usr/sbin', 'bin', 'sbin')])
     executable = next((path for path in candidates if path.is_file()), None)
     if executable is None:
         raise RuntimeError(name + ' is missing; run sandweave setup to install runtime utilities')
@@ -26,7 +29,7 @@ def command(lab, local, name, *arguments, memory_limit=False):
     # Bind at the same host paths: helper arguments include node-local sockets.
     result = [apptainer, 'exec', '--userns', '--contain', '--ipc', '--cleanenv', '--no-home',
               '--bind', str(lab) + ':' + str(lab), '--bind', str(local) + ':' + str(local),
-              '--pwd', str(lab), str(Path(lab) / 'tools/debian-trixie.sif'),
+              '--pwd', str(cwd or lab), str(Path(lab) / 'tools/debian-trixie.sif'),
               'env', 'LD_LIBRARY_PATH=' + str(helpers / 'usr/lib/x86_64-linux-gnu')]
     if memory_limit:
         # Limit the network helper, after Apptainer's Go runtime has started.

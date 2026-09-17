@@ -72,8 +72,8 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
     resources = normalize(cpu=cpu if cpu is not None else defaults.get('cpu', 1), memory=selected_memory,
                           gpu=gpu if gpu is not None else defaults.get('gpu', False),
                           network=network if network is not None else defaults.get('network', 'internet'))
-    if resources['network']['mode'] == 'proxy' and runtime != 'gvisor':
-        raise UnsupportedFeature('proxy egress enforcement requires runtime="gvisor"')
+    if resources['network']['mode'] in ('proxy', 'allowlist') and runtime != 'gvisor':
+        raise UnsupportedFeature('proxy and allowlist egress enforcement require runtime="gvisor"')
     if resources['memory'].get('disk') is not None:
         if runtime != 'gvisor':
             raise UnsupportedFeature('disk-backed guest memory requires runtime="gvisor"')
@@ -89,6 +89,9 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
         spec['recording'] = recording
     if saved and saved['spec'].get('image'):
         spec['image'] = copy.deepcopy(saved['spec']['image'])
+        # Runtime overrides replace saved command settings, but image ENV is
+        # still the base just as it is on a cold image launch.
+        spec['env'] = {**spec['image'].get('settings', {}).get('env', {}), **spec['env']}
     elif selected_image is not None:
         spec['image'] = {'reference': selected_image}
     return dict(spec=spec, reference=reference, cache_key=cache_key, refresh=refresh)
@@ -149,6 +152,8 @@ class Sandbox:
             raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on the worker and controller')
         if spec.get('recording') and not self._connection.call('ping').get('desktop_recording'):
             raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker and controller')
+        if spec.get('service_group') and not self._connection.call('ping').get('native_services'):
+            raise UnsupportedFeature('Harbor service groups require an updated worker and controller')
         from .ownership import client_owner
         owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
@@ -269,21 +274,22 @@ class Sandbox:
 
     @dualmethod
     def exec(self, command=None, *, argv=None, cwd=None, env=None, user=None,
-             timeout=None, shell=None, binary=False, max_output_bytes=None, pty=False):
+             timeout=None, shell=None, binary=False, max_output_bytes=None, pty=False, _maintenance=False):
         identity = uuid.uuid4().hex
         self._call('command_start', process_id=identity, command=command, argv=argv,
                     cwd=cwd, env=env, user=user, timeout=timeout, shell=shell, max_output_bytes=max_output_bytes,
-                    **({'pty': pty} if pty else {}))
+                    **({'pty': pty} if pty else {}), **({'maintenance': True} if _maintenance else {}))
         return Process(self, identity, binary=binary)
 
     @exec.async_impl
     async def _exec_async(self, command=None, *, argv=None, cwd=None, env=None, user=None,
-                          timeout=None, shell=None, binary=False, max_output_bytes=None, pty=False):
+                          timeout=None, shell=None, binary=False, max_output_bytes=None, pty=False, _maintenance=False):
         identity = uuid.uuid4().hex
         process = Process(self, identity, binary=binary)
         operation = asyncio.create_task(self._acall('command_start', process_id=identity,
             command=command, argv=argv, cwd=cwd, env=env, user=user, timeout=timeout,
-            shell=shell, max_output_bytes=max_output_bytes, **({'pty': pty} if pty else {})))
+            shell=shell, max_output_bytes=max_output_bytes, **({'pty': pty} if pty else {}),
+            **({'maintenance': True} if _maintenance else {})))
         try:
             await asyncio.shield(operation)
             return process
@@ -359,12 +365,22 @@ class Sandbox:
 
     @dualmethod
     def close(self):
+        release = self.__dict__.get('_lease_close')
+        if release is not None:
+            return release()
+        self._close_connection()
+
+    def _close_connection(self):
+        """Finish connection cleanup after an owning task releases its lease."""
         if not self._closed:
             self._connection.close()
             self._closed = True
 
     @close.async_impl
     async def _close_async(self):
+        release = self.__dict__.get('_lease_close')
+        if release is not None:
+            return await release.aio()
         if not self._closed:
             if hasattr(self._connection, 'aclose'):
                 await self._connection.aclose()

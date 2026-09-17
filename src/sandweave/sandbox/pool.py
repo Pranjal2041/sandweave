@@ -6,6 +6,7 @@ import asyncio
 import copy
 import inspect
 import threading
+import time
 
 from .asyncio import dualmethod
 from .sandbox import Sandbox
@@ -13,6 +14,7 @@ from .snapshots import SnapshotRef
 from .targets import connect
 from .artifacts import cache_path
 from .transfers import transfer
+from .resources import positive
 
 
 class Pool:
@@ -38,6 +40,7 @@ class Pool:
             raise ValueError('pool requires at least one target')
         self.condition = threading.Condition()
         self.idle, self.active, self.all = deque(), set(), set()
+        self.waiters = deque()
         self.pending, self.cursor = 0, 0
         self.proxy_network, self.proxy_state = None, {}
         self.started, self.closed, self.failure = False, False, None
@@ -178,33 +181,46 @@ class Pool:
             request['spec']['_proxy_assignment'] = assignment
         return Sandbox._from_definition(request, target)
 
-    def acquire(self):
+    def acquire(self, *, timeout=None):
+        if timeout is not None:
+            positive(timeout, 'timeout')
         cancelled = threading.Event()
-        return Lease(self._acquire(cancelled), cancelled)
+        return Lease(self._acquire(cancelled, timeout), cancelled)
 
     @contextmanager
-    def _acquire(self, cancelled):
+    def _acquire(self, cancelled, timeout=None):
         self.start()
+        deadline = None if timeout is None else time.monotonic() + timeout
         create = False
         with self.condition:
-            while True:
-                if cancelled.is_set():
-                    raise InterruptedError('pool checkout cancelled')
-                if self.closed:
-                    raise RuntimeError('pool is closed')
-                if self.failure:
-                    raise self.failure
-                if self.idle:
-                    env = self.idle.popleft()
-                    self.active.add(env)
-                    self._refill()
-                    break
-                if len(self.all) + self.pending < self.size:
-                    self.pending += 1
-                    target = self._target()
-                    create = True
-                    break
-                self.condition.wait(.1)
+            waiter = object()
+            self.waiters.append(waiter)
+            try:
+                while True:
+                    if cancelled.is_set():
+                        raise InterruptedError('pool checkout cancelled')
+                    if self.closed:
+                        raise RuntimeError('pool is closed')
+                    if self.failure:
+                        raise self.failure
+                    first = self.waiters[0] is waiter
+                    if first and self.idle:
+                        env = self.idle.popleft()
+                        self.active.add(env)
+                        self._refill()
+                        break
+                    if first and len(self.all) + self.pending < self.size:
+                        self.pending += 1
+                        target = self._target()
+                        create = True
+                        break
+                    remaining = None if deadline is None else deadline - time.monotonic()
+                    if remaining is not None and remaining <= 0:
+                        raise TimeoutError('pool checkout is waiting for capacity')
+                    self.condition.wait(.1 if remaining is None else min(.1, remaining))
+            finally:
+                self.waiters.remove(waiter)
+                self.condition.notify_all()
         if create:
             try:
                 env = self._sandbox(target)
@@ -219,8 +235,10 @@ class Pool:
                 self.active.add(env)
                 closed = self.closed
                 self.condition.notify_all()
-            if closed:
+            if closed or cancelled.is_set():
                 self._release(env)
+                if cancelled.is_set():
+                    raise InterruptedError('pool checkout cancelled')
                 raise RuntimeError('pool closed during checkout')
         try:
             if env.spec.get('recording'):

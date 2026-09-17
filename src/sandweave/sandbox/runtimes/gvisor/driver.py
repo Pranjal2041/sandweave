@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
 import shutil
 import subprocess
 import sys
@@ -12,9 +13,10 @@ import time
 
 from ...connection import Connection
 from ...errors import ResourceUnavailable, UnsupportedFeature
-from ...resources import memory_bytes
+from ...resources import memory_bytes, gpu_matches
 from ...workspace import locked, atomic_json
 from ...timings import measure
+from .... import _unix_sockets
 
 AGENT_PORT = 23799
 
@@ -52,7 +54,7 @@ class Runtime:
                 continue
             model = subprocess.check_output(['nvidia-smi', '-i', identity['uuid'], '--query-gpu=name',
                                              '--format=csv,noheader'], text=True).strip()
-            if not requested.get('model') or requested['model'].lower() in model.lower():
+            if gpu_matches(requested, model):
                 selected = index
                 break
         if selected is None:
@@ -100,7 +102,8 @@ class Runtime:
                    '--memory-mib', str((total + 1024**2-1)//1024**2),
                    '--runtime-memory-mib', str((memory_bytes(memory['runtime']) + 1024**2-1)//1024**2),
                    '--guest-gs', '--no-runtime-debug', '--forward', str(AGENT_PORT),
-                   '--network-policy', resources['network']['mode']]
+                   '--network-policy', resources['network']['mode'],
+                   '--allowed-hosts', json.dumps(resources['network'].get('allowed_hosts', []))]
         if memory.get('disk') is not None:
             options += ['--ram-mib', str((memory_bytes(memory['guest']) + 1024**2-1)//1024**2),
                         '--disk-path', memory['disk_path']]
@@ -113,6 +116,11 @@ class Runtime:
         runtime = spec['template'].get('runtime_options', {})
         if runtime.get('nftables'):
             options.append('--nftables')
+        if runtime.get('virtual_consoles'):
+            options.append('--virtual-consoles')
+        for feature in ('netlink_address_events', 'sysctl_reapply'):
+            if runtime.get(feature):
+                options.append('--' + feature.replace('_', '-'))
         if runtime.get('cgroup'):
             options += ['--cgroup', runtime['cgroup']]
         gpu = self.gpu(resources['gpu'], device_uuid=spec.get('_gpu_uuid'))
@@ -134,6 +142,7 @@ class Runtime:
 
     def create(self, identity, spec, *, snapshot=None, token=None):
         token = token or secrets.token_hex(32)
+        guest_tools = None
         deadline = spec.get('_startup_deadline', time.monotonic() + spec.get('startup_timeout', 300))
         def remaining():
             value = deadline - time.monotonic()
@@ -141,6 +150,10 @@ class Runtime:
                 raise TimeoutError('runtime startup deadline exceeded: ' + identity)
             return value
         options = self.options(spec)
+        if spec.get('_service_network'):
+            network_file = self.root / 'sandboxes' / (identity + '.network.json')
+            atomic_json(network_file, spec['_service_network'])
+            options += ['--service-network', str(network_file)]
         path = self.root / 'sandboxes' / (identity + '.mounts.json')
         atomic_json(path, spec.get('mounts', []))
         options += ['--mounts', str(path)]
@@ -190,9 +203,26 @@ class Runtime:
             selected_proxy, proxy_options = proxy.bind(self.root, identity, spec['resources']['network'], snapshot,
                                                        spec.get('_proxy_assignment'))
             options += proxy_options
+            features = []
+            if spec.get('_guest_tools') or any(mount.get('_private_volume') for mount in spec.get('mounts', [])):
+                features.append('private-volumes')
+            if any(mount.get('_private_volume') for mount in spec.get('mounts', [])):
+                features.append('private-volume-devices')
+            if any(mount.get('_exclusive') for mount in spec.get('mounts', [])):
+                features.append('private-volume-cache')
             if spec['resources']['memory'].get('disk') is not None:
-                from .engine import disk_runtime
-                options += disk_runtime(self.root, snapshot)
+                features.append('app-memory-directory')
+            if spec['template'].get('runtime_options', {}).get('virtual_consoles'):
+                features.append('virtual-consoles')
+            for feature in ('netlink_address_events', 'sysctl_reapply'):
+                if spec['template'].get('runtime_options', {}).get(feature):
+                    features.append(feature.replace('_', '-'))
+            if features:
+                from .engine import feature_runtime
+                selected_runtime = feature_runtime(self.root, features, snapshot)
+                options += selected_runtime
+                if 'private-volumes' in features and selected_runtime:
+                    guest_tools = self.root / selected_runtime[1] / 'gvisor-bin/sandweave-guest-tools'
             if snapshot:
                 manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
                 self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),
@@ -205,6 +235,10 @@ class Runtime:
                 cold = True
         with measure('runtime_agent_seconds'):
             metadata = self._start_agent(identity, token, init, cold, deadline, remaining, agent_command)
+            if guest_tools is not None:
+                prefix = '/.sandweave-runtime' if spec.get('image') else '/var/lib/sandweave'
+                self.connections[identity].call('file', op='write', path=prefix + '/tools/guest-tools',
+                    data=guest_tools.read_bytes(), truncate=True, mode=0o700)
             metadata.update(proxy.configure(self.connections[identity], selected_proxy))
             return metadata
 
@@ -241,6 +275,28 @@ class Runtime:
             port = self.manager.status(identity)['ports'][str(AGENT_PORT)]
             self.connections[identity] = Connection('127.0.0.1', port, metadata['token'], timeout=30)
         return self.connections[identity]
+
+    def network_policy(self, identity, network):
+        local = Path((self.root / 'runs/local-path.txt').read_text().strip())
+        endpoint = local / 'gvisor/network' / identity / 'ethernet.sock.control'
+        update = {'mode': network['mode'], 'allow_cidrs': network.get('allow_cidrs', []),
+                  'proxy_endpoints': [], 'allowed_hosts': network.get('allowed_hosts', [])}
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+            channel.settimeout(10)
+            _unix_sockets.connect(channel, endpoint)
+            channel.sendall(json.dumps(update).encode() + b'\n')
+            with channel.makefile('rb') as stream:
+                result = json.loads(stream.readline(65537))
+            if not result.get('ok'):
+                raise RuntimeError(result.get('error', 'network policy update failed'))
+        bundle = local / 'gvisor/bundles' / identity
+        config = json.loads((bundle / 'network-policy.json').read_text())
+        atomic_json(bundle / 'network-policy.json', {**config, **update})
+        settings = json.loads((bundle / 'launch-settings.json').read_text())
+        settings['settings']['network_policy'] = network['mode']
+        settings['settings']['allow_cidr'] = network.get('allow_cidrs', [])
+        settings['settings']['allowed_hosts'] = network.get('allowed_hosts', [])
+        atomic_json(bundle / 'launch-settings.json', settings)
 
     def detach(self, identity):
         connection = self.connections.pop(identity, None)

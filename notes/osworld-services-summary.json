@@ -1,0 +1,267 @@
+{
+  "runtime": {
+    "path": "tools/runtime-builds/4d72f51230861e63b4385c5c1e7a42a06f7003f3887c6861346f29065626fc7c",
+    "sha256": {
+      "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+      "gvisor-bin/checkpointgofer": "b6e79644a1b138403059f43422449c763f64049d0f98bc4b8f40a4b5a3335d66",
+      "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+      "gvisor-bin/gvisor_sentry": "50fdf24d1a47f102060f5347f8b2f9cd141586f5daa0bbec355545ef951f0be3",
+      "gvisor-bin/runsc-metric-server": "123743ac450e95022ddc4cfffbd54edce5d125ae439fae4107ebcb673a24f80f",
+      "runsc": "b86f81e61266e0a5eba7528393055116a87897e66d55c98904497dd5fecd0db3"
+    }
+  },
+  "cold": {
+    "services": {
+      "avahi-daemon": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "setvtrgb": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "exited"
+      },
+      "systemd-sysctl": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "exited"
+      }
+    },
+    "palette": "passed",
+    "sysctls": {
+      "kernel/pid_max": 4194304,
+      "vm/mmap_min_addr": 65536
+    },
+    "address_events": [
+      {
+        "family": 2,
+        "added": true,
+        "removed": true
+      },
+      {
+        "family": 10,
+        "added": true,
+        "removed": true
+      }
+    ],
+    "namespace_isolation": "passed",
+    "interface_removal": "passed",
+    "mdns": {
+      "name": "general-vm.local",
+      "addresses": [
+        "127.0.0.1"
+      ],
+      "responder": [
+        "127.0.0.1",
+        5353
+      ]
+    }
+  },
+  "restored": {
+    "services": {
+      "avahi-daemon": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "setvtrgb": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "exited"
+      },
+      "systemd-sysctl": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "exited"
+      }
+    },
+    "palette": "passed",
+    "sysctls": {
+      "kernel/pid_max": 4194304,
+      "vm/mmap_min_addr": 65536
+    },
+    "address_events": [
+      {
+        "family": 2,
+        "added": true,
+        "removed": true
+      },
+      {
+        "family": 10,
+        "added": true,
+        "removed": true
+      }
+    ],
+    "namespace_isolation": "passed",
+    "interface_removal": "passed",
+    "mdns": {
+      "name": "general-vm.local",
+      "addresses": [
+        "127.0.0.1"
+      ],
+      "responder": [
+        "127.0.0.1",
+        5353
+      ]
+    }
+  },
+  "unit_targets": 5,
+  "focused_sdk_tests": 58,
+  "live_integration_tests": 4,
+  "concurrency": {
+    "service_connections": 8,
+    "bytes_per_connection": 262144,
+    "unrelated_commands": 20,
+    "unrelated_seconds": 0.7243095473386347,
+    "benchmark_tasks": 12,
+    "leases": 4,
+    "benchmark_seconds": 11.892469915095717
+  },
+  "gui_tasks": [
+    {
+      "task": "osworld_chrome_af630914-714e-4a24-a7bb-f9af687d3b91",
+      "kind": "recorded-gui-actions",
+      "sandbox": "sw-d120327b89d04529b5fcd59418265d88",
+      "ready_seconds": 3.211177332792431,
+      "application_readiness": [
+        {
+          "expected": {
+            "application": "google-chrome",
+            "document": ""
+          },
+          "window": {
+            "id": 41943044,
+            "title": "New Tab - Google Chrome",
+            "application": "google-chrome Google-chrome",
+            "normal": true,
+            "visible": true,
+            "dialog": false,
+            "parent": null,
+            "pid": 1150
+          },
+          "seconds": 0.507729531999999
+        }
+      ],
+      "before": {
+        "task_id": "osworld_chrome_af630914-714e-4a24-a7bb-f9af687d3b91",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld af630914-714e-4a24-a7bb-f9af687d3b91 canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "action_seconds": [
+        5.925142580177635,
+        5.981225733179599,
+        5.845766501966864,
+        5.846354133915156,
+        5.845816033426672
+      ],
+      "evaluation": {
+        "task_id": "osworld_chrome_af630914-714e-4a24-a7bb-f9af687d3b91",
+        "score": 100.0,
+        "passed": true,
+        "feedback": "OSWorld af630914-714e-4a24-a7bb-f9af687d3b91 canonical reward=1.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "status": "completed",
+      "seconds": 58.14824014995247
+    },
+    {
+      "task": "osworld_os_b6781586-6346-41cd-935a-a6b1487918fc",
+      "kind": "recorded-gui-actions",
+      "sandbox": "sw-33267614caa949bcb17722dc9866759e",
+      "ready_seconds": 41.23271099105477,
+      "application_readiness": [],
+      "before": {
+        "task_id": "osworld_os_b6781586-6346-41cd-935a-a6b1487918fc",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld b6781586-6346-41cd-935a-a6b1487918fc canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "action_seconds": [
+        7.110440782736987,
+        7.344144657254219,
+        7.761696272995323,
+        26.438410040922463,
+        6.535318706184626,
+        7.093272312078625,
+        6.801229830831289
+      ],
+      "evaluation": {
+        "task_id": "osworld_os_b6781586-6346-41cd-935a-a6b1487918fc",
+        "score": 100.0,
+        "passed": true,
+        "feedback": "OSWorld b6781586-6346-41cd-935a-a6b1487918fc canonical reward=1.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "status": "completed",
+      "seconds": 119.97908562188968
+    },
+    {
+      "task": "osworld_vs_code_5e2d93d8-8ad0-4435-b150-1692aacaa994",
+      "kind": "recorded-gui-actions",
+      "sandbox": "sw-9af56ea8e0e64aa783f5d395e11eed5d",
+      "ready_seconds": 46.62239234615117,
+      "application_readiness": [
+        {
+          "expected": {
+            "application": "code",
+            "document": "project"
+          },
+          "window": {
+            "id": 44040195,
+            "title": "Welcome - project - Visual Studio Code",
+            "application": "code Code",
+            "normal": true,
+            "visible": true,
+            "dialog": false,
+            "parent": null,
+            "pid": 1190
+          },
+          "seconds": 4.033422905000002
+        }
+      ],
+      "before": {
+        "task_id": "osworld_vs_code_5e2d93d8-8ad0-4435-b150-1692aacaa994",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld 5e2d93d8-8ad0-4435-b150-1692aacaa994 canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "action_seconds": [
+        5.891975448932499,
+        6.08503333106637,
+        5.862455544061959,
+        5.729936299845576
+      ],
+      "evaluation": {
+        "task_id": "osworld_vs_code_5e2d93d8-8ad0-4435-b150-1692aacaa994",
+        "score": 100.0,
+        "passed": true,
+        "feedback": "OSWorld 5e2d93d8-8ad0-4435-b150-1692aacaa994 canonical reward=1.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "status": "completed",
+      "seconds": 76.21674218587577
+    }
+  ],
+  "decoded_gui_screenshots": 22,
+  "publication": {
+    "version": "0.2.20rc2",
+    "commit": "772b4decb8fe6250c4013626db3826006e3507e0",
+    "files": {
+      "sandweave-0.2.20rc2-py3-none-any.whl": "b9273bcd050289afddfe2828f47ad2ef4dd6b81963920d6785417bf3ba081bad",
+      "sandweave-0.2.20rc2.tar.gz": "4c504a7ae6aa61805733b89bee7c539eed7a5df1cb3d6c7190b0f9f6e8d06584"
+    }
+  },
+  "release_tests": {
+    "host_passed": 476,
+    "host_skipped": 4,
+    "host_deselected": 138,
+    "installed_sdk_passed": 4,
+    "build_transfer_passed": 7
+  },
+  "osworld_https_status": 200
+}

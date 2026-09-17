@@ -4,6 +4,22 @@ import pytest
 from sandweave.sandbox import admission
 
 
+@pytest.mark.parametrize('cached', [False, True])
+def test_pending_image_import_does_not_break_unrelated_admission(tmp_path, cached):
+    from types import SimpleNamespace
+    record = {'id': 'builder', 'state': 'ready', 'image_imports': ['pending'],
+              'runtime_status': {'status': 'running'}}
+    def status(identity):
+        assert identity == 'builder', 'uncreated importer has no runtime record'
+        return record['runtime_status']
+    worker = SimpleNamespace(path=lambda identity: tmp_path / identity,
+                             runtime=SimpleNamespace(status=status))
+    records = {'builder': record} if cached else None
+    assert admission.live(worker, record, records=records)
+    record['runtime_status']['status'] = 'stopped'
+    assert not admission.live(worker, record, records=records)
+
+
 @pytest.mark.parametrize('version', [1, 2])
 def test_narrower_ancestor_limits_an_unlimited_child(tmp_path, version):
     proc = tmp_path / 'proc'

@@ -152,12 +152,13 @@ class Management:
                 return False
         if operation not in {'describe', 'command_start', 'process_status', 'process_output',
                              'process_stdin', 'process_terminate', 'process_resize', 'file', 'setup',
-                             'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording'}:
+                             'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording',
+                             'image_capture', 'network_policy', 'service_rpc', 'service_volume_import', 'service_setup'}:
             return False
         return parameters.get('identity') == value['id']
 
     def inventory(self):
-        from .admission import reservation
+        from .admission import reservation, live as has_live_runtime
         from .ownership import process_scope
         import socket
         gpus = []
@@ -172,15 +173,24 @@ class Management:
             pass
         live = []
         records = self.worker.list()
+        by_id = {record['id']: record for record in records}
         for record in records:
+            if record.get('service_parent'):
+                continue
             if record['state'] in ('terminated', 'stopped') or record.get('cleanup_complete'):
                 continue
-            if record['runtime_status']['status'] not in ('running', 'paused', 'starting') and record['state'] not in ('creating', 'preparing'):
+            if not has_live_runtime(self.worker, record, records=by_id):
                 continue
             assignment = self.read(record['id'])
+            members = {record['id'], *record.get('image_imports', []),
+                       *(item['identity'] for item in record.get('services', {}).values())}
+            group = [by_id[identity] for identity in members if identity in by_id]
+            gpu_uuids = sorted({g['uuid'] for item in group
+                                for g in item['runtime_status'].get('gpus', []) or [] if g.get('uuid')})
             live.append({'id': record['id'], 'memory': reservation(record['spec']),
-                         'gpu': bool(record['spec']['resources']['gpu']),
-                         'gpu_uuids': [g['uuid'] for g in record['runtime_status'].get('gpus', []) or [] if g.get('uuid')],
+                         'slots': 1 + bool(record['spec'].get('_image_import_memory')) + len(record['spec'].get('services', {})),
+                         'gpu': sum(bool(item['spec']['resources']['gpu']) for item in group),
+                         'gpu_uuids': gpu_uuids,
                          'cluster': assignment['cluster'] if assignment else None})
         return {'protocol': 1, 'hostname': socket.gethostname(), 'pid': os.getpid(),
                 'scope': process_scope(), 'workspace': str(self.worker.root),

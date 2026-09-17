@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import textwrap
 import threading
+import tomllib
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -127,6 +128,22 @@ def check_browser(site, output, url=None):
                 copied = page.evaluate('navigator.clipboard.readText()')
                 assert 'shared_cache="/shared/sandweave"' in copied and 'affinity="machine"' in copied
                 page.screenshot(path=str(output / 'pools-desktop.png'), animations='disabled')
+                page.goto(url + 'benchmarks/')
+                expect(page.locator('h1')).to_have_text(re.compile(r'^Benchmarks¶?$'))
+                page.get_by_role('button', name='Copy to clipboard').first.click()
+                version = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version']
+                assert 'sandweave[benchmarks]==' + version in page.evaluate('navigator.clipboard.readText()')
+                expect(page.locator('article')).to_contain_text('private')
+                expect(page.locator('article')).to_contain_text('Full VM parity is not claimed')
+                page.screenshot(path=str(output / 'benchmarks-desktop.png'), animations='disabled')
+                page.goto(url + 'benchmarks/#harbor')
+                section = page.locator('#harbor')
+                example = section.locator('xpath=following-sibling::div[2]')
+                example.get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'Benchmark("harbor"' in copied
+                assert 'result.rewards' in copied and 'task.close()' in copied
+                page.screenshot(path=str(output / 'harbor-desktop.png'), animations='disabled')
                 page.goto(url + 'installation/')
                 page.get_by_text('pip', exact=True).click()
                 expect(page.locator('.tabbed-block:visible')).to_contain_text('python -m pip install sandweave')
@@ -150,6 +167,12 @@ def check_browser(site, output, url=None):
                 page.goto(url + 'pools/#reuse-images-across-workers')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'pools-mobile.png'), animations='disabled')
+                page.goto(url + 'benchmarks/')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.screenshot(path=str(output / 'benchmarks-mobile.png'), animations='disabled')
+                page.goto(url + 'benchmarks/#harbor')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.screenshot(path=str(output / 'harbor-mobile.png'), animations='disabled')
                 assert not errors, errors
                 assert not failed, failed
                 context.close()

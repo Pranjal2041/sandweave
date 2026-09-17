@@ -1,8 +1,9 @@
 # Harbor integration: saved design
 
-Recorded 2026-09-11. This is an agreed direction for future work, not a shipped
-integration. The user is taking a detour; do not start implementation merely
-because this note exists. Sandweave 0.2.6 has no Harbor provider or benchmark CLI.
+Recorded 2026-09-11. Implementation was resumed on 2026-09-16 at the user's request.
+The original decisions and investigation below are retained as historical context.
+See [the adapter and acceptance record](harbor-adapter.md) for the implementation
+and current compatibility boundaries.
 
 ## User intent and decisions
 

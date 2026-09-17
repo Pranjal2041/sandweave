@@ -65,7 +65,7 @@ def publish(directory, assets, *, template=None, source_identity=None):
 
 def inputs(source, recipe):
     """The transitive runtime inputs for one workload; no unrelated lab trees."""
-    from .onboarding import _inside, workload
+    from .onboarding import _inside, workload, uses_fast_io
     source = Path(source).resolve()
     registry_path = source / 'sandweave-assets.json'
     original_registry = json.loads(registry_path.read_text()) if registry_path.is_file() else {}
@@ -111,7 +111,7 @@ def inputs(source, recipe):
     for name in ('network', 'erofs', 'helpers'):
         if (source / 'tools' / name).is_dir():
             paths.add('tools/' + name)
-    if 'desktop' in recipe['capabilities']:
+    if uses_fast_io(recipe):
         paths.add('tools/fast-io')
     # These small optional compute inputs also serve a later CUDA template.
     if (source / 'tools/gpu/bin/cuda-checkpoint').is_file():
@@ -182,17 +182,21 @@ def import_runtime(source, directory, recipe):
 
 
 def needs_helpers(root, recipe=None):
+    from .onboarding import uses_fast_io
+    from .network_runtime import available
+    if not available(root):
+        return True
     helpers = Path(root) / 'tools/helpers'
-    if recipe and 'desktop' in recipe['capabilities']:
+    if recipe and uses_fast_io(recipe):
         if not all((helpers / 'usr/include/X11' / name).is_file()
                    for name in ('keysymdef.h', 'XF86keysym.h')):
             return True
-    for name in ('ip', 'passt'):
+    if not (helpers / 'usr/bin/prlimit').is_file():
+        return True
+    for name in ('ip',):
         if workspace.tool(name):
             continue
         if not any((helpers / directory / name).is_file() for directory in ('usr/bin', 'usr/sbin', 'bin', 'sbin')):
-            return True
-        if name == 'passt' and not (helpers / 'usr/bin/prlimit').is_file():
             return True
     return False
 

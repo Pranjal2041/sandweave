@@ -178,7 +178,7 @@ mkdir -p /lab/build-tmp/prepared-helpers /lab/build-tmp/apt/lists/partial /lab/b
 cd /lab/build-tmp/apt
 set -- -o Dir::State::lists=/lab/build-tmp/apt/lists -o Dir::Cache=/lab/build-tmp/apt/cache -o APT::Sandbox::User=root -o Debug::NoLocking=true
 apt-get "$@" update
-apt-get "$@" --download-only --reinstall --no-install-recommends -y install erofs-utils passt iproute2 util-linux x11proto-dev
+apt-get "$@" --download-only --reinstall --no-install-recommends -y install erofs-utils iproute2 util-linux x11proto-dev
 for package in cache/archives/*.deb; do dpkg-deb -x "$package" /lab/build-tmp/prepared-helpers; done
 '''
         self.run(self.container(root, root / 'tools/debian-trixie.sif', 'sh', '-c', script), label='Prepare runtime utilities')
@@ -187,6 +187,8 @@ for package in cache/archives/*.deb; do dpkg-deb -x "$package" /lab/build-tmp/pr
         if (root / 'tools/helpers').exists():
             shutil.rmtree(root / 'tools/helpers')
         (root / 'build-tmp/prepared-helpers').rename(root / 'tools/helpers')
+        from .network_runtime import install
+        install(self, root)
 
     def engine(self, root):
         archive = download('https://codeload.github.com/google/gvisor/tar.gz/' + GVISOR_BASE,
@@ -200,7 +202,7 @@ git apply /lab/engine.patch
 bazel --batch --output_user_root=/lab/build-tmp/bazel build --jobs="$1" \\
   //runsc:runsc //runsc/cmd/sentry:gvisor_sentry \\
   //runsc/checkpointgofer:checkpointgofer_binary //runsc/prewarmer:gvisor-sentry-prewarmer \\
-  //runsc/cmd/metricserver:runsc-metric-server
+  //runsc/cmd/metricserver:runsc-metric-server //runsc/guesttools:sandweave-guest-tools
 mkdir -p /lab/artifacts/gvisor-bin
 cp LICENSE /lab/artifacts/LICENSE
 cp bazel-bin/runsc/runsc_/runsc /lab/artifacts/runsc
@@ -208,6 +210,7 @@ cp bazel-bin/runsc/cmd/sentry/gvisor_sentry_/gvisor_sentry /lab/artifacts/gvisor
 cp bazel-bin/runsc/checkpointgofer/checkpointgofer_binary_/checkpointgofer_binary /lab/artifacts/gvisor-bin/checkpointgofer
 cp bazel-bin/runsc/prewarmer/gvisor-sentry-prewarmer /lab/artifacts/gvisor-bin/gvisor-sentry-prewarmer
 cp bazel-bin/runsc/cmd/metricserver/runsc-metric-server_/runsc-metric-server /lab/artifacts/gvisor-bin/runsc-metric-server
+cp bazel-bin/runsc/guesttools/sandweave-guest-tools /lab/artifacts/gvisor-bin/sandweave-guest-tools
 for name in bench seccomp-trap gs-base-probe; do
   cc -O2 -static "/lab/input/$name.c" -o "/lab/tools/$name" -pthread
 done
@@ -283,6 +286,10 @@ done
                 descriptor = validate_engine(engine)
                 workspace.stage_tree(Path(engine) / descriptor['path'], root / descriptor['path'])
                 workspace.atomic_json(root / 'tools/gvisor-socket/runtime.json', descriptor)
+                if (Path(engine) / 'tools/network').is_dir():
+                    workspace.stage_tree(Path(engine) / 'tools/network', root / 'tools/network')
+        from .network_runtime import install as install_network
+        install_network(self, root, engine=engine, from_source=base is None and engine is None)
         if not (root / 'tools/gpu/bin/cuda-checkpoint').is_file():
             revision = '00d5cce84c628088d6caa203fc4af40c1538b6f7'
             checkpoint = download('https://raw.githubusercontent.com/NVIDIA/cuda-checkpoint/' + revision +
@@ -309,8 +316,8 @@ done
             self.vr_inputs(root, profile)
         mounts = [{'source': str(root / 'input'), 'destination': '/sandweave-input', 'read_only': True}]
         workspace.atomic_json(root / 'mounts.json', mounts)
-        # Socket paths stay short. Large downloads, compiler output and rootfs
-        # exports are all in selected storage, not this node-local directory.
+        # Large downloads, compiler output and rootfs exports stay in selected
+        # storage. Socket addressing also supports deeply nested TMPDIR paths.
         with tempfile.TemporaryDirectory(prefix='sw-build-') as active:
             (root / 'runs/local-path.txt').write_text(active + '\n')
             command = [sys.executable, str(root / 'scripts/run-gvisor.py'), '--guest-gs',

@@ -228,7 +228,7 @@ class ClusterConnection:
             # automatically when its first delivery may already have succeeded.
             self.forget(route['id'])
             raise
-        if operation in ('capture', 'stop'):
+        if operation in ('capture', 'stop', 'image_capture'):
             self.control.call('snapshot_register', identity=route['id'], reference=result['id'],
                               key=params.get('key'), expected=expected)
         if operation in ('terminate', 'stop'):

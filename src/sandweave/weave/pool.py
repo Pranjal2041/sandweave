@@ -16,6 +16,8 @@ from ..sandbox import proxy
 from . import scheduler
 from .lifecycle import lifecycle, rpc
 
+_DEFAULT_TIMEOUT = object()
+
 
 def _poll_wait(deadline, cancelled=None):
     delay = .05 if deadline is None else min(.05, max(0, deadline - time.monotonic()))
@@ -131,9 +133,9 @@ class ManagedPool(LocalPool):
         # Reuse the established cancellation/drain behavior of local pools.
         return await LocalPool._start_async(self)
 
-    def acquire(self, *, timeout=None):
+    def acquire(self, *, timeout=_DEFAULT_TIMEOUT):
         cancelled = threading.Event()
-        return Lease(self._lease(cancelled, self.wait_timeout if timeout is None else timeout), cancelled)
+        return Lease(self._lease(cancelled, self.wait_timeout if timeout is _DEFAULT_TIMEOUT else timeout), cancelled)
 
     @contextmanager
     def _lease(self, cancelled, timeout):
@@ -455,9 +457,17 @@ def _new_member(controller, pool, *, builder=False):
 
 @lifecycle
 def _capture(controller, pool_id, builder_id):
-    from . import providers
-    try:
+    # Reconciliation may have read the old pool just before the previous
+    # capture committed. Recheck after scheduling, before contacting its
+    # already-terminated builder.
+    with controller.state.read():
+        pool = resolve(controller, pool_id)
         record = controller.state.get('allocation', builder_id)
+        if (pool['desired'] != 'running' or pool['state'] == 'failed' or
+                pool.get('baseline') is not None or pool.get('builder') != builder_id or
+                record['desired'] != 'running' or record.get('released')):
+            return
+    try:
         connection = controller.connection(record['endpoint'])
         try:
             saved = yield rpc(connection, 'capture', identity=builder_id, state='filesystem')
@@ -470,6 +480,11 @@ def _capture(controller, pool_id, builder_id):
             connection.close()
         with controller.state.transaction():
             pool = resolve(controller, pool_id)
+            current = controller.state.get('allocation', builder_id)
+            if (pool['desired'] != 'running' or pool['state'] == 'failed' or
+                    pool.get('baseline') is not None or pool.get('builder') != builder_id or
+                    current['generation'] != record['generation']):
+                return
             controller.state.put('pool', {**pool, 'baseline': saved['id'],
                                          'baseline_spec': prepared, 'state': 'ready'})
             controller.allocation_cancel(builder_id)
@@ -478,6 +493,10 @@ def _capture(controller, pool_id, builder_id):
             return
         with controller.state.transaction():
             pool = resolve(controller, pool_id)
+            current = controller.state.get('allocation', builder_id)
+            if (pool['desired'] != 'running' or pool.get('baseline') is not None or
+                    pool.get('builder') != builder_id or current['generation'] != record['generation']):
+                return
             _fail(controller, pool_id, str(error))
             controller.allocation_cancel(builder_id)
 

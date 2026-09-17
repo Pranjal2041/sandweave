@@ -28,6 +28,10 @@ def package(build_result, output, version, repository, notices):
         root = Path(temporary) / 'runtime'
         root.mkdir()
         shutil.copytree(source / descriptor['path'], root / descriptor['path'])
+        from sandweave.network_runtime import available as network_available
+        if not network_available(source):
+            raise ValueError('Build the qualified network helper before packaging')
+        shutil.copytree(source / 'tools/network', root / 'tools/network')
         if not (notices / 'sources.json').is_file():
             raise ValueError('Collect runtime notices before packaging the release')
         shutil.copytree(notices, root / 'licenses')

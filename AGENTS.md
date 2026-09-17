@@ -35,11 +35,11 @@ desktops when testing; use separate disposable environments for new tests.
   available as an explicit option; switch when the user requests Wayland testing.
 - Respect explicit research-only or no-execution instructions. Source and
   documentation findings must not be presented as successful runtime tests.
-- Harbor integration is deferred; preserve the decisions in
+- Preserve the Harbor integration decisions in
   [notes/harbor-integration.md](notes/harbor-integration.md). Use direct Sandweave
   sandboxes, with benchmark-specific settings and any necessary supporting code
-  kept with the benchmark template. Do not restart this work during the user's
-  detour or substitute nested Docker for the planned integration.
+  kept with the benchmark template. Do not substitute nested Docker for direct
+  Sandweave execution.
 
 ## Git hygiene
 
@@ -50,6 +50,8 @@ artifacts deliberately covered by `.gitignore`. Apply this habit on every task.
 - Inspect Git status before editing and again before finishing. Preserve unrelated
   user changes. Stage the files belonging to the task explicitly and review the
   staged diff before committing.
+- Do not ask for permission merely because the checkout is dirty. Track authored
+  project files and ignore local or generated artifacts, including local transcripts.
 - Commit lab scripts, tests, documentation, configurations, patches and source
   probes in this repository. Keep downloaded dependencies, binaries, images,
   snapshots, recovery archives, logs and local credentials ignored. Do not hide

@@ -204,7 +204,7 @@ class Controller:
 
     def _external(self, inventory):
         live = [r for r in inventory['live'] if r.get('cluster') != self.id]
-        return {'memory': sum(r['memory'] for r in live), 'slots': len(live),
+        return {'memory': sum(r['memory'] for r in live), 'slots': sum(r.get('slots', 1) for r in live),
                 'gpu': sum(int(r['gpu']) for r in live),
                 'gpu_uuids': sorted({g for r in live for g in r.get('gpu_uuids', [])})}
 
@@ -490,6 +490,8 @@ class Controller:
             request = record['request']
             if request['spec'].get('recording') and not (yield rpc(connection, 'ping')).get('desktop_recording'):
                 raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker')
+            if request['spec'].get('service_group') and not (yield rpc(connection, 'ping')).get('native_services'):
+                raise UnsupportedFeature('Harbor service groups require an updated Sandweave worker')
             if request['spec'].get('discard_workspace') and not (yield rpc(connection, 'ping')).get('pool_retention'):
                 with self.state.transaction():
                     current = self.state.get('allocation', identity)
@@ -498,22 +500,30 @@ class Controller:
             from ..sandbox.proxy import requires_policy
             if requires_policy(request['spec']['resources']['network']) and not (yield rpc(connection, 'ping')).get('proxy_policy'):
                 raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on every participating worker')
-            if request.get('reference'):
+            references = [request['reference']] if request.get('reference') else []
+            references.extend(service['request']['reference'] for service in request['spec'].get('services', {}).values()
+                              if service['request'].get('reference'))
+            if references:
+                completed_reference = None
                 pool = self.state.get('pool', record['parent'], required=False) if record.get('parent') else None
                 cache = (pool or {}).get('shared_cache')
                 if pool and not pool.get('retain_baseline', True):
                     from ..sandbox.retention import shared_path
                     cache = shared_path(cache, pool['id'])
-                if prepared_image is None:
-                    reference = yield from self.preparation.request.steps(self.preparation, record, connection, route, cache)
-                    if reference is None:
-                        return
-                else:
-                    reference = prepared_image[1].result() or request['reference']
+                if prepared_image is not None:
+                    reference = prepared_image[1].result()
+                    completed_reference = reference
                     if cache is not None:
                         # Publication is complete. Each worker attaches its own
                         # revision record without repeating the image transfer.
                         yield rpc(connection, 'artifact_cached', reference=reference, shared_cache=cache)
+                for reference in dict.fromkeys(references):
+                    if reference == completed_reference:
+                        continue
+                    pending = {**record, 'request': {**request, 'reference': reference}}
+                    ready = yield from self.preparation.request.steps(self.preparation, pending, connection, route, cache)
+                    if ready is None:
+                        return
             initial = connection
             connection = self.connection(route, timeout=request['spec']['startup_timeout'] + 60)
             initial.close()
@@ -681,8 +691,8 @@ class Controller:
             for identity, worker_id, gpu_uuid in placements:
                 record = self.state.get('allocation', identity)
                 if gpu_uuid:
-                    record['spec']['_gpu_uuid'] = gpu_uuid
-                    record['request']['spec']['_gpu_uuid'] = gpu_uuid
+                    scheduler.assign_gpus(record['spec'], gpu_uuid)
+                    scheduler.assign_gpus(record['request']['spec'], gpu_uuid)
                 record.update(worker=worker_id, state='reserved', reason=None)
                 self.state.put('allocation', record, event={'message': 'resources reserved', 'worker': worker_id})
             for identity, reason in reasons.items():
@@ -716,7 +726,8 @@ class Controller:
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
                     'pool_options': ['shared_cache', 'affinity', 'retain_baseline'], 'proxy_policy': 1,
-                    'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1, 'desktop_recording': 1}
+                    'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1, 'desktop_recording': 1,
+                    'native_services': 1}
         if operation == 'events':
             return self.state.events(**parameters)
         if operation == 'backup':

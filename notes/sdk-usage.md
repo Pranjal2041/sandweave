@@ -518,3 +518,13 @@ saved filesystem without pulling tags. Image preparation time is reported as
 `env.timings["image_prepare_seconds"]`, separately from `ready_seconds`.
 `env.info["image"]` reports the reference, selected manifest digest, and platform.
 See the [image guide](../docs/images.md) for registry support and examples.
+
+## Benchmark task leases
+
+`bench.next(timeout=None)` and `next(bench)` return an acquired, prepared task.
+Use `task.env` directly or `with task as env`. `task.evaluate()` is explicit.
+`task.close()`, closing its environment, and leaving the task context release
+one lease; repeated closes are safe. Capacity exhaustion waits for a release,
+while task exhaustion raises `StopIteration`. A timed-out checkout does not
+consume the task. Async clients use `await bench.next.aio()` and receive
+`StopAsyncIteration` at exhaustion. See the [benchmark guide](https://pranjal2041.github.io/sandweave/benchmarks/).

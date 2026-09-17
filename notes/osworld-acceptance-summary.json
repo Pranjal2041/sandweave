@@ -1,0 +1,46 @@
+{
+  "date": "2026-09-14",
+  "provenance": {
+    "sdk_commit": "e4701546178a6af92a42688b51e06f10b4854bc1",
+    "wheel_sha256": "8dc92814d513f477bd9eeba59c3dfb5af4691ae0bfdf9a01655c5103dd8f1339",
+    "runtime_build": "f1e54e1fe0b2efa90c28d0c306e93f7ce9d6e4d91ef984c4bd2347cbd24874ff",
+    "engine_commit": "e5a1fb8e88f86b492b49ebcc426e1aa91f13301d",
+    "source_revision": "681f8dbc695ff3a7e3af2f532bec982725818211",
+    "capacity": 1,
+    "vcpus": 4,
+    "guest_memory": "16GiB",
+    "runtime_memory": "1GiB",
+    "gpu": false,
+    "baseline": "snap-78dc311bf4fb4e7f89af4d1e6190bd80"
+  },
+  "tasks": 50,
+  "initial_attempts": 50,
+  "initial_assertion_or_runtime_failures": 1,
+  "replay_attempts": 4,
+  "replay_assertion_or_runtime_failures": 1,
+  "unresolved_failures": 0,
+  "domains": {
+    "chrome": 5,
+    "gimp": 4,
+    "libreoffice_calc": 10,
+    "libreoffice_impress": 7,
+    "libreoffice_writer": 5,
+    "multi_apps": 7,
+    "os": 1,
+    "thunderbird": 5,
+    "vlc": 3,
+    "vs_code": 3
+  },
+  "gui_completions_zero_to_100": 3,
+  "infeasible_terminal_action_zero_to_100": 1,
+  "verified_screenshots": 58,
+  "runtime_and_cleanup_checks": 54,
+  "files": {
+    "audit": "8b2447caa117015949a48188838a57f314eef4ce55d2bb2de90f2af258b5196f",
+    "replays": [
+      "c46cd163ef9933f1aefe0a1086a002e202bfc1fd94f807b20f85089ce8997c6d",
+      "1b8e79f30be4a18d645bdb9b4b122cc6f678f22b70401026c7520d8fb2395db3"
+    ]
+  },
+  "scope": "Setup, screenshot and canonical evaluation audit; not an agent accuracy score."
+}

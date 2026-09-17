@@ -31,6 +31,7 @@ class Worker:
         self.locks, self.guard, self.controls, self.deadlines = {}, threading.RLock(), {}, {}
         self.stopping = False
         self.pools = {}
+        self.services = None
         from .ownership import Owners
         self.owners = Owners(self.root)
         from .admission import budget
@@ -41,6 +42,9 @@ class Worker:
         self.artifacts = Artifacts(self)
         from ..templates.gnome.recording import Recordings
         self.recordings = Recordings(self)
+        if any(self.read(path.stem).get('service_group') for path in self.records.glob('*.bin')):
+            from .services import Services
+            self.services = Services(self)
         threading.Thread(target=self.expire, name='sandweave-cleanup', daemon=True).start()
 
     def expire(self):
@@ -54,6 +58,8 @@ class Worker:
     def expiry_reason(self, record):
         if record['state'] in ('terminated', 'stopped') or record.get('cleanup_complete'):
             return None
+        if record.get('cleanup_error') and not record['spec'].get('keep_on_error'):
+            return 'cleanup_retry'
         if (record['state'] in ('ready', 'paused') and record.get('expires_at') is not None
                 and time.time() >= record['expires_at']):
             return 'ttl'
@@ -188,7 +194,7 @@ class Worker:
                 return result
         return self._create(spec, identity, operation_id=operation_id, reference=reference, owner=owner, image_seconds=image_seconds)
 
-    def _create(self, spec, identity, *, operation_id=None, reference=None, owner=None, image_seconds=0):
+    def _create(self, spec, identity, *, operation_id=None, reference=None, owner=None, image_seconds=0, service_parent=None):
         started = time.monotonic()
         with self.lock(identity), collect() as timings:
             if self.path(identity).exists():
@@ -212,12 +218,24 @@ class Worker:
             with self.guard:
                 if self.stopping:
                     raise SandboxError('worker is shutting down')
-                record['admission'] = admit(self, spec)
+                if service_parent is None:
+                    record['admission'] = admit(self, spec)
+                else:
+                    record['service_parent'] = service_parent
+                    record['admission'] = {'memory_reserved': 0, 'service_parent': service_parent}
                 self.write(record)
             if spec.get('image'):
                 timings['image_prepare_seconds'] = image_seconds
             timings['admission_seconds'] = time.monotonic() - started
             try:
+                if spec.get('service_group') or spec.get('services'):
+                    with self.guard:
+                        if self.services is None:
+                            from .services import Services
+                            self.services = Services(self)
+                    spec = self.services.prepare(record)
+                    spec['mounts'] = external_mounts.normalize(spec.get('mounts', []))
+                    external_mounts.configure({'mounts': []}, spec['mounts'])
                 self.deadlines[identity] = started + spec['startup_timeout'] - image_seconds
                 self.remaining(identity)
                 with measure('snapshot_seconds'):
@@ -250,6 +268,8 @@ class Worker:
                 with measure('services_seconds'):
                     if cold:
                         self.start_services(identity)
+                    if spec.get('service_group') or spec.get('services'):
+                        self.services.launch(record)
                 with measure('controls_seconds'):
                     self.attach_controls(identity, cold=cold)
                 self.remaining(identity)
@@ -278,12 +298,7 @@ class Worker:
                     record['termination_reason'] = owner_reason
                 if owner_reason or not spec.get('keep_on_error'):
                     try:
-                        if spec.get('recording'):
-                            self.recordings.stop(identity)
-                        self.detach_controls(identity, reason='terminate')
-                        state = self.runtime.status(identity)['status']
-                        if state in ('starting', 'running', 'paused'):
-                            self.runtime.terminate(identity)
+                        self._terminate_runtime(record)
                         record['cleanup_complete'] = True
                         if owner_reason:
                             record['state'] = 'terminated'
@@ -338,7 +353,7 @@ class Worker:
         return self.runtime.agent(identity, record['agent'])
 
     def command_start(self, identity, process_id, command=None, argv=None, cwd=None,
-                      env=None, user=None, timeout=None, shell=None, max_output_bytes=None, pty=False):
+                      env=None, user=None, timeout=None, shell=None, max_output_bytes=None, pty=False, maintenance=False):
         record = self.read(identity)
         spec = record['spec']
         if (command is None) == (argv is None):
@@ -354,7 +369,8 @@ class Worker:
                                          env={**spec.get('env', {}), **record['agent'].get('proxy_env', {}), **(env or {})},
                                          user=user if user is not None else spec['template'].get('user', 'root'), timeout=timeout,
                                          max_output_bytes=max_output_bytes if max_output_bytes is not None else
-                                         spec['template'].get('runtime_options', {}).get('max_output_bytes', 64*1024**2), pty=pty)
+                                         spec['template'].get('runtime_options', {}).get('max_output_bytes', 64*1024**2), pty=pty,
+                                         **({'maintenance': True} if maintenance else {}))
 
     def process_status(self, identity, process_id):
         return self.agent(identity).call('status', identity=process_id)
@@ -365,8 +381,9 @@ class Worker:
     def process_stdin(self, identity, process_id, **params):
         return self.agent(identity).call('stdin', identity=process_id, **params)
 
-    def process_terminate(self, identity, process_id):
-        return self.agent(identity).call('terminate', identity=process_id)
+    def process_terminate(self, identity, process_id, signal_number=None):
+        return self.agent(identity).call('terminate', identity=process_id,
+                                         **({'signal_number': signal_number} if signal_number is not None else {}))
 
     def process_resize(self, identity, process_id, rows, cols):
         return self.agent(identity).call('resize', identity=process_id, rows=rows, cols=cols)
@@ -412,6 +429,9 @@ class Worker:
         if previous and previous['provenance'] != 'captured':
             raise CacheConflict('cache name contains a preparation build: ' + key)
         record = self.read(identity)
+        if record.get('service_group'):
+            raise UnsupportedFeature('Capture individual service images before assembling a service group; '
+                                     'group checkpoints are not supported')
         if state == 'memory' and record['spec']['resources']['gpu']:
             if not experimental_gpu_live or record['spec']['template']['capabilities']:
                 raise UnsupportedFeature('live GPU graphics checkpoints are unsupported; CUDA-only capture requires experimental_gpu_live=True')
@@ -475,18 +495,48 @@ class Worker:
 
     def terminate(self, identity):
         record = self.read(identity)
-        if record['spec'].get('recording'):
-            self.recordings.stop(identity)
-        self.detach_controls(identity, reason='terminate')
-        if self.runtime.status(identity)['status'] in ('running', 'paused', 'starting'):
-            self.runtime.terminate(identity)
-        if record['spec'].get('discard_workspace'):
-            self.runtime.adapter(record['spec']['runtime']).discard(identity)
+        try:
+            self._terminate_runtime(record)
+        except Exception as error:
+            record['cleanup_error'] = str(error)
+            self.write(record)
+            raise
         from .retention import unpin
         unpin(record['spec'].get('_retention_pool'), self.root, identity)
         record['state'] = 'terminated'
+        record['cleanup_complete'] = True
+        record.pop('cleanup_error', None)
         self.write(record)
         return self.describe(identity)
+
+    def _terminate_runtime(self, record):
+        identity, errors = record['id'], []
+        for child in record.get('image_imports', []):
+            if self.path(child).exists():
+                try:
+                    with self.lock(child):
+                        self.terminate(child)
+                except Exception as error:
+                    errors.append(error)
+        if record.get('service_group'):
+            try:
+                self.services.close(record)
+            except Exception as error:
+                errors.append(error)
+        try:
+            if record['spec'].get('recording'):
+                self.recordings.stop(identity)
+            self.detach_controls(identity, reason='terminate')
+            if self.runtime.status(identity)['status'] in ('running', 'paused', 'starting'):
+                self.runtime.terminate(identity)
+            if record['spec'].get('discard_workspace'):
+                self.runtime.adapter(record['spec']['runtime']).discard(identity)
+        except Exception as error:
+            errors.append(error)
+        if errors:
+            raise ExceptionGroup('sandbox cleanup failed', errors)
+        if record.get('service_group'):
+            self.services.discard(record)
 
     def start_services(self, identity):
         from ..templates.controls import Context
@@ -595,6 +645,46 @@ class Worker:
         raise ValueError('unknown pool operation')
 
     def dispatch(self, operation, parameters):
+        if operation == 'service_setup':
+            identity = parameters['identity']
+            with self.lock(identity):
+                return self.agent(identity).call('service_setup', **parameters['settings'])
+        if operation == 'service_volume_import':
+            with self.lock(parameters['identity']):
+                return self.services.import_volume(**parameters)
+        if operation == 'service_rpc':
+            if self.services is None:
+                raise ValueError('worker has no service groups')
+            return self.services.dispatch(**parameters)
+        if operation == 'network_policy':
+            from dataclasses import asdict
+            from .resources import Network
+            network = asdict(Network(**parameters['network']))
+            if network['mode'] == 'proxy':
+                raise UnsupportedFeature('changing proxy endpoints on a running sandbox is unsupported')
+            identity = parameters['identity']
+            with self.lock(identity):
+                record = self.read(identity)
+                if record['spec'].get('_service_internal'):
+                    network = asdict(Network('offline'))
+                if record['spec']['resources']['network']['mode'] == 'proxy':
+                    raise UnsupportedFeature('changing a running proxy sandbox to a different network is unsupported')
+                runtime = self.runtime.for_identity(identity)
+                if not hasattr(runtime, 'network_policy'):
+                    raise UnsupportedFeature('runtime does not support network policy changes')
+                runtime.network_policy(identity, network)
+                record['spec']['resources']['network'] = network
+                self.write(record)
+                return network
+        if operation == 'image_alias':
+            record = self.store.resolve(parameters['reference'])
+            previous = self.store.alias(parameters['key'])
+            self.store.publish(parameters['key'], record, (previous or {}).get('id'))
+            return self.store.public(record)
+        if operation == 'image_capture':
+            from .image_import import capture
+            with self.lock(parameters['identity']):
+                return capture(self, **parameters)
         if operation == 'recording':
             with self.lock(parameters['identity']):
                 return self.recordings.dispatch(**parameters)
@@ -635,7 +725,8 @@ class Worker:
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
                     'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget,
                     'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1, 'pool_retention': 1,
-                    'desktop_recording': 1}
+                    'desktop_recording': 1, 'oci_image_import': 1, 'native_services': 1,
+                    'dynamic_network_policy': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')

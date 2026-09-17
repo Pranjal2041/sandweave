@@ -15,6 +15,7 @@ import uuid
 from ..sandbox.errors import UnsupportedFeature, SetupError
 
 BUILTINS = {'desktop': 'sandweave.templates.gnome.controls:DesktopProvider',
+            'xorg': 'sandweave.templates.osworld.controls:XorgProvider',
             'vr': 'sandweave.templates.vr.controls:VRProvider',
             'gamepad': 'sandweave.templates.gamepad.controls:GamepadProvider'}
 

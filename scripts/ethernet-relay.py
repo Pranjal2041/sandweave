@@ -5,11 +5,40 @@ import socket
 import struct
 import threading
 import json
+import socketserver
 from pathlib import Path
 
 from network_policy import NetworkPolicy
+import _unix_sockets
 
 MAX_FRAME = 9014
+
+
+class PolicyServer(socketserver.UnixStreamServer):
+    """Worker-only control socket; packet forwarding never polls the filesystem."""
+    def __init__(self, path, policy, config):
+        self.policy, self.config = policy, config
+        with _unix_sockets.Address(path) as address:
+            super().__init__(address, PolicyRequest)
+
+
+class PolicyRequest(socketserver.StreamRequestHandler):
+    def handle(self):
+        self.request.settimeout(5)
+        try:
+            raw = self.rfile.readline(65537)
+            if len(raw) > 65536 or not raw.endswith(b'\n'):
+                raise ValueError('invalid network policy request')
+            changes = json.loads(raw)
+            if not isinstance(changes, dict) or set(changes) - {'mode', 'allow_cidrs', 'proxy_endpoints', 'allowed_hosts'}:
+                raise ValueError('invalid network policy fields')
+            config = {**self.server.config, **changes}
+            self.server.policy.update(config)
+            self.server.config = config
+            result = {'ok': True}
+        except Exception as error:
+            result = {'error': str(error)}
+        self.wfile.write(json.dumps(result).encode() + b'\n')
 
 
 def read_exact(sock, count):
@@ -24,7 +53,7 @@ def read_exact(sock, count):
     return bytes(data)
 
 
-def relay(packet, stream, policy=None):
+def relay(packet, stream, policy=None, peer=None):
     errors = []
     finished = threading.Event()
 
@@ -44,6 +73,8 @@ def relay(packet, stream, policy=None):
                     frame = read_exact(stream, length)
                 if not 14 <= len(frame) <= MAX_FRAME:
                     raise ValueError(f'invalid Ethernet frame: {len(frame)}')
+                if direction == 'to-passt' and peer is not None and peer.send(frame):
+                    continue
                 if policy is not None and not policy.allow(frame, direction):
                     continue
                 if direction == 'to-passt':
@@ -77,18 +108,37 @@ def main():
     parser.add_argument('--listen', required=True)
     parser.add_argument('--passt', required=True)
     parser.add_argument('--policy', required=True)
+    parser.add_argument('--service-network')
     args = parser.parse_args()
-    policy = NetworkPolicy(json.loads(Path(args.policy).read_text()))
+    config = json.loads(Path(args.policy).read_text())
+    policy = NetworkPolicy(config)
     os.umask(0o077)
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as listener:
-        listener.bind(args.listen)
+        _unix_sockets.bind(listener, args.listen)
         try:
             listener.listen(1)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
-                stream.connect(args.passt)
+                _unix_sockets.connect(stream, args.passt)
                 packet, _ = listener.accept()
-                with packet:
-                    relay(packet, stream, policy)
+                control = args.listen + '.control'
+                try:
+                    with PolicyServer(control, policy, config) as server:
+                        thread = threading.Thread(target=server.serve_forever, daemon=True)
+                        thread.start()
+                        peer = None
+                        try:
+                            if args.service_network:
+                                from service_network import Peer
+                                peer = Peer(json.loads(Path(args.service_network).read_text()), packet)
+                            with packet:
+                                relay(packet, stream, policy, peer)
+                        finally:
+                            if peer is not None:
+                                peer.close()
+                            server.shutdown()
+                            thread.join()
+                finally:
+                    Path(control).unlink(missing_ok=True)
         finally:
             print(json.dumps(dict(policy.counts), sort_keys=True), flush=True)
             os.unlink(args.listen)

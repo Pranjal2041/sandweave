@@ -9,6 +9,7 @@
 
 # Running environments and large recovery/snapshot artifacts stay outside Git.
 /runs/
+/previous_transcript.txt
 /snapshots/
 /checkpoints/
 /images/*

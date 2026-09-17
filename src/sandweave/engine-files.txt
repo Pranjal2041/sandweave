@@ -1,4 +1,5 @@
 scripts/run-gvisor.py
+scripts/_unix_sockets.py
 scripts/disk_memory.py
 scripts/build_artifacts.py
 scripts/make-gvisor-bundle.py
@@ -8,6 +9,8 @@ scripts/environment_control.py
 scripts/cpu_broker.py
 scripts/ethernet-relay.py
 scripts/network_policy.py
+scripts/network_allowlist.py
+scripts/service_network.py
 scripts/runtime_tools.py
 scripts/runtime_store.py
 scripts/snapshot_store.py
@@ -51,6 +54,9 @@ scripts/sdl-gamepad-proxy.c
 scripts/install-sandbox-base.sh
 scripts/install-sandbox-vr.sh
 notes/gvisor-no-kvm-prototype.patch
+notes/passt-backpressure.patch
+sources/passt-backpressure-test.c
+sources/passt-retransmission-test.c
 notes/monado-vr-lab.patch
 notes/primus-vk-visible-rows.patch
 sources/gs-base-probe.c

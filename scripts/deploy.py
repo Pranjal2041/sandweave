@@ -48,8 +48,9 @@ def preflight(root):
     run('git', 'diff', '--exit-code', '--quiet', 'HEAD', cwd=root)
     project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
     version = project['version']
-    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise ValueError('Use a stable X.Y.Z project.version for this release command')
+    if not re.fullmatch(r'\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?', version):
+        raise ValueError('Use X.Y.Z or a numbered a/b/rc prerelease for project.version')
+    prerelease = re.search(r'(?:a|b|rc)\d+$', version) is not None
     repository = project['urls']['Repository'].removeprefix('https://github.com/').removesuffix('.git')
     origin = run('git', 'remote', 'get-url', '--push', 'origin', cwd=root, capture=True).strip()
     if origin not in (f'https://github.com/{repository}', f'https://github.com/{repository}.git',
@@ -66,7 +67,7 @@ def preflight(root):
     if not notes:
         raise ValueError('Add this version to CHANGELOG.md before releasing')
     return dict(name=project['name'], version=version, repository=repository, commit=commit,
-                branch=branch, tag=tag, notes=notes)
+                branch=branch, tag=tag, notes=notes, prerelease=prerelease)
 
 
 def wheel_contents(path):
@@ -120,7 +121,8 @@ def validate(directory, release):
         raise ValueError('Source distribution does not reproduce the wheel contents')
     python = work / 'venv/bin/python'
     run('uv', 'venv', '--python', sys.executable, python.parents[1], cwd=work, env=env)
-    run('uv', 'pip', 'install', '--python', python, str(wheel) + '[test,vr]', cwd=work, env=env)
+    extras = '[test,vr,harbor]' if sys.version_info >= (3, 12) else '[test,vr]'
+    run('uv', 'pip', 'install', '--python', python, str(wheel) + extras, cwd=work, env=env)
     run(python, '-m', 'pytest', '-q', '-m', 'not integration and not gpu',
         '--confcutdir=' + str(source), cwd=source, env=env)
     run(python, '-c', 'import sandweave; from importlib.metadata import version; '
@@ -131,12 +133,42 @@ def validate(directory, release):
     (live / 'pytest.ini').write_text('[pytest]\nmarkers = integration: installed SDK acceptance\n')
     env.update(SANDWEAVE_HOME=str(work / 'worker'), SANDWEAVE_INTEGRATION='1')
     run(python, '-m', 'pytest', '-q', '-s', '--confcutdir=' + str(live), cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_build_first_use.py', live / 'test_build_first_use.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_build_first_use.py', cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_build_disk_storage.py', live / 'test_build_disk_storage.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_build_disk_storage.py', cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_iptables_state_live.py', live / 'test_iptables_state_live.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_iptables_state_live.py', cwd=live, env=env)
     # Exercise host/guest ownership independently of the default temporary
     # directory's group, using the runtime built by the installed package.
     shutil.copyfile(source / 'tests/integration/test_build_transfer.py', live / 'test_build_transfer.py')
     env['SANDWEAVE_TRANSFER_ASSETS'] = json.loads((work / 'worker/config.json').read_text())['assets']
     run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
         live / 'test_build_transfer.py', cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_network_transfer_live.py', live / 'test_network_transfer_live.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_network_transfer_live.py', cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_mounts.py', live / 'test_mounts.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_mounts.py', cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_fifo_restart_live.py', live / 'test_fifo_restart_live.py')
+    shutil.copyfile(source / 'sources/fifo-signal-test.c', live / 'fifo-signal-test.c')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_fifo_restart_live.py', cwd=live, env=env)
+    if sys.version_info >= (3, 12):
+        for relative in ('tests/test_harbor.py', 'tests/integration/test_harbor_live.py',
+                         'tests/test_harbor_contract.py', 'tests/integration/test_harbor_contract_live.py',
+                         'tests/integration/test_harbor_services_live.py',
+                         'tests/integration/test_weave_live.py'):
+            shutil.copyfile(source / relative, live / Path(relative).name)
+        env['SANDWEAVE_HARBOR_INTEGRATION'] = '1'
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_harbor.py', live / 'test_harbor_live.py',
+            live / 'test_harbor_contract.py', live / 'test_harbor_contract_live.py',
+            live / 'test_harbor_services_live.py', cwd=live, env=env)
     # Copy artifacts only after every check passes. A receipt is never partial.
     for path in files:
         shutil.copyfile(path, directory / path.name)
@@ -201,7 +233,8 @@ def publish(directory, release, files):
     notes.write_text(release['notes'] + '\n')
     if existing is None:
         run('gh', 'release', 'create', tag, *files, '--repo', repo, '--verify-tag', '--draft',
-            '--title', 'Sandweave ' + release['version'], '--notes-file', notes)
+            '--title', 'Sandweave ' + release['version'], '--notes-file', notes,
+            *(['--prerelease'] if release.get('prerelease') else []))
     else:
         present = {a['name'] for a in existing['assets']}
         missing = [p for p in files if p.name not in present]
@@ -217,11 +250,12 @@ def publish(directory, release, files):
         time.sleep(5)
     else:
         raise ValueError('PyPI has not exposed both matching files yet; rerun ./deploy')
-    run('gh', 'release', 'edit', tag, '--repo', repo, '--draft=false', '--latest')
+    run('gh', 'release', 'edit', tag, '--repo', repo, '--draft=false',
+        *(['--prerelease', '--latest=false'] if release.get('prerelease') else ['--prerelease=false', '--latest']))
     published = json.loads(run('gh', 'api', f'repos/{repo}/releases/tags/{tag}', capture=True))
     expected = {p.name: 'sha256:' + digest(p) for p in files}
     actual = {a['name']: a.get('digest') for a in published['assets']}
-    if published['draft'] or actual != expected:
+    if published['draft'] or published['prerelease'] != release.get('prerelease', False) or actual != expected:
         raise ValueError('GitHub release verification failed; rerun ./deploy')
     (directory / 'published.json').write_text(json.dumps({**release, 'files': {p.name: digest(p) for p in files}}, indent=2) + '\n')
     print(f'Published https://pypi.org/project/{release["name"]}/{release["version"]}/', flush=True)

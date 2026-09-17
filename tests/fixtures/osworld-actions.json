@@ -1,0 +1,137 @@
+{
+  "osworld_chrome_af630914-714e-4a24-a7bb-f9af687d3b91": {
+    "actions": [
+      {
+        "keyboard": {
+          "keys": [
+            "ctrl",
+            "l"
+          ]
+        }
+      },
+      {
+        "keyboard": {
+          "text": "chrome://settings/appearance"
+        }
+      },
+      {
+        "keyboard": {
+          "keys": [
+            "enter"
+          ]
+        }
+      },
+      {
+        "mouse": {
+          "left_click": [
+            1214,
+            829
+          ]
+        }
+      },
+      {
+        "mouse": {
+          "left_click": [
+            1161,
+            956
+          ]
+        }
+      }
+    ],
+    "expected_score": 100,
+    "initial_score": 0
+  },
+  "osworld_vs_code_5e2d93d8-8ad0-4435-b150-1692aacaa994": {
+    "actions": [
+      {
+        "keyboard": {
+          "keys": [
+            "ctrl",
+            "shift",
+            "p"
+          ]
+        }
+      },
+      {
+        "keyboard": {
+          "text": "Workspaces: Save Workspace As"
+        }
+      },
+      {
+        "keyboard": {
+          "keys": [
+            "enter"
+          ]
+        }
+      },
+      {
+        "mouse": {
+          "left_click": [
+            1551,
+            163
+          ]
+        }
+      }
+    ],
+    "expected_score": 100,
+    "initial_score": 0
+  },
+  "osworld_os_b6781586-6346-41cd-935a-a6b1487918fc": {
+    "actions": [
+      {
+        "keyboard": {
+          "keys": [
+            "alt",
+            "f2"
+          ]
+        }
+      },
+      {
+        "keyboard": {
+          "text": "gnome-control-center datetime"
+        }
+      },
+      {
+        "keyboard": {
+          "keys": [
+            "enter"
+          ]
+        }
+      },
+      {
+        "action": "wait",
+        "time": 20
+      },
+      {
+        "mouse": {
+          "left_click": [
+            1272,
+            391
+          ]
+        }
+      },
+      {
+        "keyboard": {
+          "text": "Reykjavik"
+        }
+      },
+      {
+        "mouse": {
+          "left_click": [
+            963,
+            373
+          ]
+        }
+      }
+    ],
+    "expected_score": 100,
+    "initial_score": 0
+  },
+  "osworld_gimp_045bf3ff-9077-4b86-b483-a1040a949cff": {
+    "actions": [
+      "FAIL"
+    ],
+    "expected_score": 100,
+    "initial_score": 0
+  }
+}

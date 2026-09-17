@@ -41,7 +41,9 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--detach', action='store_true', help='keep a desktop running independently of the terminal/chat command')
 parser.add_argument('--cpus', default=','.join(map(str, sorted(os.sched_getaffinity(0)))),
                     help='shared eligible CPU pool; defaults to the inherited Slurm allocation')
-parser.add_argument('--network-policy', choices=['internet', 'offline', 'proxy'], default='internet')
+parser.add_argument('--network-policy', choices=['internet', 'offline', 'proxy', 'allowlist'], default='internet')
+parser.add_argument('--allowed-hosts', type=json.loads, default=[])
+parser.add_argument('--service-network', type=Path, help=argparse.SUPPRESS)
 parser.add_argument('--proxy-endpoint', dest='proxy_endpoints', action='append')
 parser.add_argument('--proxy-index', type=int)
 parser.add_argument('--clear-proxy', action='store_true', help=argparse.SUPPRESS)
@@ -64,6 +66,9 @@ parser.add_argument('--base-image', type=Path, help='guest EROFS image below thi
 parser.add_argument('--mounts', type=Path, help='validated external mount JSON; sources are worker paths')
 parser.add_argument('--build-output', type=Path, help='receive installer artifacts into a new host directory')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
+parser.add_argument('--virtual-consoles', action='store_true', help='private headless consoles for guest display managers')
+parser.add_argument('--netlink-address-events', action='store_true', help='guest IPv4/IPv6 address notifications')
+parser.add_argument('--sysctl-reapply', action='store_true', help='use the Linux desktop PID range and reapply enforced sysctl values')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
 runtime_choice = parser.add_mutually_exclusive_group()
 runtime_choice.add_argument('--filesystem-runtime-current', action='store_true', help='explicitly test a cold filesystem snapshot with the currently staged runtime')
@@ -178,6 +183,11 @@ if args.detach:
                                  stdout=output, stderr=subprocess.STDOUT,
                                  start_new_session=True)
     (logs / 'launcher-pid.txt').write_text(str(child.pid) + '\n')
+    identity = cpu_broker.process_table([child.pid]).get(child.pid)
+    if identity is not None:
+        snapshot_store.write_json(logs / 'launcher.json', {
+            'pid': child.pid, 'start': identity['start'], 'hostname': socket.gethostname(),
+            'started_at': time.time()})
     print(f'Starting {args.name}, launcher PID {child.pid}; logs: {logs}; ports: {logs / "ports.json"}', flush=True)
     raise SystemExit(0)
 if args.disk_path:
@@ -216,6 +226,10 @@ else:
 runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore) or args.filesystem_runtime_current)
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
+settings['virtual_consoles'] = args.virtual_consoles
+settings['allowed_hosts'] = args.allowed_hosts
+settings['netlink_address_events'] = args.netlink_address_events
+settings['sysctl_reapply'] = args.sysctl_reapply
 launch_settings = {'settings': settings, 'runtime': runtime}
 if args.network_policy == 'proxy':
     settings.update(proxy_endpoints=args.proxy_endpoints, proxy_index=args.proxy_index)
@@ -326,15 +340,16 @@ policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.
           'dns': '10.0.2.3', 'forwarded_tcp_ports': list(map(int, ports)),
           'host_addresses': [address['local'] for interface in host_interfaces
                              for address in interface['addr_info'] if address['family'] == 'inet'],
-          'allow_cidrs': args.allow_cidr, 'proxy_endpoints': args.proxy_endpoints or []}
+          'allow_cidrs': args.allow_cidr, 'proxy_endpoints': args.proxy_endpoints or [],
+          'allowed_hosts': args.allowed_hosts}
 (bundle / 'network-policy.json').write_text(json.dumps(policy, indent=2) + '\n')
 mark('network_setup_seconds')
 
 
-def spawn(command, logfile):
+def spawn(command, logfile, *, cwd=None):
     output = logfile.open('wb')
     files.append(output)
-    child = subprocess.Popen(command, cwd=lab, stdout=output, stderr=subprocess.STDOUT,
+    child = subprocess.Popen(command, cwd=cwd or lab, stdout=output, stderr=subprocess.STDOUT,
                              start_new_session=True)
     children.append(child)
     record_children()
@@ -417,13 +432,18 @@ try:
         forwards.extend(['-t', f'127.0.0.1/{host_port}:{guest_port}'])
     for reservation in reservations:
         reservation.close()
-    passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', str(passt_socket),
+    # passt drops privileges, so it cannot dereference the launcher's /proc FD.
+    # Its private working directory gives it a short, relative socket address
+    # in both host and Apptainer execution, without changing the parent cwd.
+    passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', passt_socket.name,
                    '-a', '10.0.2.15', '-n', '24', '-g', '10.0.2.2', '-m', '1500',
-                   '--dns-forward', '10.0.2.3', *forwards, memory_limit=True), logs / 'passt.log')
+                   '--dns-forward', '10.0.2.3', *forwards, memory_limit=True, cwd=netdir),
+                  logs / 'passt.log', cwd=netdir)
     wait_socket(passt_socket, passt)
     relay = spawn(runtime_tools.limited([sys.executable, str(lab / 'scripts/ethernet-relay.py'),
                    '--listen', str(ethernet_socket), '--passt', str(passt_socket),
-                   '--policy', str(bundle / 'network-policy.json')]), logs / 'relay.log')
+                   '--policy', str(bundle / 'network-policy.json'),
+                   *(['--service-network', str(args.service_network)] if args.service_network else [])]), logs / 'relay.log')
     wait_socket(ethernet_socket, relay)
     mark('helpers_seconds')
     command = [str(lab / 'scripts/gvisor-host.sh'),
@@ -436,6 +456,12 @@ try:
                f'--debug={str(args.runtime_debug).lower()}', f'--debug-log=/lab/runs/gvisor/{args.name}/%COMMAND%.log']
     if args.nftables:
         command.append('--TESTONLY-nftables')
+    if args.virtual_consoles:
+        command.append('--virtual-consoles=headless')
+    if args.netlink_address_events:
+        command.append('--netlink-address-events=enabled')
+    if args.sysctl_reapply:
+        command.append('--sysctl-reapply=fixed')
     if args.profile:
         command.append('--profile')
     if args.guest_gs:
@@ -448,6 +474,10 @@ try:
             command += mps.flags()
     if mounts:
         command[1:1] = ['--mounts', str(mount_file)]
+        if any(mount.get('_private_volume') for mount in mounts):
+            command += ['--private-volumes=enabled', '--private-volume-devices=enabled']
+        if any(mount.get('_exclusive') for mount in mounts):
+            command.append('--private-volume-cache=enabled')
     if args.disk_path:
         command[1:1] = ['--disk-memory', str(args.disk_memory_inner)]
         command += ['--app-memory-directory=/disk-memory']

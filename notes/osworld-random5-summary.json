@@ -1,0 +1,314 @@
+{
+  "recorded_at": "2026-09-14T16:42:17.020100+00:00",
+  "selection": {
+    "seed": 10159986225375561053,
+    "population": 50,
+    "tasks": [
+      "osworld_libreoffice_impress_a097acff-6266-4291-9fbd-137af7ecd439",
+      "osworld_libreoffice_calc_a9f325aa-8c05-4e4f-8341-9e4358565f4f",
+      "osworld_libreoffice_calc_4de54231-e4b5-49e3-b2ba-61a0bec721c0",
+      "osworld_libreoffice_calc_abed40dc-063f-4598-8ba5-9fe749c0615d",
+      "osworld_gimp_a746add2-cab0-4740-ac36-c3769d9bfb46"
+    ]
+  },
+  "sdk": "0.2.20rc2",
+  "sdk_source_commit": "772b4decb8fe6250c4013626db3826006e3507e0",
+  "engine_commit": "942b66253d03cf260d2ae8a1665dfabb8723b2d2",
+  "runtime_release": "2026.09.14.2",
+  "runtime_build": "4d72f51230861e63b4385c5c1e7a42a06f7003f3887c6861346f29065626fc7c",
+  "reference_commit": "681f8dbc695ff3a7e3af2f532bec982725818211",
+  "baseline": "snap-c32b2f1704254dafbf6ef3588a61d713",
+  "capacity": 1,
+  "raw_evidence": "runs/osworld-acceptance/20260914-random5",
+  "setup_successes": 5,
+  "visually_reviewed_screenshots": 5,
+  "evaluation_calls_completed": 5,
+  "scope": "Setup and initial desktop correctness; untouched-task scores are not agent accuracy.",
+  "tasks": [
+    {
+      "task": "osworld_gimp_a746add2-cab0-4740-ac36-c3769d9bfb46",
+      "sandbox": "sw-f3567acced2542d7bb1c148c64372611",
+      "setup_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "setup_seconds": 5.24,
+      "acquire_and_setup_seconds": 5.249,
+      "application_readiness": [
+        {
+          "expected": {
+            "application": "gimp",
+            "document": "dog_with_background"
+          },
+          "window": {
+            "id": 44041657,
+            "title": "Convert to RGB Working Space?",
+            "application": "gimp Gimp",
+            "normal": false,
+            "visible": true,
+            "dialog": true,
+            "parent": null,
+            "pid": 1171
+          },
+          "seconds": 3.024854982000001
+        }
+      ],
+      "screenshot": "notes/assets/osworld-random5/gimp.png",
+      "visual_review": "Correct dog image named in the original color-profile prompt.",
+      "evaluation": {
+        "task_id": "osworld_gimp_a746add2-cab0-4740-ac36-c3769d9bfb46",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld a746add2-cab0-4740-ac36-c3769d9bfb46 canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "engine_and_resource_flags_verified": true,
+      "cleanup_complete": true,
+      "evidence_sha256": {
+        "initial.png": "f9cc6c5ccd5dd5435d4ad91420259da5e38ae148b2952222892ff53ae64400db",
+        "osworld-build.log": "9f4d7c218810063cab898daf1d1ed090f9dc616a1d07a7495ffa1ab21ac29cd5",
+        "osworld-launch.log": "02a96a0411ea43b1efc9856bf7b8d5111a0042a36deb090f22c8fb955aaf40bf",
+        "sandweave-osworld-readiness.json": "6ee3df11d673f6cf4b842dd99896798a4ac6e88bdcbd211b2be1c017595ec957",
+        "setup-01.json": "fef7c19a7127f1084194fd0adbcdf9bf68701aa207022997cd0551cd9b135ed8",
+        "setup-01.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-01.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.json": "fbf47e78caade8f652ffd0f9b1d78c2b4fbdd34affa18130aa6e1a1b1b3dde6a",
+        "setup-02.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.stdout.log": "77bb0ab32f82515fd0eca896ed827e1cd31e9fe2aee316e5e7f76c24ce97253d",
+        "setup-03.json": "2b8615f9372f44417264aba700709591c4b003896e4e924934e04d52f9705ed6",
+        "setup-03.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-03.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-seconds.json": "8f9ad3b6473d68df3fed6e05702e0dbd5341315c0eb06364c8084ba5a8404738",
+        "task.json": "940460138ddf2a816b4e7028e5e3dd593b8901cee81b8fc6a2f9a1690701fd23"
+      }
+    },
+    {
+      "task": "osworld_libreoffice_calc_abed40dc-063f-4598-8ba5-9fe749c0615d",
+      "sandbox": "sw-3461f6505aed4548a6cf4e4f1710fe84",
+      "setup_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "setup_seconds": 12.46,
+      "acquire_and_setup_seconds": 53.16,
+      "application_readiness": [
+        {
+          "expected": {
+            "application": "libreoffice",
+            "document": "Names_Duplicate_Unique"
+          },
+          "window": {
+            "id": 46137494,
+            "title": "Names_Duplicate_Unique.xlsx - LibreOffice Calc",
+            "application": "libreoffice libreoffice-calc",
+            "normal": true,
+            "visible": true,
+            "dialog": false,
+            "parent": null,
+            "pid": 1200
+          },
+          "seconds": 8.538196604999996
+        }
+      ],
+      "screenshot": "notes/assets/osworld-random5/names.png",
+      "visual_review": "Duplicate names present in the input column; output column unfilled.",
+      "evaluation": {
+        "task_id": "osworld_libreoffice_calc_abed40dc-063f-4598-8ba5-9fe749c0615d",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld abed40dc-063f-4598-8ba5-9fe749c0615d canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "engine_and_resource_flags_verified": true,
+      "cleanup_complete": true,
+      "evidence_sha256": {
+        "initial.png": "22e0ae22571c4a8000dfdfc67c477f8a4658acc96f7edf7a6a1b7e7baa85e969",
+        "osworld-build.log": "9f4d7c218810063cab898daf1d1ed090f9dc616a1d07a7495ffa1ab21ac29cd5",
+        "osworld-launch.log": "5dacd3568f64c55f742e85aabf51b6ec588447027c2a17c137ce8a6618dc33e4",
+        "sandweave-osworld-readiness.json": "745cadaa3087ca74dadbfaa6cec51be31e4f866acab63ecc17bffc4d6fefeaf5",
+        "setup-01.json": "808a4eef592772be735a4e07b9816b1ae191cc9a205eb0357bb418c6079ea692",
+        "setup-01.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-01.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.json": "2fa752ff7bb842c29a6b0e0895ac8e417defd2bbc1b708e6d8c2d87111953158",
+        "setup-02.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.stdout.log": "a867068dd0924b81a6dabdd6632d1e604c9319c9b2490d7f2bc5a8b43e1eeea1",
+        "setup-03.json": "48f0c4a83789150eff51b17702fbefe8ed5617024f484c4726c7c077ab1d5e4a",
+        "setup-03.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-03.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-seconds.json": "0848a4cb25bc95c215f0f32e664d929b5e8d49b8dac9fd612e62c907bcb05555",
+        "task.json": "a29a4e0050248bff78fa860500d1d03b938ed8e757257c942630a06aaa8e734e"
+      }
+    },
+    {
+      "task": "osworld_libreoffice_calc_a9f325aa-8c05-4e4f-8341-9e4358565f4f",
+      "sandbox": "sw-60f54637d6c6492997632769a16d0548",
+      "setup_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "setup_seconds": 13.138,
+      "acquire_and_setup_seconds": 53.305,
+      "application_readiness": [
+        {
+          "expected": {
+            "application": "libreoffice",
+            "document": "Movie_title_garbage_clean"
+          },
+          "window": {
+            "id": 46137494,
+            "title": "Movie_title_garbage_clean.xlsx - LibreOffice Calc",
+            "application": "libreoffice libreoffice-calc",
+            "normal": true,
+            "visible": true,
+            "dialog": false,
+            "parent": null,
+            "pid": 1187
+          },
+          "seconds": 9.059554392999999
+        }
+      ],
+      "screenshot": "notes/assets/osworld-random5/movie-titles.png",
+      "visual_review": "Original irregular spacing and capitalization visible; output column unfilled.",
+      "evaluation": {
+        "task_id": "osworld_libreoffice_calc_a9f325aa-8c05-4e4f-8341-9e4358565f4f",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld a9f325aa-8c05-4e4f-8341-9e4358565f4f canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "engine_and_resource_flags_verified": true,
+      "cleanup_complete": true,
+      "evidence_sha256": {
+        "initial.png": "da74cb3061e575d5c33d34fac782b7374c8730fca2b593e1a715554c6e620b98",
+        "osworld-build.log": "9f4d7c218810063cab898daf1d1ed090f9dc616a1d07a7495ffa1ab21ac29cd5",
+        "osworld-launch.log": "5dacd3568f64c55f742e85aabf51b6ec588447027c2a17c137ce8a6618dc33e4",
+        "sandweave-osworld-readiness.json": "9aba4a7154ac9460245d6095aa424a9d34434503b3141b578bf4c37b09912fff",
+        "setup-01.json": "af43f8f62a539d9312b9a6707f42b539c4ed1b1040a2ecbfbd6f1ba72a256e35",
+        "setup-01.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-01.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.json": "d7a3886acacf6a3febf1305db152a9b4515f1c7884113401c78a8914c0fe2a41",
+        "setup-02.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.stdout.log": "98917cb62845b37ff53f531b5a87bfa9e0e2cbb5c555dc8e2f7bd876636b063b",
+        "setup-03.json": "c34b4051b06549f67715bd2663160173c2f4824c95c4a0c4f51a0054b8128ec4",
+        "setup-03.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-03.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-seconds.json": "7e88b37605eeecbc02e0758c8b2d69b73713d50d99ac5f172b7a05f7c0777562",
+        "task.json": "5470bcb4f2acc329b3cc1eb006965ef326135dcc02a18cfed99591f3ede8ab0c"
+      }
+    },
+    {
+      "task": "osworld_libreoffice_calc_4de54231-e4b5-49e3-b2ba-61a0bec721c0",
+      "sandbox": "sw-910dd3a2de324028ac4a65d75f889d87",
+      "setup_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "setup_seconds": 14.11,
+      "acquire_and_setup_seconds": 54.738,
+      "application_readiness": [
+        {
+          "expected": {
+            "application": "libreoffice",
+            "document": "RampUpAndDown"
+          },
+          "window": {
+            "id": 46137494,
+            "title": "RampUpAndDown.xlsx - LibreOffice Calc",
+            "application": "libreoffice libreoffice-calc",
+            "normal": true,
+            "visible": true,
+            "dialog": false,
+            "parent": null,
+            "pid": 1188
+          },
+          "seconds": 10.095041639999998
+        }
+      ],
+      "screenshot": "notes/assets/osworld-random5/acceleration.png",
+      "visual_review": "Mass values present in columns A/C; only row 2 has acceleration values in B/D.",
+      "evaluation": {
+        "task_id": "osworld_libreoffice_calc_4de54231-e4b5-49e3-b2ba-61a0bec721c0",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld 4de54231-e4b5-49e3-b2ba-61a0bec721c0 canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "engine_and_resource_flags_verified": true,
+      "cleanup_complete": true,
+      "evidence_sha256": {
+        "initial.png": "fe1f6d14be492bd015fe971eddfee2dd5eab8b4ed554b8c7ab5ae5df4a4f277b",
+        "osworld-build.log": "9f4d7c218810063cab898daf1d1ed090f9dc616a1d07a7495ffa1ab21ac29cd5",
+        "osworld-launch.log": "5dacd3568f64c55f742e85aabf51b6ec588447027c2a17c137ce8a6618dc33e4",
+        "sandweave-osworld-readiness.json": "1118db0be69ca88b8daff4c5dfa631fbad33e2252570a6009bfaf24d81348930",
+        "setup-01.json": "843f6cba812e3223cac2031d780720a194e29534d7b7d5ca836579ee68bb338b",
+        "setup-01.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-01.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.json": "d76353931e58b465e42b114b5935ef90fb48de61a180415fe3b5f5a06751a5ad",
+        "setup-02.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.stdout.log": "3c61a68ff05983ca2ac2f18bb145ee5fa265e9d7798e291017e8cd0c3bdc1a91",
+        "setup-03.json": "580fcc9994b654c23c93d6126397a1eae24cd20859efdeb23c0a5dde9b0da302",
+        "setup-03.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-03.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-seconds.json": "20ab7080bdbee563bd600c17a5503f0aa11f9959592dbde0c6612c0518bc7081",
+        "task.json": "194981bf08f97dddfd2459383aae153a38bcf4b4bdf7e7079f94862566d19324"
+      }
+    },
+    {
+      "task": "osworld_libreoffice_impress_a097acff-6266-4291-9fbd-137af7ecd439",
+      "sandbox": "sw-dd1df9174f274fd6b61d68683fb37979",
+      "setup_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "setup_seconds": 13.814,
+      "acquire_and_setup_seconds": 56.878,
+      "application_readiness": [
+        {
+          "expected": {
+            "application": "libreoffice",
+            "document": "Secrets-of-Monetizing-Video"
+          },
+          "window": {
+            "id": 46137494,
+            "title": "Secrets-of-Monetizing-Video.pptx - LibreOffice Impress",
+            "application": "libreoffice libreoffice-impress",
+            "normal": true,
+            "visible": true,
+            "dialog": false,
+            "parent": null,
+            "pid": 1212
+          },
+          "seconds": 9.563569812000004
+        }
+      ],
+      "screenshot": "notes/assets/osworld-random5/slides.png",
+      "visual_review": "Correct presentation open on slide 1 of 17, with the title slide rendered.",
+      "evaluation": {
+        "task_id": "osworld_libreoffice_impress_a097acff-6266-4291-9fbd-137af7ecd439",
+        "score": 0.0,
+        "passed": false,
+        "feedback": "OSWorld a097acff-6266-4291-9fbd-137af7ecd439 canonical reward=0.0 at commit 315a7603173feadf1b8a85cbc006c93ffe1dc1a1"
+      },
+      "engine_and_resource_flags_verified": true,
+      "cleanup_complete": true,
+      "evidence_sha256": {
+        "initial.png": "1dda228d85485767b7143c39a6640f52e74f083906dd9205408d785af98d3f6e",
+        "osworld-build.log": "9f4d7c218810063cab898daf1d1ed090f9dc616a1d07a7495ffa1ab21ac29cd5",
+        "osworld-launch.log": "5dacd3568f64c55f742e85aabf51b6ec588447027c2a17c137ce8a6618dc33e4",
+        "sandweave-osworld-readiness.json": "b8aea4b2e363bc5dde6ad31fb24348ab31f0e11f357c863952d85e7c017ad8db",
+        "setup-01.json": "4843bf4c8521bd5f99d011252894ed5b85a07aedf72ce91c72a2368b76f62371",
+        "setup-01.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-01.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.json": "0df07993d67e99fcf6439e4e0f5163a5241c952955191b58c160515ddb89a0ba",
+        "setup-02.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-02.stdout.log": "6ab13a2da9e34f6a9260bd8fe1afb1b88a8592ad67dc46b6fca7be116b9de626",
+        "setup-03.json": "9f1403ad4a3ab6e805234341d424ddf4d00fad9700d81d11843efd0ad4a68be1",
+        "setup-03.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-03.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "setup-seconds.json": "ab66f14beba53c52e72a3719bcf8cbfab0266daeac4ecd31af7056d1188d895b",
+        "task.json": "cf40ad4a5d71918968bc8bea213e83561995d0f299115bf37b697d874127e5ae"
+      }
+    }
+  ]
+}

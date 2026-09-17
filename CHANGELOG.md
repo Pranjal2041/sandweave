@@ -1,5 +1,143 @@
 # Changelog
 
+## 0.2.20rc7
+
+- Match Harbor's environment precedence at the client command boundary and
+  isolate sidecar execution from the main agent's user, working directory and
+  scoped variables. Minimal sidecars use their POSIX shell.
+- Apply Harbor's resource-policy Compose overlay in the upstream order, honor
+  absent optional dependencies, and retry timed-out service health probes.
+- Pin Compose service image tags through the benchmark's shared resolver so
+  different workers receive the same immutable image revision.
+- Give intermediate separate verifiers independent lease capacity so they can
+  use the agent's image while the agent remains alive. Image preparation stays
+  deduplicated. Slow warm-task cleanup no longer holds the capacity lock.
+- Pass native and ATIF trajectory inputs and multi-step continuation context to
+  the client through `task.env.harbor`.
+- Propagate multi-step verifier failures instead of returning an earlier reward.
+  Honor disabled verification during task discovery and execution; evaluations
+  explicitly report `skipped=True` without inventing a reward.
+- Include contract-based Harbor tests in installed-wheel release acceptance,
+  covering cross-feature interactions and Harbor's own Oracle agent.
+
+## 0.2.20rc6
+
+- Support deeply nested and multibyte storage paths for Unix sockets during
+  first-use installation, networking, service routing, command connections,
+  CPU control and desktop I/O. Socket files remain in their original storage.
+- Launch the network helper from its private socket directory, so a long
+  `TMPDIR` does not prevent runtime setup. No benchmark-specific paths or rules.
+- Exercise long temporary paths during installed-package release acceptance,
+  including automatic setup, Dockerfile builds and cached-image reuse.
+- Store BuildKit layers, build contexts and OCI output on an owned worker
+  volume instead of consuming guest RAM. Remove build storage on completion
+  and failed builds through the existing sandbox cleanup lifecycle.
+- Use overlay snapshots during Dockerfile builds instead of copying the whole
+  filesystem for every layer. Preserve guest device metadata and trusted
+  directory attributes on private volumes without creating host devices.
+- Preserve character and block device numbers when importing EROFS images.
+- Keep unrelated sandbox admission working while an image import is starting.
+- Import completed build archives directly from their owned worker volume,
+  avoiding a full-image copy through the guest network connection.
+- Cache metadata for builder-owned volumes, avoiding repeated host filesystem
+  checks across image layers. Flush output before import; service volumes shared
+  by different sandboxes retain shared access.
+- Keep overlay directory markers consistent between writable build steps and
+  read-only multistage copies, so deleted files cannot reappear in copied trees.
+- Support legacy IPv4 and IPv6 iptables state rules using the existing
+  connection tracker, including first replies and related ICMP errors.
+- Support standard IPv4 and IPv6 firewall rejection modes, including network
+  unreachable and administrative denial, with the corresponding ICMP replies.
+- Recheck pool state before capturing its baseline so a stale reconciliation
+  cannot capture an already-stopped builder or reopen a closing pool.
+
+## 0.2.20rc5
+
+- Resolve Harbor datasets through its native registry and package protocols,
+  including Terminal-Bench 3. Preserve source revisions, task filters, original
+  setup, multi-step verification, artifacts and named rewards.
+- Build original Dockerfiles with isolated BuildKit, including remote and inline
+  contexts, build arguments, stages, additional contexts and secret mounts.
+  Read registry credentials from Docker configuration and credential helpers.
+- Run Compose service groups directly in Sandweave, with service DNS, health
+  checks, dependencies, private shared volumes, guest file ownership, secrets,
+  read-only roots, restart policies and graceful artifact-preserving shutdown.
+- Apply phase-specific public, offline and IPv4 allowlist networking. Expose
+  Harbor MCP definitions, skills paths and agent result context to client loops.
+- Drain cancelled trial cleanup before returning capacity. Keep image build and
+  import reservations, group placement and failed-launch cleanup coordinated.
+- Grant local pool capacity to waiting callers in arrival order, so a later
+  checkout cannot hold the available slot while an earlier caller waits.
+- Honor Harbor CPU quotas and acceptable GPU model lists. Preserve image ENV
+  when restoring with additional environment values.
+- Include the engine support for private service volumes. Upgrade clients,
+  controllers and workers together for the new worker operations.
+- Fix TCP payload corruption and stalled replies after network backpressure.
+  Install a qualified passt helper automatically, including when the host
+  already has passt. Preserve launcher identity across process execution.
+- Allow sandbox cleanup after an external mount source has been removed.
+- Honor SA_RESTART for interrupted blocking opens, preventing intermittent
+  FIFO startup failures in image builds.
+- Prepare the runtime automatically when a Dockerfile build is the first
+  operation in a new installation, including Harbor tasks that need a build.
+
+## 0.2.20rc4
+
+- Add Harbor datasets and local task directories through `Benchmark("harbor",
+  source=...)`. Keep Harbor's task loader, trial lifecycle, verifier scripts,
+  timeouts, artifacts and native reward metrics.
+- Share one capacity and warm-reserve budget across different task images. Pin
+  each image once per benchmark and deduplicate baseline preparation. Keep launch
+  waits separate from file transfers and cleanup.
+- Support explicit multi-step pulls with `task.next_step()`, preserving the guest
+  between steps. `task.evaluate()` returns Harbor metrics in `result.rewards`.
+- Add a Harbor environment provider using direct Sandweave guests, including
+  separate verifier environments and archive-based file transfer. Initial support
+  requires prebuilt public Linux amd64 images; see the documented runtime limits.
+- Preserve the existing OSWorld task and evaluation API.
+
+## 0.2.20rc3
+
+- Add `next(bench)` and `bench.next(timeout=...)` to acquire prepared tasks from
+  a shared cursor. Concurrent callers respect pool capacity; a timed-out checkout
+  leaves the task available. Evaluation remains explicitly controlled by the client.
+- Add `task.env` and idempotent `task.close()`. Closing a benchmark environment
+  releases its task lease too. Benchmark shutdown drains setup and evaluation
+  before releasing task resources.
+- Add cancellable `bench.next.aio()` with bounded acquisition threads, so
+  capacity waiters cannot occupy the executor used by cleanup and unrelated calls.
+- Support timed checkout on local pools and explicit unlimited checkout on
+  cluster pools. Existing iteration, mapping, worker RPCs and engine are unchanged.
+
+## 0.2.20rc2
+
+- Enable Avahi address notifications, console palette access and fixed desktop
+  sysctl support through the OSWorld template. Its original `avahi-daemon`,
+  `setvtrgb` and `systemd-sysctl` units can run without editing their service files
+  or the shared base image.
+- Preserve the console palette, route-netlink subscriptions and desktop PID
+  range across live snapshots. Other templates retain their existing defaults.
+- Keep unsupported sysctl values rejected. The selected desktop PID range is
+  enforced by the guest allocator; host sysctls are unchanged.
+
+## 0.2.20rc1
+
+- Add `Benchmark`, with capacity-bounded task leases, instructions, sync/async
+  agent mapping, and evaluations. Use the existing pool lifecycle for cleanup
+  and independent starting state.
+- Add the OSWorld integration using the pinned `cua-speed-run` desktop recipe,
+  task setup and canonical verifier. Prepare the original Ubuntu disk directly;
+  keep private reference dependencies and verifier code outside the public package
+  and agent sandbox. The representative split requires reference repository access.
+- Wait for task application/document windows after GUI launch commands so agents
+  receive a loaded desktop instead of racing background application startup.
+- Add opt-in headless virtual consoles, user keyrings and FUSE truncate support
+  to the engine so the original GDM and GNOME session can start. Preserve console
+  state across live snapshots and enforce guest console permissions.
+- Share fallback engine builds across workers and reuse disk-image verification
+  receipts across pool/worker staging. Existing desktop and command APIs remain
+  unchanged. Full VM parity is not claimed; see the OSWorld acceptance record.
+
 ## 0.2.19
 
 - Release a pool lease even when its checkout acknowledgement is lost. Retry

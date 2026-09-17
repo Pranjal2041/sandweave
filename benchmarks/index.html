@@ -1395,7 +1395,7 @@
 
 
   
-    <a href="https://github.com/Pranjal2041/sandweave/edit/feat/osworld-benchmarks/docs/benchmarks.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/Pranjal2041/sandweave/edit/main/docs/benchmarks.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1500,6 +1500,11 @@ first failed result. Worker resource admission still applies.</p>
 <code>bench.tasks</code> lists task specifications. <code>bench.results</code> contains the latest
 completed evaluation for each task, in benchmark order.</p>
 <h2 id="harbor">Harbor<a class="headerlink" href="#harbor" title="Permanent link">&para;</a></h2>
+<p>Harbor support is experimental; full Harbor compatibility is not available.
+Shared service namespaces, external volume drivers, image volumes,
+service-derived build contexts and host-device declarations are not implemented.
+The <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-contract-review.md">compatibility review</a>
+records the supported contracts, remaining limits and validation evidence.</p>
 <p>Use a Harbor dataset name or an existing Harbor task directory. The adapter reads
 the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:</p>
@@ -1612,7 +1617,7 @@ Your client loads that trajectory and retains its own model conversation.</p>
 <p>To use Harbor's own agents with the same environment provider:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>harbor<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>terminal-bench@2.0<span class="w"> </span>--env<span class="w"> </span>sandweave.benchmarks.harbor.provider:SandweaveEnvironment
 </code></pre></div>
-<p>The <a href="https://github.com/Pranjal2041/sandweave/blob/feat/osworld-benchmarks/notes/harbor-adapter.md">acceptance record</a>
+<p>The <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-adapter.md">acceptance record</a>
 lists the tasks and lifecycle checks exercised. Existing OSWorld behavior is unchanged.</p>
 <h2 id="osworld-setup">OSWorld setup<a class="headerlink" href="#osworld-setup" title="Permanent link">&para;</a></h2>
 <p>Both <code>"osworld"</code> and <code>"osworld-energy50-representative"</code> use the desktop recipe
@@ -1676,7 +1681,7 @@ mask these units. These settings also survive live snapshots.</p>
 <p>Full VM parity is not claimed. The reference selects Modal's VM runtime;
 Sandweave uses its no-KVM gVisor engine. The tested desktop and verifier paths
 work, but Linux hardware, real-time scheduling and some service behavior differ.
-The <a href="https://github.com/Pranjal2041/sandweave/blob/feat/osworld-benchmarks/notes/osworld-acceptance.md">acceptance record</a>
+The <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/osworld-acceptance.md">acceptance record</a>
 identifies those differences and the tasks exercised.</p>
 <h2 id="add-an-integration">Add an integration<a class="headerlink" href="#add-an-integration" title="Permanent link">&para;</a></h2>
 <p>An integration provides <code>tasks</code>, <code>prepare()</code>, <code>setup(env, task)</code> and

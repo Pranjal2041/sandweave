@@ -316,7 +316,7 @@ class Bridge:
         os.set_blocking(self.process.stdin.fileno(), False)
         self.stream = io.BufferedReader(self.process.stdout)
         try:
-            self._reply()
+            self.capabilities = self._reply()
             self.ready = True
         except BaseException:
             try:
@@ -333,6 +333,8 @@ class Bridge:
     def request(self, op, events):
         if self.broken or self.closed:
             raise RuntimeError('guest I/O channel failed; close it before reconnecting; previous action outcome is unknown')
+        if op == 5 and not self.capabilities.get('timestamped_cursor_capture'):
+            raise ValueError('cursor capture requires rebuilt timestamped fast I/O assets')
         payload = struct.pack('<II', op, len(events)) + b''.join(EVENT.pack(*e) for e in events)
         try:
             view = memoryview(payload)
@@ -461,9 +463,11 @@ class FastIOClient:
                               'observed_frame_age_ns': time.monotonic_ns() - metadata['host_frame_observed_ns']}
         return image
 
-    def screenshot(self, *, fresh=True):
+    def screenshot(self, *, fresh=True, cursor=False):
+        if cursor and not fresh:
+            raise ValueError('cursor capture requires a fresh screenshot')
         for _ in range(5):
-            metadata = self._request('screenshot' if fresh else 'latest')
+            metadata = self._request('screenshot_cursor' if cursor else 'screenshot' if fresh else 'latest')
             image = self._image(metadata)
             if image is not None:
                 return image
@@ -535,7 +539,7 @@ def serve(manager, name):
                                 bridge = None
                             stopped = op == 'stop'
                             reply = {'detached': True}
-                        elif op in ('action', 'screenshot', 'latest', 'step'):
+                        elif op in ('action', 'screenshot', 'screenshot_cursor', 'latest', 'step'):
                             with io_lock(manager, name):
                                 state = manager.status(name)
                                 if state['status'] != 'running':
@@ -545,11 +549,12 @@ def serve(manager, name):
                                     not isinstance(e, list) or len(e) != 4 or any(type(v) is not int for v in e)
                                     for e in events):
                                     raise ValueError('invalid input event batch')
-                                if op in ('screenshot', 'latest') and events:
+                                if op in ('screenshot', 'screenshot_cursor', 'latest') and events:
                                     raise ValueError('capture request contains input')
                                 if bridge is None:
                                     bridge = Bridge(manager, name)
-                                reply = bridge.request({'action': 2, 'screenshot': 1, 'latest': 2, 'step': 3}[op], events)
+                                reply = bridge.request({'action': 2, 'screenshot': 1, 'screenshot_cursor': 5,
+                                                        'latest': 2, 'step': 3}[op], events)
                         else:
                             raise ValueError('unknown operation')
                     except Exception as error:

@@ -45,7 +45,7 @@ case "$profile" in
             fonts-dejavu-core mesa-utils gnome-control-center accountsservice \
             at-spi2-core librsvg2-common adwaita-icon-theme-full ibus colord \
             gnome-backgrounds gjs python3-gi gir1.2-gtk-3.0 \
-            libxcb1-dev libxcb-shm0-dev libxcb-xtest0-dev
+            libxcb1-dev libxcb-shm0-dev libxcb-xtest0-dev libxcb-xfixes0-dev
         if ! id ga >/dev/null 2>&1; then
             useradd -m -u 1000 -s /bin/bash ga
         fi
@@ -68,7 +68,7 @@ case "$profile" in
         systemctl enable tigervncserver@:1.service
         mkdir -p /sandweave-output/fast-io
         cc -std=c11 -O3 -Wall -Wextra -Werror /sandweave-input/xvnc-fast-io.c \
-            -o /sandweave-output/fast-io/bridge -lxcb -lxcb-shm -lxcb-xtest
+            -o /sandweave-output/fast-io/bridge -lxcb -lxcb-shm -lxcb-xtest -lxcb-xfixes
         cp -L /usr/lib/x86_64-linux-gnu/libxcb-xtest.so.0 /sandweave-output/fast-io/
         ;;
 esac

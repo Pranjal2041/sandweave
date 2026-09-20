@@ -3,7 +3,7 @@ set -euo pipefail
 lab=$(cd "$(dirname "$0")/.." && pwd)
 mkdir -p "$lab/tools/fast-io"
 gcc -std=c11 -O3 -Wall -Wextra -Werror "$lab/sources/xvnc-fast-io.c" \
-  -o "$lab/tools/fast-io/bridge.tmp" -lxcb -lxcb-shm -lxcb-xtest
+  -o "$lab/tools/fast-io/bridge.tmp" -lxcb -lxcb-shm -lxcb-xtest -lxcb-xfixes
 mv "$lab/tools/fast-io/bridge.tmp" "$lab/tools/fast-io/bridge"
 # The base desktop has XCB and SHM, but lacks the small XTEST client library.
 cp -L /usr/lib64/libxcb-xtest.so.0 "$lab/tools/fast-io/libxcb-xtest.so.0"

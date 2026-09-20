@@ -20,6 +20,33 @@ For a GPU game example, see [Stunt Rally 3](https://github.com/Pranjal2041/sandw
 It starts the standalone Linux game at 1920×1080, accepts keyboard controls,
 and can record the desktop.
 
+## Timestamped screenshots (local branch)
+
+This extension requires the local SDK, worker code, and rebuilt Xvnc helper.
+It is not part of the official 0.2.16 installation.
+
+```python
+from pathlib import Path
+
+frame = env.desktop.capture_png(cursor=True)
+Path("desktop.png").write_bytes(frame.png)
+captured_at_ns = frame.metadata["capture_completed_wall_ns"]
+```
+
+Each call takes a fresh, full-resolution capture through the persistent
+shared-memory helper. The worker encodes lossless RGB PNG once. There is no
+FFmpeg process, guest screenshot file, separate file download, or client-side
+image encoding. `cursor=False` excludes the cursor explicitly. The existing
+`screenshot()` and `step()` return types and action behavior are unchanged.
+
+`capture_started_wall_ns` and `capture_completed_wall_ns` use the guest's Unix
+clock and bracket screen/cursor acquisition. The corresponding
+`capture_started_ns` and `capture_completed_ns` use the guest's monotonic clock.
+These are capture timestamps, not application-render or client-receipt times.
+`generation`, `frame_sequence`, and `frame_input_sequence` identify the frame;
+`png_encode_ns` measures worker encoding. Encoding happens after the pixels and
+metadata have been copied and does not hold the desktop capture lock.
+
 ## Install an application
 
 ```python

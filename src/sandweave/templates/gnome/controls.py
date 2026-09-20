@@ -1,6 +1,9 @@
 """Desktop controls own display readiness, input semantics and observations."""
 from dataclasses import dataclass
+import struct
+import threading
 import time
+import zlib
 
 from ...sandbox.asyncio import dualmethod
 from ...sandbox.errors import UnsupportedFeature
@@ -11,6 +14,34 @@ from ...sandbox.timings import measure
 class DesktopObservation:
     image: object
     metadata: dict
+
+
+@dataclass(frozen=True)
+class DesktopCapture:
+    png: bytes
+    size: tuple
+    metadata: dict
+
+
+def encode_png(image):
+    """Encode lossless RGB without adaptive filters or client-side re-encoding."""
+    width, height = image.size
+    if image.mode != 'RGB' or width < 1 or height < 1:
+        raise ValueError('capture must contain nonempty RGB pixels')
+    rgb = image.tobytes()
+    stride = width * 3
+    scanlines = bytearray((stride + 1) * height)
+    for row in range(height):
+        start = row * (stride + 1) + 1
+        scanlines[start:start + stride] = rgb[row * stride:(row + 1) * stride]
+    encoder = zlib.compressobj(1, zlib.DEFLATED, 15, 8, zlib.Z_DEFAULT_STRATEGY)
+    compressed = encoder.compress(scanlines) + encoder.flush()
+
+    def chunk(kind, data):
+        return struct.pack('!I', len(data)) + kind + data + struct.pack('!I', zlib.crc32(kind + data))
+
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('!IIBBBBB', width, height, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', compressed) + chunk(b'IEND', b''))
 
 
 def vnc_password(sandbox):
@@ -116,6 +147,16 @@ class Desktop:
         return decode_image(self._call('screenshot', fresh=fresh))
 
     @dualmethod
+    def capture_png(self, *, cursor=True):
+        """Return a fresh lossless PNG and its guest capture timestamps in one call.
+
+        No application repaint fence is implied. The wall-clock interval brackets
+        the X server capture, including cursor acquisition when requested.
+        """
+        value = self._call('capture_png', cursor=cursor)
+        return DesktopCapture(value['png'], tuple(value['size']), value['metadata'])
+
+    @dualmethod
     def action(self, action):
         return self._call('action', action=action)
 
@@ -131,6 +172,7 @@ class AttachedDesktop:
         if backend != 'xvnc':
             raise UnsupportedFeature('desktop fast I/O currently supports xvnc; Wayland is an explicit lab option')
         self.client = context.runtime.manager.fast_io(context.id, backend=backend)
+        self.capture_lock = threading.Lock()
         deadline = time.monotonic() + context.remaining(config.get('ready_timeout', 120))
         try:
             with measure('desktop_display_seconds'):
@@ -230,13 +272,29 @@ class AttachedDesktop:
     def call(self, method, parameters):
         if method == 'action':
             return self.client.action(**parameters)
-        if method == 'screenshot':
-            image = self.client.screenshot(**parameters)
-            metadata = self.client.last_metadata
-        elif method == 'step':
-            image, metadata = self.client.step(**parameters)
-        else:
-            raise UnsupportedFeature('unknown desktop operation: ' + method)
+        # Pair pixels and metadata under one lock; encoding does not hold this
+        # lock and input-only requests never acquire it.
+        with self.capture_lock:
+            if method in ('screenshot', 'capture_png'):
+                if method == 'capture_png':
+                    if set(parameters) - {'cursor'}:
+                        raise ValueError('capture_png only accepts cursor')
+                    parameters = {'cursor': True, **parameters}
+                    if type(parameters['cursor']) is not bool:
+                        raise ValueError('cursor must be a boolean')
+                image = self.client.screenshot(**parameters)
+                metadata = dict(self.client.last_metadata)
+            elif method == 'step':
+                image, metadata = self.client.step(**parameters)
+            else:
+                raise UnsupportedFeature('unknown desktop operation: ' + method)
+        if method == 'capture_png':
+            if not metadata.get('capture_completed_wall_ns'):
+                raise UnsupportedFeature('capture_png requires the timestamped fast I/O helper; rebuild the desktop assets')
+            started = time.perf_counter_ns()
+            png = encode_png(image)
+            return {'size': list(image.size), 'png': png,
+                    'metadata': {**metadata, 'png_encode_ns': time.perf_counter_ns() - started}}
         return {'size': list(image.size), 'rgb': image.tobytes(), 'metadata': metadata}
 
     def detach(self, reason):

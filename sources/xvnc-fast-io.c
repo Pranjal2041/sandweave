@@ -5,6 +5,7 @@
 #include <xcb/xcb.h>
 #include <xcb/shm.h>
 #include <xcb/xtest.h>
+#include <xcb/xfixes.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -24,7 +25,9 @@ struct frame {
     _Atomic uint64_t sequence;
     uint32_t width, height, stride, reserved;
     uint64_t started_ns, completed_ns, input_sequence;
+    uint64_t started_wall_ns, completed_wall_ns;
 };
+_Static_assert(sizeof(struct frame) <= PIXEL_OFFSET, "frame header overlaps pixels");
 static xcb_connection_t *c;
 static xcb_screen_t *screen;
 static xcb_shm_seg_t segment;
@@ -51,6 +54,10 @@ static xcb_atom_t atom(const char *name) {
 
 static uint64_t now(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000000 + t.tv_nsec;
+}
+static uint64_t wall_now(void) {
+    struct timespec t; clock_gettime(CLOCK_REALTIME, &t);
     return (uint64_t)t.tv_sec * 1000000000 + t.tv_nsec;
 }
 static void fatal(const char *message) {
@@ -145,18 +152,50 @@ static const char *drain_clients(void) {
         }
     }
 }
-static void capture(void) {
+static void capture(int cursor) {
     uint64_t started = now();
+    uint64_t started_wall = wall_now();
     xcb_get_geometry_reply_t *g = geometry();
     atomic_fetch_add_explicit(&frame->sequence, 1, memory_order_seq_cst);
     xcb_generic_error_t *error = NULL;
-    xcb_shm_get_image_reply_t *r = xcb_shm_get_image_reply(c,
-        xcb_shm_get_image(c, screen->root, 0, 0, g->width, g->height, UINT32_MAX,
-                          XCB_IMAGE_FORMAT_Z_PIXMAP, segment, PIXEL_OFFSET), &error);
+    xcb_shm_get_image_cookie_t image_cookie = xcb_shm_get_image(c, screen->root,
+        0, 0, g->width, g->height, UINT32_MAX, XCB_IMAGE_FORMAT_Z_PIXMAP, segment, PIXEL_OFFSET);
+    xcb_xfixes_get_cursor_image_cookie_t cursor_cookie = {0};
+    if (cursor) cursor_cookie = xcb_xfixes_get_cursor_image(c);
+    xcb_shm_get_image_reply_t *r = xcb_shm_get_image_reply(c, image_cookie, &error);
     if (!r || error || r->size != (uint32_t)g->width * g->height * 4)
         fatal("shared-memory capture failed (possibly a concurrent resize); reconnect");
+    if (cursor) {
+        xcb_xfixes_get_cursor_image_reply_t *pointer = xcb_xfixes_get_cursor_image_reply(c, cursor_cookie, NULL);
+        if (!pointer) fatal("cannot capture cursor");
+        uint32_t *pixels = (uint32_t *)((char *)frame + PIXEL_OFFSET);
+        uint32_t *shape = xcb_xfixes_get_cursor_image_cursor_image(pointer);
+        for (unsigned y = 0; y < pointer->height; ++y) {
+            int dy = pointer->y - pointer->yhot + (int)y;
+            if (dy < 0 || dy >= g->height) continue;
+            for (unsigned x = 0; x < pointer->width; ++x) {
+                int dx = pointer->x - pointer->xhot + (int)x;
+                if (dx < 0 || dx >= g->width) continue;
+                uint32_t src = shape[y * pointer->width + x];
+                unsigned alpha = src >> 24;
+                if (!alpha) continue;
+                uint32_t *dst = &pixels[(unsigned)dy * g->width + (unsigned)dx];
+                uint32_t blended = 0;
+                /* XFixes cursor pixels are premultiplied ARGB. */
+                for (unsigned shift = 0; shift < 24; shift += 8) {
+                    unsigned channel = ((src >> shift) & 255) +
+                        (((( *dst >> shift) & 255) * (255 - alpha) + 127) / 255);
+                    blended |= (channel > 255 ? 255 : channel) << shift;
+                }
+                *dst = blended;
+            }
+        }
+        free(pointer);
+    }
     frame->width = g->width; frame->height = g->height; frame->stride = g->width * 4;
+    frame->reserved = cursor;
     frame->started_ns = started; frame->completed_ns = now();
+    frame->started_wall_ns = started_wall; frame->completed_wall_ns = wall_now();
     frame->input_sequence = input_sequence;
     atomic_fetch_add_explicit(&frame->sequence, 1, memory_order_seq_cst);
     free(r); free(g);
@@ -261,8 +300,12 @@ int main(void) {
     wm_state = atom("WM_STATE"); ping_token = xcb_generate_id(c);
     uint32_t mask = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
     check(xcb_change_window_attributes_checked(c, screen->root, XCB_CW_EVENT_MASK, &mask));
-    capture();
-    printf("{\"ready\":true,\"version\":1,\"backend\":\"xvnc\"}\n");
+    xcb_xfixes_query_version_reply_t *fixes = xcb_xfixes_query_version_reply(c,
+        xcb_xfixes_query_version(c, 4, 0), NULL);
+    if (!fixes) fatal("XFixes required for cursor capture");
+    free(fixes);
+    capture(0);
+    printf("{\"ready\":true,\"version\":1,\"backend\":\"xvnc\",\"timestamped_cursor_capture\":true}\n");
     struct event events[MAX_EVENTS];
     uint8_t codes[MAX_EVENTS];
     xcb_void_cookie_t cookies[MAX_EVENTS];
@@ -271,7 +314,7 @@ int main(void) {
         if (!read_all(header, sizeof(header))) break;
         unsigned op = header[0], count = header[1];
         if (op == 0 && count == 0) break;
-        if (op > 4 || count > MAX_EVENTS || ((op == 1 || op == 4) && count)) fatal("invalid request");
+        if (op > 5 || count > MAX_EVENTS || ((op == 1 || op == 4 || op == 5) && count)) fatal("invalid request");
         if (count && !read_all(events, count * sizeof(events[0]))) fatal("missing events");
         uint64_t started = now(), action_ns = 0;
         if (op == 4) {
@@ -356,11 +399,13 @@ int main(void) {
             for (unsigned i = 0; i < count; ++i) check(cookies[i]);
             input_sequence++; action_ns = now() - started;
         }
-        if (op == 1 || op == 3) capture();
+        if (op == 1 || op == 3 || op == 5) capture(op == 5);
         printf("{\"input_sequence\":%lu,\"action_ns\":%lu,\"frame_sequence\":%lu,"
-               "\"capture_started_ns\":%lu,\"capture_completed_ns\":%lu,\"width\":%u,\"height\":%u}\n",
+               "\"capture_started_ns\":%lu,\"capture_completed_ns\":%lu,\"width\":%u,\"height\":%u,"
+               "\"capture_started_wall_ns\":%lu,\"capture_completed_wall_ns\":%lu,\"cursor\":%s}\n",
                input_sequence, action_ns, atomic_load(&frame->sequence), frame->started_ns,
-               frame->completed_ns, frame->width, frame->height);
+               frame->completed_ns, frame->width, frame->height,
+               frame->started_wall_ns, frame->completed_wall_ns, frame->reserved ? "true" : "false");
     }
     cleanup(); munmap(frame, capacity); free(original_map); return 0;
 }

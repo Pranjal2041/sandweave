@@ -214,6 +214,11 @@ env.desktop.mouse.click(400, 300)
 env.desktop.keyboard.type("hello")
 ```
 
+The local timestamped-capture branch also provides `env.desktop.capture_png()`.
+It returns a lossless `.png`, `.size`, and `.metadata` in one request, with the
+cursor included by default. Write the bytes directly instead of re-encoding
+them on the client. See [timestamped screenshots](docs/desktop.md#timestamped-screenshots-local-branch).
+
 Keyboard input goes to the focused window; mouse clicks use desktop coordinates.
 For an agent loop, `env.desktop.step(action)` applies a mouse/keyboard action and returns an
 observation with `.image` and timing metadata. It captures after the input server

@@ -14,6 +14,24 @@ from fast_io import Bridge, FastIOClient, events_for_action, io_lock, HEADER, FR
 
 
 class FastIOTests(unittest.TestCase):
+    def test_cursor_capture_does_not_send_unknown_opcode_to_old_helper(self):
+        bridge = Bridge.__new__(Bridge)
+        bridge.closed = bridge.broken = False
+        bridge.capabilities = {'version': 1}
+        with mock.patch('fast_io.os.write') as write:
+            with self.assertRaisesRegex(ValueError, 'rebuilt'):
+                bridge.request(5, [])
+            write.assert_not_called()
+        self.assertFalse(bridge.broken)
+
+    def test_cursor_capture_retries_observation_only_and_keeps_cursor(self):
+        with mock.patch.object(self.client, '_request', return_value={}) as request, \
+             mock.patch.object(self.client, '_image', side_effect=[None, 'image']):
+            self.assertEqual(self.client.screenshot(cursor=True), 'image')
+        self.assertEqual(request.call_args_list, [mock.call('screenshot_cursor')] * 2)
+        with self.assertRaises(ValueError):
+            self.client.screenshot(cursor=True, fresh=False)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

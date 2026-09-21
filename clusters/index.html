@@ -1437,10 +1437,11 @@ connections to every other worker.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
 </code></pre></div>
 <p>Startup prints the <strong>HTTP address, SSH address, dashboard URL, and complete join
-commands</strong>. HTTP and SSH are available together. New controllers choose an
-available port automatically.</p>
+commands</strong>. The default listener is <code>127.0.0.1</code>, with an automatically chosen
+port. HTTP and the dashboard are local to the controller machine; remote machines
+can connect through SSH.</p>
 <h2 id="2-join-another-machine">2. Join another machine<a class="headerlink" href="#2-join-another-machine" title="Permanent link">&para;</a></h2>
-<p>Install Sandweave on the worker, then copy either complete join command from the
+<p>Install Sandweave on the worker, then copy the complete SSH join command from the
 controller's output. The command already contains the connection details.</p>
 <p>No resource flags are required. Without limits, the worker contributes its
 eligible CPUs, GPUs, and available resource budget. To contribute less, append
@@ -1458,7 +1459,8 @@ controller's dashboard.</p>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python -c 'print(2 + 2)'"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
-<p>From another machine, paste the <strong>printed HTTP or SSH address</strong> as the target:</p>
+<p>From another machine, paste the <strong>printed SSH address</strong> as the target. A printed
+HTTP or HTTPS address also works when you configured an external listener:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">cluster_address</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="s2">"Paste the cluster address: "</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
@@ -1499,27 +1501,31 @@ machine and keep it running while viewing the dashboard.</p>
 </tr>
 </tbody>
 </table>
-<p>To configure HTTPS on a new controller, supply its certificate and key:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--tls-cert<span class="w"> </span>/path/to/server.crt<span class="w"> </span>--tls-key<span class="w"> </span>/path/to/server.key
+<p>To accept direct remote HTTP connections, choose a listener explicitly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--listen<span class="w"> </span><span class="m">0</span>.0.0.0:8765
+</code></pre></div>
+<p>For HTTPS, also supply its certificate and key:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--listen<span class="w"> </span><span class="m">0</span>.0.0.0:8765<span class="w"> </span>--tls-cert<span class="w"> </span>/path/to/server.crt<span class="w"> </span>--tls-key<span class="w"> </span>/path/to/server.key
 </code></pre></div>
 <p>Startup then prints HTTPS and SSH addresses. For a private certificate authority,
 use <code>--ca-file</code> when joining, or <code>ca_file</code> with <code>Cluster.connect(...)</code>.</p>
 <p>Advanced deployments can set <code>--listen HOST:PORT</code> or
 <code>--advertise https://cluster.example.org</code>. Advertising an address records an
 existing route; it does not create DNS, a reverse proxy, or a tunnel.
-Use <code>--listen 127.0.0.1:0</code> only when you intend to restrict direct access to that
-machine. Such URLs are labelled local.</p>
+Without an explicit listener, adding TLS certificates or a credential file still
+uses <code>127.0.0.1</code>. Local URLs are labelled accordingly. Existing explicit listener
+settings are retained on restart; stop the controller before changing them.</p>
 <h2 id="inspect-and-drain-workers">Inspect and drain workers<a class="headerlink" href="#inspect-and-drain-workers" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cluster</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">with</span> <span class="n">Cluster</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">cluster</span><span class="p">:</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">cluster</span><span class="o">.</span><span class="n">workers</span><span class="p">)</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">cluster</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cluster</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">with</span> <span class="n">Cluster</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">cluster</span><span class="p">:</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">cluster</span><span class="o">.</span><span class="n">workers</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">cluster</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
 </code></pre></div>
 <p>To stop assigning new work to one worker:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">with</span> <span class="n">Cluster</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">cluster</span><span class="p">:</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">worker_id</span> <span class="o">=</span> <span class="n">cluster</span><span class="o">.</span><span class="n">workers</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">"id"</span><span class="p">]</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">cluster</span><span class="o">.</span><span class="n">drain</span><span class="p">(</span><span class="n">worker_id</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">with</span> <span class="n">Cluster</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"lab"</span><span class="p">)</span> <span class="k">as</span> <span class="n">cluster</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">worker_id</span> <span class="o">=</span> <span class="n">cluster</span><span class="o">.</span><span class="n">workers</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">"id"</span><span class="p">]</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">cluster</span><span class="o">.</span><span class="n">drain</span><span class="p">(</span><span class="n">worker_id</span><span class="p">)</span>
 </code></pre></div>
 <p>Active leases finish normally. <code>cluster.resume(worker_id)</code> allows new placement.
 <code>cluster.remove_worker(worker_id)</code> unregisters a drained worker after reservations
@@ -1527,7 +1533,7 @@ are released; it does not cancel the machine's allocation.</p>
 <p>If a worker is unreachable, its reservations remain charged. A lost connection
 does not establish that its sandboxes stopped. Once you have independently
 confirmed that its allocation ended, release those records with:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">cluster</span><span class="o">.</span><span class="n">remove_worker</span><span class="p">(</span><span class="n">worker_id</span><span class="p">,</span> <span class="n">lost</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">cluster</span><span class="o">.</span><span class="n">remove_worker</span><span class="p">(</span><span class="n">worker_id</span><span class="p">,</span> <span class="n">lost</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p>The CLI equivalent is <code>sandweave cluster remove lab WORKER_ID --lost</code>. This does
 not kill remote processes. The removed worker workspace cannot rejoin that
@@ -1543,8 +1549,8 @@ controller thread. Pool lease and status polling also proceeds independently of
 state writes. These changes apply to HTTP, HTTPS and SSH connections, including
 workers connected through outbound relay. Upgrade and restart the controller to
 apply them; existing pool and sandbox arguments stay the same.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>stop<span class="w"> </span>lab
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>stop<span class="w"> </span>lab
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>sandweave<span class="w"> </span>cluster<span class="w"> </span>start<span class="w"> </span>lab<span class="w"> </span>--no-worker
 </code></pre></div>
 <p>Stopping the controller retains its state directory. Restarting resumes
 coordination; worker sandboxes retain their lifetime rules. Long outages can

@@ -351,7 +351,7 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20'
+uv pip install 'sandweave[benchmarks]==0.2.21'
 ```
 
 ```python
@@ -397,7 +397,7 @@ Shared service namespaces, external volume drivers and some other Compose
 features are not implemented. See the [compatibility review](https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-contract-review.md)
 for the current limits and validation evidence.
 
-Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.20` with
+Harbor benchmarks use the same task-pull API. Install `sandweave[harbor]==0.2.21` with
 Python 3.12+, then select a dataset or a local task directory:
 
 ```python
@@ -426,11 +426,11 @@ Start a controller with a local worker:
 sandweave cluster start lab
 ```
 
-Startup prints a dashboard URL, HTTP and SSH addresses, and complete worker join
-commands. Open the dashboard link in your browser or copy either join command
-onto another machine. Both connection methods are available immediately;
-no transport selection or saved connection is needed. Use `--no-worker` to run
-only the controller.
+Startup prints a dashboard URL, HTTP and SSH addresses, and a complete worker join
+command. The default listener is `127.0.0.1`: HTTP and the dashboard are local to
+the controller machine. Copy the SSH join command onto another machine, or start
+with `--listen 0.0.0.0:8765` to enable direct remote HTTP as well. Use `--no-worker`
+to run only the controller.
 
 Links include authentication, so keep them private. HTTP requires a network route
 to the printed host and port; SSH uses your existing SSH login. HTTP is

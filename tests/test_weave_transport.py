@@ -259,6 +259,7 @@ def test_printed_join_commands_authenticate_without_a_saved_target(tmp_path, mon
     monkeypatch.delenv('SANDWEAVE_TOKEN', raising=False)
     monkeypatch.delenv('SANDWEAVE_TOKEN_FILE', raising=False)
     assert main(['cluster', 'start', 'demo', '--no-worker',
+                 '--listen', '0.0.0.0:0',
                  '--directory', str(master / 'state with spaces')]) == 0
     output = capsys.readouterr().out
     commands = [shlex.split(line.strip()) for line in output.splitlines()
@@ -268,8 +269,8 @@ def test_printed_join_commands_authenticate_without_a_saved_target(tmp_path, mon
         try:
             expected = owner.info['id']
             url = owner.info['connection']['address']
-            # The default actually accepts non-loopback connections, without
-            # --transport or --listen and without a preconfigured client.
+            # An explicit wildcard listener still accepts remote HTTP, without
+            # a preconfigured client.
             addresses = socket.getaddrinfo(urlsplit(url).hostname, urlsplit(url).port,
                                            socket.AF_INET, socket.SOCK_STREAM)
             host = next(item[4][0] for item in addresses if not ipaddress.ip_address(item[4][0]).is_loopback)
@@ -315,6 +316,7 @@ def test_default_controllers_choose_distinct_ports_and_keep_them_on_restart(tmp_
             with Cluster.start('second', local_worker=False) as second:
                 try:
                     original = first.info['connection']['address']
+                    assert original.startswith('http://127.0.0.1:')
                     assert original != second.info['connection']['address']
                     first.stop()
                     info = json.loads((tmp_path / 'clusters/first/controller.json').read_text())
@@ -336,10 +338,11 @@ def test_default_controllers_choose_distinct_ports_and_keep_them_on_restart(tmp_
                 pass
 
 
-def test_explicit_loopback_prints_its_url_without_claiming_remote_http(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('listen', [None, '127.0.0.1:0'])
+def test_loopback_prints_its_url_without_claiming_remote_http(tmp_path, monkeypatch, capsys, listen):
     from sandweave.weave.cli import instructions
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
-    with Cluster.start('private', local_worker=False, listen='127.0.0.1:0') as cluster:
+    with Cluster.start('private', local_worker=False, listen=listen) as cluster:
         try:
             instructions(cluster)
             output = capsys.readouterr().out
@@ -352,19 +355,25 @@ def test_explicit_loopback_prints_its_url_without_claiming_remote_http(tmp_path,
             cluster.stop()
 
 
-def test_certificates_enable_printed_https_and_ssh_without_transport_flags(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('listen', [None, '0.0.0.0:0'])
+def test_certificates_enable_printed_https_and_ssh_without_transport_flags(tmp_path, monkeypatch, capsys, listen):
     from sandweave.cli import main
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path))
     cert, key = tmp_path / 'cert.pem', tmp_path / 'key.pem'
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
-        '-subj', '/CN=' + socket.gethostname(), '-addext', 'subjectAltName=DNS:' + socket.gethostname(),
+        '-subj', '/CN=' + socket.gethostname(), '-addext', 'subjectAltName=IP:127.0.0.1,DNS:' + socket.gethostname(),
         '-keyout', str(key), '-out', str(cert)], check=True, capture_output=True)
-    assert main(['cluster', 'start', 'secure', '--no-worker', '--tls-cert', str(cert), '--tls-key', str(key)]) == 0
+    assert main(['cluster', 'start', 'secure', '--no-worker', '--tls-cert', str(cert), '--tls-key', str(key),
+                 *(['--listen', listen] if listen else [])]) == 0
     output = capsys.readouterr().out
     with Cluster.connect('secure') as cluster:
         try:
-            link = next(line.removeprefix('HTTPS: ') for line in output.splitlines() if line.startswith('HTTPS: '))
-            assert 'Dashboard: https://' in output
+            scope = ' (this machine only)' if listen is None else ''
+            prefix = 'HTTPS' + scope + ': '
+            link = next(line.removeprefix(prefix) for line in output.splitlines() if line.startswith(prefix))
+            assert 'Dashboard' + scope + ': https://' in output
+            if listen is None:
+                assert link.startswith('https://127.0.0.1:')
             assert 'SSH: ssh://' in output
             assert 'HTTP: ' not in output
             with Cluster.connect(link, ca_file=cert) as peer:

@@ -133,7 +133,7 @@ async def serve_async(directory):
                            handler_cancellation=True, shutdown_timeout=5)
     try:
         await runner.setup()
-        hostname = settings.get('host', '0.0.0.0')
+        hostname = settings.get('host', '127.0.0.1')
         context = None
         if settings.get('tls_cert'):
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

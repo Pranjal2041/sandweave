@@ -16,7 +16,7 @@ Cluster pools also accept `retain_baseline=False` with 0.2.13 or newer peers.
 The [retention guide](../docs/pools.md#release-pool-files) describes which files
 are reclaimed, reference protection, and retryable cleanup after closure.
 
-These connection examples use Sandweave 0.2.3 or newer. Upgrade an existing installation
+These connection examples use Sandweave 0.2.21 or newer. Upgrade an existing installation
 with `uv pip install --upgrade sandweave` before trying these examples.
 
 ## Start a cluster
@@ -50,14 +50,15 @@ in cluster status.
 
 ## Add workers
 
-The default controller accepts both HTTP and SSH connections. To start a
+The default controller accepts local HTTP and remote SSH connections. To start a
 controller without adding the current machine as a worker:
 
 ```bash
 sandweave cluster start lab --no-worker
 ```
 
-Copy either printed join command onto the worker. The HTTP link includes a `#token=...`
+Copy the printed SSH join command onto a remote worker. With an explicit external
+listener, the printed HTTP join command also works. The HTTP link includes a `#token=...`
 fragment which Sandweave extracts for authentication; it is never sent in the
 HTTP request URL. The link grants access to the cluster, so share it privately.
 HTTP is unencrypted. SSH or HTTPS can protect traffic across other networks.
@@ -75,8 +76,9 @@ To print the complete commands again:
 sandweave cluster instructions lab
 ```
 
-New controllers listen on all IPv4 interfaces and choose an available port;
-restarting retains that port. Workers need a network route to the printed host.
+New controllers listen on `127.0.0.1` and choose an available port;
+restarting retains that port. Remote workers use SSH unless an external listener
+is explicitly configured. Explicit saved listener settings are retained.
 `--listen HOST:PORT` changes the
 bind address; `--advertise https://cluster.example.org` changes the address printed
 for an existing reverse proxy, tunnel or other route. It does not create that
@@ -184,8 +186,8 @@ verification is always enabled. HTTPS can also terminate at your existing
 reverse proxy, forwarding to the controller's loopback HTTP listener.
 
 SSH remains available alongside HTTP or HTTPS. Copy its printed join command.
-To deliberately restrict direct connections to the controller machine, use
-`--listen 127.0.0.1:0`; startup labels its HTTP and dashboard URLs as local.
+The default `127.0.0.1` listener keeps direct connections local to the controller
+machine; startup labels its HTTP and dashboard URLs as local.
 An explicit SSH address and optional saved name also work:
 
 ```bash

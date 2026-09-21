@@ -19,12 +19,13 @@ sandweave cluster start lab --no-worker
 ```
 
 Startup prints the **HTTP address, SSH address, dashboard URL, and complete join
-commands**. HTTP and SSH are available together. New controllers choose an
-available port automatically.
+commands**. The default listener is `127.0.0.1`, with an automatically chosen
+port. HTTP and the dashboard are local to the controller machine; remote machines
+can connect through SSH.
 
 ## 2. Join another machine
 
-Install Sandweave on the worker, then copy either complete join command from the
+Install Sandweave on the worker, then copy the complete SSH join command from the
 controller's output. The command already contains the connection details.
 
 No resource flags are required. Without limits, the worker contributes its
@@ -52,7 +53,8 @@ with Sandbox(target="lab") as env:
     print(env.run("python -c 'print(2 + 2)'").stdout)
 ```
 
-From another machine, paste the **printed HTTP or SSH address** as the target:
+From another machine, paste the **printed SSH address** as the target. A printed
+HTTP or HTTPS address also works when you configured an external listener:
 
 ```python
 from sandweave import Sandbox
@@ -87,10 +89,16 @@ machine and keep it running while viewing the dashboard.
 | SSH | Your existing SSH login to the controller. The printed address includes its state path. |
 | HTTPS | A trusted certificate matching the controller hostname, or an existing TLS reverse proxy. |
 
-To configure HTTPS on a new controller, supply its certificate and key:
+To accept direct remote HTTP connections, choose a listener explicitly:
 
 ```bash
-sandweave cluster start lab --tls-cert /path/to/server.crt --tls-key /path/to/server.key
+sandweave cluster start lab --listen 0.0.0.0:8765
+```
+
+For HTTPS, also supply its certificate and key:
+
+```bash
+sandweave cluster start lab --listen 0.0.0.0:8765 --tls-cert /path/to/server.crt --tls-key /path/to/server.key
 ```
 
 Startup then prints HTTPS and SSH addresses. For a private certificate authority,
@@ -99,8 +107,9 @@ use `--ca-file` when joining, or `ca_file` with `Cluster.connect(...)`.
 Advanced deployments can set `--listen HOST:PORT` or
 `--advertise https://cluster.example.org`. Advertising an address records an
 existing route; it does not create DNS, a reverse proxy, or a tunnel.
-Use `--listen 127.0.0.1:0` only when you intend to restrict direct access to that
-machine. Such URLs are labelled local.
+Without an explicit listener, adding TLS certificates or a credential file still
+uses `127.0.0.1`. Local URLs are labelled accordingly. Existing explicit listener
+settings are retained on restart; stop the controller before changing them.
 
 ## Inspect and drain workers
 

@@ -17,7 +17,7 @@ def start_options(args):
             raise ValueError('Use --transport https with TLS certificates')
         if transport == 'https' and not (args.tls_cert and args.tls_key):
             raise ValueError('HTTPS needs --tls-cert and --tls-key for a certificate trusted by your workers')
-        listen = listen or '0.0.0.0:8765'
+        listen = listen or '127.0.0.1:8765'
     if args.advertise:
         validate_advertise(args.advertise)
     return listen
@@ -108,7 +108,7 @@ def configure(sub):
     p.add_argument('--memory')
     p.add_argument('--cpus', type=int, help='Maximum eligible CPU cores for the local worker')
     p.add_argument('--gpus', type=int, help='Maximum eligible GPUs for the local worker; 0 disables GPUs')
-    p.add_argument('--listen', help='Bind address (default: all IPv4 interfaces, automatically assigned port)')
+    p.add_argument('--listen', help='Bind address (default: 127.0.0.1, automatically assigned port)')
     p.add_argument('--transport', choices=('ssh', 'http', 'https'),
                    help=argparse.SUPPRESS)  # Compatibility with explicit 0.2.1 settings.
     p.add_argument('--advertise', help='Reachable HTTP(S) address to print instead of the listener address')

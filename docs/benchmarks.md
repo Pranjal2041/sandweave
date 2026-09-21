@@ -7,7 +7,7 @@ attempt gets its own writable state.
 Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.20'
+uv pip install 'sandweave[benchmarks]==0.2.21'
 ```
 
 ## Run tasks
@@ -143,7 +143,7 @@ the original task definitions and runs their verifier through Harbor 0.23.0.
 It requires Python 3.12 or newer:
 
 ```bash
-uv pip install 'sandweave[harbor]==0.2.20'
+uv pip install 'sandweave[harbor]==0.2.21'
 ```
 
 ```python

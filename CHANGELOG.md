@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.21
+
+- Default controller listeners to `127.0.0.1` instead of `0.0.0.0`, including
+  startup with TLS or a credential file. Explicit listener addresses and saved
+  listener settings keep their existing behavior.
+- Update connection instructions for local HTTP and remote SSH access by default.
+  Direct remote HTTP or HTTPS remains available through an explicit `--listen`.
+
 ## 0.2.20
 
 - Publish the tested `0.2.20rc8` implementation as a stable release. Runtime code

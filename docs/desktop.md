@@ -47,6 +47,21 @@ These are capture timestamps, not application-render or client-receipt times.
 `png_encode_ns` measures worker encoding. Encoding happens after the pixels and
 metadata have been copied and does not hold the desktop capture lock.
 
+The local branch also supports encoded JPEG for lower response latency:
+
+```python
+frame = env.desktop.capture_image(format="jpeg", quality=85, cursor=True)
+Path("desktop.jpg").write_bytes(frame.data)
+assert frame.mime_type == "image/jpeg"
+```
+
+This preserves the original resolution and capture timestamps. JPEG is encoded
+once on the worker with 4:2:0 chroma subsampling, without progressive or optimized
+encoding passes. Quality accepts integers from 1 to 95. `format="png"` provides
+lossless encoding through the same method. Clients should return the encoded
+bytes directly. This extension is available in the local SDK/worker branch;
+the official installation and active evaluation workers are unchanged.
+
 ## Install an application
 
 ```python

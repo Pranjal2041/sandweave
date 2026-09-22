@@ -1,5 +1,6 @@
 """Desktop controls own display readiness, input semantics and observations."""
 from dataclasses import dataclass
+from io import BytesIO
 import struct
 import threading
 import time
@@ -21,6 +22,21 @@ class DesktopCapture:
     png: bytes
     size: tuple
     metadata: dict
+
+
+@dataclass(frozen=True)
+class DesktopImage:
+    data: bytes
+    mime_type: str
+    size: tuple
+    metadata: dict
+
+
+def encode_jpeg(image, quality):
+    buffer = BytesIO()
+    image.save(buffer, format='JPEG', quality=quality, subsampling=2,
+               optimize=False, progressive=False)
+    return buffer.getvalue()
 
 
 def encode_png(image):
@@ -157,6 +173,12 @@ class Desktop:
         return DesktopCapture(value['png'], tuple(value['size']), value['metadata'])
 
     @dualmethod
+    def capture_image(self, *, format='jpeg', quality=85, cursor=True):
+        """Return a full-resolution encoded image and matching capture metadata."""
+        value = self._call('capture_image', format=format, quality=quality, cursor=cursor)
+        return DesktopImage(value['data'], value['mime_type'], tuple(value['size']), value['metadata'])
+
+    @dualmethod
     def action(self, action):
         return self._call('action', action=action)
 
@@ -275,8 +297,20 @@ class AttachedDesktop:
         # Pair pixels and metadata under one lock; encoding does not hold this
         # lock and input-only requests never acquire it.
         with self.capture_lock:
-            if method in ('screenshot', 'capture_png'):
-                if method == 'capture_png':
+            if method in ('screenshot', 'capture_png', 'capture_image'):
+                if method == 'capture_image':
+                    if set(parameters) - {'cursor', 'format', 'quality'}:
+                        raise ValueError('capture_image only accepts cursor, format and quality')
+                    image_format = parameters.get('format', 'jpeg')
+                    quality = parameters.get('quality', 85)
+                    if image_format not in ('jpeg', 'png'):
+                        raise ValueError('format must be jpeg or png')
+                    if type(quality) is not int or not 1 <= quality <= 95:
+                        raise ValueError('quality must be an integer from 1 to 95')
+                    parameters = {'cursor': parameters.get('cursor', True)}
+                    if type(parameters['cursor']) is not bool:
+                        raise ValueError('cursor must be a boolean')
+                elif method == 'capture_png':
                     if set(parameters) - {'cursor'}:
                         raise ValueError('capture_png only accepts cursor')
                     parameters = {'cursor': True, **parameters}
@@ -288,10 +322,16 @@ class AttachedDesktop:
                 image, metadata = self.client.step(**parameters)
             else:
                 raise UnsupportedFeature('unknown desktop operation: ' + method)
-        if method == 'capture_png':
+        if method in ('capture_png', 'capture_image'):
             if not metadata.get('capture_completed_wall_ns'):
                 raise UnsupportedFeature('capture_png requires the timestamped fast I/O helper; rebuild the desktop assets')
             started = time.perf_counter_ns()
+            if method == 'capture_image':
+                data = encode_jpeg(image, quality) if image_format == 'jpeg' else encode_png(image)
+                return {'size': list(image.size), 'data': data, 'mime_type': 'image/' + image_format,
+                        'metadata': {**metadata, 'image_encode_ns': time.perf_counter_ns() - started,
+                                     'image_format': image_format,
+                                     'image_quality': quality if image_format == 'jpeg' else None}}
             png = encode_png(image)
             return {'size': list(image.size), 'png': png,
                     'metadata': {**metadata, 'png_encode_ns': time.perf_counter_ns() - started}}

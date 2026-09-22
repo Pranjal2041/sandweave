@@ -67,3 +67,37 @@ def test_unsupported_helper_and_invalid_cursor_fail_explicitly():
     worker.client.last_metadata = {}
     with pytest.raises(UnsupportedFeature, match='rebuild'):
         worker.call('capture_png', {'cursor': True})
+
+
+@pytest.mark.parametrize('format', ['jpeg', 'png'])
+def test_encoded_capture_preserves_size_cursor_and_metadata(format):
+    worker, calls = attached()
+    client = Desktop(SimpleNamespace(_call=lambda operation, **kw: worker.call(kw['method'], kw['parameters'])), {})
+    result = client.capture_image(format=format)
+    assert calls == [{'cursor': True}]
+    assert result.mime_type == 'image/' + format
+    assert result.metadata['image_format'] == format
+    assert result.metadata['capture_completed_wall_ns'] == 1234
+    image = Image.open(io.BytesIO(result.data))
+    assert image.size == result.size == (16, 9)
+    assert image.format.lower() == format
+
+
+@pytest.mark.parametrize('options', [{'quality': 0}, {'quality': True}, {'quality': 96},
+                                    {'format': 'gif'}, {'cursor': 'yes'}, {'resize': 720}])
+def test_encoded_capture_rejects_bad_options_before_capture(options):
+    worker, calls = attached()
+    with pytest.raises(ValueError):
+        worker.call('capture_image', options)
+    assert not calls
+
+
+def test_jpeg_encoding_releases_capture_lock(monkeypatch):
+    worker, _ = attached()
+    def encode(image, quality):
+        assert worker.capture_lock.acquire(blocking=False)
+        worker.capture_lock.release()
+        assert quality == 85
+        return b'jpeg'
+    monkeypatch.setattr('sandweave.templates.gnome.controls.encode_jpeg', encode)
+    assert worker.call('capture_image', {})['data'] == b'jpeg'

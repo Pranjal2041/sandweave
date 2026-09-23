@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.23
+
+- Extract the trusted Apptainer tools filesystem directly with its installed
+  SquashFS extractor. Avoid the internal build container that dropped mount
+  exclusions and failed when optional host files such as `/etc/localtime`
+  were absent. Keep atomic cache publication and reuse across launches.
+- Qualify fresh host-image extraction and launch in installed-package release
+  acceptance, in addition to the sandbox lifecycle tests.
+
 ## 0.2.22
 
 - Run inside existing container user namespaces when the caller already has

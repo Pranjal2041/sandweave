@@ -1,6 +1,7 @@
 """Runtime acceptance, also run under scripts/with-seccomp-listener.py."""
 from concurrent.futures import ThreadPoolExecutor
 import os
+import subprocess
 import uuid
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from sandweave import Memory, Sandbox
 from sandweave.sandbox.process import Process
 from sandweave.sandbox.targets import local_connection
+from sandweave.sandbox import workspace
 
 pytestmark = [pytest.mark.integration, pytest.mark.skipif(
     os.environ.get('SANDWEAVE_INTEGRATION') != '1', reason='requires a prepared runtime')]
@@ -19,6 +21,18 @@ def stop_idle_worker():
     connection = local_connection()
     connection.call('_shutdown_if_idle')
     connection.close()
+
+
+def test_fresh_host_image_extraction_and_launch(tmp_path):
+    host = workspace.host_compat()
+    image = workspace.assets() / 'tools/debian-trixie.sif'
+    rootfs = tmp_path / 'host-rootfs'
+    apptainer = workspace.tool('apptainer')
+    host._extract_host_image(image, rootfs, apptainer)
+    result = subprocess.run([apptainer, 'exec', *host.apptainer_options(), str(rootfs),
+                             '/bin/cat', '/etc/os-release'], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert 'ID=debian' in result.stdout
 
 
 def test_concurrent_guests_remain_isolated():

@@ -16,8 +16,9 @@ host root nor changes host AppArmor, seccomp, mounts, or KVM configuration.
   caller is already namespaced. Ordinary host users retain their existing path.
 - Compressed Apptainer images rely on nested FUSE mounts that an outer runtime
   may not propagate correctly. Container-local root uses Apptainer's existing
-  directory-image support. Prepare the trusted host image once, publish it
-  atomically, and reuse it across launches in the chosen storage directory.
+  directory-image support. Extract the trusted SIF's primary SquashFS partition
+  with the installed extractor, publish it atomically, and reuse it across
+  launches in the chosen storage directory.
 - gVisor honors explicit OCI user namespace paths. Joining the current user
   namespace is skipped only after comparing the open namespace descriptors;
   Linux rejects re-entering that namespace even for root.
@@ -68,3 +69,42 @@ Engine revision: `9bb32ef9cd87a8c01bb663e3525ba23ff830ae03`. The engine's
 cover capability selection, missing bind sources, restored UID mappings, and
 concurrent or failed host-image extraction. The installed-package acceptance
 is `tests/integration/test_container_host.py`.
+
+## Fresh extraction correction in 0.2.23
+
+Version 0.2.22 skipped absent optional bind sources on launch but still called
+`apptainer build --sandbox` on a cold tools-image cache. Apptainer starts an
+internal container for that extraction and constructs a new environment that
+drops mount exclusions. Its attempted `/etc/localtime` bind failed on a fresh
+Daytona instance where that file was absent. The previous acceptance did not
+establish that this cold extraction worked with missing optional host files.
+
+The corrected path uses `apptainer sif list` to locate the primary SquashFS
+filesystem, and `apptainer buildcfg` to locate Apptainer's bundled `unsquashfs`,
+with the system executable as fallback. It extracts directly from the SIF at
+the reported offset, avoiding an extra image copy or extraction container.
+Rootless extraction behavior is retained: user xattrs and no host device nodes.
+The existing immutable-cache publication and failed-extraction cleanup remain.
+Neither host files nor Apptainer configuration are modified.
+
+The internal extractor's environment handling is visible in
+[Apptainer 1.5.3](https://github.com/apptainer/apptainer/blob/v1.5.3/internal/pkg/image/unpacker/squashfs_apptainer.go#L348).
+
+Acceptance on a new Ubuntu 22.04 Daytona container (Linux 6.8.0-139, 8 GiB RAM):
+
+- Reproduced the reported `/etc/localtime` extraction failure with the installed
+  0.2.22 wheel and an empty tools-image cache.
+- The corrected cold extraction and tools-container launch passed with that
+  file still absent. Extraction took 0.26 seconds.
+- Installed the 0.2.23 candidate wheel in a separate Python environment, then
+  ran CLI Code setup with a new storage directory and no runtime/image override.
+  It downloaded the published engine and images, built the guest, and completed
+  its sandbox smoke test in 81.19 seconds. No compiler was downloaded or run.
+- Networking, files, pause/resume, filesystem checkpoints, process-memory
+  restore, offline networking and cleanup passed; next-sandbox readiness was
+  1.26 seconds. The four container-host integration tests also passed, including
+  fresh extraction and concurrent guests. `/etc/localtime` remained absent.
+- Native extraction and launch also passed on Babel under an ordinary
+  unprivileged account. The 12 focused Python regressions passed.
+
+The gVisor binary revision is unchanged in 0.2.23.

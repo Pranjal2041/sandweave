@@ -41,6 +41,49 @@ def reuse_user_namespace():
         return False
 
 
+def _extract_host_image(image, destination, apptainer):
+    """Extract our trusted tools SIF without starting an extraction container.
+
+    Apptainer's build command starts an internal container whose environment
+    drops NO_MOUNT settings. Use its SIF metadata and installed unsquashfs;
+    this needs no optional host bind sources or changes to Apptainer config.
+    """
+    import shutil
+    import subprocess
+
+    def run(command):
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if result.returncode:
+            raise RuntimeError('Preparing the Apptainer host image failed:\n' + result.stdout[-8000:])
+        return result.stdout
+
+    config = dict(line.split('=', 1) for line in run([apptainer, 'buildcfg']).splitlines() if '=' in line)
+    bundled = Path(config['LIBEXECDIR']) / 'apptainer/bin/unsquashfs' if config.get('LIBEXECDIR') else None
+    extractor = str(bundled) if bundled and os.access(bundled, os.X_OK) else shutil.which('unsquashfs')
+    if not extractor:
+        raise RuntimeError('Apptainer has no available unsquashfs extractor')
+
+    partitions = []
+    for line in run([apptainer, 'sif', 'list', str(image)]).splitlines():
+        fields = [part.strip() for part in line.split('|')]
+        if len(fields) == 5 and fields[4].startswith('FS (Squashfs/*System/'):
+            start, end = map(int, fields[3].split('-'))
+            partitions.append((start, end))
+    if len(partitions) != 1:
+        raise RuntimeError('Apptainer host image must contain one primary SquashFS filesystem')
+    start, end = partitions[0]
+    if not 0 <= start < end <= image.stat().st_size:
+        raise RuntimeError('Apptainer host image has an invalid SquashFS partition')
+    with image.open('rb') as stream:
+        stream.seek(start)
+        if stream.read(4) != b'hsqs':
+            raise RuntimeError('Apptainer host image has an invalid SquashFS partition')
+    # Match rootless Apptainer extraction: user xattrs, no host device nodes.
+    run([extractor, '-no-progress', '-user-xattrs', '-d', str(destination),
+         '-offset', str(start), '-excludes', str(image), 'dev'])
+    (destination / 'dev').mkdir(exist_ok=True)
+
+
 def apptainer_image(image, *, directory=None, apptainer='apptainer'):
     """Reuse an unpacked host image inside a privileged container namespace.
 
@@ -55,7 +98,6 @@ def apptainer_image(image, *, directory=None, apptainer='apptainer'):
     import hashlib
     import json
     import shutil
-    import subprocess
     import tempfile
 
     def identity():
@@ -77,11 +119,7 @@ def apptainer_image(image, *, directory=None, apptainer='apptainer'):
             return target
         temporary = Path(tempfile.mkdtemp(prefix='.extract-', dir=store))
         try:
-            result = subprocess.run([apptainer, 'build', '--sandbox', str(temporary / 'rootfs'), str(image)],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                env={**os.environ, 'APPTAINER_TMPDIR': str(temporary)})
-            if result.returncode:
-                raise RuntimeError('Preparing the Apptainer host image failed:\n' + result.stdout[-8000:])
+            _extract_host_image(image, temporary / 'rootfs', apptainer)
             if identity() != original:
                 raise RuntimeError('Apptainer image changed while preparing it: ' + str(image))
             (temporary / 'rootfs').rename(target)

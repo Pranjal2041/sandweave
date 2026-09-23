@@ -155,10 +155,10 @@ def test_filesystem_restore_registers_a_fresh_member():
     options = dict(service_network=identity, memory=Memory('256MiB', '128MiB'), network='offline')
     try:
         builder = Sandbox(**options, aliases=['builder'])
-        builder.files.write_text('/tmp/saved.txt', 'retained')
+        builder.files.write_text('/workspace/saved.txt', 'retained')
         snapshot = builder.snapshot(state='filesystem')
         restored = Sandbox(cache=snapshot, **options, aliases=['restored'])
-        assert restored.files.read_text('/tmp/saved.txt') == 'retained'
+        assert restored.files.read_text('/workspace/saved.txt') == 'retained'
         assert builder.info['service_network']['address'] != restored.info['service_network']['address']
         start_server(builder)
         assert fetch(restored, 'builder') == restored.info['service_network']['address']

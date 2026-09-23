@@ -137,7 +137,7 @@ class Networks:
                     atomic_json(local, record)
                     self.hub.register(identity, [])
                 atomic_json(index, {'workspace': str(self.worker.root), 'scope': self.scope,
-                                    'metadata': str(self.worker.metadata_path)})
+                                    'metadata': str(Path(self.worker.metadata_path).resolve())})
                 return self.public(record)
             record = self.read(identity)
             if operation == 'service_network_delete':

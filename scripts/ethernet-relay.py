@@ -56,6 +56,15 @@ def read_exact(sock, count):
 def relay(packet, stream, policy=None, peer=None):
     errors = []
     finished = threading.Event()
+    output_lock = threading.Lock()
+
+    def forward(frame):
+        if policy is None or policy.allow(frame, 'to-passt'):
+            with output_lock:
+                stream.sendall(struct.pack('!I', len(frame)) + frame)
+
+    if peer is not None:
+        peer.forward = forward
 
     def pump(direction):
         try:
@@ -75,10 +84,10 @@ def relay(packet, stream, policy=None, peer=None):
                     raise ValueError(f'invalid Ethernet frame: {len(frame)}')
                 if direction == 'to-passt' and peer is not None and peer.send(frame):
                     continue
-                if policy is not None and not policy.allow(frame, direction):
-                    continue
                 if direction == 'to-passt':
-                    stream.sendall(struct.pack('!I', len(frame)) + frame)
+                    forward(frame)
+                elif policy is not None and not policy.allow(frame, direction):
+                    continue
                 elif packet.send(frame) != len(frame):
                     raise OSError('short SOCK_SEQPACKET send')
         except EOFError:

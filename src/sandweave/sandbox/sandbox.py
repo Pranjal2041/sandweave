@@ -19,7 +19,8 @@ from ..templates.resolve import Template, setup_step
 def definition(*, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
-               keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False):
+               keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False,
+               service_network=None, aliases=None, networks=None):
     """Resolve a complete portable definition without starting an environment."""
     if sum(x is not None for x in (cache, snapshot)) > 1:
         raise ValueError('cache and snapshot are alternative sources')
@@ -87,6 +88,13 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
             'experimental_gpu_live': experimental_gpu_live}
     if recording is not None:
         spec['recording'] = recording
+    if service_network is not None:
+        from .networks import membership
+        if runtime != 'gvisor':
+            raise UnsupportedFeature('service networks require runtime="gvisor"')
+        spec['service_network'] = membership(service_network, aliases, networks)
+    elif aliases is not None or networks is not None:
+        raise ValueError('aliases and networks require a service_network')
     if saved and saved['spec'].get('image'):
         spec['image'] = copy.deepcopy(saved['spec']['image'])
         # Runtime overrides replace saved command settings, but image ENV is
@@ -101,7 +109,8 @@ class Sandbox:
     def __init__(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                  cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
-                 refresh=False, experimental_gpu_live=False, recording=False):
+                 refresh=False, experimental_gpu_live=False, recording=False,
+                 service_network=None, aliases=None, networks=None):
         options = dict(locals()); options.pop('self')
         self._connection = None
         try:
@@ -114,7 +123,8 @@ class Sandbox:
     def _initialize(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
                     cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
-                    refresh=False, experimental_gpu_live=False, recording=False):
+                    refresh=False, experimental_gpu_live=False, recording=False,
+                    service_network=None, aliases=None, networks=None):
         options = dict(locals()); options.pop('self')
         request = definition(**options)
         self._launch(request, target)
@@ -154,6 +164,8 @@ class Sandbox:
             raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker and controller')
         if spec.get('service_group') and not self._connection.call('ping').get('native_services'):
             raise UnsupportedFeature('Harbor service groups require an updated worker and controller')
+        if spec.get('service_network', {}).get('id') and not self._connection.call('ping').get('service_networks'):
+            raise UnsupportedFeature('service networks require Sandweave 0.2.24 or newer on the worker and controller')
         from .ownership import client_owner
         owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,

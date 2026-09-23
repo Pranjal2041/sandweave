@@ -113,6 +113,14 @@ def check_browser(site, output, url=None):
                 page.locator('.md-sidebar--primary').get_by_role('link', name='Networking', exact=True).click()
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Networking¶?$'))
                 assert page.url.endswith('/networking/')
+                page.goto(url + 'networking/#connect-sandboxes')
+                section = page.locator('#connect-sandboxes')
+                example = section.locator('xpath=following-sibling::div[1]')
+                example.get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'create_service_network(target=target)' in copied
+                assert 'env.terminate()' in copied and 'delete_service_network(group, target=target)' in copied
+                page.screenshot(path=str(output / 'service-networks-desktop.png'), animations='disabled')
                 page.locator('.md-sidebar--primary').get_by_role('link', name='Docker images', exact=True).click()
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Docker images¶?$'))
                 page.get_by_role('button', name='Copy to clipboard').first.click()

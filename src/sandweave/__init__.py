@@ -17,7 +17,8 @@ except PackageNotFoundError:
 __all__ = ['Sandbox', 'Pool', 'Benchmark', 'Cluster', 'Job', 'Template', 'SnapshotRef', 'CPU', 'GPU', 'Memory',
            'Network', 'ProxyPolicy', 'Mount', 'Recording', 'Slurm', 'SandboxError', 'CacheMiss', 'CacheConflict',
            'IncompatibleSnapshot', 'UnsupportedFeature', 'ResourceUnavailable',
-           'CommandError', 'CommandTimeout', 'OperationUnknown', 'SetupError', 'OutputLimitExceeded']
+           'CommandError', 'CommandTimeout', 'OperationUnknown', 'SetupError', 'OutputLimitExceeded',
+           'create_service_network', 'delete_service_network']
 
 
 def __getattr__(name):
@@ -30,6 +31,8 @@ def __getattr__(name):
         'Template': ('.templates', 'Template'),
         'SnapshotRef': ('.sandbox.snapshots', 'SnapshotRef'),
         'Slurm': ('.sandbox.targets', 'Slurm'),
+        'create_service_network': ('.sandbox.networks', 'create_service_network'),
+        'delete_service_network': ('.sandbox.networks', 'delete_service_network'),
     }
     if name not in modules:
         raise AttributeError(name)

@@ -42,7 +42,8 @@ class Worker:
         self.artifacts = Artifacts(self)
         from ..templates.gnome.recording import Recordings
         self.recordings = Recordings(self)
-        if any(self.read(path.stem).get('service_group') for path in self.records.glob('*.bin')):
+        if ((self.root / 'service-networks').exists() or
+                any(self.read(path.stem).get('service_group') for path in self.records.glob('*.bin'))):
             from .services import Services
             self.services = Services(self)
         threading.Thread(target=self.expire, name='sandweave-cleanup', daemon=True).start()
@@ -94,6 +95,13 @@ class Worker:
 
     def owner_register(self, identity, process):
         return self.owners.register(identity, process)
+
+    def service_manager(self):
+        with self.guard:
+            if self.services is None:
+                from .services import Services
+                self.services = Services(self)
+            return self.services
 
     def owner_heartbeat(self, identity):
         return self.owners.heartbeat_managed(identity)
@@ -228,6 +236,8 @@ class Worker:
                 timings['image_prepare_seconds'] = image_seconds
             timings['admission_seconds'] = time.monotonic() - started
             try:
+                if spec.get('service_network', {}).get('id'):
+                    self.service_manager().networks.join(record)
                 if spec.get('service_group') or spec.get('services'):
                     with self.guard:
                         if self.services is None:
@@ -432,6 +442,9 @@ class Worker:
         if record.get('service_group'):
             raise UnsupportedFeature('Capture individual service images before assembling a service group; '
                                      'group checkpoints are not supported')
+        if record['spec'].get('service_network', {}).get('id') and state != 'filesystem':
+            raise UnsupportedFeature('service network members support filesystem snapshots; '
+                                     'a live network cannot be rolled back independently')
         if state == 'memory' and record['spec']['resources']['gpu']:
             if not experimental_gpu_live or record['spec']['template']['capabilities']:
                 raise UnsupportedFeature('live GPU graphics checkpoints are unsupported; CUDA-only capture requires experimental_gpu_live=True')
@@ -511,6 +524,13 @@ class Worker:
 
     def _terminate_runtime(self, record):
         identity, errors = record['id'], []
+        if record['spec'].get('service_network', {}).get('id'):
+            try:
+                self.service_manager().networks.leave(record)
+            except FileNotFoundError:
+                pass  # Preparation may have rejected an unknown network.
+            except Exception as error:
+                errors.append(error)
         for child in record.get('image_imports', []):
             if self.path(child).exists():
                 try:
@@ -645,6 +665,8 @@ class Worker:
         raise ValueError('unknown pool operation')
 
     def dispatch(self, operation, parameters):
+        if operation.startswith('service_network_'):
+            return self.service_manager().networks.dispatch(operation, **parameters)
         if operation == 'service_setup':
             identity = parameters['identity']
             with self.lock(identity):
@@ -705,6 +727,9 @@ class Worker:
                     for identity, frame in sys._current_frames().items()}
         if operation == '_shutdown_if_idle':
             with self.guard:
+                if self.services and any(json.loads(path.read_text())['state'] == 'ready'
+                                         for path in self.services.networks.root.glob('net-*.json')):
+                    raise RuntimeError('worker still owns service networks; delete them before shutdown')
                 if self.pools:
                     raise RuntimeError('worker still owns named pools')
                 if any(self.read(p.stem)['state'] in ('creating', 'preparing') or
@@ -726,7 +751,7 @@ class Worker:
                     'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget,
                     'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1, 'pool_retention': 1,
                     'desktop_recording': 1, 'oci_image_import': 1, 'native_services': 1,
-                    'dynamic_network_policy': 1}
+                    'dynamic_network_policy': 1, 'service_networks': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
@@ -808,6 +833,7 @@ def serve(metadata_path):
     server.daemon_threads = True
     from .targets import Endpoint
     worker.endpoint = Endpoint(server.server_port, token)
+    worker.metadata_path = metadata_path
     worker.shutdown = server.shutdown
     information = {'hostname': socket.gethostname(), 'pid': os.getpid(), 'status': 'ready',
                    'port': server.server_port, 'token': token, 'workspace': str(root)}

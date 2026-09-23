@@ -56,6 +56,8 @@ class Services:
             record = worker.read(path.stem)
             if record.get('services') and not record.get('cleanup_complete') and record['state'] not in ('terminated', 'stopped'):
                 self.hub.register(record['id'], record['services'].values())
+        from .networks import Networks
+        self.networks = Networks(worker, self.hub)
 
     def prepare(self, record):
         definitions = record['spec']['services']

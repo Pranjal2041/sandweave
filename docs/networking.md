@@ -20,6 +20,72 @@ Replace `lab` with the full printed cluster address when connecting from another
 machine. Offline networking applies **inside the sandbox**. The Python client
 and worker can still communicate with the controller and perform sandbox actions.
 
+## Connect sandboxes
+
+Create a service network, then join independent sandboxes to it. This works with
+any gVisor template, including custom GNOME desktops:
+
+```python
+from sandweave import Sandbox, create_service_network, delete_service_network
+
+target = "lab"  # Or the full cluster address. Omit target for local sandboxes.
+group = create_service_network(target=target)
+api = desktop = None
+try:
+    api = Sandbox(target=target, service_network=group,
+                  aliases=["api"], networks=["private"], network="offline")
+    api.exec("python -m http.server 8000 --bind 0.0.0.0")
+    desktop = Sandbox(target=target, template="gnome", service_network=group,
+                      aliases=["desktop"], networks=["private"], network="offline")
+    # The desktop can reach http://api:8000, including from its browser.
+    print(desktop.info["service_network"])
+finally:
+    for env in (desktop, api):
+        if env is not None:
+            env.terminate()
+            env.close()
+    delete_service_network(group, target=target)
+```
+
+The server binds inside its sandbox. This does not publish a host port.
+`network=` still controls outside access: offline members can talk to peers,
+but cannot reach the internet. Internet, allowlist and proxy policies continue
+to govern all other traffic.
+
+- `service_network` identifies the group and its worker. All members are placed
+  on that worker. If it is full, cluster requests wait for capacity rather than
+  moving to another worker; `startup_timeout` bounds that wait.
+- `networks` names the segments a member can use, defaulting to `["default"]`.
+  Members must share at least one name to communicate, even by IP address.
+- `aliases` supplies DNS names, defaulting to `[]`. Names become visible when a
+  member joins, including to already-running peers. An alias must be unique
+  among members sharing a named network.
+- `env.info["service_network"]` contains the ID, aliases, named networks and
+  service IPv4 address. That address remains fixed for the member's lifetime.
+
+Private packets pass through the worker's hub over private local sockets.
+The hub checks membership and assigns the source identity; guests cannot choose
+another member's source address or bypass the hub to reach a different segment.
+This is a worker-local network, not an encrypted link between workers. A member
+of two named networks can intentionally act as an application gateway between
+them, so grant multi-network membership only where intended.
+
+Termination removes membership. `close()` alone disconnects an ordinary sandbox
+handle; it does not terminate its runtime. Networks persist until explicitly
+deleted, and deletion refuses active members. A lost worker's network does not
+migrate; create a new network for replacement sandboxes.
+
+For proxy-aware tools, include peer aliases in their proxy bypass setting
+(for example `NO_PROXY=api`), so private requests use the service network. An
+unknown DNS name falls back to the sandbox's ordinary egress policy.
+
+Filesystem caches are supported. Restoring one creates fresh membership when
+you explicitly pass `service_network=...`; it does not restore a source member's
+address. Memory checkpoints of joined members are unsupported because rolling
+back one member independently would also roll back live connections to peers.
+Existing Harbor service groups remain separate and cannot join another group.
+The client, controller and workers need Sandweave 0.2.24 or newer.
+
 ## Install dependencies before going offline
 
 Worker preparation may download a runtime or template on first use, even when

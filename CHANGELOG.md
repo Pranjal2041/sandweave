@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.24
+
+- Create a service network with `create_service_network(target=...)`, then join
+  independent sandboxes with `service_network`, `aliases`, and `networks`.
+  Coding, desktop and custom gVisor templates use the same API.
+- Pin members to the network's worker. Private traffic uses the existing worker
+  hub with fixed source identities and named-network isolation. Alias discovery
+  supports later joins; ordinary egress policies still govern outside traffic.
+- Persist membership across worker restarts, remove routes on termination, and
+  delete empty networks with `delete_service_network`. Filesystem restores get
+  fresh member routes; independent memory rollback of a member is rejected.
+
 ## 0.2.23
 
 - Extract the trusted Apptainer tools filesystem directly with its installed

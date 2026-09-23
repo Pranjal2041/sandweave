@@ -5,6 +5,7 @@ Import the public objects from `sandweave`:
 ```python
 from sandweave import Sandbox, Pool, Cluster, Job, Benchmark
 from sandweave import CPU, Memory, GPU, Network, Template, SnapshotRef, Mount, Slurm, Recording
+from sandweave import create_service_network, delete_service_network
 ```
 
 Methods that support async calls expose `.aio`. See [async Python](async.md).
@@ -30,6 +31,9 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `memory` | Guest size or `Memory(...)`. | Template default |
 | `gpu` | Boolean, model name, or `GPU(...)`. | Template default |
 | `network` | `"internet"`, `"offline"`, or `Network(...)`. | Template default, normally `"internet"` |
+| `service_network` | ID returned by `create_service_network(target=...)`. Pins placement to its worker. | None |
+| `aliases` | DNS names visible to members sharing a named network. | `[]` |
+| `networks` | Named networks this member joins within the service network. | `["default"]` |
 | `target` | Cluster name/address, worker target, or allocation. | Local worker |
 | `runtime` | `"gvisor"` or `"apptainer"` for a new recipe. | `"gvisor"` |
 | `env` | Guest environment variables. | Template environment |
@@ -104,6 +108,14 @@ record. Check that `status == "passed"` before relying on the saved state.
 `env.vr` exposes VR controls. A template must supply a control before it can be
 used. See [desktop agents](desktop.md), [VR games](vr.md), and
 [templates](templates.md).
+
+## Service networks
+
+`create_service_network(target=None)` returns a network ID. Pass that ID and the
+same target to `Sandbox(service_network=id, aliases=[...], networks=[...])`.
+`delete_service_network(id, target=None)` deletes an empty network; terminate its
+members first. `env.info["service_network"]` reports membership and its fixed
+service address. See [connecting sandboxes](networking.md#connect-sandboxes).
 
 ## Resource values
 

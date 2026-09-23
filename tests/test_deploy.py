@@ -144,6 +144,20 @@ def test_failed_recheck_invalidates_previous_pass(deploy, repo, monkeypatch):
     assert not receipt.exists()
 
 
+def test_focused_receipt_cannot_be_mistaken_for_full_validation(deploy, repo, monkeypatch):
+    root, _ = repo
+    release = deploy.preflight(root)
+    directory = root / 'runs/deploy' / (release['version'] + '-' + release['commit'][:12])
+    directory.mkdir(parents=True)
+    (directory / 'validated.json').write_text(json.dumps({'tests': ['tests/test_public_networks.py']}))
+    monkeypatch.setattr(deploy, 'ROOT', root)
+    monkeypatch.setattr(deploy, 'validated_files', lambda *args: ['focused-artifact'])
+    monkeypatch.setattr(deploy, 'publish', lambda *args: pytest.fail('must not publish under a different test selection'))
+    monkeypatch.setattr(sys, 'argv', ['deploy', '--check'])
+    with pytest.raises(ValueError, match='different test selection'):
+        deploy.main()
+
+
 def test_credentials_are_parsed_as_data(deploy, tmp_path, monkeypatch):
     monkeypatch.setattr(deploy, 'ROOT', tmp_path)
     for key in ('UV_PUBLISH_TOKEN', 'PYPI_API_KEY', 'PYPI_API_TOKEN'):

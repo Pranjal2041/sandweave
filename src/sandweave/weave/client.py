@@ -213,7 +213,7 @@ class ClusterConnection:
                 raise
         if operation == 'list':
             return [a.get('info') or {'id': a['id'], 'state': a['state']} for a in self._rpc('status')['sandboxes']]
-        if operation.startswith(('pool_', 'job_', 'worker_', 'snapshot_', 'allocation_')) or operation in ('ping', 'status', 'events', 'backup', 'shutdown', 'dashboard_ticket'):
+        if operation.startswith(('pool_', 'job_', 'worker_', 'snapshot_', 'allocation_', 'service_network_')) or operation in ('ping', 'status', 'events', 'backup', 'shutdown', 'dashboard_ticket'):
             return self._rpc(operation, **params)
         identity = params.get('identity')
         if identity is None:

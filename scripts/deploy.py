@@ -91,7 +91,7 @@ def validated_files(directory, release):
     return files
 
 
-def validate(directory, release):
+def validate(directory, release, tests=None):
     work = Path(tempfile.mkdtemp(prefix='sandweave-deploy-')).resolve()
     if work.is_relative_to(ROOT):
         raise ValueError('Set TMPDIR outside this checkout for installed-package acceptance')
@@ -123,66 +123,77 @@ def validate(directory, release):
     run('uv', 'venv', '--python', sys.executable, python.parents[1], cwd=work, env=env)
     extras = '[test,vr,harbor]' if sys.version_info >= (3, 12) else '[test,vr]'
     run('uv', 'pip', 'install', '--python', python, str(wheel) + extras, cwd=work, env=env)
-    run(python, '-m', 'pytest', '-q', '-m', 'not integration and not gpu',
-        '--confcutdir=' + str(source), cwd=source, env=env)
-    run(python, '-c', 'import sandweave; from importlib.metadata import version; '
-        f'assert sandweave.__version__ == version("sandweave") == {release["version"]!r}', cwd=work, env=env)
-    live = work / 'acceptance'
-    live.mkdir()
-    shutil.copyfile(source / 'tests/integration/test_sdk.py', live / 'test_sdk.py')
-    (live / 'pytest.ini').write_text('[pytest]\nmarkers = integration: installed SDK acceptance\n')
-    env.update(SANDWEAVE_HOME=str(work / 'worker'), SANDWEAVE_INTEGRATION='1')
-    run(python, '-m', 'pytest', '-q', '-s', '--confcutdir=' + str(live), cwd=live, env=env)
-    shutil.copyfile(source / 'tests/integration/test_container_host.py', live / 'test_container_host.py')
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_container_host.py', cwd=live, env=env)
-    run(python, source / 'scripts/with-seccomp-listener.py', python, '-m', 'pytest', '-q',
-        '--confcutdir=' + str(live), live / 'test_container_host.py', cwd=live, env=env)
-    shutil.copyfile(source / 'tests/integration/test_build_first_use.py', live / 'test_build_first_use.py')
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_build_first_use.py', cwd=live, env=env)
-    shutil.copyfile(source / 'tests/integration/test_build_disk_storage.py', live / 'test_build_disk_storage.py')
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_build_disk_storage.py', cwd=live, env=env)
-    shutil.copyfile(source / 'tests/integration/test_iptables_state_live.py', live / 'test_iptables_state_live.py')
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_iptables_state_live.py', cwd=live, env=env)
-    # Exercise host/guest ownership independently of the default temporary
-    # directory's group, using the runtime built by the installed package.
-    shutil.copyfile(source / 'tests/integration/test_build_transfer.py', live / 'test_build_transfer.py')
-    env['SANDWEAVE_TRANSFER_ASSETS'] = json.loads((work / 'worker/config.json').read_text())['assets']
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_build_transfer.py', cwd=live, env=env)
-    shutil.copyfile(source / 'tests/integration/test_network_transfer_live.py', live / 'test_network_transfer_live.py')
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_network_transfer_live.py', cwd=live, env=env)
-    shutil.copyfile(source / 'tests/integration/test_mounts.py', live / 'test_mounts.py')
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_mounts.py', cwd=live, env=env)
-    for name in ('test_snapshots.py', 'test_checkpoint_storage.py', 'test_docker_storage_live.py'):
-        shutil.copyfile(source / 'tests/integration' / name, live / name)
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_snapshots.py', live / 'test_checkpoint_storage.py',
-        live / 'test_docker_storage_live.py', cwd=live, env=env)
-    shutil.copyfile(source / 'tests/integration/test_fifo_restart_live.py', live / 'test_fifo_restart_live.py')
-    shutil.copyfile(source / 'sources/fifo-signal-test.c', live / 'fifo-signal-test.c')
-    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-        live / 'test_fifo_restart_live.py', cwd=live, env=env)
-    if sys.version_info >= (3, 12):
-        for relative in ('tests/test_harbor.py', 'tests/integration/test_harbor_live.py',
-                         'tests/test_harbor_contract.py', 'tests/integration/test_harbor_contract_live.py',
-                         'tests/integration/test_harbor_services_live.py',
-                         'tests/integration/test_weave_live.py'):
-            shutil.copyfile(source / relative, live / Path(relative).name)
-        env['SANDWEAVE_HARBOR_INTEGRATION'] = '1'
+    if tests:
+        # Explicit selection is recorded in the receipt; it is never represented
+        # as a full release check. Tests import the installed wheel, not src/.
+        if os.environ.get('SANDWEAVE_ASSETS'):
+            env['SANDWEAVE_ASSETS'] = os.environ['SANDWEAVE_ASSETS']
+        env.update(SANDWEAVE_HOME=str(work / 'worker'), SANDWEAVE_INTEGRATION='1')
+        run(python, '-m', 'pytest', '-q', '-s', '-o', 'pythonpath=tests',
+            '--confcutdir=' + str(source), *tests, cwd=source, env=env)
+        run(python, '-c', 'import sandweave; from importlib.metadata import version; '
+            f'assert sandweave.__version__ == version("sandweave") == {release["version"]!r}', cwd=work, env=env)
+    else:
+        run(python, '-m', 'pytest', '-q', '-m', 'not integration and not gpu',
+            '--confcutdir=' + str(source), cwd=source, env=env)
+        run(python, '-c', 'import sandweave; from importlib.metadata import version; '
+            f'assert sandweave.__version__ == version("sandweave") == {release["version"]!r}', cwd=work, env=env)
+        live = work / 'acceptance'
+        live.mkdir()
+        shutil.copyfile(source / 'tests/integration/test_sdk.py', live / 'test_sdk.py')
+        (live / 'pytest.ini').write_text('[pytest]\nmarkers = integration: installed SDK acceptance\n')
+        env.update(SANDWEAVE_HOME=str(work / 'worker'), SANDWEAVE_INTEGRATION='1')
+        run(python, '-m', 'pytest', '-q', '-s', '--confcutdir=' + str(live), cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_container_host.py', live / 'test_container_host.py')
         run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
-            live / 'test_harbor.py', live / 'test_harbor_live.py',
-            live / 'test_harbor_contract.py', live / 'test_harbor_contract_live.py',
-            live / 'test_harbor_services_live.py', cwd=live, env=env)
+            live / 'test_container_host.py', cwd=live, env=env)
+        run(python, source / 'scripts/with-seccomp-listener.py', python, '-m', 'pytest', '-q',
+            '--confcutdir=' + str(live), live / 'test_container_host.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_build_first_use.py', live / 'test_build_first_use.py')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_build_first_use.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_build_disk_storage.py', live / 'test_build_disk_storage.py')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_build_disk_storage.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_iptables_state_live.py', live / 'test_iptables_state_live.py')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_iptables_state_live.py', cwd=live, env=env)
+        # Exercise host/guest ownership independently of the default temporary
+        # directory's group, using the runtime built by the installed package.
+        shutil.copyfile(source / 'tests/integration/test_build_transfer.py', live / 'test_build_transfer.py')
+        env['SANDWEAVE_TRANSFER_ASSETS'] = json.loads((work / 'worker/config.json').read_text())['assets']
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_build_transfer.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_network_transfer_live.py', live / 'test_network_transfer_live.py')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_network_transfer_live.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_mounts.py', live / 'test_mounts.py')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_mounts.py', cwd=live, env=env)
+        for name in ('test_snapshots.py', 'test_checkpoint_storage.py', 'test_docker_storage_live.py'):
+            shutil.copyfile(source / 'tests/integration' / name, live / name)
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_snapshots.py', live / 'test_checkpoint_storage.py',
+            live / 'test_docker_storage_live.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_fifo_restart_live.py', live / 'test_fifo_restart_live.py')
+        shutil.copyfile(source / 'sources/fifo-signal-test.c', live / 'fifo-signal-test.c')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_fifo_restart_live.py', cwd=live, env=env)
+        if sys.version_info >= (3, 12):
+            for relative in ('tests/test_harbor.py', 'tests/integration/test_harbor_live.py',
+                             'tests/test_harbor_contract.py', 'tests/integration/test_harbor_contract_live.py',
+                             'tests/integration/test_harbor_services_live.py',
+                             'tests/integration/test_weave_live.py'):
+                shutil.copyfile(source / relative, live / Path(relative).name)
+            env['SANDWEAVE_HARBOR_INTEGRATION'] = '1'
+            run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+                live / 'test_harbor.py', live / 'test_harbor_live.py',
+                live / 'test_harbor_contract.py', live / 'test_harbor_contract_live.py',
+                live / 'test_harbor_services_live.py', cwd=live, env=env)
     # Copy artifacts only after every check passes. A receipt is never partial.
     for path in files:
         shutil.copyfile(path, directory / path.name)
-    receipt = {**release, 'workspace': str(work), 'files': {p.name: digest(p) for p in files}}
+    receipt = {**release, 'workspace': str(work), 'tests': tests, 'files': {p.name: digest(p) for p in files}}
     temporary = directory / 'validated.json.tmp'
     temporary.write_text(json.dumps(receipt, indent=2) + '\n')
     temporary.replace(directory / 'validated.json')
@@ -275,7 +286,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='validate without pushing or publishing')
     parser.add_argument('--recheck', action='store_true', help='repeat validation instead of reusing its receipt')
+    parser.add_argument('--tests', nargs='+', metavar='PATH',
+                        help='run only these test files instead of the full release suite; recorded in the receipt')
     args = parser.parse_args()
+    if args.tests:
+        for name in args.tests:
+            path = Path(name)
+            if path.is_absolute() or '..' in path.parts or path.parts[0] != 'tests' or path.suffix != '.py' or not (ROOT / path).is_file():
+                raise ValueError('--tests requires existing test files relative to the repository')
     if not shutil.which('uv') or (not args.check and not shutil.which('gh')):
         raise ValueError('Install uv and, for publication, the GitHub CLI')
     release = preflight(ROOT)
@@ -294,11 +312,14 @@ def main():
             if args.recheck:
                 (directory / 'validated.json').unlink(missing_ok=True)
             files = validated_files(directory, release)
-            files = files or validate(directory, release)
+            if files and json.loads((directory / 'validated.json').read_text()).get('tests') != args.tests:
+                raise ValueError('Receipt uses a different test selection; repeat that --tests selection or use --recheck')
+            files = files or (validate(directory, release, args.tests) if args.tests else validate(directory, release))
             if preflight(ROOT) != release:
                 raise ValueError('Source changed during validation; start a new release check')
             if args.check:
-                print('Checks passed. Run ./deploy to publish these artifacts.', flush=True)
+                command = ['./deploy', *(['--tests', *args.tests] if args.tests else [])]
+                print('Checks passed. Run ' + shlex.join(command) + ' to publish these artifacts.', flush=True)
             else:
                 publish(directory, release, files)
         finally:

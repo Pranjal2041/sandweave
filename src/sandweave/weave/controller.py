@@ -368,6 +368,9 @@ class Controller:
                              for location in artifact['locations']]
                 if locations != artifact['locations']:
                     self.state.put('artifact', {**artifact, 'locations': locations})
+            for network in self.state.list('network', worker=identity):
+                if network['endpoint'].get('workspace') == info['workspace'] and network['endpoint'] != route:
+                    self.state.put('network', {**network, 'endpoint': route})
         return route
 
     def create(self, identity, spec, *, operation_id=None, reference=None, cache_key=None,
@@ -395,9 +398,11 @@ class Controller:
             if spec.get('name') and any(a['spec'].get('name') == spec['name'] and not a.get('released')
                                        for a in self.state.list('allocation')):
                 raise FileExistsError('sandbox name is already in use')
+            from .networks import placement
+            network_placement = placement(self, spec)
             record = self.state.put('allocation', dict(id=identity, state='pending', desired='running',
                 generation=1, released=False, request=request, spec=copy.deepcopy(spec), stamp=stamp, canonical_stamp=canonical,
-                owner=owner, parent=None, ack=False, deadline=time.time() + spec['startup_timeout']),
+                owner=owner, parent=None, ack=False, deadline=time.time() + spec['startup_timeout'], **network_placement),
                 event={'message': 'sandbox requested'})
         return self._public_allocation(record)
 
@@ -492,6 +497,8 @@ class Controller:
                 raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker')
             if request['spec'].get('service_group') and not (yield rpc(connection, 'ping')).get('native_services'):
                 raise UnsupportedFeature('Harbor service groups require an updated Sandweave worker')
+            if request['spec'].get('service_network', {}).get('id') and not (yield rpc(connection, 'ping')).get('service_networks'):
+                raise UnsupportedFeature('service networks require Sandweave 0.2.24 or newer on the worker')
             if request['spec'].get('discard_workspace') and not (yield rpc(connection, 'ping')).get('pool_retention'):
                 with self.state.transaction():
                     current = self.state.get('allocation', identity)
@@ -727,7 +734,10 @@ class Controller:
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
                     'pool_options': ['shared_cache', 'affinity', 'retain_baseline'], 'proxy_policy': 1,
                     'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1, 'desktop_recording': 1,
-                    'native_services': 1}
+                    'native_services': 1, 'service_networks': 1}
+        if operation.startswith('service_network_'):
+            from .networks import dispatch
+            return dispatch(self, operation, **parameters)
         if operation == 'events':
             return self.state.events(**parameters)
         if operation == 'backup':

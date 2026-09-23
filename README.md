@@ -63,6 +63,25 @@ to apply it, then see the updated results. For scripts and CI, use
 
 <a id="agreed-public-api-contract-v1"></a>
 
+## Connect sandboxes
+
+```python
+from sandweave import Sandbox, create_service_network, delete_service_network
+
+group = create_service_network(target="lab")
+api = Sandbox(target="lab", service_network=group, aliases=["api"])
+desktop = Sandbox(target="lab", template="gnome", service_network=group,
+                  aliases=["desktop"])
+```
+
+Both sandboxes run on the network's worker and can reach each other by alias.
+`networks=["private"]` restricts communication to members sharing that name;
+`network="offline"` disables internet access while retaining these private links.
+Any gVisor template can join. Terminate the members before calling
+`delete_service_network(group, target="lab")`.
+See [service networks](https://pranjal2041.github.io/sandweave/networking/#connect-sandboxes)
+for a complete example and cleanup.
+
 ## Run commands
 
 ```python

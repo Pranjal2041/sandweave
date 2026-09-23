@@ -84,6 +84,13 @@ class RPC:
                 result = self.controller.relay.results(**params)
             elif operation == 'sandbox_rpc':
                 result = await self.forward(**params)
+            elif operation in ('service_network_create', 'service_network_delete'):
+                from .networks import dispatch
+                future = self.controller._submit(('network', params['identity'], operation),
+                                                  dispatch, self.controller, operation, params['identity'])
+                if future is None:
+                    raise RuntimeError('controller is shutting down')
+                result = await asyncio.shield(asyncio.wrap_future(future))
             elif operation in {'ping', 'pool_status', 'pool_lease', 'allocation_get', 'allocation_route'}:
                 # Indexed memory reads never enter the control queue or wait
                 # for a writer. Projections copy only the fields they return.

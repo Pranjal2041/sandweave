@@ -109,6 +109,10 @@ class Store:
                     'location': str(path), 'workspace': str(self.runtime.root), 'source': source['id'],
                     'template': source['spec']['template']['name'], 'spec': copy.deepcopy(source['spec']),
                     'agent': source['agent'], 'created_at': time.time(), 'snapshot_id': manifest['snapshot_id']}
+        if metadata['spec'].get('service_network', {}).get('id'):
+            # An immutable filesystem is portable; its source member's hub
+            # socket and address are not. A new member registers its own route.
+            metadata['spec'].pop('_service_network', None)
         metadata['digest'] = hashlib.sha256(encode(metadata)).hexdigest()
         destination = self.root / 'revisions' / (identity + '.bin')
         fd, temporary = tempfile.mkstemp(prefix='.' + identity, dir=destination.parent)

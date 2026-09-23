@@ -76,6 +76,18 @@ Artifacts, logs and a validation receipt stay in `runs/deploy/`. Repeating
 partial publication. Existing remote files must match their SHA-256 hashes;
 the command never overwrites them. A changed commit requires new validation.
 Use `./deploy --check --recheck` to repeat validation for the same commit.
+When a release explicitly calls for focused validation, pass its test files:
+
+```bash
+./deploy --check --tests tests/test_service_network.py tests/test_public_networks.py tests/integration/test_service_networks_live.py
+```
+
+This replaces the full test suite while retaining package checks and wheel
+reproducibility. Configure the integration tests' required environment variables
+as documented in their files. The receipt records the selection. Repeat the
+same `--tests` arguments without `--check` to publish; a focused receipt cannot
+be reused as a full-suite pass. The default `./deploy` still runs the full suite.
+
 Fresh runtime storage uses the system temporary directory (`TMPDIR` if set),
 which must be outside this checkout. Its path is printed and retained for
 inspection; only the disposable sandboxes and their idle worker are stopped.

@@ -115,3 +115,73 @@ def test_router_restart_preserves_existing_guest_connections(nested):
                 for channel in pair:
                     channel.close()
             hub.close()
+
+
+def dns_query(name):
+    labels = b''.join(bytes([len(part)]) + part.encode() for part in name.split('.'))
+    query = b'\x12\x34\x01\0\0\1\0\0\0\0\0\0' + labels + b'\0\0\1\0\1'
+    request = bytearray(frame('10.0.2.3', query))
+    struct.pack_into('!H', request, 36, 53)
+    return bytes(request)
+
+
+def test_dynamic_membership_dns_network_isolation_and_fixed_source(tmp_path):
+    hub = Hub(tmp_path)
+    hub.register('group', [])
+    channels, peers = [], []
+    def member(index, networks, aliases):
+        entry = {'address': '10.231.0.' + str(index + 2), 'socket': str(tmp_path / f'{index}.sock'),
+                 'networks': networks, 'aliases': aliases}
+        hub.add('group', entry)
+        guest, packet = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        guest.settimeout(.2)
+        channels.extend([guest, packet])
+        peer = Peer({**entry, 'hub': str(hub.path), 'dynamic': True}, packet)
+        peers.append(peer)
+        return guest, peer
+    try:
+        first, sender = member(0, ['frontend'], ['desktop'])
+        # This member did not exist when the first relay started.
+        second, receiver = member(1, ['frontend'], ['api'])
+        hidden, _ = member(2, ['backend'], ['database'])
+        assert sender.send(dns_query('api'))
+        assert first.recv(9014).endswith(ipaddress.IPv4Address('10.231.0.3').packed)
+        sender.send(frame('10.231.0.3'))
+        received = second.recv(9014)
+        assert received[26:30] == ipaddress.IPv4Address('10.231.0.2').packed
+        assert receiver.send(frame('10.231.0.2', b'reply'))
+        assert first.recv(9014).endswith(b'reply')
+        forged = bytearray(frame('10.231.0.3'))
+        forged[26:30] = ipaddress.IPv4Address('10.231.0.4').packed
+        assert sender.send(forged)
+        with pytest.raises(socket.timeout):
+            second.recv(9014)
+        assert sender.send(frame('10.231.0.4'))
+        with pytest.raises(socket.timeout):
+            hidden.recv(9014)
+        import threading
+        forwarded = []
+        changed = threading.Event()
+        def external(query):
+            forwarded.append(query)
+            changed.set()
+        sender.forward = external
+        query = dns_query('example.com')
+        sender.send(query)
+        assert changed.wait(2) and forwarded == [query]
+        changed.clear()
+        sender.send(dns_query('database'))
+        assert changed.wait(2)  # Hidden service aliases are not resolved.
+        hub.remove('group', '10.231.0.3')
+        changed.clear()
+        sender.send(dns_query('api'))
+        assert changed.wait(2)
+        assert sender.send(frame('10.231.0.3'))
+        with pytest.raises(socket.timeout):
+            second.recv(9014)
+    finally:
+        for peer in peers:
+            peer.close()
+        for channel in channels:
+            channel.close()
+        hub.close()

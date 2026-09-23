@@ -17,6 +17,8 @@ DNS = ipaddress.IPv4Address('10.0.2.3').packed
 GUEST_MAC = bytes.fromhex('020000000015')
 GATEWAY_MAC = bytes.fromhex('020000000002')
 MAX_FRAME = 9014
+DNS_FORWARD = b'\x00SWDNS'
+PRIVATE_PREFIX = ipaddress.IPv4Address('10.231.0.0').packed[:2]
 
 
 def checksum(data):
@@ -127,6 +129,7 @@ class Hub:
             raise
         self.socket.settimeout(.2)
         self.members, self.groups = {}, {}
+        self.names, self.aliases = {}, {}
         self.origins = {}
         self.lock = threading.Lock()
         self.stopping = threading.Event()
@@ -134,6 +137,7 @@ class Hub:
         self.thread.start()
 
     def register(self, identity, members):
+        members = list(members)
         with self.lock:
             if identity in self.groups:
                 raise ValueError('service network is already registered')
@@ -153,20 +157,60 @@ class Hub:
                     endpoint.close()
                 raise
             self.groups[identity] = routes
+            self.names[identity] = {}
             for address, (path, networks, _) in routes.items():
                 self.members[path] = (identity, address, networks)
+
+    def add(self, identity, entry):
+        """Publish one member without rebuilding or interrupting other routes."""
+        address = ipaddress.IPv4Address(entry['address']).packed
+        path = str(Path(entry['socket']).resolve())
+        networks = frozenset(entry['networks'])
+        aliases = tuple(entry.get('aliases', ()))
+        with self.lock:
+            routes, names = self.groups[identity], self.names[identity]
+            if path in self.members or address in routes:
+                raise ValueError('duplicate service network member')
+            for alias in aliases:
+                if any(networks.intersection(other) for other in names.get(alias, {}).values()):
+                    raise ValueError('service alias is already used on this named network: ' + alias)
+            Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            endpoint = Address(path)
+            routes[address] = (path, networks, endpoint)
+            self.members[path] = (identity, address, networks)
+            self.aliases[path] = aliases
+            for alias in aliases:
+                names.setdefault(alias, {})[address] = networks
+
+    def remove(self, identity, address):
+        with self.lock:
+            address = ipaddress.IPv4Address(address).packed
+            member = self.groups.get(identity, {}).pop(address, None)
+            if member is None:
+                return
+            path, _, endpoint = member
+            self.members.pop(path, None)
+            for alias in self.aliases.pop(path, ()):
+                entries = self.names[identity][alias]
+                entries.pop(address, None)
+                if not entries:
+                    self.names[identity].pop(alias)
+            self.origins = {key: value for key, value in self.origins.items() if value != path}
+            endpoint.close()
 
     def unregister(self, identity):
         with self.lock:
             for path, _, endpoint in self.groups.pop(identity, {}).values():
                 self.members.pop(path, None)
+                self.aliases.pop(path, None)
                 endpoint.close()
+            self.names.pop(identity, None)
             self.origins.clear()
 
     def run(self):
         while not self.stopping.is_set():
             try:
-                frame, _, flags, origin = self.socket.recvmsg(MAX_FRAME)
+                frame, _, flags, origin = self.socket.recvmsg(MAX_FRAME + len(DNS_FORWARD))
                 if flags & socket.MSG_TRUNC or len(frame) < 34:
                     continue
                 with self.lock:
@@ -183,6 +227,21 @@ class Hub:
                     if member is None:
                         continue
                     group, address, networks = member
+                    if frame.startswith(DNS_FORWARD):
+                        query = frame[len(DNS_FORWARD):]
+                        names = self.names[group]
+                        class VisibleNames:
+                            def get(self, name):
+                                matches = [ip for ip, scopes in names.get(name, {}).items()
+                                           if networks.intersection(scopes)]
+                                return str(ipaddress.IPv4Address(min(matches))) if matches else None
+                        reply = dns_reply(query, VisibleNames())
+                        # An unknown public name goes back through this peer's
+                        # ordinary egress policy, never through the hub's host.
+                        endpoint = self.groups[group][address][2]
+                        self.socket.sendto(reply if reply is not None else frame,
+                                           socket.MSG_DONTWAIT, endpoint.path)
+                        continue
                     target = self.groups[group].get(frame[30:34])
                     if target is None or not networks.intersection(target[1]):
                         continue
@@ -212,8 +271,8 @@ class Hub:
 class Peer:
     def __init__(self, config, packet):
         self.config, self.packet = config, packet
+        self.forward = None
         self.path = config['socket']
-        self.addresses = {ipaddress.IPv4Address(value).packed for value in config['peers'].values()}
         self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         self.address = self.hub = None
         self.hub_path = str(Path(config['hub']).resolve())
@@ -235,14 +294,22 @@ class Peer:
         self.thread.start()
 
     def send(self, frame):
-        reply = dns_reply(frame, self.config['peers'])
+        if (self.config.get('dynamic') and len(frame) >= 42 and frame[12:14] == b'\x08\x00'
+                and frame[14] == 0x45 and frame[23] == 17 and frame[26:30] == GUEST
+                and frame[30:34] == DNS and frame[36:38] == b'\0\x35'):
+            try:
+                self.socket.sendto(DNS_FORWARD + frame, socket.MSG_DONTWAIT, self.hub.path)
+            except OSError:
+                pass
+            return True
+        reply = dns_reply(frame, self.config.get('peers', {}))
         if reply is not None:
             try:
                 self.packet.send(reply, socket.MSG_DONTWAIT)
             except BlockingIOError:
                 pass
             return True
-        if len(frame) < 34 or frame[12:14] != b'\x08\x00' or frame[30:34] not in self.addresses:
+        if len(frame) < 34 or frame[12:14] != b'\x08\x00' or frame[30:32] != PRIVATE_PREFIX:
             return False
         try:
             self.socket.sendto(frame, socket.MSG_DONTWAIT, self.hub.path)
@@ -255,11 +322,15 @@ class Peer:
     def run(self):
         while not self.stopping.is_set():
             try:
-                frame, origin = self.socket.recvfrom(MAX_FRAME)
+                frame, origin = self.socket.recvfrom(MAX_FRAME + len(DNS_FORWARD))
                 if origin and origin != self.hub_origin and str(Path(origin).resolve()) == self.hub_path:
                     self.hub_origin = origin
                 if frame and origin == self.hub_origin:
-                    self.packet.send(frame, socket.MSG_DONTWAIT)
+                    if frame.startswith(DNS_FORWARD):
+                        if self.forward is not None:
+                            self.forward(frame[len(DNS_FORWARD):])
+                    else:
+                        self.packet.send(frame, socket.MSG_DONTWAIT)
             except BlockingIOError:
                 continue
             except socket.timeout:

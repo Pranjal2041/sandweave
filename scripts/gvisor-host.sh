@@ -31,9 +31,10 @@ done
 export APPTAINER_CACHEDIR="$lab_root/downloads/apptainer-cache"
 export APPTAINER_TMPDIR="$lab_root/runs/apptainer-tmp"
 mkdir -p "$lab_local/gvisor-tmp" "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
-exec apptainer exec --userns --contain --ipc --cleanenv --no-home \
+exec "${SANDWEAVE_PYTHON:-python3}" "$lab_root/scripts/host_compat.py" "$lab_root/tools/debian-trixie.sif" \
+  --contain --ipc --cleanenv --no-home \
   "${gpu_binds[@]}" \
   --bind "$lab_root:/lab" --bind "$lab_local:/local" \
   --bind "$lab_local/gvisor-tmp:/tmp" --pwd /lab \
-  "$lab_root/tools/debian-trixie.sif" \
+  -- \
   sh -c 'set -eu; test ! -e /dev/kvm; export PATH=/lab/tools/gvisor-nightly-20260906:/lab/tools/erofs/usr/bin:$PATH; exec "$@"' sh "$@"

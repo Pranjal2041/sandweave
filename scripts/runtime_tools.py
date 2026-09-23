@@ -4,6 +4,7 @@ from pathlib import Path
 import resource
 import shutil
 import sys
+import host_compat
 
 
 def limited(command):
@@ -27,9 +28,9 @@ def command(lab, local, name, *arguments, memory_limit=False, cwd=None):
     if not apptainer:
         raise RuntimeError('Apptainer is missing; run sandweave doctor')
     # Bind at the same host paths: helper arguments include node-local sockets.
-    result = [apptainer, 'exec', '--userns', '--contain', '--ipc', '--cleanenv', '--no-home',
+    result = [apptainer, 'exec', *host_compat.apptainer_options(), '--contain', '--ipc', '--cleanenv', '--no-home',
               '--bind', str(lab) + ':' + str(lab), '--bind', str(local) + ':' + str(local),
-              '--pwd', str(cwd or lab), str(Path(lab) / 'tools/debian-trixie.sif'),
+              '--pwd', str(cwd or lab), str(host_compat.apptainer_image(Path(lab) / 'tools/debian-trixie.sif')),
               'env', 'LD_LIBRARY_PATH=' + str(helpers / 'usr/lib/x86_64-linux-gnu')]
     if memory_limit:
         # Limit the network helper, after Apptainer's Go runtime has started.

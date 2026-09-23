@@ -12,6 +12,7 @@ scripts/network_policy.py
 scripts/network_allowlist.py
 scripts/service_network.py
 scripts/runtime_tools.py
+scripts/host_compat.py
 scripts/runtime_store.py
 scripts/snapshot_store.py
 scripts/filesystem_snapshot.py

@@ -238,12 +238,13 @@ def inspect(template='coding', *, assets=None):
             # Keep Apptainer's probe caches off the user's configured cache paths.
             env = {**os.environ, 'APPTAINER_CACHEDIR': temporary, 'APPTAINER_TMPDIR': temporary}
             try:
-                process = subprocess.run([apptainer, 'exec', '--userns', '--contain', '--ipc',
-                    '--cleanenv', '--no-home', str(root / 'tools/debian-trixie.sif'),
+                process = subprocess.run([apptainer, 'exec', *workspace.host_compat().apptainer_options(), '--contain', '--ipc',
+                    '--cleanenv', '--no-home', str(workspace.host_compat().apptainer_image(
+                        root / 'tools/debian-trixie.sif', directory=workspace.home(), apptainer=apptainer)),
                     'sh', '-c', 'test ! -e /dev/kvm'], capture_output=True, text=True,
                     stdin=subprocess.DEVNULL, timeout=30, env=env)
                 ok, detail = process.returncode == 0, (process.stdout + process.stderr).strip()[-2000:]
-            except (OSError, subprocess.TimeoutExpired) as error:
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                 ok, detail = False, str(error)
         checks.append(Check('container', 'Container support', 'pass' if ok else 'fail',
                             'Apptainer started a temporary container' if ok else detail))

@@ -163,7 +163,9 @@ class Builder:
 
     def container(self, root, image, *command):
         (root / 'build-tmp/home').mkdir(parents=True, exist_ok=True)
-        return [self.apptainer, 'exec', '--userns', '--containall', '--cleanenv', '--no-home',
+        image = workspace.host_compat().apptainer_image(image, directory=self.directory, apptainer=self.apptainer)
+        return [self.apptainer, 'exec', *workspace.host_compat().apptainer_options(),
+                '--containall', '--cleanenv', '--no-home',
                 '--bind', str(root) + ':/lab', '--bind', str(root / 'build-tmp') + ':/tmp',
                 '--env', 'HOME=/tmp/home', '--env', 'TMPDIR=/tmp',
                 '--env', 'GOCACHE=/tmp/go-cache', '--env', 'BAZELISK_HOME=/tmp/bazelisk',

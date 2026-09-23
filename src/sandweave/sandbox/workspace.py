@@ -1,7 +1,9 @@
 """Private worker state and immutable runtime inputs, independent of the old lab."""
 from contextlib import contextmanager
 import fcntl
+from functools import lru_cache
 import hashlib
+import importlib.util
 from importlib import resources
 import json
 import os
@@ -112,6 +114,15 @@ def engine_files():
                 raise ResourceUnavailable('Installed engine script is missing: ' + name.name)
             result.append(path)
     return sorted(result)
+
+
+@lru_cache(maxsize=1)
+def host_compat():
+    """Load the same host checks used by standalone, staged engine scripts."""
+    spec = importlib.util.spec_from_file_location('_sandweave_host_compat', engine_sources() / 'host_compat.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def assets(*, directory=None, selected=None):

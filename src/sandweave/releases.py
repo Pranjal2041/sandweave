@@ -71,8 +71,8 @@ def check_host(directory):
             (root / name).mkdir(parents=True, exist_ok=True)
         for name in ('passwd', 'group'):
             (root / 'etc' / name).touch()
-        command = [apptainer, 'exec', '--userns', '--contain', '--ipc', '--cleanenv', '--no-home',
-                   '--no-mount', 'tmp,home,cwd']
+        command = [apptainer, 'exec', *workspace.host_compat().apptainer_options(no_mount=('tmp', 'home', 'cwd')),
+                   '--contain', '--ipc', '--cleanenv', '--no-home']
         # Use only the host's trusted interpreter and libraries for this probe.
         # -I -S prevents importing user packages, sitecustomize or PYTHONPATH.
         base_prefix = str(Path(sys.base_prefix).resolve())

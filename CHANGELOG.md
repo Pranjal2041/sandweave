@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.22
+
+- Run inside existing container user namespaces when the caller already has
+  container-local mount authority. Keep ordinary unprivileged host launches
+  unchanged and skip optional Apptainer binds when their source is absent.
+- Reuse an unpacked Apptainer host image inside those containers, avoiding
+  nested FUSE mounts and repeated extraction on each sandbox launch.
+- Honor explicit OCI user namespaces, handle mediated mount paths and proc
+  cleanup, and use gVisor's existing futex communication when an outer
+  container already owns the seccomp notification listener.
+- Add concurrent sandbox and process-checkpoint acceptance under an inherited
+  seccomp listener. No host sudo, KVM or host security-policy changes are used.
+
 ## 0.2.21
 
 - Default controller listeners to `127.0.0.1` instead of `0.0.0.0`, including

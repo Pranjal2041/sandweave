@@ -3779,6 +3779,19 @@ index 22c8dc1..0d0bad8 100644
  // Context represents the execution context for a single thread.
  type Context interface {
  	// Switch resumes execution of the thread specified by the arch.Context64
+diff --git a/pkg/sentry/platform/systrap/subprocess.go b/pkg/sentry/platform/systrap/subprocess.go
+index 4de8f9a..811a91f 100644
+--- a/pkg/sentry/platform/systrap/subprocess.go
++++ b/pkg/sentry/platform/systrap/subprocess.go
+@@ -216,7 +216,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
+ 	}
+ 
+ 	if err := t.init(seccompNotify); err != nil {
+-		panic("failed to create a syscall thread")
++		panic(fmt.Sprintf("failed to create a syscall thread: %v", err))
+ 	}
+ 	s.syscallThread = &t
+ 
 diff --git a/pkg/sentry/platform/systrap/subprocess_amd64.go b/pkg/sentry/platform/systrap/subprocess_amd64.go
 index 070d84d..2fa568d 100644
 --- a/pkg/sentry/platform/systrap/subprocess_amd64.go
@@ -3804,6 +3817,35 @@ index 070d84d..2fa568d 100644
 +
  func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
  }
+ 
+diff --git a/pkg/sentry/platform/systrap/syscall_thread.go b/pkg/sentry/platform/systrap/syscall_thread.go
+index bf14741..74dcc9c 100644
+--- a/pkg/sentry/platform/systrap/syscall_thread.go
++++ b/pkg/sentry/platform/systrap/syscall_thread.go
+@@ -15,6 +15,7 @@
+ package systrap
+ 
+ import (
++	"errors"
+ 	"fmt"
+ 	"os"
+ 	"sync/atomic"
+@@ -100,8 +101,14 @@ func (t *syscallThread) init(seccompNotify bool) error {
+ 
+ 	if seccompNotify && seccompNotifyIsSupported {
+ 		if t.seccompNotify, err = t.installSeccompNotify(); err != nil {
+-			t.destroy()
+-			return fmt.Errorf("failed to install seccomp notify rules: %w", err)
++			// A process may inherit a notification listener from an outer
++			// container. Linux permits only one listener in the filter chain.
++			// Notification is an optimization here: the existing futex protocol
++			// performs the same communication without changing either filter.
++			if !errors.Is(err, unix.EBUSY) {
++				t.destroy()
++				return fmt.Errorf("failed to install seccomp notify rules: %w", err)
++			}
+ 		}
+ 	}
  
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 index 5d6b4ce..b6cd5f6 100644
@@ -7790,6 +7832,41 @@ index bde091e..b42f9b7 100644
  			connImpl = fsgofer.NewConnectionImpl(connConf)
  			connOpts = fsgofer.ConnectionOpts(cfg.readonly)
  		}
+diff --git a/runsc/cmd/sandboxsetup/process.go b/runsc/cmd/sandboxsetup/process.go
+index 60404f1..8fe835e 100644
+--- a/runsc/cmd/sandboxsetup/process.go
++++ b/runsc/cmd/sandboxsetup/process.go
+@@ -186,7 +186,29 @@ func UmountProcFile(syncFile *os.File) {
+ // The caller must still hold CAP_SYS_ADMIN.
+ func UmountProcInProcess() {
+ 	if err := unix.Unmount("/proc", unix.MNT_DETACH); err != nil {
+-		util.Fatalf("error umounting /proc: %v", err)
++		if err != unix.EBUSY {
++			util.Fatalf("error umounting /proc: %v", err)
++		}
++		// An outer container runtime may protect the literal /proc mount even
++		// after we have pivoted into our private root. Remove our own fd bind
++		// mount explicitly, then detach the proc mount from another location.
++		// The open fd-directory handle remains pinned across both unmounts.
++		if err := unix.Unmount(ProcFDBindMount, unix.MNT_DETACH); err != nil {
++			util.Fatalf("error umounting private proc fd mount: %v", err)
++		}
++		retired, err := os.MkdirTemp("/", ".proc-unmount-")
++		if err != nil {
++			util.Fatalf("creating private proc unmount directory: %v", err)
++		}
++		if err := unix.Mount("/proc", retired, "", unix.MS_MOVE, ""); err != nil {
++			util.Fatalf("moving private proc mount: %v", err)
++		}
++		if err := unix.Unmount(retired, unix.MNT_DETACH); err != nil {
++			util.Fatalf("error umounting relocated proc: %v", err)
++		}
++		if err := os.Remove(retired); err != nil {
++			util.Fatalf("removing private proc unmount directory: %v", err)
++		}
+ 	}
+ 	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
+ 		util.Fatalf("/proc is still accessible")
 diff --git a/runsc/cmd/sentry/sentrycmd/boot.go b/runsc/cmd/sentry/sentrycmd/boot.go
 index 3e711fc..ec10b76 100644
 --- a/runsc/cmd/sentry/sentrycmd/boot.go
@@ -9389,7 +9466,7 @@ index 0000000..02a983d
 +	}
 +}
 diff --git a/runsc/sandbox/sandbox.go b/runsc/sandbox/sandbox.go
-index bcc7287..5b8850d 100644
+index bcc7287..26bed8f 100644
 --- a/runsc/sandbox/sandbox.go
 +++ b/runsc/sandbox/sandbox.go
 @@ -1023,6 +1023,31 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
@@ -9424,7 +9501,20 @@ index bcc7287..5b8850d 100644
  	donations.DonateAndClose("mounts-fd", args.MountsFile)
  	donations.Donate("start-sync-fd", startSyncFile)
  	donations.DonateAndClose("pin-ring-fd", args.PinRingFile)
-@@ -1383,6 +1408,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
+@@ -1150,7 +1175,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
+ 	// configured.
+ 	rootlessEUID := unix.Geteuid() != 0
+ 	setUserMappings := false
+-	if conf.Network == config.NetworkHost || conf.DirectFS {
++	userns, hasUserNS := specutils.GetNS(specs.UserNamespace, args.Spec)
++	// An explicitly supplied namespace path is a caller-configured namespace;
++	// do not replace it with an additional anonymous user namespace.
++	joinUserNS := !rootlessEUID && hasUserNS && userns.Path != ""
++	if conf.Network == config.NetworkHost || conf.DirectFS || joinUserNS {
+ 		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
+ 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
+ 			nss = append(nss, userns)
+@@ -1383,6 +1412,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
  			mem = memLimit
  		}
  	}
@@ -9437,7 +9527,7 @@ index bcc7287..5b8850d 100644
  	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
  
  	if args.Attached {
-@@ -2570,18 +2601,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
+@@ -2570,18 +2605,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
  // TarRootfsUpperLayer serializes the rootfs upper layer of a given
  // container to a tar file. When the rootfs is not an overlayfs, it
  // returns an error. It writes the tar file to outFD.
@@ -9466,3 +9556,105 @@ index bcc7287..5b8850d 100644
  // ReadFile reads a file of the sandbox from the given container (or root container if containerID is empty) up to the specified size from the specified offset.
  func (s *Sandbox) ReadFile(containerID, path string, offset, size int64, outFD *os.File) error {
  	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, offset: %d, size: %d", s.ID, containerID, path, offset, size)
+diff --git a/runsc/specutils/BUILD b/runsc/specutils/BUILD
+index bac4e4e..0f4d59f 100644
+--- a/runsc/specutils/BUILD
++++ b/runsc/specutils/BUILD
+@@ -43,6 +43,7 @@ go_test(
+     size = "small",
+     srcs = [
+         "gofer_conf_test.go",
++        "namespace_test.go",
+         "specutils_test.go",
+     ],
+     library = ":specutils",
+diff --git a/runsc/specutils/namespace.go b/runsc/specutils/namespace.go
+index a727884..9cd8228 100644
+--- a/runsc/specutils/namespace.go
++++ b/runsc/specutils/namespace.go
+@@ -121,6 +121,15 @@ func ApplyNS(ns specs.LinuxNamespace) (func() error, error) {
+ 	if err != nil {
+ 		return nil, fmt.Errorf("error opening %q: %v", curPath, err)
+ 	}
++	// Joining our current user namespace is both unnecessary and forbidden by
++	// Linux. Compare the open descriptors, not path strings: callers may refer
++	// to the same namespace through another process or a pinned namespace file.
++	newInfo, newErr := newNS.Stat()
++	oldInfo, oldErr := oldNS.Stat()
++	if ns.Type == specs.UserNamespace && newErr == nil && oldErr == nil && os.SameFile(newInfo, oldInfo) {
++		oldNS.Close()
++		return func() error { return nil }, nil
++	}
+ 
+ 	// Set namespace to the one requested and setup function to restore it back.
+ 	flag := nsCloneFlag(ns.Type)
+diff --git a/runsc/specutils/namespace_test.go b/runsc/specutils/namespace_test.go
+new file mode 100644
+index 0000000..1ce83aa
+--- /dev/null
++++ b/runsc/specutils/namespace_test.go
+@@ -0,0 +1,43 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package specutils
++
++import (
++	"fmt"
++	"os"
++	"runtime"
++	"testing"
++
++	specs "github.com/opencontainers/runtime-spec/specs-go"
++)
++
++func TestApplyCurrentUserNamespace(t *testing.T) {
++	runtime.LockOSThread()
++	defer runtime.UnlockOSThread()
++	// Neither spelling should issue setns: Linux forbids re-entering the
++	// current user namespace, even for root. These calls need no privilege.
++	for _, path := range []string{"/proc/self/ns/user", fmt.Sprintf("/proc/%d/ns/user", os.Getpid())} {
++		restore, err := ApplyNS(specs.LinuxNamespace{Type: specs.UserNamespace, Path: path})
++		if err != nil {
++			t.Fatalf("ApplyNS(%q): %v", path, err)
++		}
++		if err := restore(); err != nil {
++			t.Fatalf("restoring %q: %v", path, err)
++		}
++	}
++	if _, err := ApplyNS(specs.LinuxNamespace{Type: specs.UserNamespace, Path: "/proc/self/ns/does-not-exist"}); err == nil {
++		t.Fatal("missing namespace was accepted")
++	}
++}
+diff --git a/runsc/specutils/specutils.go b/runsc/specutils/specutils.go
+index 435b456..77366af 100644
+--- a/runsc/specutils/specutils.go
++++ b/runsc/specutils/specutils.go
+@@ -830,6 +830,16 @@ func SafeMount(src, dst, fstype string, flags uintptr, data, procPath string) er
+ 	}
+ 
+ 	mountErr := unix.Mount(src, safePath, fstype, flags, data)
++	if mountErr == unix.ENOENT && procPath != "/proc" {
++		// Some outer container runtimes mediate mount(2) and only resolve
++		// descriptors through the canonical procfs path. Keep the destination
++		// pinned and verify the alias names the very same descriptor before retrying.
++		canonical := filepath.Join("/proc/self/fd", strconv.Itoa(fd))
++		var alias, pinned unix.Stat_t
++		if unix.Stat(canonical, &alias) == nil && unix.Fstat(fd, &pinned) == nil && alias.Dev == pinned.Dev && alias.Ino == pinned.Ino {
++			mountErr = unix.Mount(src, canonical, fstype, flags, data)
++		}
++	}
+ 	if mountErr != nil {
+ 		return fmt.Errorf("mount(%q, %q, %q, %#x, %q) failed: %w", src, safePath, fstype, flags, data, mountErr)
+ 	}

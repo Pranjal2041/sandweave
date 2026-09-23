@@ -14,6 +14,7 @@ import shutil
 import cpu_broker
 import runtime_store
 import runtime_tools
+import host_compat
 import snapshot_store
 import filesystem_snapshot
 import gvisor_gpu
@@ -260,6 +261,7 @@ if args.restore:
     if (args.restore / 'fixtures.tar').exists():
         shutil.copy2(args.restore / 'fixtures.tar', bundle / 'fixtures.tar')
 spec = json.loads((bundle / 'config.json').read_text())
+host_compat.configure_user_namespace(spec)
 if args.restore and not filesystem_restore:
     base = lab / snapshot_manifest['base_image']['path']
     # Older lab snapshots used node-local aliases. Materialize those immutable

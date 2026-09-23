@@ -1422,6 +1422,15 @@
 They need permission to run unprivileged containers. Setup installs Apptainer
 when needed and checks whether the host permits the actual container launch.
 Host sudo and <code>/dev/kvm</code> are not required.</p>
+<p>Inside an existing container, Sandweave can use container-local root's existing
+mount permissions. It reuses that user namespace and prepares the Apptainer
+host image once in <code>host-images</code> under your chosen Sandweave directory. Guest
+code still runs inside gVisor. This does not grant host privileges or override
+restrictions imposed on your account by the outer container.</p>
+<p>The default Code sandbox reserves 1 GiB for the guest plus 512 MiB for its
+runtime. First-time package installation also needs memory for downloads and
+unpacking. A 1 GiB host cannot run that default configuration; smaller resource
+limits can be used with an already prepared image.</p>
 <p>A GPU workload needs a compatible NVIDIA GPU already available to the worker.
 Creating a sandbox does not allocate a GPU from a scheduler.</p>
 <h2 id="prepare-on-first-use">Prepare on first use<a class="headerlink" href="#prepare-on-first-use" title="Permanent link">&para;</a></h2>

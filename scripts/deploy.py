@@ -133,6 +133,11 @@ def validate(directory, release):
     (live / 'pytest.ini').write_text('[pytest]\nmarkers = integration: installed SDK acceptance\n')
     env.update(SANDWEAVE_HOME=str(work / 'worker'), SANDWEAVE_INTEGRATION='1')
     run(python, '-m', 'pytest', '-q', '-s', '--confcutdir=' + str(live), cwd=live, env=env)
+    shutil.copyfile(source / 'tests/integration/test_container_host.py', live / 'test_container_host.py')
+    run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+        live / 'test_container_host.py', cwd=live, env=env)
+    run(python, source / 'scripts/with-seccomp-listener.py', python, '-m', 'pytest', '-q',
+        '--confcutdir=' + str(live), live / 'test_container_host.py', cwd=live, env=env)
     shutil.copyfile(source / 'tests/integration/test_build_first_use.py', live / 'test_build_first_use.py')
     run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
         live / 'test_build_first_use.py', cwd=live, env=env)

@@ -630,6 +630,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#connect-sandboxes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connect sandboxes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#install-dependencies-before-going-offline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1313,6 +1324,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#connect-sandboxes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connect sandboxes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#install-dependencies-before-going-offline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1417,28 +1439,86 @@
 <p>Replace <code>lab</code> with the full printed cluster address when connecting from another
 machine. Offline networking applies <strong>inside the sandbox</strong>. The Python client
 and worker can still communicate with the controller and perform sandbox actions.</p>
+<h2 id="connect-sandboxes">Connect sandboxes<a class="headerlink" href="#connect-sandboxes" title="Permanent link">&para;</a></h2>
+<p>Create a service network, then join independent sandboxes to it. This works with
+any gVisor template, including custom GNOME desktops:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span><span class="p">,</span> <span class="n">create_service_network</span><span class="p">,</span> <span class="n">delete_service_network</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">target</span> <span class="o">=</span> <span class="s2">"lab"</span>  <span class="c1"># Or the full cluster address. Omit target for local sandboxes.</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">group</span> <span class="o">=</span> <span class="n">create_service_network</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">target</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">api</span> <span class="o">=</span> <span class="n">desktop</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">api</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">target</span><span class="p">,</span> <span class="n">service_network</span><span class="o">=</span><span class="n">group</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>                  <span class="n">aliases</span><span class="o">=</span><span class="p">[</span><span class="s2">"api"</span><span class="p">],</span> <span class="n">networks</span><span class="o">=</span><span class="p">[</span><span class="s2">"private"</span><span class="p">],</span> <span class="n">network</span><span class="o">=</span><span class="s2">"offline"</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">api</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="s2">"python -m http.server 8000 --bind 0.0.0.0"</span><span class="p">)</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">desktop</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">target</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="s2">"gnome"</span><span class="p">,</span> <span class="n">service_network</span><span class="o">=</span><span class="n">group</span><span class="p">,</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>                      <span class="n">aliases</span><span class="o">=</span><span class="p">[</span><span class="s2">"desktop"</span><span class="p">],</span> <span class="n">networks</span><span class="o">=</span><span class="p">[</span><span class="s2">"private"</span><span class="p">],</span> <span class="n">network</span><span class="o">=</span><span class="s2">"offline"</span><span class="p">)</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="c1"># The desktop can reach http://api:8000, including from its browser.</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">desktop</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"service_network"</span><span class="p">])</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="k">for</span> <span class="n">env</span> <span class="ow">in</span> <span class="p">(</span><span class="n">desktop</span><span class="p">,</span> <span class="n">api</span><span class="p">):</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>        <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>            <span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>            <span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>    <span class="n">delete_service_network</span><span class="p">(</span><span class="n">group</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="n">target</span><span class="p">)</span>
+</code></pre></div>
+<p>The server binds inside its sandbox. This does not publish a host port.
+<code>network=</code> still controls outside access: offline members can talk to peers,
+but cannot reach the internet. Internet, allowlist and proxy policies continue
+to govern all other traffic.</p>
+<ul>
+<li><code>service_network</code> identifies the group and its worker. All members are placed
+  on that worker. If it is full, cluster requests wait for capacity rather than
+  moving to another worker; <code>startup_timeout</code> bounds that wait.</li>
+<li><code>networks</code> names the segments a member can use, defaulting to <code>["default"]</code>.
+  Members must share at least one name to communicate, even by IP address.</li>
+<li><code>aliases</code> supplies DNS names, defaulting to <code>[]</code>. Names become visible when a
+  member joins, including to already-running peers. An alias must be unique
+  among members sharing a named network.</li>
+<li><code>env.info["service_network"]</code> contains the ID, aliases, named networks and
+  service IPv4 address. That address remains fixed for the member's lifetime.</li>
+</ul>
+<p>Private packets pass through the worker's hub over private local sockets.
+The hub checks membership and assigns the source identity; guests cannot choose
+another member's source address or bypass the hub to reach a different segment.
+This is a worker-local network, not an encrypted link between workers. A member
+of two named networks can intentionally act as an application gateway between
+them, so grant multi-network membership only where intended.</p>
+<p>Termination removes membership. <code>close()</code> alone disconnects an ordinary sandbox
+handle; it does not terminate its runtime. Networks persist until explicitly
+deleted, and deletion refuses active members. A lost worker's network does not
+migrate; create a new network for replacement sandboxes.</p>
+<p>For proxy-aware tools, include peer aliases in their proxy bypass setting
+(for example <code>NO_PROXY=api</code>), so private requests use the service network. An
+unknown DNS name falls back to the sandbox's ordinary egress policy.</p>
+<p>Filesystem caches are supported. Restoring one creates fresh membership when
+you explicitly pass <code>service_network=...</code>; it does not restore a source member's
+address. Memory checkpoints of joined members are unsupported because rolling
+back one member independently would also roll back live connections to peers.
+Existing Harbor service groups remain separate and cannot join another group.
+The client, controller and workers need Sandweave 0.2.24 or newer.</p>
 <h2 id="install-dependencies-before-going-offline">Install dependencies before going offline<a class="headerlink" href="#install-dependencies-before-going-offline" title="Permanent link">&para;</a></h2>
 <p>Worker preparation may download a runtime or template on first use, even when
 the requested sandbox is offline. Install software and save a filesystem cache
 before running an offline workload:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">setup</span><span class="o">=</span><span class="s2">"./install-tools.sh"</span><span class="p">)</span> <span class="k">as</span> <span class="n">builder</span><span class="p">:</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">ready</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"tools-ready"</span><span class="p">)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">ready</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="s2">"offline"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">setup</span><span class="o">=</span><span class="s2">"./install-tools.sh"</span><span class="p">)</span> <span class="k">as</span> <span class="n">builder</span><span class="p">:</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">ready</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"tools-ready"</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">ready</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="s2">"offline"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>Provide your own <code>install-tools.sh</code>. The second sandbox starts from the saved
 files. A setup script that requires internet cannot download packages after
 offline mode is enabled.</p>
 <h2 id="restrict-destinations">Restrict destinations<a class="headerlink" href="#restrict-destinations" title="Permanent link">&para;</a></h2>
 <p>Allow only selected hostnames or IPv4 addresses:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Sandbox</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="s2">"allowlist"</span><span class="p">,</span> <span class="n">allowed_hosts</span><span class="o">=</span><span class="p">(</span><span class="s2">"pypi.org"</span><span class="p">,</span> <span class="s2">"*.pythonhosted.org"</span><span class="p">))</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python -m pip install requests"</span><span class="p">)</span><span class="o">.</span><span class="n">returncode</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Sandbox</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="s2">"allowlist"</span><span class="p">,</span> <span class="n">allowed_hosts</span><span class="o">=</span><span class="p">(</span><span class="s2">"pypi.org"</span><span class="p">,</span> <span class="s2">"*.pythonhosted.org"</span><span class="p">))</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python -m pip install requests"</span><span class="p">)</span><span class="o">.</span><span class="n">returncode</span><span class="p">)</span>
 </code></pre></div>
 <p>The policy permits IPs returned by DNS for those names. It does not check HTTP
 Host or TLS SNI names when sites share an IP. Unlisted destinations are blocked;
@@ -1446,18 +1526,18 @@ IPv4 addresses and CIDRs are also accepted. This requires the <code>0.2.20rc7</c
 on the client, controller and workers. Harbor tasks apply their phase policies
 automatically.</p>
 <h2 id="use-a-proxy">Use a proxy<a class="headerlink" href="#use-a-proxy" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Sandbox</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"proxies.json"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">proxies</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">network</span><span class="o">=</span><span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">))</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"curl -s https://api.ipify.org"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"network"</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Sandbox</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"proxies.json"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">proxies</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">network</span><span class="o">=</span><span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">))</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"curl -s https://api.ipify.org"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"network"</span><span class="p">])</span>
 </code></pre></div>
 <p><code>proxies.json</code> contains a JSON list of URLs, for example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">[</span><span class="s2">"http://USERNAME:PASSWORD@HOST:PORT"</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">[</span><span class="s2">"http://USERNAME:PASSWORD@HOST:PORT"</span><span class="p">]</span>
 </code></pre></div>
 <p>Keep this file private. You can also pass one URL directly to <code>Network(proxy=...)</code>.
 By default, each sandbox randomly selects one supplied proxy and keeps it for its
@@ -1483,11 +1563,11 @@ pinned in the guest's hosts file for the sandbox's lifetime.</p>
 <p>The configured proxy also applies to setup commands. To install dependencies
 using direct internet and run episodes through proxies, build a filesystem
 cache first:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">setup</span><span class="o">=</span><span class="s2">"./install-tools.sh"</span><span class="p">)</span> <span class="k">as</span> <span class="n">builder</span><span class="p">:</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">ready</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"research-tools"</span><span class="p">)</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">ready</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">))</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"curl -s https://api.ipify.org"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">setup</span><span class="o">=</span><span class="s2">"./install-tools.sh"</span><span class="p">)</span> <span class="k">as</span> <span class="n">builder</span><span class="p">:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">ready</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"research-tools"</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">ready</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">))</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"curl -s https://api.ipify.org"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>Worker-side downloads, such as runtime preparation and image imports, use the
 worker's connection. They are separate from traffic inside the sandbox.
@@ -1499,23 +1579,23 @@ compare the same research requests directly and through ten proxies.</p>
 <h2 id="proxy-policies">Proxy policies<a class="headerlink" href="#proxy-policies" title="Permanent link">&para;</a></h2>
 <p><code>ProxyPolicy</code> controls which proxies are eligible and how a pool distributes
 them. The policy is configuration; each pool maintains its own assignment state.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">ProxyPolicy</span><span class="p">,</span> <span class="n">Sandbox</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"proxies.json"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">proxies</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">,</span> <span class="n">policy</span><span class="o">=</span><span class="n">ProxyPolicy</span><span class="p">(</span><span class="s2">"same_region"</span><span class="p">))</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">warm</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"network"</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">ProxyPolicy</span><span class="p">,</span> <span class="n">Sandbox</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"proxies.json"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">proxies</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">,</span> <span class="n">policy</span><span class="o">=</span><span class="n">ProxyPolicy</span><span class="p">(</span><span class="s2">"same_region"</span><span class="p">))</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">warm</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"network"</span><span class="p">])</span>
 </code></pre></div>
 <p>For region policies, group URLs by the region labels you supply:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">{</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">"uk"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://USER:PASS@UK_HOST_1:PORT"</span><span class="p">,</span><span class="w"> </span><span class="s2">"http://USER:PASS@UK_HOST_2:PORT"</span><span class="p">],</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">"us"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://USER:PASS@US_HOST_1:PORT"</span><span class="p">,</span><span class="w"> </span><span class="s2">"http://USER:PASS@US_HOST_2:PORT"</span><span class="p">]</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">"uk"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://USER:PASS@UK_HOST_1:PORT"</span><span class="p">,</span><span class="w"> </span><span class="s2">"http://USER:PASS@UK_HOST_2:PORT"</span><span class="p">],</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">"us"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://USER:PASS@US_HOST_1:PORT"</span><span class="p">,</span><span class="w"> </span><span class="s2">"http://USER:PASS@US_HOST_2:PORT"</span><span class="p">]</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="p">}</span>
 </code></pre></div>
 <p>Labels are matched exactly. Sandweave uses this supplied metadata; it does not
 infer location from the URL. Other policies also accept a flat URL list or one URL.</p>
@@ -1546,10 +1626,10 @@ infer location from the URL. Other policies also accept a flat URL list or one U
 </tbody>
 </table>
 <p>Restrict any policy to a specific region inside the policy itself:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">,</span> <span class="n">policy</span><span class="o">=</span><span class="n">ProxyPolicy</span><span class="p">(</span><span class="s2">"random"</span><span class="p">,</span> <span class="n">region</span><span class="o">=</span><span class="s2">"uk"</span><span class="p">))</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"curl -s https://api.ipify.org"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">proxy</span><span class="o">=</span><span class="n">proxies</span><span class="p">,</span> <span class="n">policy</span><span class="o">=</span><span class="n">ProxyPolicy</span><span class="p">(</span><span class="s2">"random"</span><span class="p">,</span> <span class="n">region</span><span class="o">=</span><span class="s2">"uk"</span><span class="p">))</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">network</span><span class="o">=</span><span class="n">network</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"curl -s https://api.ipify.org"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>A standalone sandbox selects one eligible proxy and keeps it. With <code>same_region</code>,
 it first selects a region, then a proxy in that region. Sharing a <code>Network</code>

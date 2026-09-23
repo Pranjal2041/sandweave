@@ -1221,6 +1221,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#service-networks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service networks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#resource-values" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1457,6 +1468,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#service-networks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service networks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#resource-values" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1551,6 +1573,7 @@
 <p>Import the public objects from <code>sandweave</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">Cluster</span><span class="p">,</span> <span class="n">Job</span><span class="p">,</span> <span class="n">Benchmark</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPU</span><span class="p">,</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">GPU</span><span class="p">,</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Template</span><span class="p">,</span> <span class="n">SnapshotRef</span><span class="p">,</span> <span class="n">Mount</span><span class="p">,</span> <span class="n">Slurm</span><span class="p">,</span> <span class="n">Recording</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_service_network</span><span class="p">,</span> <span class="n">delete_service_network</span>
 </code></pre></div>
 <p>Methods that support async calls expose <code>.aio</code>. See <a href="../async/">async Python</a>.</p>
 <h2 id="sandbox">Sandbox<a class="headerlink" href="#sandbox" title="Permanent link">&para;</a></h2>
@@ -1620,6 +1643,21 @@
 <td><code>network</code></td>
 <td><code>"internet"</code>, <code>"offline"</code>, or <code>Network(...)</code>.</td>
 <td>Template default, normally <code>"internet"</code></td>
+</tr>
+<tr>
+<td><code>service_network</code></td>
+<td>ID returned by <code>create_service_network(target=...)</code>. Pins placement to its worker.</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>aliases</code></td>
+<td>DNS names visible to members sharing a named network.</td>
+<td><code>[]</code></td>
+</tr>
+<tr>
+<td><code>networks</code></td>
+<td>Named networks this member joins within the service network.</td>
+<td><code>["default"]</code></td>
 </tr>
 <tr>
 <td><code>target</code></td>
@@ -1816,6 +1854,12 @@ record. Check that <code>status == "passed"</code> before relying on the saved s
 <code>env.vr</code> exposes VR controls. A template must supply a control before it can be
 used. See <a href="../desktop/">desktop agents</a>, <a href="../vr/">VR games</a>, and
 <a href="../templates/">templates</a>.</p>
+<h2 id="service-networks">Service networks<a class="headerlink" href="#service-networks" title="Permanent link">&para;</a></h2>
+<p><code>create_service_network(target=None)</code> returns a network ID. Pass that ID and the
+same target to <code>Sandbox(service_network=id, aliases=[...], networks=[...])</code>.
+<code>delete_service_network(id, target=None)</code> deletes an empty network; terminate its
+members first. <code>env.info["service_network"]</code> reports membership and its fixed
+service address. See <a href="../networking/#connect-sandboxes">connecting sandboxes</a>.</p>
 <h2 id="resource-values">Resource values<a class="headerlink" href="#resource-values" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">cpu</span> <span class="o">=</span> <span class="n">CPU</span><span class="p">(</span><span class="n">vcpus</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">quota</span><span class="o">=</span><span class="mf">1.5</span><span class="p">)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">memory</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">guest</span><span class="o">=</span><span class="s2">"4GiB"</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="s2">"1GiB"</span><span class="p">)</span>

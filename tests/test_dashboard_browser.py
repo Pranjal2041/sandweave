@@ -22,8 +22,11 @@ def test_default_start_prints_a_reusable_browser_link(tmp_path, monkeypatch):
         'cluster', 'start', 'browser-link', '--no-worker'], cwd=tmp_path, text=True)
     with Cluster.connect('browser-link') as cluster:
         try:
-            link = next(line.removeprefix('Dashboard: ') for line in output.splitlines()
-                        if line.startswith('Dashboard: '))
+            prefix = 'Dashboard (this machine only): '
+            links = [line.removeprefix(prefix) for line in output.splitlines()
+                     if line.startswith(prefix)]
+            assert len(links) == 1
+            link = links[0]
             token = address(link)['token']
             root = Path(os.environ['SANDWEAVE_BROWSER_TESTS'])
             root.mkdir(parents=True, exist_ok=True)

@@ -123,8 +123,38 @@ filesystem-cache restore, live process-memory restore, offline networking,
 cleanup, and preservation of the global storage location. Five filesystem
 compatibility tests and eight systrap tests also passed on that kernel.
 
+Both desktop integration cases passed on the same Linux 5.4 kernel with the
+emulation settings above: clean 1920×1080 startup, exact Unicode input observed
+by GTK, mouse/input sequencing, pause/resume, filesystem snapshot restore,
+1280×800 configuration, and preservation of the user's overview state across
+pause/resume. They took 1,606.39 seconds under TCG. The initial and restored
+desktop screenshots were opened and inspected. The immediate typed/resumed
+captures preceded the application's repaint under emulation; input correctness
+was checked using the application's saved text, not those pixels. Native captures
+show the typed text, with the existing missing Japanese glyphs in the base font
+set. The test-only auto-repeat setting is not a change to the shipped desktop.
+
 On Babel's Linux 5.14 host, the same release engine passed 15 SDK, snapshot and
-mount integration cases and both desktop integration cases. The SDK host suite
-passed 661 tests, with three skipped and 212 integration/GPU cases deselected.
-Engine filesystem, gofer and systrap test targets passed as well. These results
-do not claim coverage of GPU workloads.
+mount integration cases and both desktop integration cases. During qualification,
+the SDK host suite passed 661 tests, with three skipped and 212 integration/GPU
+cases deselected. After the final SDK changes, the committed wheel passed all
+108 selected release checks, including installation, commands, snapshots,
+mounts, desktop controls and the startup regressions. Engine filesystem, gofer
+and systrap test targets passed as well. These results do not claim coverage of
+GPU workloads.
+
+SDK 0.2.27 is published from commit
+`ff43815318b0671768e8f1358c33b01c64358ad4`. The anonymous PyPI downloads match the
+validated artifacts: wheel SHA-256
+`6292cbf5ba76911c430cdcafdcf3239e0f9b94b658c549ca35ee5bcf3c400048`, source archive
+SHA-256 `42037e60af1dfc874d0bd791a306e106184b0c4871b8072ae85fc24c3197500e`.
+GitHub release digests match them as well. Anonymous downloads of all four
+runtime assets match the local packaged files. The published documentation
+passed browser interactions and checks of 23 pages, 109 Python examples and
+1,806 internal links; its installation page was opened and inspected.
+
+Finally, the Linux 5.4 VM reinstalled `sandweave==0.2.27` from public PyPI with
+`--no-cache --reinstall --no-deps`. The existing
+`test_sdk.py::test_setup_and_borrowed_handle` passed against that installation
+and the prepared runtime in 34.54 seconds, covering setup scripts, file access,
+borrowed handles, pause/resume and cleanup.

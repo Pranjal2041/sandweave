@@ -56,5 +56,75 @@
     "filesystem_compatibility": 5,
     "systrap": 8,
     "status": "passed"
+  },
+  "desktop": {
+    "status": "passed",
+    "tests": 2,
+    "seconds": 1606.39,
+    "sdk_commit": "ff43815318b0671768e8f1358c33b01c64358ad4",
+    "test_commit": "b79cffb",
+    "cpu_model": "Nehalem",
+    "memory_gib": 16,
+    "configuration": {
+      "startup_timeout": 900,
+      "desktop_ready_timeout": 600,
+      "action_timeout_scale": 10,
+      "x11_auto_repeat": false
+    },
+    "checks": [
+      "clean-1920x1080-start",
+      "no-visible-vnc-dialog",
+      "sysinit-active",
+      "udev-masked",
+      "gtk-unicode-input",
+      "mouse-input-sequence",
+      "pause-resume",
+      "filesystem-snapshot-restore",
+      "1280x800-resolution",
+      "overview-preserved",
+      "startup-timings-preserved"
+    ],
+    "screenshots_sha256": {
+      "initial.png": "38bab5264c9ccd4deec6b06c3d27a8ec00f4a1f3aa0bd707b0469d30876c523d",
+      "typed.png": "a3d38c029b47b5c9d06e7c04f2d89995c7e836c21676d0d50ad10998409fec82",
+      "resumed.png": "a3d38c029b47b5c9d06e7c04f2d89995c7e836c21676d0d50ad10998409fec82",
+      "restored.png": "ffdabc15d415330c719e467e8c9e86535195c988b54d7a5c256e0f1addc15175"
+    },
+    "visual_inspection": [
+      "clean initial desktop",
+      "clean restored desktop"
+    ],
+    "input_observation": "Exact GTK text verified from application file; immediate TCG screenshots precede application repaint.",
+    "scope": "Real kernel under CPU emulation; native performance and GPU workloads are not measured."
+  },
+  "publication": {
+    "sdk_version": "0.2.27",
+    "sdk_commit": "ff43815318b0671768e8f1358c33b01c64358ad4",
+    "pypi_downloads": {
+      "sandweave-0.2.27-py3-none-any.whl": "6292cbf5ba76911c430cdcafdcf3239e0f9b94b658c549ca35ee5bcf3c400048",
+      "sandweave-0.2.27.tar.gz": "42037e60af1dfc874d0bd791a306e106184b0c4871b8072ae85fc24c3197500e"
+    },
+    "runtime_downloads": {
+      "manifest.json": "2fd8341e4aa8d52acac5417399c798f739984234065067343b51539c5c25623f",
+      "runtime-release.json": "0031c3474f2323ac4921f1740123fb426dbd3af178b251013d80d9adef7468e4",
+      "SHA256SUMS": "5d3d418035d604c6d3242424b3a78c532cbd7c710dcc780a5b58f4c07a7eea6f",
+      "sandweave-runtime-2026.09.24.1-linux-x86_64.tar.gz": "63739a9228e86dd897a389cc56cc39b843b9a1cf0f2329e9e7a165903d471bc4"
+    },
+    "installed_wheel_release_tests": 108,
+    "documentation": {
+      "pages": 23,
+      "python_examples": 109,
+      "internal_links": 1806,
+      "browser": "passed"
+    },
+    "linux54_public_pypi_install": {
+      "status": "passed",
+      "tests": [
+        "test_setup_and_borrowed_handle"
+      ],
+      "seconds": 34.54,
+      "installation": "public PyPI, no cache, reinstall, no dependencies",
+      "runtime": "existing prepared runtime with published engine hashes"
+    }
   }
 }

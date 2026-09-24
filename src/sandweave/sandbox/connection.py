@@ -39,7 +39,7 @@ class Connection:
     async def acall(self, operation, **parameters):
         return await self.arequest(operation, parameters)
 
-    async def arequest(self, operation, parameters, *, token=None):
+    def asynchronous(self):
         from .async_connection import AsyncConnection
         loop = asyncio.get_running_loop()
         with self.lock:
@@ -50,7 +50,13 @@ class Connection:
                 connection = self.async_connections[loop] = AsyncConnection(
                     self.host, self.port, self.token, timeout=self.timeout,
                     unix_path=self.unix_path, tls=self.tls, ca_file=self.ca_file, rpc_path=self.rpc_path)
-        return await connection.request(operation, parameters, token=token)
+        return connection
+
+    async def arequest(self, operation, parameters, *, token=None):
+        return await self.asynchronous().request(operation, parameters, token=token)
+
+    async def open_stream(self, identity, *, path='/vnc', token=None):
+        return await self.asynchronous().open_stream(identity, path=path, token=token)
 
     async def aclose(self):
         loop = asyncio.get_running_loop()

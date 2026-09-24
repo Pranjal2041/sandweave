@@ -153,7 +153,8 @@ class Management:
         if operation not in {'describe', 'command_start', 'process_status', 'process_output',
                              'process_stdin', 'process_terminate', 'process_resize', 'file', 'setup',
                              'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording',
-                             'image_capture', 'network_policy', 'service_rpc', 'service_volume_import', 'service_setup'}:
+                             'image_capture', 'network_policy', 'service_rpc', 'service_volume_import', 'service_setup',
+                             'vnc_stream'}:
             return False
         return parameters.get('identity') == value['id']
 

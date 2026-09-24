@@ -83,7 +83,12 @@ class Bridge:
                 link = links[port]
                 links.move_to_end(port)
                 link['active'] += 1
-                result = {'result': await link['connection'].request(request['method'], request['parameters'], token=endpoint['token'])}
+                if request['method'] == 'vnc_stream':
+                    from .streams import bridge
+                    value = await bridge(controller.control, link['connection'], endpoint['token'], request['parameters'])
+                else:
+                    value = await link['connection'].request(request['method'], request['parameters'], token=endpoint['token'])
+                result = {'result': value}
             except Exception as error:
                 result = {'error': {'kind': type(error).__name__, 'message': str(error),
                     **{k: getattr(error, k, None) for k in ('operation_id', 'sandbox_id', 'phase')}}}

@@ -178,9 +178,45 @@ print(info["vnc"]["url"])
 print(info["vnc"]["password"])
 ```
 
-The VNC address points to the worker's loopback port. Remote VNC access uses your
-own network or tunnel arrangement. A cluster's command transport does not
-automatically forward that separate TCP connection.
+The VNC address points to the worker's loopback port. For a remote viewer, use
+the SDK byte stream below, or arrange your own tunnel to that port.
+
+## Stream VNC through the SDK
+
+```python
+from sandweave import Sandbox
+
+env = Sandbox.connect(sandbox_id, target="lab")
+stream = env.desktop.vnc()
+try:
+    banner = stream.read(12)
+    # Pass stream.read and stream.write to your RFB/VNC client.
+finally:
+    stream.close()
+    env.close()
+```
+
+This opens a bidirectional byte stream through the same authenticated SDK
+endpoint used for commands and files. Local, SSH, and Weave targets are supported,
+including HTTPS controllers and workers that connect outward to the controller.
+There is no separate VNC port to expose or tunnel to configure.
+
+`read(n=65536)` returns up to `n` bytes, or `b""` at EOF. `write(data)` sends all
+the bytes and returns their count. Reads and writes can run concurrently;
+slow readers apply backpressure. Transport failures raise an exception and are
+never silently reconnected or replayed. The stream carries the unmodified RFB
+protocol: your VNC client still negotiates it and authenticates using the
+password in `env.info["vnc"]["password"]`.
+
+Async calls use `await env.desktop.vnc.aio()`, `await stream.read.aio(n)`,
+`await stream.write.aio(data)`, and `await stream.close.aio()`. You can use
+`asyncio.wait_for` to set a read deadline. Closing a stream leaves the desktop
+running. Closing its sandbox handle, pausing or terminating the sandbox, or
+losing its worker ends the stream. Open a new stream after resume.
+
+Streaming requires Sandweave 0.2.26 or newer on the client, controller and worker,
+and a template that exposes an Xvnc desktop, such as `gnome` or a template
+extending it. It does not install a VNC server in templates without one.
 
 ## Measure startup
 

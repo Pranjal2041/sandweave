@@ -1,5 +1,6 @@
 """Cancellable worker requests and reusable transports owned by a controller."""
 import asyncio
+from contextlib import asynccontextmanager
 from concurrent.futures import Future, ThreadPoolExecutor
 import threading
 
@@ -99,9 +100,7 @@ class Connections:
             self.check(endpoint)
         return connection
 
-    async def _forward(self, endpoint, operation, parameters, token, timeout):
-        if endpoint.get('relay'):
-            return await self.relay.acall({**endpoint, 'token': token}, operation, parameters, timeout)
+    async def _transport(self, endpoint):
         key = endpoint_key(endpoint)
         with self.guard:
             opening = self.transports.get(key)
@@ -117,6 +116,33 @@ class Connections:
                     self.transports.pop(key)
             raise
         self.check(endpoint)
+        return connection
+
+    @asynccontextmanager
+    async def stream(self, endpoint, identity):
+        task = asyncio.current_task()
+        with self.guard:
+            self.check(endpoint)
+            self.requests[task] = worker_key(endpoint)
+        socket = None
+        try:
+            connection = await self._transport(endpoint)
+            socket = await connection.open_stream(identity, token=endpoint['token'])
+            self.check(endpoint)
+            yield socket
+        finally:
+            try:
+                if socket is not None:
+                    from ..sandbox.streams import close_socket
+                    await close_socket(socket)
+            finally:
+                with self.guard:
+                    self.requests.pop(task, None)
+
+    async def _forward(self, endpoint, operation, parameters, token, timeout):
+        if endpoint.get('relay'):
+            return await self.relay.acall({**endpoint, 'token': token}, operation, parameters, timeout)
+        connection = await self._transport(endpoint)
         if hasattr(connection, 'arequest'):
             request = connection.arequest(operation, parameters, token=token)
         else:

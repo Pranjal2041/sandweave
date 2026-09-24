@@ -488,6 +488,8 @@ class Worker:
 
     def pause(self, identity):
         record = self.read(identity)
+        if getattr(self, 'streams', None):
+            self.streams.disconnect(identity)
         if record['spec'].get('recording'):
             self.recordings.stop(identity, reason='paused')
         self.detach_controls(identity, reason='pause')
@@ -524,6 +526,8 @@ class Worker:
 
     def _terminate_runtime(self, record):
         identity, errors = record['id'], []
+        if getattr(self, 'streams', None):
+            self.streams.disconnect(identity)
         if record['spec'].get('service_network', {}).get('id'):
             try:
                 self.service_manager().networks.leave(record)
@@ -827,9 +831,11 @@ def serve(metadata_path):
             self.end_headers()
             self.wfile.write(payload)
 
-    class Server(ThreadingHTTPServer):
+    from .vnc import StreamServerMixin, WorkerStreams
+    class Server(StreamServerMixin, ThreadingHTTPServer):
         request_queue_size = socket.SOMAXCONN
     server = Server(('127.0.0.1', 0), Handler)
+    server.streams = worker.streams = WorkerStreams(worker, token)
     server.daemon_threads = True
     from .targets import Endpoint
     worker.endpoint = Endpoint(server.server_port, token)
@@ -843,6 +849,7 @@ def serve(metadata_path):
         server.serve_forever(poll_interval=.1)
     finally:
         server.server_close()
+        worker.streams.close()
         authority.close()
         if metadata_path.exists() and json.loads(metadata_path.read_text()).get('pid') == os.getpid():
             metadata_path.unlink()

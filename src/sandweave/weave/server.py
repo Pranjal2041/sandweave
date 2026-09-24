@@ -47,6 +47,8 @@ class RPC:
         self.controller, self.token, self.dashboard, self.stop = controller, token, dashboard, stop
         self.executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix='weave-control')
         self.monitor_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix='weave-dashboard')
+        from .streams import Streams
+        self.streams = Streams(controller, token)
 
     async def blocking(self, function, *args, monitoring=False, **kwargs):
         executor = self.monitor_executor if monitoring else self.executor
@@ -61,6 +63,8 @@ class RPC:
         return await connection.arequest(method, parameters, token=endpoint['token'])
 
     async def handle(self, request):
+        if request.path in ('/vnc', '/vnc/relay'):
+            return await self.streams.handle(request)
         if request.path != '/rpc':
             if request.content_length and request.content_length > 4096:
                 return web.Response(status=413)
@@ -169,6 +173,7 @@ async def serve_async(directory):
         controller.stopping.set()
         controller.connections.stop()
         controller.relay.close()
+        await rpc.streams.close()
         await runner.cleanup()
         await rpc.close()
         await asyncio.to_thread(dashboard.monitor.close)

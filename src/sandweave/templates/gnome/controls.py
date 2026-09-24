@@ -97,6 +97,21 @@ class Desktop:
         return self.sandbox._call('control', name='desktop', method=method, parameters=parameters)
 
     @dualmethod
+    def vnc(self):
+        """Open a raw VNC byte stream through this sandbox's SDK connection."""
+        from ...sandbox.streams import ByteStream
+        if self.sandbox._closed:
+            raise RuntimeError('sandbox connection is closed')
+        return ByteStream.connect(self.sandbox._connection, self.sandbox.id)
+
+    @vnc.async_impl
+    async def _vnc_async(self):
+        from ...sandbox.streams import ByteStream
+        if self.sandbox._closed:
+            raise RuntimeError('sandbox connection is closed')
+        return await ByteStream.open(self.sandbox._connection, self.sandbox.id)
+
+    @dualmethod
     def screenshot(self, *, fresh=True):
         return decode_image(self._call('screenshot', fresh=fresh))
 

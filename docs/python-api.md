@@ -105,6 +105,9 @@ record. Check that `status == "passed"` before relying on the saved state.
 ### Workload controls
 
 `env.desktop` exposes the desktop controls provided by its template.
+For Xvnc templates, `env.desktop.vnc()` opens a byte stream through the SDK
+transport. The stream has `read(n=65536)`, `write(data)`, `close()` and `.aio()`
+equivalents. It works on connected handles and local, SSH or Weave targets.
 `env.vr` exposes VR controls. A template must supply a control before it can be
 used. See [desktop agents](desktop.md), [VR games](vr.md), and
 [templates](templates.md).

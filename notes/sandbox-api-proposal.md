@@ -27,6 +27,12 @@ at checkout. `env.recording` provides retained export after termination, status,
 explicit stop and deletion. Defaults and existing command/lifecycle contracts
 remain unchanged. See [desktop recording](../docs/desktop.md#record-a-desktop).
 
+Approved extension, 2026-09-24: `env.desktop.vnc()` returns a bidirectional byte
+stream on the SDK transport, including handles opened with `Sandbox.connect`.
+Local, SSH and Weave targets share `read`, `write`, `close` and `.aio()` methods.
+The stream carries RFB bytes and retains VNC authentication; closing the stream
+does not terminate its sandbox. See [VNC streaming](../docs/desktop.md#stream-vnc-through-the-sdk).
+
 | User priority | API consequence |
 | --- | --- |
 | Simple Python and CLI | One `Sandbox` handle; ordinary calls work without an App, deployment decorator, mandatory server account or RL framework. The constructor returns a usable environment. |

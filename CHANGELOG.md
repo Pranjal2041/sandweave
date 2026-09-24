@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.26
+
+- Open a bidirectional VNC byte stream with `env.desktop.vnc()`, including
+  `Sandbox.connect` handles on local, SSH and Weave targets. Provide `read`,
+  `write`, `close` and async equivalents through the authenticated SDK endpoint.
+- Forward streams asynchronously through controllers and outbound worker
+  relays with bounded buffering and backpressure. Preserve sandbox-scoped
+  authorization and close streams on handle closure, pause, termination or
+  declared worker loss.
+
 ## 0.2.25
 
 - Preserve the saved runtime-memory budget when restoring a snapshot or cache

@@ -198,6 +198,12 @@ observation with `.image` and timing metadata. It captures after the input serve
 acknowledges the action; your application may still be processing it.
 See the [desktop loop example](https://github.com/Pranjal2041/sandweave/blob/main/notes/sandbox-api-examples.md#4-a-desktop-agent-loop).
 
+`env.desktop.vnc()` opens a bidirectional VNC byte stream through the same SDK
+endpoint, including SSH and Weave targets. Use `stream.read(n)`,
+`stream.write(data)`, and `stream.close()`, or their `.aio()` equivalents.
+See [VNC streaming](https://pranjal2041.github.io/sandweave/desktop/#stream-vnc-through-the-sdk)
+for connection and authentication details.
+
 To record a desktop, enable recording when you create it:
 
 ```python

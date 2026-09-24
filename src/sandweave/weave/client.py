@@ -239,6 +239,11 @@ class ClusterConnection:
             self.forget(route['id'])
         return result
 
+    async def open_stream(self, identity):
+        # Use the controller that this client already reached. Its stream
+        # route handles both direct workers and outbound-only worker bridges.
+        return await self.control.open_stream(identity)
+
     def close(self):
         self.control.close()
         with self.lock:

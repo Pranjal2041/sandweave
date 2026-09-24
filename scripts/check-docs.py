@@ -121,6 +121,12 @@ def check_browser(site, output, url=None):
                 assert 'create_service_network(target=target)' in copied
                 assert 'env.terminate()' in copied and 'delete_service_network(group, target=target)' in copied
                 page.screenshot(path=str(output / 'service-networks-desktop.png'), animations='disabled')
+                page.goto(url + 'desktop/#stream-vnc-through-the-sdk')
+                section = page.locator('#stream-vnc-through-the-sdk')
+                section.locator('xpath=following-sibling::div[1]').get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'env.desktop.vnc()' in copied and 'stream.close()' in copied
+                page.screenshot(path=str(output / 'vnc-stream-desktop.png'), animations='disabled')
                 page.locator('.md-sidebar--primary').get_by_role('link', name='Docker images', exact=True).click()
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Docker images¶?$'))
                 page.get_by_role('button', name='Copy to clipboard').first.click()
@@ -178,6 +184,9 @@ def check_browser(site, output, url=None):
                 expect(page.locator('h1')).to_have_text(re.compile(r'^Docker images¶?$'))
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'images-mobile.png'), full_page=True, animations='disabled')
+                page.goto(url + 'desktop/#stream-vnc-through-the-sdk')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.screenshot(path=str(output / 'vnc-stream-mobile.png'), animations='disabled')
                 page.goto(url + 'snapshots/#save-docker-storage')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'docker-storage-mobile.png'), animations='disabled')

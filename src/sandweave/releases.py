@@ -22,13 +22,22 @@ def kernel_version(value):
     return tuple(int(part or 0) for part in match.groups())
 
 
-def host_info():
+def check_platform():
+    """Check runtime host requirements without installing or probing containers."""
     architecture = {'amd64': 'x86_64'}.get(platform.machine(), platform.machine())
     if platform.system() != 'Linux' or architecture != 'x86_64':
         raise ValueError('Sandweave currently supports Linux x86-64 workers; this architecture needs a port, not a local rebuild')
-    kernel = kernel_version(platform.release())
+    release = platform.release()
+    kernel = kernel_version(release)
     if kernel < (5, 6, 0):
-        raise ValueError('This runtime requires Linux 5.6 or newer; compiling it locally does not change that requirement')
+        raise ValueError('Sandweave\'s gVisor runtime requires Linux 5.6 or newer '
+                         '(found ' + release + '). Use a worker with a supported kernel; '
+                         'reinstalling or compiling Sandweave does not upgrade the host kernel.')
+    return {'architecture': architecture, 'kernel': kernel}
+
+
+def host_info():
+    info = check_platform()
     flags = []
     try:
         eligible = os.sched_getaffinity(0)
@@ -39,8 +48,7 @@ def host_info():
                 flags.append(set(fields.get('flags', '').split()))
     except (OSError, ValueError):
         flags = []
-    return {'architecture': architecture, 'kernel': kernel,
-            'cpu_flags': sorted(set.intersection(*flags)) if flags else []}
+    return {**info, 'cpu_flags': sorted(set.intersection(*flags)) if flags else []}
 
 
 SECCOMP_PROBE = '''import ctypes, os

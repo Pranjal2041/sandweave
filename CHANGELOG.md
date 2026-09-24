@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.27
+
+- Check the runtime's Linux x86-64 and kernel 5.6+ requirements in `doctor`,
+  setup and local sandbox preparation. Reject incompatible workers before
+  installing Apptainer, creating storage or importing prepared runtime files.
+- Include the detected kernel in compatibility errors. The minimum kernel
+  remains unchanged; this release does not add Linux 5.4 runtime support.
+
 ## 0.2.26
 
 - Open a bidirectional VNC byte stream with `env.desktop.vnc()`, including

@@ -209,18 +209,20 @@ def python_packages(recipe):
 
 
 def inspect(template='coding', *, assets=None):
+    from .releases import check_platform
     recipe = Template(template).resolve()
-    checks = []
-    supported = platform.system() == 'Linux' and platform.machine() in ('x86_64', 'amd64')
-    checks.append(Check('platform', 'Worker platform', 'pass' if supported else 'fail',
-                        platform.system() + ' ' + platform.machine() +
-                        ('' if supported else '; run setup on a Linux x86-64 worker')))
+    try:
+        check_platform()
+    except ValueError as error:
+        return [Check('platform', 'Worker platform', 'fail', str(error))]
+    checks = [Check('platform', 'Worker platform', 'pass',
+                    platform.system() + ' ' + platform.machine() + '; kernel ' + platform.release())]
     # The subprocess owns the temporary namespace. The doctor process keeps its identity.
     ok, detail = run_probe([sys.executable, '-c',
         'import ctypes,os; c=ctypes.CDLL(None,use_errno=True); '
         'r=c.unshare(0x10000000); '
         'print("Available" if r==0 else os.strerror(ctypes.get_errno())); '
-        'raise SystemExit(0 if r==0 else 1)']) if supported else (False, 'Unsupported worker platform')
+        'raise SystemExit(0 if r==0 else 1)'])
     checks.append(Check('userns', 'Container permissions', 'pass' if ok else 'fail',
         detail if ok else detail + '. Checking whether Apptainer can create the required namespace.'))
     apptainer = workspace.tool('apptainer')
@@ -483,6 +485,8 @@ def smoke_test(template='coding'):
 
 
 def install_runtime(template, directory, *, assets=None, sources=(), game_archive=None, yes=False, build=False):
+    from . import releases
+    releases.check_platform()
     from .installation import import_runtime, validate_installation, needs_helpers
     from .bootstrap import Builder
     recipe = Template(template).resolve()
@@ -519,7 +523,6 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
         print('Importing runtime from ' + str(source) + ' into ' + str(directory), flush=True)
         return import_runtime(source, directory, recipe)
     profile = workload(recipe)
-    from . import releases
     host = releases.check_host(directory)
     if 'gunspinning' in profile:
         from .vr_installation import GUNSPINNING_SHA256
@@ -549,9 +552,9 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
 
 def setup_worker(args, template, interactive):
     from .installation import destination
+    from .releases import check_platform
+    check_platform()
     yes = getattr(args, 'yes', False)
-    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'amd64'):
-        raise ValueError('Run setup on a Linux x86-64 worker')
     selected = getattr(args, 'directory', None)
     explicit = os.environ.get('SANDWEAVE_HOME')
     if selected and explicit and Path(selected).expanduser().resolve() != Path(explicit).expanduser().resolve():

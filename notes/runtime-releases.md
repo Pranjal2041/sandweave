@@ -6,9 +6,12 @@ Existing configured installations keep their recorded runtime files.
 
 ## Selection and fallback
 
-Before the engine download, setup checks Linux x86-64, kernel 5.6 or newer,
-CPU instruction flags, and a namespace/seccomp probe through the installed
-Apptainer. The probe uses a minimal temporary root and the resolved host Python
+Doctor, setup and local sandbox preparation check Linux x86-64 and kernel 5.6
+or newer before installation. Setup rejects unsupported workers before creating
+storage or installing Apptainer, including when importing prepared runtimes.
+Before the engine download, setup also checks CPU instruction flags and runs a
+namespace/seccomp probe through the installed Apptainer. The probe uses a minimal
+temporary root and the resolved host Python
 interpreter. It needs no downloaded container image and handles virtual
 environments under `/tmp` and symlinked Python installations.
 
@@ -23,6 +26,14 @@ No matching artifact or an unavailable release selects the source builder.
 An integrity failure stops installation. A source build cannot solve an
 unsupported architecture, an old kernel or a host permission restriction.
 `sandweave setup --build` explicitly selects a new source build.
+
+Linux 5.4 is not a supported runtime host. The first published binary SDK
+release (0.1.1) already enforced 5.6, and the pinned upstream engine documents
+the same minimum. Its host filesystem code uses `openat2` without a fallback;
+that syscall was introduced in Linux 5.6. Removing the setup guard or choosing
+an older SDK does not provide a supported 5.4 runtime. This restriction applies
+to the worker that runs the sandbox, not a client connecting to that worker.
+See [upstream requirements](https://gvisor.dev/docs/user_guide/install/).
 
 Archives contain the five static engine executables, their manifests, the
 engine patch, build provenance and upstream notices. They do not contain a

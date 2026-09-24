@@ -80,6 +80,11 @@ def available(recipe, directory):
 
 
 def ensure(recipe):
+    from ..releases import check_platform
+    try:
+        check_platform()
+    except ValueError as error:
+        raise SetupError(str(error), phase='installation') from error
     candidate = _checking.get()
     if candidate is not None:
         return candidate

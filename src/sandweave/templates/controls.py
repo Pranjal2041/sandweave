@@ -12,7 +12,7 @@ from pathlib import Path
 import time
 import uuid
 
-from ..sandbox.errors import UnsupportedFeature, SetupError
+from ..sandbox.errors import OperationUnknown, UnsupportedFeature, SetupError
 
 BUILTINS = {'desktop': 'sandweave.templates.gnome.controls:DesktopProvider',
             'xorg': 'sandweave.templates.osworld.controls:XorgProvider',
@@ -58,7 +58,17 @@ class Context:
         self.worker.command_start(self.id, process, command=command, argv=argv, user=user,
                                   env=env, cwd=cwd, timeout=timeout)
         self.worker.process_stdin(self.id, process, close=True)
-        while (state := self.worker.process_status(self.id, process))['returncode'] is None:
+        def status():
+            try:
+                return self.worker.process_status(self.id, process)
+            except OperationUnknown:
+                # A keep-alive peer can close between the transport's idle
+                # check and the next request. Reading this same process again
+                # is safe; never replay its start or stdin mutations here.
+                self.worker.remaining(self.id, timeout)
+                return self.worker.process_status(self.id, process)
+
+        while (state := status())['returncode'] is None:
             time.sleep(.02)
         output = {stream: self.worker.process_output(self.id, process, stream=stream, size=1024**2)
                   for stream in ('stdout', 'stderr')}

@@ -15,6 +15,8 @@
   in a udev restart loop.
 - Apply the configured desktop readiness deadline to closing GNOME's initial
   overview, including slow desktop control-bus responses.
+- Retry an interrupted template command-status read once, without replaying
+  command execution.
 
 ## 0.2.26
 

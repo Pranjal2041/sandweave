@@ -35,6 +35,9 @@ socket. Previously, desktop startup depended on repeated failures reaching
 systemd's start limit; slow attempts could restart forever and block sysinit.
 Closing GNOME's initial overview also uses the remaining desktop-readiness
 budget instead of a separate five-second command timeout.
+Template command polling retries one interrupted status read. The transport
+discards the failed connection; the retry only reads the same process ID and
+does not repeat command execution or stdin writes. A second failure propagates.
 
 Engine commits: `9e26156` and `ea092f0`. The cumulative patch and immutable
 runtime identifiers are recorded in `source-revisions.json`.

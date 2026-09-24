@@ -1851,6 +1851,9 @@ with streams, <code>wait</code>, <code>poll</code>, <code>result</code>, <code>t
 record. Check that <code>status == "passed"</code> before relying on the saved state.</p>
 <h3 id="workload-controls">Workload controls<a class="headerlink" href="#workload-controls" title="Permanent link">&para;</a></h3>
 <p><code>env.desktop</code> exposes the desktop controls provided by its template.
+For Xvnc templates, <code>env.desktop.vnc()</code> opens a byte stream through the SDK
+transport. The stream has <code>read(n=65536)</code>, <code>write(data)</code>, <code>close()</code> and <code>.aio()</code>
+equivalents. It works on connected handles and local, SSH or Weave targets.
 <code>env.vr</code> exposes VR controls. A template must supply a control before it can be
 used. See <a href="../desktop/">desktop agents</a>, <a href="../vr/">VR games</a>, and
 <a href="../templates/">templates</a>.</p>

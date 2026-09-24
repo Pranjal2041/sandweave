@@ -925,6 +925,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#stream-vnc-through-the-sdk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stream VNC through the SDK
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#measure-startup" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1457,6 +1468,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#stream-vnc-through-the-sdk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stream VNC through the SDK
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#measure-startup" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1636,21 +1658,50 @@ desktop. For paired VR eye videos, use <a href="../vr/">VR recording</a>.</p>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">"vnc"</span><span class="p">][</span><span class="s2">"url"</span><span class="p">])</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">"vnc"</span><span class="p">][</span><span class="s2">"password"</span><span class="p">])</span>
 </code></pre></div>
-<p>The VNC address points to the worker's loopback port. Remote VNC access uses your
-own network or tunnel arrangement. A cluster's command transport does not
-automatically forward that separate TCP connection.</p>
+<p>The VNC address points to the worker's loopback port. For a remote viewer, use
+the SDK byte stream below, or arrange your own tunnel to that port.</p>
+<h2 id="stream-vnc-through-the-sdk">Stream VNC through the SDK<a class="headerlink" href="#stream-vnc-through-the-sdk" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">sandbox_id</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">stream</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">vnc</span><span class="p">()</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">banner</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">12</span><span class="p">)</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="c1"># Pass stream.read and stream.write to your RFB/VNC client.</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="n">stream</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p>This opens a bidirectional byte stream through the same authenticated SDK
+endpoint used for commands and files. Local, SSH, and Weave targets are supported,
+including HTTPS controllers and workers that connect outward to the controller.
+There is no separate VNC port to expose or tunnel to configure.</p>
+<p><code>read(n=65536)</code> returns up to <code>n</code> bytes, or <code>b""</code> at EOF. <code>write(data)</code> sends all
+the bytes and returns their count. Reads and writes can run concurrently;
+slow readers apply backpressure. Transport failures raise an exception and are
+never silently reconnected or replayed. The stream carries the unmodified RFB
+protocol: your VNC client still negotiates it and authenticates using the
+password in <code>env.info["vnc"]["password"]</code>.</p>
+<p>Async calls use <code>await env.desktop.vnc.aio()</code>, <code>await stream.read.aio(n)</code>,
+<code>await stream.write.aio(data)</code>, and <code>await stream.close.aio()</code>. You can use
+<code>asyncio.wait_for</code> to set a read deadline. Closing a stream leaves the desktop
+running. Closing its sandbox handle, pausing or terminating the sandbox, or
+losing its worker ends the stream. Open a new stream after resume.</p>
+<p>Streaming requires Sandweave 0.2.26 or newer on the client, controller and worker,
+and a template that exposes an Xvnc desktop, such as <code>gnome</code> or a template
+extending it. It does not install a VNC server in templates without one.</p>
 <h2 id="measure-startup">Measure startup<a class="headerlink" href="#measure-startup" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">timings</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">timings</span><span class="p">)</span>
 </code></pre></div>
 <p><code>ready_seconds</code> measures startup on the worker. Other entries break down runtime
 launch, setup, and desktop readiness. First-use installation and worker preparation
 happen before that timer starts.</p>
 <h2 id="reuse-the-installed-desktop">Reuse the installed desktop<a class="headerlink" href="#reuse-the-installed-desktop" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">baseline</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"my-desktop"</span><span class="p">)</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">baseline</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="n">restored</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">screenshot</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"restored.png"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">baseline</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="s2">"my-desktop"</span><span class="p">)</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">cache</span><span class="o">=</span><span class="n">baseline</span><span class="p">)</span> <span class="k">as</span> <span class="n">restored</span><span class="p">:</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    <span class="n">restored</span><span class="o">.</span><span class="n">desktop</span><span class="o">.</span><span class="n">screenshot</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"restored.png"</span><span class="p">)</span>
 </code></pre></div>
 <p>This saves installed files and the template. Restoring a filesystem cache starts
 a fresh desktop session. Use <code>detached=True</code> when you want the current session

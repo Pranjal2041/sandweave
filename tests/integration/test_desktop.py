@@ -43,6 +43,10 @@ def test_desktop_actions_pause_and_filesystem_restore():
         assert image.mode == 'RGB' and image.size == (1920, 1080)
         image.save(artifacts / 'initial.png')
         assert_clean_start(env)
+        if os.environ.get('SANDWEAVE_TEST_DISABLE_KEY_REPEAT') == '1':
+            # TCG can stall X11 between a queued synthetic press and release
+            # long enough for the desktop's real-time repeat timer to fire.
+            env.run('xset r off', check=True)
         source = '''import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk

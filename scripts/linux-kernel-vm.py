@@ -55,7 +55,9 @@ users:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     command = [*container, 'qemu-system-x86_64', '-machine', 'q35,accel=tcg',
-               '-cpu', 'max', '-smp', '4', '-m', str(args.memory_gib * 1024), '-nodefaults',
+               # A consistent 64-bit CPU model is required by Mesa's LLVM JIT.
+               # Some QEMU versions identify "max" as a 32-bit AMD model.
+               '-cpu', 'Nehalem', '-smp', '4', '-m', str(args.memory_gib * 1024), '-nodefaults',
                '-L', '/qtools/usr/share/qemu', '-bios', '/qtools/usr/share/seabios/bios-256k.bin',
                '-drive', 'file=/vm/disk.qcow2,if=virtio,format=qcow2,discard=unmap',
                '-drive', 'file=/vm/seed.iso,if=virtio,format=raw,readonly=on',

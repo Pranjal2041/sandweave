@@ -33,6 +33,8 @@ The GNOME launcher masks udev's physical-device service, sockets and trigger
 units. gVisor supplies virtual devices but does not provide udev's host uevent
 socket. Previously, desktop startup depended on repeated failures reaching
 systemd's start limit; slow attempts could restart forever and block sysinit.
+Closing GNOME's initial overview also uses the remaining desktop-readiness
+budget instead of a separate five-second command timeout.
 
 Engine commits: `9e26156` and `ea092f0`. The cumulative patch and immutable
 runtime identifiers are recorded in `source-revisions.json`.
@@ -63,12 +65,18 @@ The verified cloud image is
 `https://cloud-images.ubuntu.com/focal/20250624/focal-server-cloudimg-amd64.img`,
 SHA-256 `18f2977d77dfea1b74aee14533bd21c34f789139e949c57023b7364894b7e5e9`.
 `scripts/linux-kernel-vm.py` boots it with an independent 64 GiB overlay,
-4 CPUs, 16 GiB RAM and loopback SSH. The Code qualification used 8 GiB;
+4 CPUs, a Nehalem CPU model, 16 GiB RAM and loopback SSH. The Code qualification used 8 GiB;
 the desktop qualification uses 16 GiB to admit GNOME's default 9 GiB reservation.
 Its tools directory contains extracted
 Debian `qemu-system-x86`, `qemu-utils`, `seabios`, and `genisoimage` packages and
 their libraries. The Debian host SIF supplies their matching libc. No host
 package installation or privileged VM launcher is used.
+
+The desktop VM uses Nehalem because this QEMU version's `max` model identifies
+itself as a 32-bit AMD processor while advertising 64-bit support. Mesa's LLVM
+renderer aborts on that inconsistent model; this is
+[QEMU issue 191](https://gitlab.com/qemu-project/qemu/-/issues/191).
+Changing the test VM's CPU model requires no sandbox rendering workaround.
 
 Build the release with `scripts/build-runtime-release.py` and package it with
 `scripts/package-runtime-release.py`, as described in `runtime-releases.md`.

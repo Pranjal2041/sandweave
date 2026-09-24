@@ -187,13 +187,19 @@ class AttachedDesktop:
         bus = ['gdbus', 'call', '--session', '--dest', 'org.gnome.Shell',
                '--object-path', '/org/gnome/Shell', '--method']
         environment = {'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus'}
+        def remaining():
+            budget = deadline - time.monotonic()
+            if budget <= 0:
+                raise TimeoutError('GNOME overview did not close before the readiness deadline')
+            return context.remaining(budget)
+
         context.run(argv=[*bus, 'org.freedesktop.DBus.Properties.Set',
                          'org.gnome.Shell', 'OverviewActive', '<false>'],
-                    user='ga', env=environment, timeout=5)
+                    user='ga', env=environment, timeout=remaining())
         while True:
             state = context.run(argv=[*bus, 'org.freedesktop.DBus.Properties.Get',
                                       'org.gnome.Shell', 'OverviewActive'],
-                                user='ga', env=environment, timeout=5)
+                                user='ga', env=environment, timeout=remaining())
             if state['stdout'].strip() == b'(<false>,)':
                 break
             if time.monotonic() >= deadline:

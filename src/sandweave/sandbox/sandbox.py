@@ -46,6 +46,9 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
         defaults = {'cpu': CPU(**defaults['cpu']), 'memory': Memory(**defaults['memory']),
                     'gpu': GPU(**defaults['gpu']) if defaults['gpu'] else False,
                     'network': Network(**defaults['network'])}
+        # Scalar memory overrides change the guest budget, retaining the saved
+        # runtime allowance just as fresh launches retain their template's.
+        defaults['runtime_memory'] = defaults['memory'].runtime
         if env is None:
             env = saved['spec']['env']
         if mounts is None:

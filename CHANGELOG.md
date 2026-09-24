@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.25
+
+- Preserve the saved runtime-memory budget when restoring a snapshot or cache
+  with a string or byte-count guest-memory override. Explicit `Memory(...)`
+  settings still override the saved budgets.
+
 ## 0.2.24
 
 - Create a service network with `create_service_network(target=...)`, then join

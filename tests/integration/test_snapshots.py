@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from sandweave import Sandbox, CacheMiss, CacheConflict, IncompatibleSnapshot
+from sandweave import Sandbox, Memory, CacheMiss, CacheConflict, IncompatibleSnapshot
 from sandweave.sandbox.process import Process
 from sandweave.sandbox.targets import local_connection
 
@@ -65,6 +65,24 @@ def test_memory_checkpoint_preserves_running_process_and_stdin():
         assert process.wait(timeout=5) == 0
         with pytest.raises(IncompatibleSnapshot):
             Sandbox(snapshot=baseline, cpu=2)
+
+
+@pytest.mark.parametrize('state', ['filesystem', 'memory'])
+@pytest.mark.parametrize('source', ['snapshot', 'cache'])
+def test_guest_memory_string_retains_saved_runtime_budget(state, source):
+    with Sandbox(memory=Memory('256MiB', '768MiB')) as original:
+        original.files.write_text('/workspace/saved', 'preserved')
+        if source == 'cache':
+            original.cache('memory-budget-' + original.id, state=state)
+            reference = 'memory-budget-' + original.id
+        else:
+            reference = original.snapshot(state=state)
+    # Filesystem restores may resize guest memory; live process checkpoints
+    # retain their existing resource compatibility requirements.
+    guest = '384MiB' if state == 'filesystem' else '256MiB'
+    with Sandbox(**{source: reference}, memory=guest) as restored:
+        assert restored.info['memory'] == {'guest': guest, 'runtime': '768MiB'}
+        assert restored.run('cat /workspace/saved', check=True).stdout == 'preserved'
 
 
 def test_stop_and_failed_save_keeps_source_alive():

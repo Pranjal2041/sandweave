@@ -16,10 +16,13 @@ Install the Python package in your environment:
 
 ## Worker requirements
 
-Workers run on Linux x86-64 with kernel 5.6 or newer and Python 3.11 or newer.
+Workers run on Linux x86-64 with kernel 5.4 or newer and Python 3.11 or newer.
 They need permission to run unprivileged containers. Setup installs Apptainer
 when needed and checks whether the host permits the actual container launch.
 Host sudo and `/dev/kvm` are not required.
+
+Linux 5.4 support requires Sandweave 0.2.27 or newer. Setup downloads a compatible
+engine, including when upgrading prepared runtime files from an older release.
 
 Inside an existing container, Sandweave can use container-local root's existing
 mount permissions. It reuses that user namespace and prepares the Apptainer

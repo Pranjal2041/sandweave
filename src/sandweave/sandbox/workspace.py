@@ -344,7 +344,8 @@ def prepare(*, source=None):
         if revisions.is_file():
             info = json.loads(revisions.read_text())['gvisor']
             candidate = info.get('candidate_runtime_build')
-            if candidate and (root / candidate / 'manifest.json').is_file():
+            selected_runtime = json.loads((root / 'tools/gvisor-socket/runtime.json').read_text())
+            if candidate and candidate != selected_runtime['path'] and (root / candidate / 'manifest.json').is_file():
                 atomic_json(root / 'tools/gvisor-socket/runtime.json', {
                     'path': candidate, 'sha256': json.loads((root / candidate / 'manifest.json').read_text())})
         registry_path = base / 'sandweave-assets.json'

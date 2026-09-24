@@ -217,10 +217,18 @@ def test_host_probe_handles_symlinked_python_and_venv_under_tmp(tmp_path, monkey
 
 
 @pytest.mark.parametrize('architecture,kernel,message', [
-    ('aarch64', '6.8.0', 'needs a port'), ('x86_64', '4.18.0', 'Linux 5.6')])
+    ('aarch64', '6.8.0', 'needs a port'), ('x86_64', '4.18.0', 'Linux 5.4')])
 def test_source_requirements_are_not_binary_fallbacks(monkeypatch, architecture, kernel, message):
     monkeypatch.setattr(releases.platform, 'system', lambda: 'Linux')
     monkeypatch.setattr(releases.platform, 'machine', lambda: architecture)
     monkeypatch.setattr(releases.platform, 'release', lambda: kernel)
     with pytest.raises(ValueError, match=message):
         releases.host_info()
+
+
+def test_linux54_selects_compatible_prebuilt_engine(published_runtime):
+    manifest, _, _, _ = published_runtime
+    host = {**HOST, 'kernel': (5, 4, 0)}
+    assert releases.select(manifest, host)[0] is None
+    manifest['artifacts'][0]['minimum_kernel'] = '5.4'
+    assert releases.select(manifest, host)[0] == manifest['artifacts'][0]

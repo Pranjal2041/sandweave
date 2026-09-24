@@ -3,6 +3,17 @@
 set -eu
 umask 022
 
+# gVisor supplies the desktop's virtual devices; it has no host uevent socket
+# for udev to consume. A restarting udev job can indefinitely hold sysinit.target
+# when each failed attempt takes longer than systemd's start-limit interval.
+# Disable physical-device discovery before systemd starts, without relying on
+# how quickly those unsupported services fail.
+mkdir -p /etc/systemd/system
+for unit in systemd-udevd.service systemd-udevd-control.socket systemd-udevd-kernel.socket \
+            systemd-udev-trigger.service systemd-udev-settle.service; do
+    ln -sfn /dev/null "/etc/systemd/system/$unit"
+done
+
 # These local D-Bus services only need AF_UNIX. Their additional private
 # network namespace currently fails during systemd's setup under gVisor.
 # Keep their address-family restriction and other service hardening intact.

@@ -465,6 +465,404 @@ index 0000000..ced89f3
 +		t.Fatalf("Inode error = %v, want EUCLEAN", err)
 +	}
 +}
+diff --git a/pkg/fsutil/BUILD b/pkg/fsutil/BUILD
+index ac6af39..f7ea44e 100644
+--- a/pkg/fsutil/BUILD
++++ b/pkg/fsutil/BUILD
+@@ -1,4 +1,4 @@
+-load("//tools:defs.bzl", "go_library")
++load("//tools:defs.bzl", "go_library", "go_test")
+ 
+ package(default_applicable_licenses = ["//:license"])
+ 
+@@ -11,6 +11,7 @@ go_library(
+         "fsutil_amd64_unsafe.go",
+         "fsutil_arm64_unsafe.go",
+         "fsutil_unsafe.go",
++        "open_compat.go",
+     ],
+     visibility = ["//visibility:public"],
+     deps = [
+@@ -18,3 +19,10 @@ go_library(
+         "@org_golang_x_sys//unix:go_default_library",
+     ],
+ )
++
++go_test(
++    name = "open_compat_test",
++    srcs = ["open_compat_test.go"],
++    library = ":fsutil",
++    deps = ["@org_golang_x_sys//unix:go_default_library"],
++)
+diff --git a/pkg/fsutil/open_compat.go b/pkg/fsutil/open_compat.go
+new file mode 100644
+index 0000000..66e3106
+--- /dev/null
++++ b/pkg/fsutil/open_compat.go
+@@ -0,0 +1,158 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package fsutil
++
++import (
++	"fmt"
++	"os"
++	"strconv"
++	"strings"
++	"sync/atomic"
++
++	"golang.org/x/sys/unix"
++)
++
++var openat2Unavailable atomic.Bool
++
++// OpenDirNoFollow opens an absolute directory path without following any
++// symlinks. Linux 5.4 has no openat2; its fallback pins each directory with an
++// O_PATH descriptor before walking the next component. No check-then-open
++// pathname lookup or symlink traversal is used.
++func OpenDirNoFollow(name string) (int, error) {
++	if !strings.HasPrefix(name, "/") {
++		return -1, unix.EINVAL
++	}
++	for _, component := range strings.Split(name, "/") {
++		if component == ".." {
++			return -1, unix.EINVAL
++		}
++	}
++	if openat2Unavailable.Load() {
++		return openDirNoFollowFallback(name)
++	}
++	fd, err := unix.Openat2(unix.AT_FDCWD, name, &unix.OpenHow{
++		Flags:   unix.O_PATH | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC,
++		Resolve: unix.RESOLVE_NO_SYMLINKS,
++	})
++	if err != unix.ENOSYS {
++		return fd, err
++	}
++	openat2Unavailable.Store(true)
++	return openDirNoFollowFallback(name)
++}
++
++func openDirNoFollowFallback(name string) (int, error) {
++	if !strings.HasPrefix(name, "/") {
++		return -1, unix.EINVAL
++	}
++	flags := unix.O_PATH | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
++	fd, err := unix.Open("/", flags, 0)
++	if err != nil {
++		return -1, err
++	}
++	for _, component := range strings.Split(name, "/") {
++		if component == "" || component == "." {
++			continue
++		}
++		if component == ".." {
++			unix.Close(fd)
++			return -1, unix.EINVAL
++		}
++		next, err := unix.Openat(fd, component, flags, 0)
++		unix.Close(fd)
++		if err != nil {
++			return -1, err
++		}
++		fd = next
++	}
++	return fd, nil
++}
++
++// OpenFilestoreAt creates or reopens a filestore directly beneath
++// dirFD, without following links or crossing mounts. The filename must be a
++// single component. Unlike a generic openat2 emulation, this deliberately
++// accepts only the operation needed by self-backed overlays.
++func OpenFilestoreAt(dirFD int, name string, exclusive bool) (int, error) {
++	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\x00") {
++		return -1, unix.EINVAL
++	}
++	if openat2Unavailable.Load() {
++		return openFilestoreAtFallback(dirFD, name, exclusive)
++	}
++	flags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
++	if exclusive {
++		flags |= unix.O_EXCL
++	}
++	fd, err := unix.Openat2(dirFD, name, &unix.OpenHow{
++		Flags: uint64(flags), Mode: 0666,
++		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
++	})
++	if err != unix.ENOSYS {
++		return fd, err
++	}
++	openat2Unavailable.Store(true)
++	return openFilestoreAtFallback(dirFD, name, exclusive)
++}
++
++func openFilestoreAtFallback(dirFD int, name string, exclusive bool) (int, error) {
++	// O_EXCL atomically creates a new regular file. If another publisher wins,
++	// shared overlays may reopen it below; exclusive overlays retain EEXIST.
++	fd, err := unix.Openat(dirFD, name, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0666)
++	if err != unix.EEXIST || exclusive {
++		return fd, err
++	}
++	// O_PATH obtains a descriptor without opening a device or blocking on a
++	// FIFO. Inspect the pinned inode before reopening it for data access.
++	pinned, err := unix.Openat(dirFD, name, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
++	if err != nil {
++		return -1, err
++	}
++	defer unix.Close(pinned)
++	var stat unix.Stat_t
++	if err := unix.Fstat(pinned, &stat); err != nil {
++		return -1, err
++	}
++	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
++		return -1, unix.EINVAL
++	}
++	parentMount, err := mountID(dirFD)
++	if err != nil {
++		return -1, err
++	}
++	fileMount, err := mountID(pinned)
++	if err != nil {
++		return -1, err
++	}
++	if parentMount != fileMount {
++		return -1, unix.EXDEV
++	}
++	// This is the trusted procfs descriptor, not the original mutable name.
++	return unix.Open("/proc/self/fd/"+strconv.Itoa(pinned), unix.O_RDWR|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
++}
++
++func mountID(fd int) (uint64, error) {
++	// fdinfo has exposed mnt_id since Linux 3.15. st_dev alone would miss a
++	// bind mount of another file on the same filesystem.
++	data, err := os.ReadFile("/proc/self/fdinfo/" + strconv.Itoa(fd))
++	if err != nil {
++		return 0, err
++	}
++	for _, line := range strings.Split(string(data), "\n") {
++		if strings.HasPrefix(line, "mnt_id:") {
++			return strconv.ParseUint(strings.TrimSpace(strings.TrimPrefix(line, "mnt_id:")), 10, 64)
++		}
++	}
++	return 0, fmt.Errorf("mount identity absent from fdinfo for fd %d", fd)
++}
+diff --git a/pkg/fsutil/open_compat_test.go b/pkg/fsutil/open_compat_test.go
+new file mode 100644
+index 0000000..3ba14e7
+--- /dev/null
++++ b/pkg/fsutil/open_compat_test.go
+@@ -0,0 +1,199 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package fsutil
++
++import (
++	"os"
++	"os/exec"
++	"path/filepath"
++	"sync"
++	"sync/atomic"
++	"syscall"
++	"testing"
++
++	"golang.org/x/sys/unix"
++)
++
++func TestOpenDirectoryNoLinks(t *testing.T) {
++	root := t.TempDir()
++	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0700); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Symlink("a", filepath.Join(root, "link")); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Symlink("/proc/self/fd", filepath.Join(root, "magic")); err != nil {
++		t.Fatal(err)
++	}
++	for _, open := range []func(string) (int, error){OpenDirNoFollow, openDirNoFollowFallback} {
++		for _, path := range []string{root, root + "/a/b", "/"} {
++			fd, err := open(path)
++			if err != nil {
++				t.Fatalf("open(%q): %v", path, err)
++			}
++			unix.Close(fd)
++		}
++		for _, path := range []string{root + "/link", root + "/link/b", root + "/magic", "relative", root + "/a/../a"} {
++			fd, err := open(path)
++			if err == nil {
++				unix.Close(fd)
++				t.Fatalf("followed forbidden path %q", path)
++			}
++		}
++	}
++}
++
++func TestFilestoreCreateReopenAndLinks(t *testing.T) {
++	for _, open := range []func(int, string, bool) (int, error){OpenFilestoreAt, openFilestoreAtFallback} {
++		root := t.TempDir()
++		dir, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer unix.Close(dir)
++		fd, err := open(dir, "state", true)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, err := unix.Write(fd, []byte("saved")); err != nil {
++			t.Fatal(err)
++		}
++		unix.Close(fd)
++		if fd, err := open(dir, "state", true); err != unix.EEXIST {
++			if err == nil {
++				unix.Close(fd)
++			}
++			t.Fatalf("exclusive reopen: %v", err)
++		}
++		fd, err = open(dir, "state", false)
++		if err != nil {
++			t.Fatal(err)
++		}
++		data := make([]byte, 5)
++		if _, err := unix.Read(fd, data); err != nil || string(data) != "saved" {
++			t.Fatalf("reopen lost contents: %q %v", data, err)
++		}
++		unix.Close(fd)
++		if err := os.Symlink("state", filepath.Join(root, "link")); err != nil {
++			t.Fatal(err)
++		}
++		fd, err = open(dir, "link", false)
++		if err == nil {
++			unix.Close(fd)
++			t.Fatal("followed symlink")
++		}
++	}
++	for _, name := range []string{"", ".", "..", "a/b", "/tmp/state", "../state", "a\x00b"} {
++		if fd, err := OpenFilestoreAt(-1, name, false); err != unix.EINVAL {
++			if err == nil {
++				unix.Close(fd)
++			}
++			t.Fatalf("invalid basename %q: %v", name, err)
++		}
++	}
++}
++
++func TestFilestoreFallbackDoesNotOpenFIFO(t *testing.T) {
++	root := t.TempDir()
++	if err := unix.Mkfifo(filepath.Join(root, "fifo"), 0600); err != nil {
++		t.Fatal(err)
++	}
++	dir, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer unix.Close(dir)
++	if fd, err := openFilestoreAtFallback(dir, "fifo", false); err == nil {
++		unix.Close(fd)
++		t.Fatal("opened FIFO as filestore")
++	}
++}
++
++func TestFilestoreFallbackConcurrentCreators(t *testing.T) {
++	root := t.TempDir()
++	dir, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer unix.Close(dir)
++	var wg sync.WaitGroup
++	var created atomic.Int32
++	for i := 0; i < 32; i++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			fd, err := openFilestoreAtFallback(dir, "state", true)
++			if err == nil {
++				created.Add(1)
++				unix.Close(fd)
++			} else if err != unix.EEXIST {
++				t.Error(err)
++			}
++			fd, err = openFilestoreAtFallback(dir, "state", false)
++			if err != nil {
++				t.Error(err)
++			} else {
++				unix.Close(fd)
++			}
++		}()
++	}
++	wg.Wait()
++	if created.Load() != 1 {
++		t.Fatalf("got %d exclusive creators", created.Load())
++	}
++}
++
++func TestFilestoreRejectsBindMount(t *testing.T) {
++	if os.Getenv("FSUTIL_BIND_CHILD") != "1" {
++		cmd := exec.Command("/proc/self/exe", "-test.run=^TestFilestoreRejectsBindMount$")
++		cmd.Env = append(os.Environ(), "FSUTIL_BIND_CHILD=1")
++		cmd.SysProcAttr = &syscall.SysProcAttr{
++			Cloneflags:  unix.CLONE_NEWUSER | unix.CLONE_NEWNS,
++			UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
++			GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
++		}
++		out, err := cmd.CombinedOutput()
++		if _, ok := err.(*os.PathError); ok {
++			t.Skipf("user namespaces unavailable: %v", err)
++		}
++		if err != nil {
++			t.Fatalf("bind-mount test: %v\n%s", err, out)
++		}
++		return
++	}
++	root := t.TempDir()
++	for _, name := range []string{"source", "target"} {
++		if err := os.WriteFile(filepath.Join(root, name), []byte("untouched"), 0600); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if err := unix.Mount(filepath.Join(root, "source"), filepath.Join(root, "target"), "", unix.MS_BIND, ""); err != nil {
++		t.Fatal(err)
++	}
++	defer unix.Unmount(filepath.Join(root, "target"), unix.MNT_DETACH)
++	dir, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer unix.Close(dir)
++	for _, open := range []func(int, string, bool) (int, error){OpenFilestoreAt, openFilestoreAtFallback} {
++		if fd, err := open(dir, "target", false); err != unix.EXDEV {
++			if err == nil {
++				unix.Close(fd)
++			}
++			t.Fatalf("crossed same-filesystem bind mount: %v", err)
++		}
++	}
++}
 diff --git a/pkg/sentry/arch/arch_amd64.go b/pkg/sentry/arch/arch_amd64.go
 index 6240b68..d936d7c 100644
 --- a/pkg/sentry/arch/arch_amd64.go
@@ -3779,6 +4177,29 @@ index 22c8dc1..0d0bad8 100644
  // Context represents the execution context for a single thread.
  type Context interface {
  	// Switch resumes execution of the thread specified by the arch.Context64
+diff --git a/pkg/sentry/platform/systrap/BUILD b/pkg/sentry/platform/systrap/BUILD
+index ee3b436..ecb0959 100644
+--- a/pkg/sentry/platform/systrap/BUILD
++++ b/pkg/sentry/platform/systrap/BUILD
+@@ -114,14 +114,18 @@ go_test(
+     srcs = [
+         "context_queue_test.go",
+         "shared_context_test.go",
++        "sysmsg_thread_amd64_test.go",
+         "systrap_test.go",
+     ],
+     library = ":systrap",
+     deps = [
++        "//pkg/abi/linux",
++        "//pkg/bpf",
+         "//pkg/context",
+         "//pkg/cpuid",
+         "//pkg/hostarch",
+         "//pkg/safemem",
++        "//pkg/seccomp",
+         "//pkg/sentry/arch",
+         "//pkg/sentry/memmap",
+         "//pkg/sentry/pgalloc",
 diff --git a/pkg/sentry/platform/systrap/subprocess.go b/pkg/sentry/platform/systrap/subprocess.go
 index 4de8f9a..811a91f 100644
 --- a/pkg/sentry/platform/systrap/subprocess.go
@@ -3932,6 +4353,82 @@ index 88170a1..b6347ba 100644
  };
  
  enum stub_error {
+diff --git a/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go b/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
+index c140cac..8f39591 100644
+--- a/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
++++ b/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
+@@ -53,6 +53,21 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet
+ 						seccomp.AnyValue{},
+ 						seccomp.GreaterThan(stubStart), // rip
+ 					},
++					// Hosts without userspace FSGSBASE (including Linux 5.4)
++					// use arch_prctl to preserve guest GS in the signal handler.
++					// Only the protected stub may make these host calls.
++					seccomp.PerArg{
++						seccomp.EqualTo(linux.ARCH_SET_GS),
++						seccomp.AnyValue{}, seccomp.AnyValue{}, seccomp.AnyValue{},
++						seccomp.AnyValue{}, seccomp.AnyValue{},
++						seccomp.GreaterThan(stubStart),
++					},
++					seccomp.PerArg{
++						seccomp.EqualTo(linux.ARCH_GET_GS),
++						seccomp.AnyValue{}, seccomp.AnyValue{}, seccomp.AnyValue{},
++						seccomp.AnyValue{}, seccomp.AnyValue{},
++						seccomp.GreaterThan(stubStart),
++					},
+ 				},
+ 			}),
+ 			Action: seccomp.Allow,
+diff --git a/pkg/sentry/platform/systrap/sysmsg_thread_amd64_test.go b/pkg/sentry/platform/systrap/sysmsg_thread_amd64_test.go
+new file mode 100644
+index 0000000..04287b5
+--- /dev/null
++++ b/pkg/sentry/platform/systrap/sysmsg_thread_amd64_test.go
+@@ -0,0 +1,44 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package systrap
++
++import (
++	"testing"
++
++	"golang.org/x/sys/unix"
++	"gvisor.dev/gvisor/pkg/abi/linux"
++	"gvisor.dev/gvisor/pkg/bpf"
++	"gvisor.dev/gvisor/pkg/seccomp"
++)
++
++func TestThreadSegmentBaseFilter(t *testing.T) {
++	program, err := bpf.Compile(sysmsgThreadRules(stubStart), true)
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, operation := range []uint64{linux.ARCH_GET_FS, linux.ARCH_SET_FS, linux.ARCH_GET_GS, linux.ARCH_SET_GS, linux.ARCH_SET_CPUID} {
++		for _, ip := range []uint64{0, uint64(stubStart), uint64(stubStart) + 1} {
++			data := linux.SeccompData{Nr: unix.SYS_ARCH_PRCTL, Arch: seccomp.LINUX_AUDIT_ARCH, Args: [6]uint64{operation}, InstructionPointer: ip}
++			got, err := bpf.Exec[bpf.NativeEndian](program, seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes())))
++			want := uint32(linux.SECCOMP_RET_TRAP)
++			if ip > uint64(stubStart) && operation != linux.ARCH_SET_CPUID {
++				want = uint32(linux.SECCOMP_RET_ALLOW)
++			}
++			if err != nil || got != want {
++				t.Errorf("operation %#x at %#x: got %#x, %v; want %#x", operation, ip, got, err, want)
++			}
++		}
++	}
++}
 diff --git a/pkg/sentry/platform/systrap/systrap_amd64.go b/pkg/sentry/platform/systrap/systrap_amd64.go
 index 7cb8c23..d6c8d57 100644
 --- a/pkg/sentry/platform/systrap/systrap_amd64.go
@@ -8234,11 +8731,31 @@ index f4852a7..5cf1e29 100644
  	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
  	flagSet.Bool("rdmaproxy", false, "WIP: enable RDMA support for containers with /dev/infiniband/uverbs* devices.")
  	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
+diff --git a/runsc/container/BUILD b/runsc/container/BUILD
+index 957b4c6..87163c8 100644
+--- a/runsc/container/BUILD
++++ b/runsc/container/BUILD
+@@ -21,6 +21,7 @@ go_library(
+     deps = [
+         "//pkg/abi/linux",
+         "//pkg/cleanup",
++        "//pkg/fsutil",
+         "//pkg/log",
+         "//pkg/pinring",
+         "//pkg/sentry/control",
 diff --git a/runsc/container/container.go b/runsc/container/container.go
-index f600485..7332b76 100644
+index f600485..0cbc679 100644
 --- a/runsc/container/container.go
 +++ b/runsc/container/container.go
-@@ -774,12 +774,12 @@ func (c *Container) WaitFSRestore() error {
+@@ -34,6 +34,7 @@ import (
+ 
+ 	"gvisor.dev/gvisor/pkg/abi/linux"
+ 	"gvisor.dev/gvisor/pkg/cleanup"
++	"gvisor.dev/gvisor/pkg/fsutil"
+ 	"gvisor.dev/gvisor/pkg/log"
+ 	"gvisor.dev/gvisor/pkg/pinring"
+ 	"gvisor.dev/gvisor/pkg/sentry/control"
+@@ -774,12 +775,12 @@ func (c *Container) WaitFSRestore() error {
  // TarRootfsUpperLayer serializes the rootfs upper layer of the container to a tar file. When
  // the rootfs is not an overlayfs, it returns an error. It writes the tar file
  // to outFD.
@@ -8253,6 +8770,33 @@ index f600485..7332b76 100644
  }
  
  // SignalContainer sends the signal to the container. If all is true and signal
+@@ -1254,11 +1255,11 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
+ 
+ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
+ 	// Create the self filestore file.
+-	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
++	exclusive := false
+ 	if hint := mountHints.FindMount(mountSrc); hint == nil || !hint.ShouldShareMount() {
+ 		// Allow shared mounts to reuse existing filestore. A previous shared user
+ 		// may have already set up the filestore.
+-		createFlags |= unix.O_EXCL
++		exclusive = true
+ 	}
+ 	dirPath := path.Join(goferRootfs, mountSrc)
+ 	fileName := boot.SelfFilestoreName(c.sandboxID())
+@@ -1269,11 +1270,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
+ 	}
+ 	defer unix.Close(dirFD)
+ 
+-	filestoreFD, err := unix.Openat2(dirFD, fileName, &unix.OpenHow{
+-		Flags:   uint64(createFlags),
+-		Mode:    0666,
+-		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
+-	})
++	filestoreFD, err := fsutil.OpenFilestoreAt(dirFD, fileName, exclusive)
+ 	if err != nil {
+ 		if err == unix.EEXIST {
+ 			// Note that if the same submount is mounted multiple times within the
 diff --git a/runsc/fsgofer/BUILD b/runsc/fsgofer/BUILD
 index c3b00f8..9194874 100644
 --- a/runsc/fsgofer/BUILD
@@ -8294,7 +8838,7 @@ index 8453f96..3184a98 100644
  	unix.SYS_FUTEX: seccomp.Or{
  		seccomp.PerArg{
 diff --git a/runsc/fsgofer/lisafs.go b/runsc/fsgofer/lisafs.go
-index d57e54e..0f9bf86 100644
+index d57e54e..151ed20 100644
 --- a/runsc/fsgofer/lisafs.go
 +++ b/runsc/fsgofer/lisafs.go
 @@ -51,6 +51,10 @@ const (
@@ -8355,7 +8899,19 @@ index d57e54e..0f9bf86 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, -1, err
  	}
-@@ -308,7 +336,7 @@ func (fd *controlFDLisa) Close() {
+@@ -278,10 +306,7 @@ func (fd *controlFDLisa) getParentFD() (int, string, error) {
+ 	}
+ 	// As a defense-in-depth measure, do not follow symlinks in the parent's path
+ 	// to prevent attackers from redirecting the parent to a different location.
+-	parent, err := unix.Openat2(unix.AT_FDCWD, path.Dir(filePath), &unix.OpenHow{
+-		Flags:   uint64(openFlags | unix.O_PATH),
+-		Resolve: unix.RESOLVE_NO_SYMLINKS,
+-	})
++	parent, err := fsutil.OpenDirNoFollow(path.Dir(filePath))
+ 	return parent, path.Base(filePath), err
+ }
+ 
+@@ -308,7 +333,7 @@ func (fd *controlFDLisa) Close() {
  
  // Stat implements lisafs.ControlFDImpl.Stat.
  func (fd *controlFDLisa) Stat() (lisafs.Statx, error) {
@@ -8364,7 +8920,7 @@ index d57e54e..0f9bf86 100644
  }
  
  // SetStat implements lisafs.ControlFDImpl.SetStat.
-@@ -415,7 +443,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
+@@ -415,7 +440,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
  		if stat.Mask&unix.STATX_GID != 0 {
  			gid = stat.GID
  		}
@@ -8373,7 +8929,7 @@ index d57e54e..0f9bf86 100644
  			log.Warningf("SetStat fchown failed %q, err: %v", fd.Node().FilePath(), err)
  			failureMask |= stat.Mask & (unix.STATX_UID | unix.STATX_GID)
  			failureErr = err
-@@ -434,7 +462,7 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, err
+@@ -434,7 +459,7 @@ func (fd *controlFDLisa) Walk(name string) (*lisafs.ControlFD, lisafs.Statx, err
  		return nil, lisafs.Statx{}, err
  	}
  
@@ -8382,7 +8938,7 @@ index d57e54e..0f9bf86 100644
  	if err != nil {
  		_ = unix.Close(childHostFD)
  		return nil, lisafs.Statx{}, err
-@@ -465,7 +493,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
+@@ -465,7 +490,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
  	defer closeCurDirFD()
  	if len(path) > 0 && len(path[0]) == 0 {
  		// Write stat results for dirFD if the first path component is "".
@@ -8391,7 +8947,7 @@ index d57e54e..0f9bf86 100644
  		if err != nil {
  			return err
  		}
-@@ -490,7 +518,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
+@@ -490,7 +515,7 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
  		closeCurDirFD()
  		curDirFD = curFD
  
@@ -8400,7 +8956,7 @@ index d57e54e..0f9bf86 100644
  		if err != nil {
  			return err
  		}
-@@ -539,12 +567,19 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
+@@ -539,12 +564,19 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
  			return nil, -1, unix.EPERM
  		}
  	case unix.S_IFCHR:
@@ -8420,7 +8976,7 @@ index d57e54e..0f9bf86 100644
  	}
  	flags |= openFlags
  	openHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
-@@ -597,12 +632,12 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
+@@ -597,12 +629,12 @@ func (fd *controlFDLisa) OpenCreate(mode linux.FileMode, uid lisafs.UID, gid lis
  	defer cu.Clean()
  
  	// Set the owners as requested by the client.
@@ -8435,7 +8991,7 @@ index d57e54e..0f9bf86 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, nil, -1, err
  	}
-@@ -650,13 +685,13 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+@@ -650,13 +682,13 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
@@ -8451,7 +9007,7 @@ index d57e54e..0f9bf86 100644
  	if err != nil {
  		unix.Close(childDirFd)
  		return nil, lisafs.Statx{}, err
-@@ -668,13 +703,18 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+@@ -668,13 +700,18 @@ func (fd *controlFDLisa) Mkdir(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
  
  // Mknod implements lisafs.ControlFDImpl.Mknod.
  func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.GID, name string, minor uint32, major uint32) (*lisafs.ControlFD, lisafs.Statx, error) {
@@ -8471,7 +9027,7 @@ index d57e54e..0f9bf86 100644
  	case linux.S_IFREG:
  	case linux.S_IFCHR:
  		if minor == 0 && major == 0 {
-@@ -685,7 +725,7 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+@@ -685,7 +722,7 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
  		return nil, lisafs.Statx{}, unix.EPERM
  	}
  
@@ -8480,7 +9036,7 @@ index d57e54e..0f9bf86 100644
  		return nil, lisafs.Statx{}, err
  	}
  	cu := cleanup.Make(func() {
-@@ -703,17 +743,23 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
+@@ -703,17 +740,23 @@ func (fd *controlFDLisa) Mknod(mode linux.FileMode, uid lisafs.UID, gid lisafs.G
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
@@ -8506,7 +9062,7 @@ index d57e54e..0f9bf86 100644
  	cu.Release()
  
  	return newControlFDLisa(childFD, fd, name, mode).FD(), childStat, nil
-@@ -737,12 +783,12 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
+@@ -737,12 +780,12 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
@@ -8521,7 +9077,7 @@ index d57e54e..0f9bf86 100644
  	if err != nil {
  		unix.Close(symlinkFD)
  		return nil, lisafs.Statx{}, err
-@@ -781,7 +827,7 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
+@@ -781,7 +824,7 @@ func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.Co
  		return nil, lisafs.Statx{}, err
  	}
  
@@ -8530,7 +9086,7 @@ index d57e54e..0f9bf86 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, err
  	}
-@@ -991,12 +1037,12 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
+@@ -991,12 +1034,12 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
  		_ = unix.Close(sockFileFD)
  	})
  
@@ -8545,7 +9101,7 @@ index d57e54e..0f9bf86 100644
  	if err != nil {
  		return nil, lisafs.Statx{}, nil, -1, err
  	}
-@@ -1046,6 +1092,15 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
+@@ -1046,6 +1089,15 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
  		size = linux.XATTR_SIZE_MAX
  	}
  	data := getValueBuf(size)
@@ -8561,7 +9117,7 @@ index d57e54e..0f9bf86 100644
  	if fd.IsSocket() || fd.IsSymlink() {
  		// Sockets and symlinks use O_PATH host FDs. However, fgetxattr(2) fails
  		// with EBADF for O_PATH FDs. Use lgetxattr(2) instead.
-@@ -1058,6 +1113,14 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
+@@ -1058,6 +1110,14 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
  
  // SetXattr implements lisafs.ControlFDImpl.SetXattr.
  func (fd *controlFDLisa) SetXattr(name string, value string, flags uint32) error {
@@ -8576,7 +9132,7 @@ index d57e54e..0f9bf86 100644
  	if fd.IsSocket() || fd.IsSymlink() {
  		// Sockets and symlinks use O_PATH host FDs. However, fsetxattr(2) fails
  		// with EBADF for O_PATH FDs. Use lsetxattr(2) instead.
-@@ -1104,14 +1167,50 @@ func (fd *controlFDLisa) ListXattr(size uint64) (lisafs.StringArray, error) {
+@@ -1104,14 +1164,50 @@ func (fd *controlFDLisa) ListXattr(size uint64) (lisafs.StringArray, error) {
  		if i < 0 {
  			break
  		}
@@ -8628,7 +9184,7 @@ index d57e54e..0f9bf86 100644
  	if fd.IsSocket() || fd.IsSymlink() {
  		// Sockets and symlinks use O_PATH host FDs. However, fremovexattr(2) fails
  		// with EBADF for O_PATH FDs. Use lremovexattr(2) instead.
-@@ -1156,7 +1255,7 @@ func (fd *openFDLisa) Close() {
+@@ -1156,7 +1252,7 @@ func (fd *openFDLisa) Close() {
  
  // Stat implements lisafs.OpenFDImpl.Stat.
  func (fd *openFDLisa) Stat() (lisafs.Statx, error) {
@@ -8637,7 +9193,7 @@ index d57e54e..0f9bf86 100644
  }
  
  // Sync implements lisafs.OpenFDImpl.Sync.
-@@ -1232,6 +1331,25 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
+@@ -1232,6 +1328,25 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
  			// The client also wants the device ID, which annoyingly incurs an
  			// additional syscall per dirent.
  			// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
@@ -8663,7 +9219,7 @@ index d57e54e..0f9bf86 100644
  			stat, err := fsutil.StatAt(fd.hostFD, name)
  			if err != nil {
  				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(fd.ControlFD().FD().Node().FilePath(), name), err)
-@@ -1333,8 +1451,12 @@ func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
+@@ -1333,8 +1448,12 @@ func fchown(hostFD int, uid lisafs.UID, gid lisafs.GID) error {
  }
  
  func fstatTo(hostFD int) (lisafs.Statx, error) {
@@ -8677,7 +9233,7 @@ index d57e54e..0f9bf86 100644
  		return lisafs.Statx{}, err
  	}
  	return lisafs.Statx{
-@@ -1372,7 +1494,7 @@ func fstatTo(hostFD int) (lisafs.Statx, error) {
+@@ -1372,7 +1491,7 @@ func fstatTo(hostFD int) (lisafs.Statx, error) {
  
  func checkSupportedFileType(mode uint32) error {
  	switch mode & unix.S_IFMT {

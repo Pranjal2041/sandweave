@@ -2,11 +2,17 @@
 
 ## 0.2.27
 
-- Check the runtime's Linux x86-64 and kernel 5.6+ requirements in `doctor`,
-  setup and local sandbox preparation. Reject incompatible workers before
-  installing Apptainer, creating storage or importing prepared runtime files.
-- Include the detected kernel in compatibility errors. The minimum kernel
-  remains unchanged; this release does not add Linux 5.4 runtime support.
+- Support Linux 5.4 workers with a compatible prebuilt gVisor engine. Fall back
+  from unavailable `openat2` without following symlinks or crossing the overlay
+  filestore's mount boundary. Preserve guest GS state on hosts without FSGSBASE.
+- Upgrade incompatible prepared engines automatically while reusing guest
+  images. Keep the native `openat2` path on newer kernels.
+- Check worker architecture and the supported kernel range before installation
+  in doctor, setup and local first use.
+- Use the sandbox's startup deadline when activating its guest service, including
+  slow systemd startup; wait for agent readiness without a separate 30-second cap.
+- Stop GNOME's physical-device discovery from blocking virtual desktop startup
+  in a udev restart loop.
 
 ## 0.2.26
 

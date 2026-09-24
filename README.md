@@ -17,7 +17,7 @@ a Docker image as its filesystem base.
 
 ## Install
 
-Inside a Python 3.11+ environment on a Linux x86-64 worker (kernel 5.6 or newer):
+Inside a Python 3.11+ environment on a Linux x86-64 worker (kernel 5.4 or newer):
 
 ```bash
 uv pip install sandweave

@@ -231,6 +231,10 @@ def inspect(template='coding', *, assets=None):
                         None if ok else 'Install or locate Apptainer'))
     try:
         root = validate_assets(assets or workspace.assets(), recipe)
+        from .releases import runtime_supported
+        if not runtime_supported(root):
+            raise ValueError('These prepared files contain an engine without support for this host kernel. '
+                             'Run sandweave setup to upgrade the engine for this worker.')
         checks.append(Check('assets', 'Runtime files', 'pass', str(root)))
     except (OSError, ValueError, KeyError, TypeError, workspace.ResourceUnavailable) as error:
         root = None
@@ -514,6 +518,13 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
                 if selected:
                     raise ValueError('The runtime source is incomplete: ' + str(source) + '\n' + str(error)) from error
             continue
+        if not releases.runtime_supported(source):
+            host = releases.check_host(directory)
+            engine = releases.install(directory, host)
+            if engine is None:
+                return Builder(directory).build(workload(recipe), recipe, base=source)
+            print('Updating the prepared runtime engine for this worker.', flush=True)
+            return import_runtime(source, directory, recipe, engine=engine)
         if ((source / 'installation.json').is_file() and source.is_relative_to(Path(directory) / 'assets')
                 and not needs_helpers(source, recipe)):
             print('Using installed runtime: ' + str(source), flush=True)
@@ -541,7 +552,8 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
         workspace._immutable(archive, cached, sha256=GUNSPINNING_SHA256)
     engine = None
     if core is not None:
-        core = import_runtime(core, directory, Template('coding').resolve())
+        upgrade = releases.install(directory, host) if not releases.runtime_supported(core) else None
+        core = import_runtime(core, directory, Template('coding').resolve(), engine=upgrade)
     elif not build:
         engine = releases.install(directory, host)
     print('Preparing ' + profile + (' with the downloaded engine.' if engine else ' from upstream sources. The first build can take a while.'), flush=True)

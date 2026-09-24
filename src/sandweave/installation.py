@@ -79,7 +79,7 @@ def inputs(source, recipe):
     revisions = source / 'notes/source-revisions.json'
     if revisions.is_file():
         candidate = json.loads(revisions.read_text()).get('gvisor', {}).get('candidate_runtime_build')
-        if candidate and (_inside(source, candidate) / 'manifest.json').is_file():
+        if candidate and candidate != runtime['path'] and (_inside(source, candidate) / 'manifest.json').is_file():
             runtime = {'path': candidate, 'sha256': json.loads(
                 (_inside(source, candidate) / 'manifest.json').read_text())}
     if (source / 'installation.json').is_file():
@@ -132,7 +132,7 @@ def inputs(source, recipe):
     return sorted(paths), runtime, registry
 
 
-def import_runtime(source, directory, recipe):
+def import_runtime(source, directory, recipe, *, engine=None):
     """Copy/link a verified input set; publish no partial installation."""
     from .onboarding import _inside, validate_assets
     source = validate_assets(source, recipe)
@@ -141,6 +141,9 @@ def import_runtime(source, directory, recipe):
     store = Path(directory) / 'assets'
     store.mkdir(parents=True, exist_ok=True)
     selected, runtime, registry = inputs(source, recipe)
+    if engine is not None:
+        from .releases import validate_engine
+        runtime = validate_engine(engine)
     identity = hashlib.sha256(json.dumps(
         {'source': workspace.asset_identity(source), 'inputs': selected,
          'runtime': runtime, 'registry': registry}, sort_keys=True).encode()).hexdigest()[:24]
@@ -164,6 +167,8 @@ def import_runtime(source, directory, recipe):
                     progress.update(detail=name)
                     workspace.stage_tree(_inside(source, name), temporary / name)
                     progress.update(advance=1)
+            if engine is not None:
+                workspace.stage_tree(_inside(Path(engine), runtime['path']), temporary / runtime['path'])
             workspace.atomic_json(temporary / 'tools/gvisor-socket/runtime.json', runtime)
             workspace.atomic_json(temporary / 'sandweave-assets.json', registry)
             if needs_helpers(temporary, recipe):

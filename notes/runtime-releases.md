@@ -6,7 +6,7 @@ Existing configured installations keep their recorded runtime files.
 
 ## Selection and fallback
 
-Doctor, setup and local sandbox preparation check Linux x86-64 and kernel 5.6
+Doctor, setup and local sandbox preparation check Linux x86-64 and kernel 5.4
 or newer before installation. Setup rejects unsupported workers before creating
 storage or installing Apptainer, including when importing prepared runtimes.
 Before the engine download, setup also checks CPU instruction flags and runs a
@@ -27,13 +27,17 @@ An integrity failure stops installation. A source build cannot solve an
 unsupported architecture, an old kernel or a host permission restriction.
 `sandweave setup --build` explicitly selects a new source build.
 
-Linux 5.4 is not a supported runtime host. The first published binary SDK
-release (0.1.1) already enforced 5.6, and the pinned upstream engine documents
-the same minimum. Its host filesystem code uses `openat2` without a fallback;
-that syscall was introduced in Linux 5.6. Removing the setup guard or choosing
-an older SDK does not provide a supported 5.4 runtime. This restriction applies
-to the worker that runs the sandbox, not a client connecting to that worker.
-See [upstream requirements](https://gvisor.dev/docs/user_guide/install/).
+Linux 5.4 is supported starting with SDK 0.2.27 and runtime 2026.09.24.1.
+Earlier Sandweave binaries required 5.6. Our engine adds descriptor-based
+fallbacks for its two host `openat2` call sites and permits the protected signal
+handler's GS-base syscalls on hosts without userspace FSGSBASE. Newer kernels
+retain the native path; only `ENOSYS` selects the filesystem fallback.
+Prepared installations record their engine's minimum kernel. On 5.4, setup
+replaces an older engine while preserving its guest images. Upstream gVisor's
+[published requirements](https://gvisor.dev/docs/user_guide/install/) still
+state 5.6; this compatibility is provided by Sandweave's pinned engine patch.
+See [Linux 5.4 support](linux-5.4-support.md) for the implementation and kernel
+qualification procedure.
 
 Archives contain the five static engine executables, their manifests, the
 engine patch, build provenance and upstream notices. They do not contain a

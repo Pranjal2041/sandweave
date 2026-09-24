@@ -2,14 +2,14 @@
   "gvisor": {
     "path": "sources/gvisor",
     "upstream": "https://github.com/google/gvisor.git",
-    "branch": "fix/caller-user-namespace",
+    "branch": "fix/linux-5.4-host",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "9bb32ef9cd87a8c01bb663e3525ba23ff830ae03",
+    "commit": "ea092f0805ee6a4afa310f1bbb97b0a5b24d1305",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/a78fbb1c5610c803e44946900dd38ba8d9ada49412fbce8e5098b8cd0d8884ee",
+    "runtime_build": "tools/runtime-builds/0baa735edc93b688c67333551bc3e7b440c87117c550b26c0f7d4f35d68532c6",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "9bb32ef9cd87a8c01bb663e3525ba23ff830ae03",
+    "runtime_commit": "ea092f0805ee6a4afa310f1bbb97b0a5b24d1305",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
@@ -18,7 +18,8 @@
     "osworld_status": "All 50 representative tasks completed setup/screenshots/canonical evaluation in rc1; rc2 adds template-selected Avahi, console palette and fixed desktop sysctl support. RealtimeKit and physical GPU detection remain outside that support.",
     "osworld_runtime_release": "2026.09.14.2",
     "harbor_runtime_release": "2026.09.16.5",
-    "harbor_status": "Private-volume overlay metadata and exclusive caching; legacy stateful IPv4/IPv6 firewall matching and standard reject modes. See notes/harbor-adapter.md for acceptance."
+    "harbor_status": "Private-volume overlay metadata and exclusive caching; legacy stateful IPv4/IPv6 firewall matching and standard reject modes. See notes/harbor-adapter.md for acceptance.",
+    "linux54_runtime_release": "2026.09.24.1"
   },
   "passt": {
     "upstream": "https://passt.top/passt",

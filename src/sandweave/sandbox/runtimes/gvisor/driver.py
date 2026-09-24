@@ -254,15 +254,15 @@ class Runtime:
             while True:
                 try:
                     self.manager._run([*self.manager._command(identity), 'exec', identity,
-                                       'test', '-S', '/run/systemd/private'], timeout=10)
+                                       'test', '-S', '/run/systemd/private'], timeout=min(10, remaining()))
                     break
-                except RuntimeError:
+                except (RuntimeError, subprocess.TimeoutExpired):
                     if time.monotonic() >= deadline:
                         raise TimeoutError('guest systemd control bus did not become ready: ' + identity)
                     time.sleep(.1)
             self.manager._run([*self.manager._command(identity), 'exec', identity,
-                               'systemd-run', '--unit=sandweave-agent', '--collect',
-                               *agent_command], timeout=30)
+                               'systemd-run', '--unit=sandweave-agent', '--collect', '--no-block',
+                               *agent_command], timeout=remaining())
         port = self.manager.status(identity)['ports'][str(AGENT_PORT)]
         client = Connection('127.0.0.1', port, token, timeout=min(1, remaining()))
         while True:

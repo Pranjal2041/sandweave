@@ -14,6 +14,7 @@ from .sandbox import workspace
 from .setup_progress import Stage
 
 PIN = Path(__file__).with_name('runtime-release.json')
+MINIMUM_KERNEL = (5, 4, 0)
 
 def kernel_version(value):
     match = re.match(r'^(\d+)\.(\d+)(?:\.(\d+))?', value)
@@ -29,8 +30,8 @@ def check_platform():
         raise ValueError('Sandweave currently supports Linux x86-64 workers; this architecture needs a port, not a local rebuild')
     release = platform.release()
     kernel = kernel_version(release)
-    if kernel < (5, 6, 0):
-        raise ValueError('Sandweave\'s gVisor runtime requires Linux 5.6 or newer '
+    if kernel < MINIMUM_KERNEL:
+        raise ValueError('Sandweave\'s gVisor runtime requires Linux 5.4 or newer '
                          '(found ' + release + '). Use a worker with a supported kernel; '
                          'reinstalling or compiling Sandweave does not upgrade the host kernel.')
     return {'architecture': architecture, 'kernel': kernel}
@@ -49,6 +50,18 @@ def host_info():
     except (OSError, ValueError):
         flags = []
     return {**info, 'cpu_flags': sorted(set.intersection(*flags)) if flags else []}
+
+
+def runtime_supported(root):
+    """Legacy prepared runtimes predate Linux 5.4 support."""
+    descriptor = json.loads((Path(root) / 'tools/gvisor-socket/runtime.json').read_text())
+    minimum = descriptor.get('minimum_kernel', '5.6')
+    revisions = Path(root) / 'notes/source-revisions.json'
+    if revisions.is_file():
+        candidate = json.loads(revisions.read_text()).get('gvisor', {}).get('candidate_runtime_build')
+        if candidate and candidate != descriptor['path'] and (Path(root) / candidate / 'manifest.json').is_file():
+            minimum = '5.6'
+    return check_platform()['kernel'] >= kernel_version(minimum)
 
 
 SECCOMP_PROBE = '''import ctypes, os

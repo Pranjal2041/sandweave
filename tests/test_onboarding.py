@@ -616,3 +616,36 @@ def test_new_destination_does_not_import_previous_runtime_or_targets(tmp_path, m
     assert onboarding.configuration(old) == before
     assert workspace.home() == new
     assert json.loads((project / '.sandweave/location.json').read_text()) == {'path': str(new)}
+
+
+def test_linux54_upgrades_prepared_engine_without_rebuilding_guest(first_use, monkeypatch, tmp_path):
+    import shutil
+    from sandweave import bootstrap, releases
+    from sandweave.installation import record_installation
+    preparation, storage, source = first_use
+    monkeypatch.setattr(releases.platform, 'release', lambda: '5.4.0-216-generic')
+    monkeypatch.setattr(releases.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(releases.platform, 'machine', lambda: 'x86_64')
+    recipe = Template('coding').resolve()
+    assert preparation.available(recipe, storage) is None
+    engine = tmp_path / 'compatible-engine'
+    shutil.copytree(source, engine)
+    pointer = engine / 'tools/gvisor-socket/runtime.json'
+    descriptor = json.loads(pointer.read_text())
+    (engine / descriptor['path']).rename(engine / 'tools/runtime-builds/linux54')
+    descriptor.update(path='tools/runtime-builds/linux54', minimum_kernel='5.4')
+    pointer.write_text(json.dumps(descriptor))
+    for name in descriptor['sha256']:
+        (engine / descriptor['path'] / name).chmod(0o755)
+    record_installation(engine)
+    monkeypatch.setattr(releases, 'check_host', lambda *a: {'kernel': (5, 4, 0)})
+    monkeypatch.setattr(releases, 'install', lambda *a: engine)
+    monkeypatch.setattr(bootstrap.Builder, 'build', lambda *a, **k: pytest.fail('rebuilt guest image'))
+    installed = onboarding.install_runtime('coding', storage, sources=[source], yes=True)
+    assert releases.runtime_supported(installed)
+    assert json.loads((installed / 'tools/gvisor-socket/runtime.json').read_text()) == descriptor
+    assert (installed / 'images/gvisor-ubuntu-ready-ae303ca.erofs').read_bytes() == (
+        source / 'images/gvisor-ubuntu-ready-ae303ca.erofs').read_bytes()
+    assert 'minimum_kernel' not in json.loads((source / 'tools/gvisor-socket/runtime.json').read_text())
+    onboarding.workspace.atomic_json(storage / 'config.json', {'assets': str(installed)})
+    assert preparation.available(recipe, storage).assets == installed

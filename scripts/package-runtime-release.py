@@ -68,7 +68,7 @@ def package(build_result, output, version, repository, notices):
                 else:
                     raise ValueError('Engine release contains a non-regular entry: ' + str(path))
     base_url = 'https://github.com/' + repository + '/releases/download/runtime-v' + version + '/'
-    artifact = {'architecture': 'x86_64', 'minimum_kernel': '5.6', 'cpu_flags': ['sse2'],
+    artifact = {'architecture': 'x86_64', 'minimum_kernel': descriptor.get('minimum_kernel', '5.6'), 'cpu_flags': ['sse2'],
                 'name': name, 'url': base_url + name, 'size': archive.stat().st_size,
                 'sha256': workspace.file_digest(archive), 'unpacked_bytes': unpacked}
     manifest = {'schema_version': 1, 'version': version, 'engine_patch_sha256': result['patch_sha256'],

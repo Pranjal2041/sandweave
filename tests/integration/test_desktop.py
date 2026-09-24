@@ -13,6 +13,18 @@ pytestmark = [pytest.mark.integration,
               pytest.mark.skipif(not os.environ.get('SANDWEAVE_INTEGRATION'), reason='explicit worker required')]
 
 
+# CPU-emulated kernel qualification needs a longer wall-clock startup budget.
+# Native runs keep the public defaults; only explicit test configuration changes
+# the template's readiness limit and Sandbox's overall startup deadline.
+STARTUP_TIMEOUT = float(os.environ.get('SANDWEAVE_TEST_STARTUP_TIMEOUT', '300'))
+DESKTOP_TIMEOUT = float(os.environ.get('SANDWEAVE_TEST_DESKTOP_TIMEOUT', '120'))
+
+
+def desktop_template(**settings):
+    return Template({'extends': 'gnome', 'capabilities': {
+        'desktop': {'ready_timeout': DESKTOP_TIMEOUT, **settings}}})
+
+
 @pytest.fixture(scope='module', autouse=True)
 def release_idle_test_worker():
     yield
@@ -25,7 +37,7 @@ def test_desktop_actions_pause_and_filesystem_restore():
     artifacts = Path(os.environ.get('SANDWEAVE_TEST_ARTIFACTS',
                                    str(Path(os.environ['SANDWEAVE_ASSETS']) / 'runs/sdk-acceptance/desktop')))
     artifacts.mkdir(parents=True, exist_ok=True)
-    with Sandbox(template='gnome') as env:
+    with Sandbox(template=desktop_template(), startup_timeout=STARTUP_TIMEOUT) as env:
         image = env.desktop.screenshot()
         assert image.mode == 'RGB' and image.size == (1920, 1080)
         image.save(artifacts / 'initial.png')
@@ -78,7 +90,7 @@ Gtk.main()
         env.desktop.screenshot().save(artifacts / 'resumed.png')
         baseline = env.cache('sdk-desktop-' + uuid.uuid4().hex)
         application.terminate()
-    with Sandbox(cache=baseline) as restored:
+    with Sandbox(cache=baseline, startup_timeout=STARTUP_TIMEOUT) as restored:
         assert_clean_start(restored)
         assert restored.files.read_text('/workspace/typed') == expected
         image = restored.desktop.screenshot()
@@ -101,12 +113,14 @@ def assert_clean_start(env):
     assert visible.returncode == 1 and not visible.stdout
     assert env.run('pgrep -x tigervncconfig', check=False).returncode == 0
     assert env.run('systemctl is-active accounts-daemon', user='root').stdout.strip() == 'active'
+    assert env.run('systemctl is-enabled systemd-udevd.service', check=False).stdout.strip() == 'masked'
+    assert env.run('systemctl is-active sysinit.target', check=True).stdout.strip() == 'active'
     assert env.timings['controls_seconds'] >= env.timings['desktop_startup_seconds'] >= 0
 
 
 def test_pause_preserves_user_overview_and_startup_timings():
-    template = Template({'extends': 'gnome', 'capabilities': {'desktop': {'resolution': [1280, 800]}}})
-    with Sandbox(template=template) as env:
+    template = desktop_template(resolution=[1280, 800])
+    with Sandbox(template=template, startup_timeout=STARTUP_TIMEOUT) as env:
         assert_clean_start(env)
         assert env.desktop.screenshot().size == (1280, 800)
         initial_timings = env.timings

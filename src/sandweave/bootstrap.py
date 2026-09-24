@@ -227,7 +227,10 @@ done
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         artifacts.rename(root / relative)
         workspace.atomic_json(root / relative / 'manifest.json', hashes)
-        workspace.atomic_json(root / 'tools/gvisor-socket/runtime.json', {'path': relative, 'sha256': hashes})
+        from .releases import MINIMUM_KERNEL
+        workspace.atomic_json(root / 'tools/gvisor-socket/runtime.json', {
+            'path': relative, 'sha256': hashes,
+            'minimum_kernel': '.'.join(map(str, MINIMUM_KERNEL[:2]))})
 
     def erofs(self, root, source, output):
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -273,6 +276,11 @@ done
                 if (Path(base) / name).is_dir():
                     workspace.stage_tree(Path(base) / name, root / name)
             previous = json.loads((Path(base) / 'sandweave-assets.json').read_text())
+            from .releases import runtime_supported
+            if not runtime_supported(base):
+                self.pull(BUILDER, self.downloads / 'gvisor-builder.sif')
+                workspace._immutable(self.downloads / 'gvisor-builder.sif', root / 'tools/gvisor-builder.sif')
+                self.engine(root)
         else:
             previous = {}
             self.pull('docker://debian:trixie-slim', self.downloads / 'debian-trixie.sif')

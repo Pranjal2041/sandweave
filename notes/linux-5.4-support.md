@@ -90,6 +90,8 @@ desktop tests.
 
 For the emulated host, run the desktop tests with
 `SANDWEAVE_TEST_STARTUP_TIMEOUT=900 SANDWEAVE_TEST_DESKTOP_TIMEOUT=600`.
+Set `SANDWEAVE_TEST_ACTION_TIMEOUT_SCALE=10` for the application's test deadlines;
+launching a GTK application under TCG exceeded the normal 15-second test limit.
 These apply the existing public startup and template-readiness settings only in
 the test: native tests retain the normal 300-second and 120-second defaults.
 GNOME exceeded the default session-start deadline under CPU emulation after

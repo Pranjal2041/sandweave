@@ -18,6 +18,7 @@ pytestmark = [pytest.mark.integration,
 # the template's readiness limit and Sandbox's overall startup deadline.
 STARTUP_TIMEOUT = float(os.environ.get('SANDWEAVE_TEST_STARTUP_TIMEOUT', '300'))
 DESKTOP_TIMEOUT = float(os.environ.get('SANDWEAVE_TEST_DESKTOP_TIMEOUT', '120'))
+ACTION_TIMEOUT_SCALE = float(os.environ.get('SANDWEAVE_TEST_ACTION_TIMEOUT_SCALE', '1'))
 
 
 def desktop_template(**settings):
@@ -62,14 +63,14 @@ Gtk.main()
 '''
         env.files.write_text('/workspace/desktop-test.py', source)
         application = env.exec('python /workspace/desktop-test.py')
-        env.run("xdotool search --sync --name 'Sandweave desktop acceptance' windowactivate --sync", timeout=15)
-        focused = env.run("xdotool search --name 'Sandweave desktop acceptance' windowfocus --sync", timeout=10, check=False)
+        env.run("xdotool search --sync --name 'Sandweave desktop acceptance' windowactivate --sync", timeout=15 * ACTION_TIMEOUT_SCALE)
+        focused = env.run("xdotool search --name 'Sandweave desktop acceptance' windowfocus --sync", timeout=10 * ACTION_TIMEOUT_SCALE, check=False)
         env.desktop.screenshot().save(artifacts / 'before-input.png')
         (artifacts / 'focus.txt').write_text(env.run('xdotool getwindowfocus getwindowname; xprop -root _NET_ACTIVE_WINDOW').stdout)
         assert focused.returncode == 0, focused.stderr
         expected = 'Sandweave: hello € 日本語'
         env.desktop.keyboard.type(expected)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 5 * ACTION_TIMEOUT_SCALE
         while True:
             try:
                 actual = env.files.read_text('/workspace/typed')
@@ -125,7 +126,7 @@ def test_pause_preserves_user_overview_and_startup_timings():
         assert env.desktop.screenshot().size == (1280, 800)
         initial_timings = env.timings
         overview(env, 'true')
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 5 * ACTION_TIMEOUT_SCALE
         while overview(env) != '(<true>,)':
             assert time.monotonic() < deadline
             time.sleep(.05)

@@ -1871,6 +1871,10 @@ service address. See <a href="../networking/#connect-sandboxes">connecting sandb
 </code></pre></div>
 <p>These values can be passed to <code>Sandbox</code> and pool creation. See
 <a href="../resources/">resources</a> for units, admission, and runtime support.</p>
+<p><code>Memory(guest="16GiB", reservation="4GiB", experimental=True)</code> opts into
+<a href="../resources/#experimental-memory-sharing">experimental memory sharing</a>.
+The reservation affects admission; the guest limit remains 16 GiB. Combined
+usage can exceed physical RAM and cause host out-of-memory failures.</p>
 <p><code>Network(proxy=...)</code> accepts a proxy URL or a list of URLs. See
 <a href="../networking/#use-a-proxy">proxy networking</a> for selection, setup and application support.</p>
 <p><code>ProxyPolicy(distribution="random", region=None)</code> supports <code>random</code>, <code>round_robin</code>,

@@ -624,6 +624,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#experimental-memory-sharing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experimental memory sharing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#disk-backed-memory" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1335,6 +1346,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#experimental-memory-sharing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Experimental memory sharing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#disk-backed-memory" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1477,17 +1499,58 @@ to its slot limit and other reservations. Slots do not grant additional memory.<
 steps and ancestor limits. An environment variable cannot raise that ceiling.
 If several workers or unrelated processes share a memory allocation, their
 budgets still need to fit within that shared allocation.</p>
-<h2 id="disk-backed-memory">Disk-backed memory<a class="headerlink" href="#disk-backed-memory" title="Permanent link">&para;</a></h2>
+<h2 id="experimental-memory-sharing">Experimental memory sharing<a class="headerlink" href="#experimental-memory-sharing" title="Permanent link">&para;</a></h2>
+<p>Give each sandbox a guest-memory limit and a smaller admission reservation:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">Sandbox</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">memory</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">guest</span><span class="o">=</span><span class="s2">"4GiB"</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">disk</span><span class="o">=</span><span class="s2">"16GiB"</span><span class="p">,</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">disk_path</span><span class="o">=</span><span class="s2">"/scratch/my-memory"</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">)</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">memory</span><span class="o">=</span><span class="n">memory</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"free -h"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"disk_memory"</span><span class="p">])</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">memory</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">guest</span><span class="o">=</span><span class="s2">"16GiB"</span><span class="p">,</span> <span class="n">reservation</span><span class="o">=</span><span class="s2">"4GiB"</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="s2">"512MiB"</span><span class="p">,</span> <span class="n">experimental</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">memory</span><span class="o">=</span><span class="n">memory</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"memory"</span><span class="p">])</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Run your agent, then release its sandbox.</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p>This sandbox sees 16 GiB and can allocate beyond 4 GiB automatically. There is
+no burst timer or extra call for the agent. Sandweave counts 4 GiB plus 512 MiB
+of runtime memory for admission; it does not allocate or pin that RAM upfront.
+The reservation is scheduling accounting, not a protected minimum of physical
+RAM. Four such sandboxes reserve 18 GiB on a worker with a 32 GiB budget, even
+though their combined guest limits are 64 GiB. Ordinary sandboxes continue to
+reserve their full guest and runtime budgets.</p>
+<p>The same <code>memory=</code> object works with <code>Pool</code>, local workers, and Weave targets.
+The controller and workers must run Sandweave 0.2.28 or newer for consistent
+reservation accounting. Pool weights govern scheduling; they do not divide RAM
+between running sandboxes. There is no automatic ballooning, memory weighting,
+or reclamation of another sandbox's live private data.</p>
+<p><strong>This opts into possible host out-of-memory failures.</strong> Guest limits and runtime
+guards remain in effect, but reservations are not host RSS caps. If combined
+usage exceeds available RAM, the host can kill sandbox or other processes in
+the enclosing allocation. Sandweave does not guarantee that only a borrower is
+killed. Existing host swap, if any, follows the host's policy; this option does
+not create swap or disk backing. Leave capacity for host and worker processes.</p>
+<p><code>reservation</code> must be at least 64 MiB and no greater than <code>guest</code>, and requires
+<code>experimental=True</code>. Omitting it retains full reservation, even with
+<code>experimental=True</code>. Runtime memory is always reserved in full, as are service
+and image-import requirements according to their own resource settings.
+With disk-backed memory, the reservation replaces only the guest RAM amount
+counted for admission; the existing kernel cap remains <code>guest + runtime</code>.</p>
+<p>Snapshots retain the setting. On restore, an explicit <code>Memory(...)</code> can change
+or remove the reservation without changing saved guest contents; live restores
+still require the same guest, runtime and disk sizes. A scalar <code>memory=</code> override
+selects full reservation, retaining the saved runtime budget.</p>
+<p>The CLI equivalent is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--memory<span class="w"> </span>16GiB<span class="w"> </span>--memory-reservation<span class="w"> </span>4GiB<span class="w"> </span>--experimental-memory-sharing<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
+</code></pre></div>
+<h2 id="disk-backed-memory">Disk-backed memory<a class="headerlink" href="#disk-backed-memory" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">Sandbox</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">memory</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">guest</span><span class="o">=</span><span class="s2">"4GiB"</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">disk</span><span class="o">=</span><span class="s2">"16GiB"</span><span class="p">,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">disk_path</span><span class="o">=</span><span class="s2">"/scratch/my-memory"</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">)</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">memory</span><span class="o">=</span><span class="n">memory</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"free -h"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"disk_memory"</span><span class="p">])</span>
 </code></pre></div>
 <p>Applications see 20 GiB of guest memory and allocate it normally. They need no
 special calls or awareness of a second memory tier. Linux caches the backing
@@ -1536,14 +1599,14 @@ with 99% of accesses in a warmed 2 GiB region averaged about 5.2 times the RAM
 baseline; random access across 20 GiB cost about 260 times as much. See the
 <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/disk-memory-profiling.md">profiling report</a>.</p>
 <h2 id="use-a-gpu">Use a GPU<a class="headerlink" href="#use-a-gpu" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span> <span class="n">gpu</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"nvidia-smi"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span> <span class="n">gpu</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"nvidia-smi"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>Use a model name to select among eligible devices:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span> <span class="n">gpu</span><span class="o">=</span><span class="s2">"L40S"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"gpus"</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span> <span class="n">gpu</span><span class="o">=</span><span class="s2">"L40S"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"gpus"</span><span class="p">])</span>
 </code></pre></div>
 <p>The worker must already have access to that GPU. Weave currently reserves whole
 GPUs for cluster admission; fractional GPU admission is not implemented.</p>
@@ -1552,11 +1615,11 @@ GPUs for cluster admission; fractional GPU admission is not implemented.</p>
 the <code>gpu</code> argument. Model matching is case-insensitive and accepts substrings
 of the device name. This still requests one GPU.</p>
 <h2 id="inspect-configuration">Inspect configuration<a class="headerlink" href="#inspect-configuration" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pprint</span><span class="w"> </span><span class="kn">import</span> <span class="n">pprint</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">pprint</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pprint</span><span class="w"> </span><span class="kn">import</span> <span class="n">pprint</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">pprint</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
 </code></pre></div>
 <p>The summary includes identity, state, template, worker hostname, CPU and memory
 settings, selected GPU devices, and VNC details where applicable. Resource
@@ -1564,8 +1627,8 @@ settings are budgets, not current usage. The <a href="../dashboard/">dashboard</
 live measurements separately.</p>
 <h2 id="choose-a-runtime">Choose a runtime<a class="headerlink" href="#choose-a-runtime" title="Permanent link">&para;</a></h2>
 <p>gVisor is the default. For code using the host kernel directly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">runtime</span><span class="o">=</span><span class="s2">"apptainer"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">runtime</span><span class="o">=</span><span class="s2">"apptainer"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>Native Apptainer supports commands, files, GPU exposure, pause/resume, and
 filesystem caches. It uses the host network and does not support CPU weights,

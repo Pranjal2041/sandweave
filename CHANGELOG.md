@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.28
+
+- Add opt-in experimental memory overcommit with
+  `Memory(guest="16GiB", reservation="4GiB", experimental=True)`. Workers and
+  Weave count the reservation plus the full runtime allowance for admission,
+  while retaining the existing guest allocation limit and runtime guard.
+- Support the same setting in pools, templates and the CLI. Preserve reservations
+  in snapshots and allow changing admission reservations on live restore without
+  changing captured guest resources. Require compatible controllers and workers.
+- Keep full memory reservations as the default. Experimental reservations are
+  scheduling accounting, not protected RAM; combined usage can cause host OOM.
+
 ## 0.2.27
 
 - Support Linux 5.4 workers with a compatible prebuilt gVisor engine. Fall back

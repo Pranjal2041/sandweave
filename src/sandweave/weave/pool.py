@@ -92,6 +92,9 @@ class ManagedPool(LocalPool):
                     raise UnsupportedFeature('requested pool options require Sandweave ' + version +
                                              ' or newer on the controller: ' + ', '.join(sorted(requested)))
                 request = definition(target=self.target, **self.options)
+                from ..sandbox.resources import uses_memory_reservations
+                if uses_memory_reservations(request['spec']) and not self.connection.call('ping').get('memory_reservations'):
+                    raise UnsupportedFeature('memory reservations require Sandweave 0.2.28 or newer on the controller')
                 if request['spec'].get('recording') and not self.connection.call('ping').get('desktop_recording'):
                     raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the controller')
                 if proxy.requires_policy(request['spec']['resources']['network']) and not self.connection.call('ping').get('proxy_policy'):

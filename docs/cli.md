@@ -33,6 +33,15 @@ sandweave run --memory 4GiB --disk-memory 16GiB --disk-path /scratch/my-memory -
 
 See [disk-backed memory](resources.md#disk-backed-memory) for host requirements.
 
+To count less guest RAM for admission while retaining a higher allocation limit:
+
+```bash
+sandweave run --memory 16GiB --memory-reservation 4GiB --experimental-memory-sharing -- "free -h"
+```
+
+This explicitly opts into [experimental memory sharing](resources.md#experimental-memory-sharing)
+and possible host out-of-memory failures when combined usage exceeds available RAM.
+
 Use one proxy from a private JSON list of proxy URLs:
 
 ```bash

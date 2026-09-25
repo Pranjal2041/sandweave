@@ -754,6 +754,7 @@ class Worker:
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
                     'cpu_affinity': sorted(os.sched_getaffinity(0)), 'memory_budget': self.memory_budget,
                     'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1, 'pool_retention': 1,
+                    'memory_reservations': 1,
                     'desktop_recording': 1, 'oci_image_import': 1, 'native_services': 1,
                     'dynamic_network_policy': 1, 'service_networks': 1}
         if operation not in allowed:

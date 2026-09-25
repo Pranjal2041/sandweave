@@ -51,12 +51,21 @@ class Memory:
     runtime: str | int = '512MiB'
     disk: str | int | None = None
     disk_path: str | None = None
+    reservation: str | int | None = None
+    experimental: bool = False
 
     def __post_init__(self):
         if memory_bytes(self.guest) < 64 * 1024**2:
             raise ValueError('guest memory must be at least 64MiB')
         if memory_bytes(self.runtime) < 32 * 1024**2:
             raise ValueError('runtime memory must be at least 32MiB')
+        if type(self.experimental) is not bool:
+            raise ValueError('experimental must be a bool')
+        if self.reservation is not None:
+            if not self.experimental:
+                raise ValueError('memory sharing requires experimental=True')
+            if not 64 * 1024**2 <= memory_bytes(self.reservation) <= memory_bytes(self.guest):
+                raise ValueError('memory reservation must be between 64MiB and guest memory')
         if (self.disk is None) != (self.disk_path is None):
             raise ValueError('disk memory requires both disk and disk_path')
         if self.disk is not None:
@@ -162,15 +171,24 @@ def normalize(cpu=1, memory='1GiB', gpu=False, network='internet'):
     elif gpu is not False and gpu is not None and not isinstance(gpu, GPU):
         raise ValueError('gpu must be a bool, model string or GPU')
     network = network if isinstance(network, Network) else Network(**network) if isinstance(network, dict) else Network(network)
-    return {'cpu': asdict(cpu), 'memory': {k: v for k, v in asdict(memory).items() if v is not None},
+    return {'cpu': asdict(cpu), 'memory': {k: v for k, v in asdict(memory).items()
+                                        if v is not None and (k != 'experimental' or v)},
             'gpu': asdict(gpu) if isinstance(gpu, GPU) else None,
             'network': {k: v for k, v in asdict(network).items()
                         if v is not None and (k != 'allowed_hosts' or v or network.mode == 'allowlist')}}
 
 
 def restore_resources(resources):
-    """Disk location is a worker binding, not part of captured guest state."""
+    """Placement reservations and disk locations are not captured guest state."""
     import copy
     result = copy.deepcopy(resources)
     result['memory'].pop('disk_path', None)
+    result['memory'].pop('reservation', None)
+    result['memory'].pop('experimental', None)
     return result
+
+
+def uses_memory_reservations(spec):
+    return (spec['resources']['memory'].get('reservation') is not None or
+            any(uses_memory_reservations(service['request']['spec'])
+                for service in spec.get('services', {}).values()))

@@ -160,6 +160,9 @@ class Sandbox:
         initial = self._connection
         self._connection = initial.clone(timeout=startup_timeout + 60)
         initial.close()
+        from .resources import uses_memory_reservations
+        if uses_memory_reservations(spec) and not self._connection.call('ping').get('memory_reservations'):
+            raise UnsupportedFeature('memory reservations require Sandweave 0.2.28 or newer on the worker and controller')
         from .proxy import requires_policy
         if requires_policy(spec['resources']['network']) and not self._connection.call('ping').get('proxy_policy'):
             raise UnsupportedFeature('proxy policies require Sandweave 0.2.10 or newer on the worker and controller')

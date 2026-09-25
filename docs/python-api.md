@@ -132,6 +132,11 @@ network = Network(mode="offline")
 These values can be passed to `Sandbox` and pool creation. See
 [resources](resources.md) for units, admission, and runtime support.
 
+`Memory(guest="16GiB", reservation="4GiB", experimental=True)` opts into
+[experimental memory sharing](resources.md#experimental-memory-sharing).
+The reservation affects admission; the guest limit remains 16 GiB. Combined
+usage can exceed physical RAM and cause host out-of-memory failures.
+
 `Network(proxy=...)` accepts a proxy URL or a list of URLs. See
 [proxy networking](networking.md#use-a-proxy) for selection, setup and application support.
 

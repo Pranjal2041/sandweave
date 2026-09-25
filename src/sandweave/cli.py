@@ -43,6 +43,9 @@ def creation_options(parser):
     parser.add_argument('--cpu-quota', type=float)
     parser.add_argument('--memory')
     parser.add_argument('--runtime-memory')
+    parser.add_argument('--memory-reservation', help='guest RAM counted for admission; requires --experimental-memory-sharing')
+    parser.add_argument('--experimental-memory-sharing', action='store_true',
+                        help='allow memory limits to exceed reserved RAM; combined usage can exhaust host memory')
     parser.add_argument('--disk-memory', help='additional disk-backed guest memory, such as 16GiB')
     parser.add_argument('--disk-path', help='independent worker directory for disk-backed memory')
     parser.add_argument('--mount', action='append', default=[], help='JSON Mount object; repeat for multiple mounts')
@@ -84,9 +87,12 @@ def creation(args):
         options['cpu'] = CPU(args.cpu if args.cpu is not None else 1,
                              args.cpu_weight if args.cpu_weight is not None else 100,
                              args.cpu_quota)
-    if any(getattr(args, key, None) for key in ('runtime_memory', 'disk_memory', 'disk_path')):
+    if any(getattr(args, key, None) for key in ('runtime_memory', 'disk_memory', 'disk_path',
+                                             'memory_reservation', 'experimental_memory_sharing')):
         options['memory'] = Memory(args.memory or '1GiB', args.runtime_memory or '512MiB',
-                                   getattr(args, 'disk_memory', None), getattr(args, 'disk_path', None))
+                                   getattr(args, 'disk_memory', None), getattr(args, 'disk_path', None),
+                                   reservation=getattr(args, 'memory_reservation', None),
+                                   experimental=getattr(args, 'experimental_memory_sharing', False))
     if getattr(args, 'mount', None):
         options['mounts'] = [Mount(**json.loads(value)) for value in args.mount]
     if getattr(args, 'proxy_file', None):

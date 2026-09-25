@@ -493,6 +493,9 @@ class Controller:
                     return
                 record = self.state.put('allocation', {**record, 'endpoint': route, 'state': 'starting'})
             request = record['request']
+            from ..sandbox.resources import uses_memory_reservations
+            if uses_memory_reservations(request['spec']) and not (yield rpc(connection, 'ping')).get('memory_reservations'):
+                raise UnsupportedFeature('memory reservations require Sandweave 0.2.28 or newer on the worker')
             if request['spec'].get('recording') and not (yield rpc(connection, 'ping')).get('desktop_recording'):
                 raise UnsupportedFeature('desktop recording requires Sandweave 0.2.14 or newer on the worker')
             if request['spec'].get('service_group') and not (yield rpc(connection, 'ping')).get('native_services'):
@@ -733,6 +736,7 @@ class Controller:
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
                     'pool_options': ['shared_cache', 'affinity', 'retain_baseline'], 'proxy_policy': 1,
+                    'memory_reservations': 1,
                     'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1, 'desktop_recording': 1,
                     'native_services': 1, 'service_networks': 1}
         if operation.startswith('service_network_'):

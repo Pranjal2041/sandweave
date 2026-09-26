@@ -1593,6 +1593,10 @@ host RAM and reclaim that cache; this does not add RAM to the sandbox.</p>
 explicit path, this directory is under the worker's runtime workspace. The path
 is on the worker, including when using SSH or Weave. The same <code>storage=</code> option
 works with <code>Pool</code>; templates can set <code>resources.storage</code>.</p>
+<p>The runtime workspace uses <code>SANDWEAVE_LOCAL_DIR</code> on the worker, falling back to
+<code>TMPDIR</code> and then the system temporary directory. Set <code>SANDWEAVE_LOCAL_DIR</code> to a
+disk directory before starting workers if their <code>/tmp</code> is backed by RAM.
+<code>Storage(path=...)</code> overrides this location for a sandbox's writable files.</p>
 <p>The root writable layer and persistent Docker/containerd mounts use disk.
 <code>/run</code>, <code>/tmp</code>, <code>/dev/shm</code>, and other volatile mounts retain their RAM semantics.
 Explicit external mounts keep their existing backing and snapshot policy.

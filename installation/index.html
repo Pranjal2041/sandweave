@@ -1462,25 +1462,34 @@ small <code>.sandweave/location.json</code> file in the project records your cho
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SANDWEAVE_HOME</span><span class="o">=</span>/path/to/sandweave-data
 </code></pre></div>
 <p>Active runtime working directories use separate, temporary worker-local storage.
-Keep caches and snapshots on storage that will survive the worker's lifetime.</p>
+Keep caches and snapshots on storage that will survive the worker's lifetime.
+Worker-local directories honor <code>SANDWEAVE_LOCAL_DIR</code>, then <code>TMPDIR</code>, then Python's
+system temporary-directory default. Set these on the worker before starting it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SANDWEAVE_LOCAL_DIR</span><span class="o">=</span>/scratch/sandweave
+</code></pre></div>
+<p>Sandweave creates private random directories under that parent for active
+filesystems and checkpoint staging. Changing the setting selects a new worker
+workspace; it does not move running sandboxes. An invalid explicit directory
+raises an error rather than silently using <code>/tmp</code>. If the selected filesystem
+is tmpfs, its files consume host RAM; choose a disk directory for disk storage.</p>
 <h2 id="check-or-repair-an-installation">Check or repair an installation<a class="headerlink" href="#check-or-repair-an-installation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sandweave<span class="w"> </span>doctor
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>sandweave<span class="w"> </span>doctor
 </code></pre></div>
 <p>Doctor shows checks for the selected workload and offers repairs in its terminal
 menu. For a check without interactive changes:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>sandweave<span class="w"> </span>doctor<span class="w"> </span>--check
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>sandweave<span class="w"> </span>doctor<span class="w"> </span>--check
 </code></pre></div>
 <p>Setup displays progress and saves full logs under <code>logs/setup</code> in your selected
 storage directory. See <a href="../troubleshooting/">troubleshooting</a> if a stage fails.</p>
 <h2 id="upgrade">Upgrade<a class="headerlink" href="#upgrade" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>sandweave
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>sandweave
 </code></pre></div>
 <p>Restart an existing controller to load updated controller code. Existing running
 workers and sandboxes keep the code and runtime files they started with.</p>
 <h2 id="prepare-specific-workloads">Prepare specific workloads<a class="headerlink" href="#prepare-specific-workloads" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>sandweave<span class="w"> </span>setup<span class="w"> </span>--template<span class="w"> </span>gnome
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>sandweave<span class="w"> </span>setup<span class="w"> </span>--template<span class="w"> </span>cuda
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>sandweave<span class="w"> </span>setup<span class="w"> </span>--template<span class="w"> </span>vr/gunspinning
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sandweave<span class="w"> </span>setup<span class="w"> </span>--template<span class="w"> </span>gnome
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>sandweave<span class="w"> </span>setup<span class="w"> </span>--template<span class="w"> </span>cuda
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>sandweave<span class="w"> </span>setup<span class="w"> </span>--template<span class="w"> </span>vr/gunspinning
 </code></pre></div>
 <p>Desktop and VR controls use additional Python packages. First-use preparation
 installs those dependencies on a local worker. A client on another machine can

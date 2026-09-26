@@ -1572,7 +1572,7 @@
 <h1 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h1>
 <p>Import the public objects from <code>sandweave</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span><span class="p">,</span> <span class="n">Pool</span><span class="p">,</span> <span class="n">Cluster</span><span class="p">,</span> <span class="n">Job</span><span class="p">,</span> <span class="n">Benchmark</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPU</span><span class="p">,</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">GPU</span><span class="p">,</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Template</span><span class="p">,</span> <span class="n">SnapshotRef</span><span class="p">,</span> <span class="n">Mount</span><span class="p">,</span> <span class="n">Slurm</span><span class="p">,</span> <span class="n">Recording</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">CPU</span><span class="p">,</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">GPU</span><span class="p">,</span> <span class="n">Network</span><span class="p">,</span> <span class="n">Storage</span><span class="p">,</span> <span class="n">Template</span><span class="p">,</span> <span class="n">SnapshotRef</span><span class="p">,</span> <span class="n">Mount</span><span class="p">,</span> <span class="n">Slurm</span><span class="p">,</span> <span class="n">Recording</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_service_network</span><span class="p">,</span> <span class="n">delete_service_network</span>
 </code></pre></div>
 <p>Methods that support async calls expose <code>.aio</code>. See <a href="../async/">async Python</a>.</p>
@@ -1638,6 +1638,11 @@
 <td><code>gpu</code></td>
 <td>Boolean, model name, or <code>GPU(...)</code>.</td>
 <td>Template default</td>
+</tr>
+<tr>
+<td><code>storage</code></td>
+<td><code>"disk"</code>, <code>"memory"</code>, or <code>Storage(path="/worker/path")</code>.</td>
+<td>Template default, normally <code>"disk"</code></td>
 </tr>
 <tr>
 <td><code>network</code></td>
@@ -1868,6 +1873,7 @@ service address. See <a href="../networking/#connect-sandboxes">connecting sandb
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">memory</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span><span class="n">guest</span><span class="o">=</span><span class="s2">"4GiB"</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="s2">"1GiB"</span><span class="p">)</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">gpu</span> <span class="o">=</span> <span class="n">GPU</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">"L40S"</span><span class="p">)</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">network</span> <span class="o">=</span> <span class="n">Network</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"offline"</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">storage</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="s2">"/data/sandbox-disks"</span><span class="p">)</span>
 </code></pre></div>
 <p>These values can be passed to <code>Sandbox</code> and pool creation. See
 <a href="../resources/">resources</a> for units, admission, and runtime support.</p>

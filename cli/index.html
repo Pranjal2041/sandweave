@@ -1275,6 +1275,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#writable-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writable storage
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1444,6 +1455,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#writable-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writable storage
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1569,6 +1591,12 @@ See <a href="../desktop/#record-a-desktop">desktop recording</a> for timing and 
 </code></pre></div>
 <p>The VR template needs prepared game files and an available GPU. Recording exports
 both eyes and a synchronized side-by-side preview. See <a href="../vr/">VR games</a>.</p>
+<h2 id="writable-storage">Writable storage<a class="headerlink" href="#writable-storage" title="Permanent link">&para;</a></h2>
+<p>New sandboxes use disk-backed writable files. Choose their directory on the worker:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--storage-path<span class="w"> </span>/data/sandbox-disks<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
+</code></pre></div>
+<p>Use <code>--storage memory</code> to retain RAM-backed writable files. This is independent
+of <code>--disk-memory</code> and <code>--disk-path</code>, which configure application memory.</p>
 
 
 

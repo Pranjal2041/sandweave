@@ -88,7 +88,8 @@ def test_one_stalled_runtime_does_not_delay_healthy_peer(broker, tmp_path, monke
     assert counts['stalled'] <= 3
 
 
-def test_control_connection_reuses_stream_and_handles_split_reply(broker, tmp_path):
+@pytest.mark.parametrize('directory', ['short', 'd' * 180])
+def test_control_connection_reuses_stream_and_handles_split_reply(broker, tmp_path, directory):
     async def run():
         connections = []
         async def serve(reader, writer):
@@ -105,8 +106,12 @@ def test_control_connection_reuses_stream_and_handles_split_reply(broker, tmp_pa
             finally:
                 writer.close()
                 await writer.wait_closed()
-        path = str(tmp_path / 'control')
-        server = await asyncio.start_unix_server(serve, path)
+        from _unix_sockets import Address
+        parent = tmp_path / directory
+        parent.mkdir()
+        path = str(parent / 'control')
+        with Address(path) as address:
+            server = await asyncio.start_unix_server(serve, address)
         conn = broker.ControlConnection(path)
         try:
             for _ in range(2):

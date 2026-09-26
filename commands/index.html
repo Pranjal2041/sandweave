@@ -1429,6 +1429,12 @@ raises <code>CommandTimeout</code>; it is separate from a program's nonzero exit
 <p><code>exec</code> returns immediately with a <code>Process</code>. Use its <code>stdin</code>, <code>stdout</code>, <code>stderr</code>,
 <code>poll()</code>, <code>wait()</code>, and <code>terminate()</code> methods. The SDK drains command output
 within its configured output limit.</p>
+<p>Process waits and output readers wake when the guest exits or produces output.
+Long commands do not continuously poll their status. <code>wait(timeout=...)</code> limits
+how long the caller waits; it leaves the command running if that deadline expires.
+The command's own <code>timeout=</code> still terminates it when its execution deadline expires.
+Upgrade clients and workers to use notification-based waits. Older workers and
+memory snapshots remain compatible through polling with backoff.</p>
 <p>For a terminal, pass <code>pty=True</code>. Terminal stdout and stderr share one stream;
 <code>process.resize(rows, cols)</code> changes its dimensions.</p>
 <h2 id="select-a-shell-or-literal-arguments">Select a shell or literal arguments<a class="headerlink" href="#select-a-shell-or-literal-arguments" title="Permanent link">&para;</a></h2>

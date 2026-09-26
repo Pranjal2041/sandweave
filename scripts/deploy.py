@@ -143,6 +143,8 @@ def validate(directory, release, tests=None):
         shutil.copyfile(source / 'tests/integration/test_sdk.py', live / 'test_sdk.py')
         shutil.copyfile(source / 'tests/integration/test_process_wait_live.py', live / 'test_process_wait_live.py')
         shutil.copyfile(source / 'tests/integration/test_filesystem_storage_live.py', live / 'test_filesystem_storage_live.py')
+        shutil.copyfile(source / 'tests/integration/test_signal_masks_live.py', live / 'test_signal_masks_live.py')
+        shutil.copyfile(source / 'tests/integration/test_checkpoint_cleanup_live.py', live / 'test_checkpoint_cleanup_live.py')
         (live / 'pytest.ini').write_text('[pytest]\nmarkers = integration: installed SDK acceptance\n')
         env.update(SANDWEAVE_HOME=str(work / 'worker'), SANDWEAVE_INTEGRATION='1')
         run(python, '-m', 'pytest', '-q', '-s', '--confcutdir=' + str(live), cwd=live, env=env)

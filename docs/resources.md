@@ -166,6 +166,11 @@ explicit path, this directory is under the worker's runtime workspace. The path
 is on the worker, including when using SSH or Weave. The same `storage=` option
 works with `Pool`; templates can set `resources.storage`.
 
+The runtime workspace uses `SANDWEAVE_LOCAL_DIR` on the worker, falling back to
+`TMPDIR` and then the system temporary directory. Set `SANDWEAVE_LOCAL_DIR` to a
+disk directory before starting workers if their `/tmp` is backed by RAM.
+`Storage(path=...)` overrides this location for a sandbox's writable files.
+
 The root writable layer and persistent Docker/containerd mounts use disk.
 `/run`, `/tmp`, `/dev/shm`, and other volatile mounts retain their RAM semantics.
 Explicit external mounts keep their existing backing and snapshot policy.

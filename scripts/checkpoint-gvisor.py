@@ -138,6 +138,7 @@ if not required <= files.keys():
 manifest = {'format': 2, 'kind': 'filesystem' if a.filesystem else 'live',
             'experimental_gpu_live': a.experimental_gpu_live, 'filesystem': filesystem,
             'snapshot_id': uuid.uuid4().hex, 'container': a.name, 'pause_seconds': pause_seconds,
+            'discard_local_staging': not a.local_only,
             'runtime': runtime, 'base_image': base_info, 'files': files,
             'verification_source': {'hostname': socket.gethostname(), 'path': str(dest),
                                     'files': captured, 'base_path': str(original_base), 'base_stat': base_stat},

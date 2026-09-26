@@ -46,9 +46,19 @@ def tool(name):
     return shutil.which(name, path=tool_path())
 
 
+def local_parent():
+    """Worker-side scratch location; explicit choices never silently fall back."""
+    value = os.environ.get('SANDWEAVE_LOCAL_DIR') or os.environ.get('TMPDIR') or tempfile.gettempdir()
+    path = Path(value).expanduser().resolve()
+    if any(c in str(path) for c in ('\0', '\n', '\r', ':', ',')):
+        raise ResourceUnavailable('Worker local directory cannot contain colons, commas or control characters')
+    return path
+
+
 def worker_key(source=None):
     """Workers may only share authority within the same eligible resource set."""
     eligibility = {'assets': asset_identity(source), 'software': software_identity(),
+                   'local_directory': str(local_parent()),
                    'cpus': sorted(os.sched_getaffinity(0)),
                    'gpu': {key: os.environ.get(key) for key in
                            ('SLURM_STEP_GPUS', 'SLURM_JOB_GPUS', 'CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES', 'SANDWEAVE_GPU_DEVICES', 'SANDWEAVE_GPU_LIMIT')},
@@ -363,7 +373,9 @@ def prepare(*, source=None):
         previous = json.loads(prepared_path.read_text()) if prepared_path.exists() else {}
         local = Path(previous['local']) if previous.get('local') else None
         if local is None or not local.is_dir():
-            local = Path(tempfile.mkdtemp(prefix='sandweave-' + str(os.getuid()) + '-', dir='/tmp'))
+            parent = local_parent()
+            parent.mkdir(parents=True, exist_ok=True)
+            local = Path(tempfile.mkdtemp(prefix='sandweave-' + str(os.getuid()) + '-', dir=parent))
         for directory in ('gvisor/bundles', 'gvisor/state', 'gvisor/checkpoints'):
             (local / directory).mkdir(parents=True, exist_ok=True)
         (root / 'runs/local-path.txt').write_text(str(local) + '\n')

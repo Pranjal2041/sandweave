@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.33
+
+- Include upstream gVisor signal masks in `/proc/[pid]/status`, fixing JDK 25
+  attach and Elasticsearch 9 startup. Upgrade the engine for new sandboxes while
+  preserving the engines pinned by existing memory snapshots.
+- Honor `SANDWEAVE_LOCAL_DIR`, then `TMPDIR`, for private worker-local storage.
+  Changes select a new worker workspace without relocating running sandboxes.
+- Remove checkpoint staging after the published copy passes verification. New
+  restores use the published copy, including while verification is pending, so
+  cleanup cannot remove their inputs. Retain failed and diagnostic-only captures.
+
 ## 0.2.32
 
 - Use disk-backed writable storage by default for new sandboxes, including

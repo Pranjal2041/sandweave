@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -87,6 +88,10 @@ def pending(snapshot, manifest):
 def restore_path(local, snapshot, manifest):
     """Reuse this node's frozen capture when its recorded file identities match."""
     snapshot = Path(snapshot).resolve()
+    # New captures use their published copy even while verification is pending.
+    # This keeps staging disposable without racing a lazy live/cold restore.
+    if manifest.get('discard_local_staging'):
+        return snapshot
     reference = manifest.get('verification_source', {})
     if reference.get('hostname') != socket.gethostname():
         return snapshot
@@ -103,6 +108,28 @@ def restore_path(local, snapshot, manifest):
     except (OSError, ValueError, KeyError):
         return snapshot
     return source
+
+
+def cleanup_staging(lab, snapshot, manifest):
+    """Remove only our verified disposable capture, never the published copy."""
+    if not manifest.get('discard_local_staging'):
+        return
+    lab, snapshot = Path(lab).resolve(), Path(snapshot).resolve()
+    reference = manifest.get('verification_source', {})
+    if reference.get('hostname') != socket.gethostname():
+        return
+    source = Path(reference['path'])
+    try:
+        local = Path((lab / 'runs/local-path.txt').read_text().strip()).resolve()
+        if (source.is_symlink() or source.resolve().parent != local / 'gvisor/checkpoints'
+                or snapshot.parent != lab / 'snapshots' or snapshot == source.resolve()):
+            return
+        original = json.loads((source / 'snapshot-manifest.json').read_text())
+        if identity(original) != identity(manifest) or not original.get('discard_local_staging'):
+            return
+        shutil.rmtree(source)
+    except FileNotFoundError:
+        return
 
 
 def start_verification(lab, snapshot):
@@ -211,5 +238,12 @@ def verify(lab, snapshot, *, verified=None, reuse=False):
                           verified_files=receipts)
         except Exception as error:
             status.update(status='failed', error=str(error), finished_at=time.time(), seconds=time.perf_counter() - started)
+        if status['status'] == 'passed':
+            try:
+                cleanup_staging(lab, snapshot, manifest)
+            except (OSError, ValueError, KeyError) as error:
+                # A cleanup failure must not invalidate a verified snapshot;
+                # keep the staging copy and retry cleanup on the next verify.
+                status['cleanup_error'] = str(error)
         write_json(snapshot / 'verification.json', status)
         return status

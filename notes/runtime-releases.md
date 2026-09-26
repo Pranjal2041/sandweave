@@ -4,6 +4,11 @@ Sandweave 0.1.1 selects a pinned engine from GitHub Releases before building
 one locally. The Python API and `sandweave setup` share this installation path.
 Existing configured installations keep their recorded runtime files.
 
+SDK 0.2.33 upgrades prepared engines to runtime 2026.09.26.3 with the exact
+signal-mask implementation from upstream `0ac45dc25466`, backported on top of
+the existing Sandweave engine. Linux 5.4 support and existing patches remain.
+See [signal masks and local storage](signal-masks-local-storage.md).
+
 SDK 0.2.32 upgrades prepared engines to runtime 2026.09.26.2 for disk-backed
 writable storage. It retains guest images and pinned memory-snapshot engines.
 See [filesystem storage](filesystem-storage.md) for API, capture/restore behavior

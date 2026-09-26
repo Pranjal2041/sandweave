@@ -17,6 +17,13 @@ Caches save filesystem state by default. A restore starts fresh processes with
 independent writable state. It also restores the template's services and controls,
 so you do not need to specify the template again.
 
+Saving first captures into the worker's local directory, then publishes a copy
+under its persistent snapshot storage. Background verification removes the
+local staging copy after the published files pass verification. Restores use
+the published files even while verification is pending, so cleanup does not
+interrupt them. Failed verification retains staging for recovery; diagnostic
+`--local-only` captures are also retained.
+
 ## Pin a particular version
 
 A cache name can point to a newer revision later. Use the returned reference to

@@ -82,6 +82,18 @@ export SANDWEAVE_HOME=/path/to/sandweave-data
 
 Active runtime working directories use separate, temporary worker-local storage.
 Keep caches and snapshots on storage that will survive the worker's lifetime.
+Worker-local directories honor `SANDWEAVE_LOCAL_DIR`, then `TMPDIR`, then Python's
+system temporary-directory default. Set these on the worker before starting it:
+
+```bash
+export SANDWEAVE_LOCAL_DIR=/scratch/sandweave
+```
+
+Sandweave creates private random directories under that parent for active
+filesystems and checkpoint staging. Changing the setting selects a new worker
+workspace; it does not move running sandboxes. An invalid explicit directory
+raises an error rather than silently using `/tmp`. If the selected filesystem
+is tmpfs, its files consume host RAM; choose a disk directory for disk storage.
 
 ## Check or repair an installation
 

@@ -1,5 +1,5 @@
 diff --git a/pkg/abi/linux/keyctl.go b/pkg/abi/linux/keyctl.go
-index 4fedb33..ac7f9a9 100644
+index 4fedb33d9..ac7f9a922 100644
 --- a/pkg/abi/linux/keyctl.go
 +++ b/pkg/abi/linux/keyctl.go
 @@ -18,7 +18,9 @@ package linux
@@ -23,7 +23,7 @@ index 4fedb33..ac7f9a9 100644
 +	KEYCTL_READ                 = 11
  )
 diff --git a/pkg/abi/linux/netlink.go b/pkg/abi/linux/netlink.go
-index 46717a0..5e0e0ff 100644
+index 46717a077..5e0e0ff4e 100644
 --- a/pkg/abi/linux/netlink.go
 +++ b/pkg/abi/linux/netlink.go
 @@ -196,4 +196,6 @@ type NetlinkErrorMessage struct {
@@ -34,7 +34,7 @@ index 46717a0..5e0e0ff 100644
 +	RTNLGRP_IPV6_IFADDR = 9
  )
 diff --git a/pkg/abi/nvgpu/ctrl.go b/pkg/abi/nvgpu/ctrl.go
-index fc07881..eda0c6c 100644
+index fc07881b2..eda0c6c52 100644
 --- a/pkg/abi/nvgpu/ctrl.go
 +++ b/pkg/abi/nvgpu/ctrl.go
 @@ -58,6 +58,9 @@ type HasCtrlInfoList interface {
@@ -56,7 +56,7 @@ index fc07881..eda0c6c 100644
  
  // NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS is the params type for
 diff --git a/pkg/erofs/BUILD b/pkg/erofs/BUILD
-index 00645a2..5acb9b4 100644
+index 00645a27f..5acb9b46c 100644
 --- a/pkg/erofs/BUILD
 +++ b/pkg/erofs/BUILD
 @@ -10,6 +10,7 @@ go_library(
@@ -80,7 +80,7 @@ index 00645a2..5acb9b4 100644
 +    deps = ["//pkg/errors/linuxerr"],
  )
 diff --git a/pkg/erofs/erofs.go b/pkg/erofs/erofs.go
-index 193781c..7202fea 100644
+index 193781c82..7202feabc 100644
 --- a/pkg/erofs/erofs.go
 +++ b/pkg/erofs/erofs.go
 @@ -416,6 +416,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
@@ -175,7 +175,7 @@ index 193781c..7202fea 100644
  
  // bitRange returns the bits within the range [bit, bit+bits) in value.
 diff --git a/pkg/erofs/erofs_test.go b/pkg/erofs/erofs_test.go
-index 0ece14f..1c04e72 100644
+index 0ece14f10..1c04e7237 100644
 --- a/pkg/erofs/erofs_test.go
 +++ b/pkg/erofs/erofs_test.go
 @@ -16,10 +16,41 @@ package erofs
@@ -222,7 +222,7 @@ index 0ece14f..1c04e72 100644
  		t.Errorf("wrong superblock size: want %d, got %d", SuperBlockSize, sb.SizeBytes())
 diff --git a/pkg/erofs/xattr.go b/pkg/erofs/xattr.go
 new file mode 100644
-index 0000000..1deaee6
+index 000000000..1deaee627
 --- /dev/null
 +++ b/pkg/erofs/xattr.go
 @@ -0,0 +1,110 @@
@@ -338,7 +338,7 @@ index 0000000..1deaee6
 +}
 diff --git a/pkg/erofs/xattr_test.go b/pkg/erofs/xattr_test.go
 new file mode 100644
-index 0000000..ced89f3
+index 000000000..ced89f310
 --- /dev/null
 +++ b/pkg/erofs/xattr_test.go
 @@ -0,0 +1,123 @@
@@ -466,7 +466,7 @@ index 0000000..ced89f3
 +	}
 +}
 diff --git a/pkg/fsutil/BUILD b/pkg/fsutil/BUILD
-index ac6af39..f7ea44e 100644
+index ac6af3975..f7ea44e0b 100644
 --- a/pkg/fsutil/BUILD
 +++ b/pkg/fsutil/BUILD
 @@ -1,4 +1,4 @@
@@ -496,7 +496,7 @@ index ac6af39..f7ea44e 100644
 +)
 diff --git a/pkg/fsutil/open_compat.go b/pkg/fsutil/open_compat.go
 new file mode 100644
-index 0000000..66e3106
+index 000000000..66e310633
 --- /dev/null
 +++ b/pkg/fsutil/open_compat.go
 @@ -0,0 +1,158 @@
@@ -660,7 +660,7 @@ index 0000000..66e3106
 +}
 diff --git a/pkg/fsutil/open_compat_test.go b/pkg/fsutil/open_compat_test.go
 new file mode 100644
-index 0000000..3ba14e7
+index 000000000..3ba14e765
 --- /dev/null
 +++ b/pkg/fsutil/open_compat_test.go
 @@ -0,0 +1,199 @@
@@ -864,7 +864,7 @@ index 0000000..3ba14e7
 +	}
 +}
 diff --git a/pkg/sentry/arch/arch_amd64.go b/pkg/sentry/arch/arch_amd64.go
-index 6240b68..d936d7c 100644
+index 6240b6803..d936d7c7d 100644
 --- a/pkg/sentry/arch/arch_amd64.go
 +++ b/pkg/sentry/arch/arch_amd64.go
 @@ -106,6 +106,12 @@ const (
@@ -911,7 +911,7 @@ index 6240b68..d936d7c 100644
  func (c *Context64) SetOldRSeqInterruptedIP(value uintptr) {
  	c.Regs.R10 = uint64(value)
 diff --git a/pkg/sentry/arch/arch_x86.go b/pkg/sentry/arch/arch_x86.go
-index 3aef3e4..699bb26 100644
+index 3aef3e4df..699bb260c 100644
 --- a/pkg/sentry/arch/arch_x86.go
 +++ b/pkg/sentry/arch/arch_x86.go
 @@ -397,7 +397,7 @@ func New(arch Arch) *Context64 {
@@ -924,7 +924,7 @@ index 3aef3e4..699bb26 100644
  				// Set initial registers for compatibility with Linux
  				// (as done in arch/x86/kernel/process_64.c:start_thread()).
 diff --git a/pkg/sentry/arch/signal_amd64.go b/pkg/sentry/arch/signal_amd64.go
-index bb8545d..011e779 100644
+index bb8545dea..011e77971 100644
 --- a/pkg/sentry/arch/signal_amd64.go
 +++ b/pkg/sentry/arch/signal_amd64.go
 @@ -86,6 +86,17 @@ type UContext64 struct {
@@ -965,7 +965,7 @@ index bb8545d..011e779 100644
  	}
  
 diff --git a/pkg/sentry/control/BUILD b/pkg/sentry/control/BUILD
-index c99d770..8490518 100644
+index c99d770c6..8490518da 100644
 --- a/pkg/sentry/control/BUILD
 +++ b/pkg/sentry/control/BUILD
 @@ -62,6 +62,7 @@ go_library(
@@ -977,7 +977,7 @@ index c99d770..8490518 100644
          "//pkg/sentry/fsmetric",
          "//pkg/sentry/kernel",
 diff --git a/pkg/sentry/control/fs.go b/pkg/sentry/control/fs.go
-index 054d6ea..ef2b7a7 100644
+index 054d6ea88..ef2b7a7c3 100644
 --- a/pkg/sentry/control/fs.go
 +++ b/pkg/sentry/control/fs.go
 @@ -26,6 +26,7 @@ import (
@@ -1060,7 +1060,7 @@ index 054d6ea..ef2b7a7 100644
  	if !ok {
  		return fmt.Errorf("rootfs is not an overlayfs")
 diff --git a/pkg/sentry/devices/nvproxy/frontend.go b/pkg/sentry/devices/nvproxy/frontend.go
-index 3dda8ec..964a3ec 100644
+index 3dda8ecc9..964a3ec9f 100644
 --- a/pkg/sentry/devices/nvproxy/frontend.go
 +++ b/pkg/sentry/devices/nvproxy/frontend.go
 @@ -16,6 +16,7 @@ package nvproxy
@@ -1101,7 +1101,7 @@ index 3dda8ec..964a3ec 100644
  	if clientDst == nil || clientSrc == nil {
  		return 0, frontendFailWithStatus(fi, &ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
 diff --git a/pkg/sentry/devices/nvproxy/frontend_unsafe.go b/pkg/sentry/devices/nvproxy/frontend_unsafe.go
-index 5838c6b..2588732 100644
+index 5838c6bde..2588732d2 100644
 --- a/pkg/sentry/devices/nvproxy/frontend_unsafe.go
 +++ b/pkg/sentry/devices/nvproxy/frontend_unsafe.go
 @@ -36,7 +36,10 @@ func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *fronten
@@ -1117,7 +1117,7 @@ index 5838c6b..2588732 100644
  		return n, errno
  	}
 diff --git a/pkg/sentry/devices/nvproxy/nvproxy.go b/pkg/sentry/devices/nvproxy/nvproxy.go
-index 1c328cf..d5939f3 100644
+index 1c328cf3e..d5939f387 100644
 --- a/pkg/sentry/devices/nvproxy/nvproxy.go
 +++ b/pkg/sentry/devices/nvproxy/nvproxy.go
 @@ -51,6 +51,9 @@ type Options struct {
@@ -1174,7 +1174,7 @@ index 1c328cf..d5939f3 100644
 +	return nil
 +}
 diff --git a/pkg/sentry/devices/nvproxy/nvproxy_test.go b/pkg/sentry/devices/nvproxy/nvproxy_test.go
-index b96bb61..a5e409f 100644
+index b96bb6117..a5e409f9f 100644
 --- a/pkg/sentry/devices/nvproxy/nvproxy_test.go
 +++ b/pkg/sentry/devices/nvproxy/nvproxy_test.go
 @@ -15,6 +15,7 @@
@@ -1244,7 +1244,7 @@ index b96bb61..a5e409f 100644
  // in this tool's map. If you're here because of failures run:
  // `make sudo TARGETS=//tools/gpu:main ARGS="validate_checksum"`and fix mismatches.
 diff --git a/pkg/sentry/devices/nvproxy/save_restore.go b/pkg/sentry/devices/nvproxy/save_restore.go
-index 85652e6..52408c7 100644
+index 85652e694..52408c788 100644
 --- a/pkg/sentry/devices/nvproxy/save_restore.go
 +++ b/pkg/sentry/devices/nvproxy/save_restore.go
 @@ -174,6 +174,9 @@ func MakeDeviceRemapping(oldIDs, newIDs []DeviceRemapID) (*DeviceRemapping, erro
@@ -1268,7 +1268,7 @@ index 85652e6..52408c7 100644
  	}
  	abspath := filepath.Join("/dev", relpath)
 diff --git a/pkg/sentry/devices/nvproxy/version.go b/pkg/sentry/devices/nvproxy/version.go
-index 5e1b63c..d9f2a7a 100644
+index 5e1b63cdb..d9f2a7a71 100644
 --- a/pkg/sentry/devices/nvproxy/version.go
 +++ b/pkg/sentry/devices/nvproxy/version.go
 @@ -341,6 +341,7 @@ func Init() {
@@ -1306,7 +1306,7 @@ index 5e1b63c..d9f2a7a 100644
  				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_MSENC_GET_CAPS] = ioctlInfoWithStructName("NV0080_CTRL_CMD_MSENC_GET_CAPS", nvgpu.NV0080_CTRL_GET_CAPS_PARAMS{}, "NV0080_CTRL_NVENC_GET_CAPS_PARAMS")
  
 diff --git a/pkg/sentry/devices/ttydev/BUILD b/pkg/sentry/devices/ttydev/BUILD
-index 836d7b4..155d11a 100644
+index 836d7b4c1..155d11a88 100644
 --- a/pkg/sentry/devices/ttydev/BUILD
 +++ b/pkg/sentry/devices/ttydev/BUILD
 @@ -6,13 +6,20 @@ licenses(["notice"])
@@ -1333,7 +1333,7 @@ index 836d7b4..155d11a 100644
  )
 diff --git a/pkg/sentry/devices/ttydev/console.go b/pkg/sentry/devices/ttydev/console.go
 new file mode 100644
-index 0000000..6441080
+index 000000000..644108076
 --- /dev/null
 +++ b/pkg/sentry/devices/ttydev/console.go
 @@ -0,0 +1,485 @@
@@ -1823,7 +1823,7 @@ index 0000000..6441080
 +	return nil
 +}
 diff --git a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go b/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
-index d5d2f4d..941bef4 100644
+index d5d2f4d07..941bef40a 100644
 --- a/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
 +++ b/pkg/sentry/fsimpl/cgroupfs/cgroupfs.go
 @@ -266,9 +266,9 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
@@ -1890,7 +1890,7 @@ index d5d2f4d..941bef4 100644
  		cnames = append(cnames, string(c.Type()))
  	}
 diff --git a/pkg/sentry/fsimpl/cgroupfs/pids.go b/pkg/sentry/fsimpl/cgroupfs/pids.go
-index f567b63..0fb439c 100644
+index f567b6332..0fb439cf2 100644
 --- a/pkg/sentry/fsimpl/cgroupfs/pids.go
 +++ b/pkg/sentry/fsimpl/cgroupfs/pids.go
 @@ -287,7 +287,7 @@ func (d *pidsMaxData) WriteBackground(ctx context.Context, src usermem.IOSequenc
@@ -1903,7 +1903,7 @@ index f567b63..0fb439c 100644
  		defer d.c.mu.Unlock()
  		d.c.max = pidLimitUnlimited
 diff --git a/pkg/sentry/fsimpl/erofs/erofs.go b/pkg/sentry/fsimpl/erofs/erofs.go
-index 7dfbe76..3171af6 100644
+index 7dfbe7617..3171af62c 100644
 --- a/pkg/sentry/fsimpl/erofs/erofs.go
 +++ b/pkg/sentry/fsimpl/erofs/erofs.go
 @@ -28,6 +28,7 @@ import (
@@ -2075,7 +2075,7 @@ index 7dfbe76..3171af6 100644
  
  // SetXattr implements vfs.FileDescriptionImpl.SetXattr.
 diff --git a/pkg/sentry/fsimpl/erofs/filesystem.go b/pkg/sentry/fsimpl/erofs/filesystem.go
-index de8b278..f31fbb2 100644
+index de8b27891..f31fbb210 100644
 --- a/pkg/sentry/fsimpl/erofs/filesystem.go
 +++ b/pkg/sentry/fsimpl/erofs/filesystem.go
 @@ -440,8 +440,8 @@ func (fs *filesystem) ListXattrAt(ctx context.Context, rp *vfs.ResolvingPath, si
@@ -2130,7 +2130,7 @@ index de8b278..f31fbb2 100644
  
  // PrependPath implements vfs.FilesystemImpl.PrependPath.
 diff --git a/pkg/sentry/fsimpl/fuse/connection_control.go b/pkg/sentry/fsimpl/fuse/connection_control.go
-index 67f336f..7f5e244 100644
+index 67f336f47..7f5e24451 100644
 --- a/pkg/sentry/fsimpl/fuse/connection_control.go
 +++ b/pkg/sentry/fsimpl/fuse/connection_control.go
 @@ -42,7 +42,7 @@ const (
@@ -2143,7 +2143,7 @@ index 67f336f..7f5e244 100644
  	// An INIT response needs to be at least this long.
  	minInitSize = 24
 diff --git a/pkg/sentry/fsimpl/gofer/gofer.go b/pkg/sentry/fsimpl/gofer/gofer.go
-index 7cfad68..2d14d49 100644
+index 7cfad68ac..2d14d49f0 100644
 --- a/pkg/sentry/fsimpl/gofer/gofer.go
 +++ b/pkg/sentry/fsimpl/gofer/gofer.go
 @@ -446,6 +446,10 @@ const (
@@ -2167,7 +2167,7 @@ index 7cfad68..2d14d49 100644
  	}
  	// Do not allow writes to the "security" namespace on the host filesystem.
 diff --git a/pkg/sentry/fsimpl/overlay/overlay.go b/pkg/sentry/fsimpl/overlay/overlay.go
-index dabaee8..768b487 100644
+index dabaee88d..768b487ce 100644
 --- a/pkg/sentry/fsimpl/overlay/overlay.go
 +++ b/pkg/sentry/fsimpl/overlay/overlay.go
 @@ -248,12 +248,20 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
@@ -2198,7 +2198,7 @@ index dabaee8..768b487 100644
  		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
  		upperRoot.DecRef(ctx)
 diff --git a/pkg/sentry/fsimpl/proc/task.go b/pkg/sentry/fsimpl/proc/task.go
-index 69c94a6..1b24a49 100644
+index 69c94a61f..1b24a49c9 100644
 --- a/pkg/sentry/fsimpl/proc/task.go
 +++ b/pkg/sentry/fsimpl/proc/task.go
 @@ -66,9 +66,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
@@ -2213,10 +2213,26 @@ index 69c94a6..1b24a49 100644
  	contents := map[string]kernfs.Inode{
  		"auxv":            fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, &mmFile{task: task, ftype: auxvMMFile}),
 diff --git a/pkg/sentry/fsimpl/proc/task_files.go b/pkg/sentry/fsimpl/proc/task_files.go
-index 4602277..0bded7c 100644
+index 460227787..04b8a1300 100644
 --- a/pkg/sentry/fsimpl/proc/task_files.go
 +++ b/pkg/sentry/fsimpl/proc/task_files.go
-@@ -1476,9 +1476,6 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
+@@ -1041,6 +1041,15 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
+ 	fmt.Fprintf(buf, "VmData:\t%d kB\n", data>>10)
+ 
+ 	fmt.Fprintf(buf, "Threads:\t%d\n", s.task.ThreadGroup().Count())
++	// Signal masks are rendered as in Linux's fs/proc/array.c:task_sig().
++	// SigQ is omitted since the sentry does not account queued signals per
++	// user.
++	fmt.Fprintf(buf, "SigPnd:\t%016x\n", s.task.TaskPendingSignals())
++	fmt.Fprintf(buf, "ShdPnd:\t%016x\n", s.task.ThreadGroup().PendingSignals())
++	fmt.Fprintf(buf, "SigBlk:\t%016x\n", s.task.SignalMask())
++	ignored, caught := s.task.ThreadGroup().IgnoredAndCaughtSignals()
++	fmt.Fprintf(buf, "SigIgn:\t%016x\n", ignored)
++	fmt.Fprintf(buf, "SigCgt:\t%016x\n", caught)
+ 	fmt.Fprintf(buf, "CapInh:\t%016x\n", creds.InheritableCaps)
+ 	fmt.Fprintf(buf, "CapPrm:\t%016x\n", creds.PermittedCaps)
+ 	fmt.Fprintf(buf, "CapEff:\t%016x\n", creds.EffectiveCaps)
+@@ -1476,9 +1485,6 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
  		}
  		return nil
  	case linux.CLONE_NEWCGROUP:
@@ -2226,7 +2242,7 @@ index 4602277..0bded7c 100644
  		if cgroupns := t.GetCgroupNamespace(); cgroupns != nil {
  			return cgroupns.GetInode()
  		}
-@@ -1646,14 +1643,14 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error
+@@ -1646,14 +1652,14 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error
  		return linuxerr.ESRCH
  	}
  
@@ -2247,7 +2263,7 @@ index 4602277..0bded7c 100644
  			fmt.Fprintf(buf, "0::%s\n", cg2Entry.Path)
  		}
 diff --git a/pkg/sentry/fsimpl/proc/tasks_sys.go b/pkg/sentry/fsimpl/proc/tasks_sys.go
-index 03c9150..9a37abf 100644
+index 03c9150d7..9a37abfa7 100644
 --- a/pkg/sentry/fsimpl/proc/tasks_sys.go
 +++ b/pkg/sentry/fsimpl/proc/tasks_sys.go
 @@ -48,6 +48,12 @@ const (
@@ -2327,7 +2343,7 @@ index 03c9150..9a37abf 100644
  //
  // +stateify savable
 diff --git a/pkg/sentry/fsimpl/proc/tasks_sys_test.go b/pkg/sentry/fsimpl/proc/tasks_sys_test.go
-index 2b7c713..40516e7 100644
+index 2b7c713e3..40516e750 100644
 --- a/pkg/sentry/fsimpl/proc/tasks_sys_test.go
 +++ b/pkg/sentry/fsimpl/proc/tasks_sys_test.go
 @@ -37,6 +37,30 @@ func newIPv6TestStack() *inet.TestStack {
@@ -2362,7 +2378,7 @@ index 2b7c713..40516e7 100644
  	n := &ifinet6{stack: newIPv6TestStack()}
  	var buf bytes.Buffer
 diff --git a/pkg/sentry/fsimpl/sys/BUILD b/pkg/sentry/fsimpl/sys/BUILD
-index 6a4b589..b42a733 100644
+index 6a4b589a9..b42a733b9 100644
 --- a/pkg/sentry/fsimpl/sys/BUILD
 +++ b/pkg/sentry/fsimpl/sys/BUILD
 @@ -39,6 +39,7 @@ go_library(
@@ -2374,7 +2390,7 @@ index 6a4b589..b42a733 100644
          "//pkg/sentry/fsimpl/kernfs",
          "//pkg/sentry/inet",
 diff --git a/pkg/sentry/fsimpl/sys/save_restore.go b/pkg/sentry/fsimpl/sys/save_restore.go
-index 312f11e..d5c6b15 100644
+index 312f11ef4..d5c6b1563 100644
 --- a/pkg/sentry/fsimpl/sys/save_restore.go
 +++ b/pkg/sentry/fsimpl/sys/save_restore.go
 @@ -56,6 +56,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
@@ -2386,7 +2402,7 @@ index 312f11e..d5c6b15 100644
  		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
  			"cpu": cpuDir(ctx, fs, creds),
 diff --git a/pkg/sentry/fsimpl/sys/sys.go b/pkg/sentry/fsimpl/sys/sys.go
-index f043868..c4ad638 100644
+index f04386808..c4ad63811 100644
 --- a/pkg/sentry/fsimpl/sys/sys.go
 +++ b/pkg/sentry/fsimpl/sys/sys.go
 @@ -30,12 +30,23 @@ import (
@@ -2422,7 +2438,7 @@ index f043868..c4ad638 100644
  	systemSub := map[string]kernfs.Inode{   // /sys/devices/system
  		"cpu": cpuDir(ctx, fs, creds),
 diff --git a/pkg/sentry/fsimpl/tmpfs/BUILD b/pkg/sentry/fsimpl/tmpfs/BUILD
-index 3ccab4d..7845b02 100644
+index 3ccab4d87..7845b02bb 100644
 --- a/pkg/sentry/fsimpl/tmpfs/BUILD
 +++ b/pkg/sentry/fsimpl/tmpfs/BUILD
 @@ -175,6 +175,8 @@ go_test(
@@ -2435,7 +2451,7 @@ index 3ccab4d..7845b02 100644
          "//pkg/sentry/kernel/auth",
          "//pkg/sentry/vfs",
 diff --git a/pkg/sentry/fsimpl/tmpfs/tar.go b/pkg/sentry/fsimpl/tmpfs/tar.go
-index 54d92bc..dd6f389 100644
+index 54d92bccb..dd6f389fd 100644
 --- a/pkg/sentry/fsimpl/tmpfs/tar.go
 +++ b/pkg/sentry/fsimpl/tmpfs/tar.go
 @@ -24,7 +24,6 @@ import (
@@ -2737,7 +2753,7 @@ index 54d92bc..dd6f389 100644
  func aclToPAXRecord(acl *vfs.PosixACL) string {
  	// We can use a "fake" root userns for this serialization
 diff --git a/pkg/sentry/fsimpl/tmpfs/tar_test.go b/pkg/sentry/fsimpl/tmpfs/tar_test.go
-index 3ce00a5..2cdeae7 100644
+index 3ce00a55c..2cdeae733 100644
 --- a/pkg/sentry/fsimpl/tmpfs/tar_test.go
 +++ b/pkg/sentry/fsimpl/tmpfs/tar_test.go
 @@ -18,11 +18,15 @@ import (
@@ -2915,7 +2931,7 @@ index 3ce00a5..2cdeae7 100644
 +	}
 +}
 diff --git a/pkg/sentry/inet/namespace.go b/pkg/sentry/inet/namespace.go
-index bf182a5..753cc13 100644
+index bf182a5f1..753cc1398 100644
 --- a/pkg/sentry/inet/namespace.go
 +++ b/pkg/sentry/inet/namespace.go
 @@ -15,19 +15,27 @@
@@ -3020,7 +3036,7 @@ index bf182a5..753cc13 100644
  
  // AbstractSockets returns AbstractSocketNamespace.
 diff --git a/pkg/sentry/inet/nlmcast.go b/pkg/sentry/inet/nlmcast.go
-index 1efd7a5..eaa5818 100644
+index 1efd7a50c..eaa581806 100644
 --- a/pkg/sentry/inet/nlmcast.go
 +++ b/pkg/sentry/inet/nlmcast.go
 @@ -43,6 +43,17 @@ type InterfaceEventPublisher interface {
@@ -3062,7 +3078,7 @@ index 1efd7a5..eaa5818 100644
  func NewNetlinkMcastTable() *McastTable {
  	return &McastTable{
 diff --git a/pkg/sentry/kernel/auth/BUILD b/pkg/sentry/kernel/auth/BUILD
-index fd238f4..984cbaf 100644
+index fd238f473..984cbafe6 100644
 --- a/pkg/sentry/kernel/auth/BUILD
 +++ b/pkg/sentry/kernel/auth/BUILD
 @@ -94,6 +94,7 @@ go_library(
@@ -3083,7 +3099,7 @@ index fd238f4..984cbaf 100644
      deps = [
          "//pkg/abi/linux",
 diff --git a/pkg/sentry/kernel/auth/key.go b/pkg/sentry/kernel/auth/key.go
-index 38ada05..c691c5f 100644
+index 38ada0547..c691c5fa0 100644
 --- a/pkg/sentry/kernel/auth/key.go
 +++ b/pkg/sentry/kernel/auth/key.go
 @@ -19,6 +19,7 @@ import (
@@ -3322,7 +3338,7 @@ index 38ada05..c691c5f 100644
  }
 diff --git a/pkg/sentry/kernel/auth/key_links_test.go b/pkg/sentry/kernel/auth/key_links_test.go
 new file mode 100644
-index 0000000..537686b
+index 000000000..537686b0a
 --- /dev/null
 +++ b/pkg/sentry/kernel/auth/key_links_test.go
 @@ -0,0 +1,101 @@
@@ -3428,7 +3444,7 @@ index 0000000..537686b
 +	}
 +}
 diff --git a/pkg/sentry/kernel/cgroup.go b/pkg/sentry/kernel/cgroup.go
-index 047b21b..05b83e1 100644
+index 047b21b0e..05b83e15d 100644
 --- a/pkg/sentry/kernel/cgroup.go
 +++ b/pkg/sentry/kernel/cgroup.go
 @@ -440,10 +440,17 @@ func (r *CgroupRegistry) FindCgroup(ctx context.Context, ctype CgroupControllerT
@@ -3490,7 +3506,7 @@ index 047b21b..05b83e1 100644
  }
  
 diff --git a/pkg/sentry/kernel/cgroup2.go b/pkg/sentry/kernel/cgroup2.go
-index 3143492..be13822 100644
+index 31434924a..be138220b 100644
 --- a/pkg/sentry/kernel/cgroup2.go
 +++ b/pkg/sentry/kernel/cgroup2.go
 @@ -16,6 +16,7 @@ package kernel
@@ -3577,7 +3593,7 @@ index 3143492..be13822 100644
  // SetInode sets the nsfs inode of the cgroup namespace.
  func (ns *CgroupNamespace) SetInode(inode *nsfs.Inode) {
 diff --git a/pkg/sentry/kernel/futex/BUILD b/pkg/sentry/kernel/futex/BUILD
-index 971dcf1..ef7d6b0 100644
+index 971dcf111..ef7d6b072 100644
 --- a/pkg/sentry/kernel/futex/BUILD
 +++ b/pkg/sentry/kernel/futex/BUILD
 @@ -68,6 +68,7 @@ go_test(
@@ -3589,7 +3605,7 @@ index 971dcf1..ef7d6b0 100644
          "//pkg/context",
          "//pkg/errors/linuxerr",
 diff --git a/pkg/sentry/kernel/futex/futex.go b/pkg/sentry/kernel/futex/futex.go
-index b5e0431..5a8bc6c 100644
+index b5e0431e0..5a8bc6c2e 100644
 --- a/pkg/sentry/kernel/futex/futex.go
 +++ b/pkg/sentry/kernel/futex/futex.go
 @@ -130,11 +130,14 @@ func check(t Target, addr hostarch.Addr, val uint32) error {
@@ -3635,7 +3651,7 @@ index b5e0431..5a8bc6c 100644
  		return false, linuxerr.ENOSYS
  	}
 diff --git a/pkg/sentry/kernel/futex/futex_test.go b/pkg/sentry/kernel/futex/futex_test.go
-index 9fe1c6c..472b77d 100644
+index 9fe1c6cec..472b77d4e 100644
 --- a/pkg/sentry/kernel/futex/futex_test.go
 +++ b/pkg/sentry/kernel/futex/futex_test.go
 @@ -20,6 +20,7 @@ import (
@@ -3721,7 +3737,7 @@ index 9fe1c6c..472b77d 100644
  	for _, private := range []bool{false, true} {
  		t.Run(futexKind(private), func(t *testing.T) {
 diff --git a/pkg/sentry/kernel/kernel.go b/pkg/sentry/kernel/kernel.go
-index 32afe64..4473a17 100644
+index 32afe64a6..4473a17b3 100644
 --- a/pkg/sentry/kernel/kernel.go
 +++ b/pkg/sentry/kernel/kernel.go
 @@ -147,6 +147,13 @@ type SaveRestoreExecConfig struct {
@@ -3795,7 +3811,7 @@ index 32afe64..4473a17 100644
  	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
  		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
 diff --git a/pkg/sentry/kernel/task_cgroup.go b/pkg/sentry/kernel/task_cgroup.go
-index 365eed0..2e3a917 100644
+index 365eed06c..2e3a91780 100644
 --- a/pkg/sentry/kernel/task_cgroup.go
 +++ b/pkg/sentry/kernel/task_cgroup.go
 @@ -265,9 +265,12 @@ func (t *Task) GetCgroupEntries() []TaskCgroupEntry {
@@ -3813,7 +3829,7 @@ index 365eed0..2e3a917 100644
  	}
  }
 diff --git a/pkg/sentry/kernel/task_clone.go b/pkg/sentry/kernel/task_clone.go
-index 2b6b42d..ebfb60c 100644
+index 2b6b42d4b..ebfb60c87 100644
 --- a/pkg/sentry/kernel/task_clone.go
 +++ b/pkg/sentry/kernel/task_clone.go
 @@ -66,7 +66,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
@@ -3883,7 +3899,7 @@ index 2b6b42d..ebfb60c 100644
  	}
  	if flags&linux.CLONE_NEWNS != 0 {
 diff --git a/pkg/sentry/kernel/task_run.go b/pkg/sentry/kernel/task_run.go
-index eb266fc..0240467 100644
+index eb266fc67..02404675e 100644
 --- a/pkg/sentry/kernel/task_run.go
 +++ b/pkg/sentry/kernel/task_run.go
 @@ -283,6 +283,14 @@ func (app *runApp) execute(t *Task) taskRunState {
@@ -3911,8 +3927,61 @@ index eb266fc..0240467 100644
  			// Synchronous signal. Send it to ourselves. Assume the signal is
  			// legitimate and force it (work around the signal being ignored or
  			// blocked) like Linux does. Conveniently, this is even the correct
+diff --git a/pkg/sentry/kernel/task_signals.go b/pkg/sentry/kernel/task_signals.go
+index 8c332c999..2b6b0bb7d 100644
+--- a/pkg/sentry/kernel/task_signals.go
++++ b/pkg/sentry/kernel/task_signals.go
+@@ -149,6 +149,17 @@ func (t *Task) PendingSignals() linux.SignalSet {
+ 	return linux.SignalSet(t.pendingSignals.pendingSet.Load() | t.tg.pendingSignals.pendingSet.Load())
+ }
+ 
++// TaskPendingSignals returns the set of signals pending for t alone,
++// excluding its thread group's pending signals.
++func (t *Task) TaskPendingSignals() linux.SignalSet {
++	return linux.SignalSet(t.pendingSignals.pendingSet.Load())
++}
++
++// PendingSignals returns the set of signals pending for tg.
++func (tg *ThreadGroup) PendingSignals() linux.SignalSet {
++	return linux.SignalSet(tg.pendingSignals.pendingSet.Load())
++}
++
+ // deliverSignal delivers the given signal and returns the following run state.
+ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRunState {
+ 	sig := linux.Signal(info.Signo)
+@@ -708,6 +719,30 @@ func (t *Task) SetSignalStack(alt linux.SignalStack) bool {
+ 	return true
+ }
+ 
++// IgnoredAndCaughtSignals returns the sets of signals that tg ignores and
++// that tg has installed handlers for, respectively. This is analogous to
++// Linux's fs/proc/array.c:collect_sigign_sigcatch().
++//
++// +checklocksexclude:tg.pidns.owner.mu
++// +checklocksexclude:tg.signalHandlers.mu
++func (tg *ThreadGroup) IgnoredAndCaughtSignals() (ignored, caught linux.SignalSet) {
++	tg.pidns.owner.mu.RLock()
++	defer tg.pidns.owner.mu.RUnlock()
++	sh := tg.signalHandlers
++	sh.mu.Lock()
++	defer sh.mu.Unlock()
++	for sig, act := range sh.actions {
++		switch act.Handler {
++		case linux.SIG_IGN:
++			ignored |= linux.SignalSetOf(sig)
++		case linux.SIG_DFL:
++		default:
++			caught |= linux.SignalSetOf(sig)
++		}
++	}
++	return ignored, caught
++}
++
+ // SetSigAction atomically sets the thread group's signal action for signal sig
+ // to *actptr (if actptr is not nil) and returns the old signal action.
+ func (tg *ThreadGroup) SetSigAction(sig linux.Signal, actptr *linux.SigAction) (linux.SigAction, error) {
 diff --git a/pkg/sentry/kernel/task_start.go b/pkg/sentry/kernel/task_start.go
-index 6dded04..bc3f9ac 100644
+index 6dded04e1..bc3f9ac44 100644
 --- a/pkg/sentry/kernel/task_start.go
 +++ b/pkg/sentry/kernel/task_start.go
 @@ -512,7 +512,7 @@ func (ns *PIDNamespace) allocateTID() (ThreadID, error) {
@@ -3925,7 +3994,7 @@ index 6dded04..bc3f9ac 100644
  		}
  
 diff --git a/pkg/sentry/kernel/task_test.go b/pkg/sentry/kernel/task_test.go
-index 5579b56..c987284 100644
+index 5579b56d5..c987284d8 100644
 --- a/pkg/sentry/kernel/task_test.go
 +++ b/pkg/sentry/kernel/task_test.go
 @@ -17,9 +17,49 @@ package kernel
@@ -3979,7 +4048,7 @@ index 5579b56..c987284 100644
  	for _, test := range []struct {
  		mask sched.CPUSet
 diff --git a/pkg/sentry/kernel/threads.go b/pkg/sentry/kernel/threads.go
-index 1364d47..451a538 100644
+index 1364d473a..451a538a8 100644
 --- a/pkg/sentry/kernel/threads.go
 +++ b/pkg/sentry/kernel/threads.go
 @@ -38,6 +38,10 @@ import (
@@ -4014,7 +4083,7 @@ index 1364d47..451a538 100644
  	pidns.owner = ts
  	return ts
 diff --git a/pkg/sentry/pgalloc/BUILD b/pkg/sentry/pgalloc/BUILD
-index feb4941..4fbbc07 100644
+index feb4941a4..4fbbc076d 100644
 --- a/pkg/sentry/pgalloc/BUILD
 +++ b/pkg/sentry/pgalloc/BUILD
 @@ -209,6 +209,7 @@ go_test(
@@ -4027,7 +4096,7 @@ index feb4941..4fbbc07 100644
      deps = [
 diff --git a/pkg/sentry/pgalloc/limit_test.go b/pkg/sentry/pgalloc/limit_test.go
 new file mode 100644
-index 0000000..2a17c11
+index 000000000..2a17c113e
 --- /dev/null
 +++ b/pkg/sentry/pgalloc/limit_test.go
 @@ -0,0 +1,109 @@
@@ -4141,7 +4210,7 @@ index 0000000..2a17c11
 +	f.DecRef(replacement)
 +}
 diff --git a/pkg/sentry/pgalloc/pgalloc.go b/pkg/sentry/pgalloc/pgalloc.go
-index 6c2eae3..1328575 100644
+index 6c2eae32a..1328575eb 100644
 --- a/pkg/sentry/pgalloc/pgalloc.go
 +++ b/pkg/sentry/pgalloc/pgalloc.go
 @@ -170,10 +170,14 @@ type MemoryFile struct {
@@ -4258,7 +4327,7 @@ index 6c2eae3..1328575 100644
  		}
  	}()
 diff --git a/pkg/sentry/pgalloc/save_restore.go b/pkg/sentry/pgalloc/save_restore.go
-index 0700060..f44532d 100644
+index 070006067..f44532d69 100644
 --- a/pkg/sentry/pgalloc/save_restore.go
 +++ b/pkg/sentry/pgalloc/save_restore.go
 @@ -126,6 +126,19 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto)
@@ -4282,7 +4351,7 @@ index 0700060..f44532d 100644
  	for k, v := range pb.Subreleased {
  		f.subreleased[k] = v
 diff --git a/pkg/sentry/platform/platform.go b/pkg/sentry/platform/platform.go
-index 22c8dc1..0d0bad8 100644
+index 22c8dc1d8..0d0bad851 100644
 --- a/pkg/sentry/platform/platform.go
 +++ b/pkg/sentry/platform/platform.go
 @@ -208,6 +208,14 @@ type MemoryManager interface {
@@ -4301,7 +4370,7 @@ index 22c8dc1..0d0bad8 100644
  type Context interface {
  	// Switch resumes execution of the thread specified by the arch.Context64
 diff --git a/pkg/sentry/platform/systrap/BUILD b/pkg/sentry/platform/systrap/BUILD
-index ee3b436..50642ee 100644
+index ee3b436b0..50642ee25 100644
 --- a/pkg/sentry/platform/systrap/BUILD
 +++ b/pkg/sentry/platform/systrap/BUILD
 @@ -35,6 +35,7 @@ go_library(
@@ -4333,7 +4402,7 @@ index ee3b436..50642ee 100644
          "//pkg/sentry/pgalloc",
 diff --git a/pkg/sentry/platform/systrap/cpu_accounting.go b/pkg/sentry/platform/systrap/cpu_accounting.go
 new file mode 100644
-index 0000000..d729608
+index 000000000..d729608d7
 --- /dev/null
 +++ b/pkg/sentry/platform/systrap/cpu_accounting.go
 @@ -0,0 +1,125 @@
@@ -4463,7 +4532,7 @@ index 0000000..d729608
 +	return 0, int64(time.Hour)
 +}
 diff --git a/pkg/sentry/platform/systrap/subprocess.go b/pkg/sentry/platform/systrap/subprocess.go
-index 4de8f9a..fba9eee 100644
+index 4de8f9a83..fba9eee68 100644
 --- a/pkg/sentry/platform/systrap/subprocess.go
 +++ b/pkg/sentry/platform/systrap/subprocess.go
 @@ -81,6 +81,10 @@ type thread struct {
@@ -4513,7 +4582,7 @@ index 4de8f9a..fba9eee 100644
  		return
  	}
 diff --git a/pkg/sentry/platform/systrap/subprocess_amd64.go b/pkg/sentry/platform/systrap/subprocess_amd64.go
-index 070d84d..2fa568d 100644
+index 070d84d55..2fa568dc8 100644
 --- a/pkg/sentry/platform/systrap/subprocess_amd64.go
 +++ b/pkg/sentry/platform/systrap/subprocess_amd64.go
 @@ -200,6 +200,8 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
@@ -4539,7 +4608,7 @@ index 070d84d..2fa568d 100644
  }
  
 diff --git a/pkg/sentry/platform/systrap/syscall_thread.go b/pkg/sentry/platform/systrap/syscall_thread.go
-index bf14741..74dcc9c 100644
+index bf14741d0..74dcc9cff 100644
 --- a/pkg/sentry/platform/systrap/syscall_thread.go
 +++ b/pkg/sentry/platform/systrap/syscall_thread.go
 @@ -15,6 +15,7 @@
@@ -4568,7 +4637,7 @@ index bf14741..74dcc9c 100644
  	}
  
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
-index 5d6b4ce..b6cd5f6 100644
+index 5d6b4cef8..b6cd5f6d7 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 +++ b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 @@ -161,6 +161,26 @@ static void set_fsbase(uint64_t fsbase) {
@@ -4624,7 +4693,7 @@ index 5d6b4ce..b6cd5f6 100644
  
  void __syshandler() {
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sysmsg.go b/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
-index 5601d38..6547e5e 100644
+index 5601d3831..6547e5eb6 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
 +++ b/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
 @@ -281,6 +281,11 @@ type ThreadContext struct {
@@ -4640,7 +4709,7 @@ index 5601d38..6547e5e 100644
  
  // StubError are values that represent known stub-thread failure modes.
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sysmsg.h b/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
-index 88170a1..b6347ba 100644
+index 88170a14d..b6347ba12 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
 +++ b/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
 @@ -100,6 +100,8 @@ struct thread_context {
@@ -4653,7 +4722,7 @@ index 88170a1..b6347ba 100644
  
  enum stub_error {
 diff --git a/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go b/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
-index c140cac..8f39591 100644
+index c140cac1f..8f3959187 100644
 --- a/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
 +++ b/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
 @@ -53,6 +53,21 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet
@@ -4680,7 +4749,7 @@ index c140cac..8f39591 100644
  			Action: seccomp.Allow,
 diff --git a/pkg/sentry/platform/systrap/sysmsg_thread_amd64_test.go b/pkg/sentry/platform/systrap/sysmsg_thread_amd64_test.go
 new file mode 100644
-index 0000000..04287b5
+index 000000000..04287b5ad
 --- /dev/null
 +++ b/pkg/sentry/platform/systrap/sysmsg_thread_amd64_test.go
 @@ -0,0 +1,44 @@
@@ -4729,7 +4798,7 @@ index 0000000..04287b5
 +	}
 +}
 diff --git a/pkg/sentry/platform/systrap/systrap.go b/pkg/sentry/platform/systrap/systrap.go
-index 0b77e71..a3fabb4 100644
+index 0b77e7118..a3fabb413 100644
 --- a/pkg/sentry/platform/systrap/systrap.go
 +++ b/pkg/sentry/platform/systrap/systrap.go
 @@ -332,6 +332,7 @@ func New(opts platform.Options) (*Systrap, error) {
@@ -4741,7 +4810,7 @@ index 0b77e71..a3fabb4 100644
  	if !neverEnableFastPath {
  		latencyMonitoring.Do(func() {
 diff --git a/pkg/sentry/platform/systrap/systrap_amd64.go b/pkg/sentry/platform/systrap/systrap_amd64.go
-index 7cb8c23..d6c8d57 100644
+index 7cb8c235c..d6c8d572c 100644
 --- a/pkg/sentry/platform/systrap/systrap_amd64.go
 +++ b/pkg/sentry/platform/systrap/systrap_amd64.go
 @@ -15,9 +15,22 @@
@@ -4768,7 +4837,7 @@ index 7cb8c23..d6c8d57 100644
  	return uintptr(r.Rsp)
  }
 diff --git a/pkg/sentry/platform/systrap/systrap_test.go b/pkg/sentry/platform/systrap/systrap_test.go
-index 7d09752..bec31c0 100644
+index 7d09752f8..bec31c0f5 100644
 --- a/pkg/sentry/platform/systrap/systrap_test.go
 +++ b/pkg/sentry/platform/systrap/systrap_test.go
 @@ -39,6 +39,25 @@ func TestMain(m *testing.M) {
@@ -4798,7 +4867,7 @@ index 7d09752..bec31c0 100644
  // platformContext.Switch touches on the syscall path. Syscall patching is
  // disabled in the tests, so MMap and friends are never reached.
 diff --git a/pkg/sentry/socket/netfilter/BUILD b/pkg/sentry/socket/netfilter/BUILD
-index 21c625e..697a133 100644
+index 21c625e14..697a133b9 100644
 --- a/pkg/sentry/socket/netfilter/BUILD
 +++ b/pkg/sentry/socket/netfilter/BUILD
 @@ -20,6 +20,7 @@ go_library(
@@ -4825,7 +4894,7 @@ index 21c625e..697a133 100644
          "//pkg/tcpip/stack",
 diff --git a/pkg/sentry/socket/netfilter/reject_test.go b/pkg/sentry/socket/netfilter/reject_test.go
 new file mode 100644
-index 0000000..c5e009e
+index 000000000..c5e009ea5
 --- /dev/null
 +++ b/pkg/sentry/socket/netfilter/reject_test.go
 @@ -0,0 +1,70 @@
@@ -4901,7 +4970,7 @@ index 0000000..c5e009e
 +}
 diff --git a/pkg/sentry/socket/netfilter/state_matcher.go b/pkg/sentry/socket/netfilter/state_matcher.go
 new file mode 100644
-index 0000000..704825d
+index 000000000..704825d81
 --- /dev/null
 +++ b/pkg/sentry/socket/netfilter/state_matcher.go
 @@ -0,0 +1,58 @@
@@ -4965,7 +5034,7 @@ index 0000000..704825d
 +}
 diff --git a/pkg/sentry/socket/netfilter/state_matcher_test.go b/pkg/sentry/socket/netfilter/state_matcher_test.go
 new file mode 100644
-index 0000000..6ce65e6
+index 000000000..6ce65e6cf
 --- /dev/null
 +++ b/pkg/sentry/socket/netfilter/state_matcher_test.go
 @@ -0,0 +1,48 @@
@@ -5018,7 +5087,7 @@ index 0000000..6ce65e6
 +	}
 +}
 diff --git a/pkg/sentry/socket/netfilter/targets.go b/pkg/sentry/socket/netfilter/targets.go
-index 7be4a27..a1dfbc1 100644
+index 7be4a27fd..a1dfbc1e3 100644
 --- a/pkg/sentry/socket/netfilter/targets.go
 +++ b/pkg/sentry/socket/netfilter/targets.go
 @@ -599,6 +599,8 @@ func (rm *rejectTargetMaker) marshalIPv4(tgt target) []byte {
@@ -5079,7 +5148,7 @@ index 7be4a27..a1dfbc1 100644
  		nflog("rejectTargetMaker: unknown reject type %d", info.With)
  		return nil, syserr.ErrInvalidArgument
 diff --git a/pkg/sentry/socket/netlink/netfilter/protocol.go b/pkg/sentry/socket/netlink/netfilter/protocol.go
-index 2105a92..37109a9 100644
+index 2105a92f3..37109a99c 100644
 --- a/pkg/sentry/socket/netlink/netfilter/protocol.go
 +++ b/pkg/sentry/socket/netlink/netfilter/protocol.go
 @@ -1333,9 +1333,12 @@ func (p *Protocol) receiveBatchMessage(ctx context.Context, ms *nlmsg.MessageSet
@@ -5109,7 +5178,7 @@ index 2105a92..37109a9 100644
  		// Messages that are too small clear the error message set and return.
  		// From net/netfilter/nfnetlink.c:nfnetlink_rcv_batch
 diff --git a/pkg/sentry/socket/netlink/provider.go b/pkg/sentry/socket/netlink/provider.go
-index 064b548..591f156 100644
+index 064b548cf..591f15654 100644
 --- a/pkg/sentry/socket/netlink/provider.go
 +++ b/pkg/sentry/socket/netlink/provider.go
 @@ -62,6 +62,7 @@ type RouteProtocol interface {
@@ -5121,7 +5190,7 @@ index 064b548..591f156 100644
  
  // Provider is a function that creates a new Protocol for a specific netlink
 diff --git a/pkg/sentry/socket/netlink/route/protocol.go b/pkg/sentry/socket/netlink/route/protocol.go
-index 28a62ac..dc46f18 100644
+index 28a62ac2f..dc46f189b 100644
 --- a/pkg/sentry/socket/netlink/route/protocol.go
 +++ b/pkg/sentry/socket/netlink/route/protocol.go
 @@ -292,6 +292,30 @@ func (p *Protocol) AddDelLinkMessage(ms *nlmsg.MessageSet, idx int32, i inet.Int
@@ -5230,7 +5299,7 @@ index 28a62ac..dc46f18 100644
  			return syserr.ErrNotSupported
  		}
 diff --git a/pkg/sentry/socket/netlink/route/protocol_test.go b/pkg/sentry/socket/netlink/route/protocol_test.go
-index c696b99..7ad4fbe 100644
+index c696b9908..7ad4fbe00 100644
 --- a/pkg/sentry/socket/netlink/route/protocol_test.go
 +++ b/pkg/sentry/socket/netlink/route/protocol_test.go
 @@ -63,6 +63,42 @@ func TestProtocolBasics(t *testing.T) {
@@ -5277,7 +5346,7 @@ index c696b99..7ad4fbe 100644
  	tests := []struct {
  		name string
 diff --git a/pkg/sentry/socket/netlink/socket.go b/pkg/sentry/socket/netlink/socket.go
-index 6147922..0c18899 100644
+index 61479229c..0c1889949 100644
 --- a/pkg/sentry/socket/netlink/socket.go
 +++ b/pkg/sentry/socket/netlink/socket.go
 @@ -63,6 +63,7 @@ const (
@@ -5366,7 +5435,7 @@ index 6147922..0c18899 100644
  	return sa, uint32(sa.SizeBytes()), nil
  }
 diff --git a/pkg/sentry/socket/netstack/stack.go b/pkg/sentry/socket/netstack/stack.go
-index 2288a97..5461622 100644
+index 2288a979c..546162257 100644
 --- a/pkg/sentry/socket/netstack/stack.go
 +++ b/pkg/sentry/socket/netstack/stack.go
 @@ -100,6 +100,36 @@ func (s *Stack) sendDeleteEvent(ctx context.Context, id tcpip.NICID, nicInfo *st
@@ -5469,7 +5538,7 @@ index 2288a97..5461622 100644
  	// Remove the corresponding local network route if it exists.
  	localRoute := tcpip.Route{
 diff --git a/pkg/sentry/socket/unix/transport/host.go b/pkg/sentry/socket/unix/transport/host.go
-index 60ab471..bb4a0b4 100644
+index 60ab471bf..bb4a0b418 100644
 --- a/pkg/sentry/socket/unix/transport/host.go
 +++ b/pkg/sentry/socket/unix/transport/host.go
 @@ -290,15 +290,17 @@ func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (Re
@@ -5540,7 +5609,7 @@ index 60ab471..bb4a0b4 100644
  func (c *HostSender) NotifyWriteSpace() {}
  
 diff --git a/pkg/sentry/socket/unix/transport/host_test.go b/pkg/sentry/socket/unix/transport/host_test.go
-index c9a0472..340a6e8 100644
+index c9a047269..340a6e86a 100644
 --- a/pkg/sentry/socket/unix/transport/host_test.go
 +++ b/pkg/sentry/socket/unix/transport/host_test.go
 @@ -15,6 +15,7 @@
@@ -5620,7 +5689,7 @@ index c9a0472..340a6e8 100644
  // on an SCMSender whose host file descriptor is already closed (fd < 0)
  // is a safe no-op and does not panic in fdnotifier.RemoveFD.
 diff --git a/pkg/sentry/syscalls/linux/sys_file.go b/pkg/sentry/syscalls/linux/sys_file.go
-index c2f114d..2c71f70 100644
+index c2f114d19..2c71f7060 100644
 --- a/pkg/sentry/syscalls/linux/sys_file.go
 +++ b/pkg/sentry/syscalls/linux/sys_file.go
 @@ -215,7 +215,12 @@ func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, m
@@ -5638,7 +5707,7 @@ index c2f114d..2c71f70 100644
  	defer file.DecRef(t)
  
 diff --git a/pkg/sentry/syscalls/linux/sys_key.go b/pkg/sentry/syscalls/linux/sys_key.go
-index 3b75aec..24e6ccd 100644
+index 3b75aec68..24e6ccd8f 100644
 --- a/pkg/sentry/syscalls/linux/sys_key.go
 +++ b/pkg/sentry/syscalls/linux/sys_key.go
 @@ -15,8 +15,10 @@
@@ -5791,7 +5860,7 @@ index 3b75aec..24e6ccd 100644
 +	return uintptr(size), nil, err
 +}
 diff --git a/pkg/sentry/syscalls/linux/sys_tls_amd64.go b/pkg/sentry/syscalls/linux/sys_tls_amd64.go
-index 655cdc6..5df38d6 100644
+index 655cdc6fe..5df38d6e4 100644
 --- a/pkg/sentry/syscalls/linux/sys_tls_amd64.go
 +++ b/pkg/sentry/syscalls/linux/sys_tls_amd64.go
 @@ -46,8 +46,20 @@ func ArchPrctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
@@ -5818,7 +5887,7 @@ index 655cdc6..5df38d6 100644
  		return 0, nil, linuxerr.EINVAL
  	}
 diff --git a/pkg/sentry/vfs/file_description.go b/pkg/sentry/vfs/file_description.go
-index 7257c31..349c7cd 100644
+index 7257c31d7..349c7cdf5 100644
 --- a/pkg/sentry/vfs/file_description.go
 +++ b/pkg/sentry/vfs/file_description.go
 @@ -978,7 +978,12 @@ func (fd *FileDescription) ComputeLockRange(ctx context.Context, start uint64, l
@@ -5836,7 +5905,7 @@ index 7257c31..349c7cd 100644
  		}
  		off = curOff
 diff --git a/pkg/tcpip/link/nested/nested.go b/pkg/tcpip/link/nested/nested.go
-index fdb5022..c297965 100644
+index fdb50224b..c29796598 100644
 --- a/pkg/tcpip/link/nested/nested.go
 +++ b/pkg/tcpip/link/nested/nested.go
 @@ -192,3 +192,17 @@ func (e *Endpoint) SetOnCloseAction(action func()) {
@@ -5858,7 +5927,7 @@ index fdb5022..c297965 100644
 +	}
 +}
 diff --git a/pkg/tcpip/link/veth/BUILD b/pkg/tcpip/link/veth/BUILD
-index 3980a6a..f5286c0 100644
+index 3980a6a08..f5286c0df 100644
 --- a/pkg/tcpip/link/veth/BUILD
 +++ b/pkg/tcpip/link/veth/BUILD
 @@ -45,6 +45,7 @@ go_test(
@@ -5870,7 +5939,7 @@ index 3980a6a..f5286c0 100644
          "//pkg/sync",
          "//pkg/tcpip",
 diff --git a/pkg/tcpip/link/veth/veth.go b/pkg/tcpip/link/veth/veth.go
-index d942678..d9c22d2 100644
+index d94267821..d9c22d2eb 100644
 --- a/pkg/tcpip/link/veth/veth.go
 +++ b/pkg/tcpip/link/veth/veth.go
 @@ -16,6 +16,8 @@
@@ -5998,7 +6067,7 @@ index d942678..d9c22d2 100644
 +	}()
 +}
 diff --git a/pkg/tcpip/link/veth/veth_test.go b/pkg/tcpip/link/veth/veth_test.go
-index c466d92..54b168e 100644
+index c466d92de..54b168e9c 100644
 --- a/pkg/tcpip/link/veth/veth_test.go
 +++ b/pkg/tcpip/link/veth/veth_test.go
 @@ -15,6 +15,9 @@
@@ -6056,7 +6125,7 @@ index c466d92..54b168e 100644
 +	}
 +}
 diff --git a/pkg/tcpip/network/ipv4/ipv4.go b/pkg/tcpip/network/ipv4/ipv4.go
-index 416cbe7..b5d9f2b 100644
+index 416cbe70e..b5d9f2b07 100644
 --- a/pkg/tcpip/network/ipv4/ipv4.go
 +++ b/pkg/tcpip/network/ipv4/ipv4.go
 @@ -1984,6 +1984,8 @@ func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.
@@ -6069,7 +6138,7 @@ index 416cbe7..b5d9f2b 100644
  		return p.returnError(&icmpReasonNetworkProhibited{}, pkt, inputHook)
  	case stack.RejectIPv4WithICMPHostProhibited:
 diff --git a/pkg/tcpip/network/ipv6/icmp.go b/pkg/tcpip/network/ipv6/icmp.go
-index 00f48cc..8dd7be0 100644
+index 00f48cce2..8dd7be062 100644
 --- a/pkg/tcpip/network/ipv6/icmp.go
 +++ b/pkg/tcpip/network/ipv6/icmp.go
 @@ -1008,6 +1008,12 @@ func (p *icmpReasonParameterProblem) respondsToMulticast() bool {
@@ -6095,7 +6164,7 @@ index 00f48cc..8dd7be0 100644
  			return header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, sent.dstUnreachable, 0
  		case *icmpReasonNetUnreachable:
 diff --git a/pkg/tcpip/network/ipv6/ipv6.go b/pkg/tcpip/network/ipv6/ipv6.go
-index 714c1ad..3ea39db 100644
+index 714c1ad19..3ea39db2b 100644
 --- a/pkg/tcpip/network/ipv6/ipv6.go
 +++ b/pkg/tcpip/network/ipv6/ipv6.go
 @@ -2853,6 +2853,12 @@ func (p *protocol) SendRejectionError(pkt *stack.PacketBuffer, rejectWith stack.
@@ -6112,7 +6181,7 @@ index 714c1ad..3ea39db 100644
  		return ip.RejectWithTCPReset(pkt, ProtocolNumber, p.stack, inputHook)
  	default:
 diff --git a/pkg/tcpip/nftables/BUILD b/pkg/tcpip/nftables/BUILD
-index f390167..923970b 100644
+index f39016770..923970b6e 100644
 --- a/pkg/tcpip/nftables/BUILD
 +++ b/pkg/tcpip/nftables/BUILD
 @@ -39,6 +39,7 @@ go_library(
@@ -6147,7 +6216,7 @@ index f390167..923970b 100644
          "@com_github_google_go_cmp//cmp:go_default_library",
      ],
 diff --git a/pkg/tcpip/nftables/nft_bitwise.go b/pkg/tcpip/nftables/nft_bitwise.go
-index 6d647d6..5967ee3 100644
+index 6d647d64a..5967ee3c1 100644
 --- a/pkg/tcpip/nftables/nft_bitwise.go
 +++ b/pkg/tcpip/nftables/nft_bitwise.go
 @@ -50,13 +50,14 @@ func (bop bitwiseOp) String() string {
@@ -6168,7 +6237,7 @@ index 6d647d6..5967ee3 100644
  
  	// Note: Technically, the linux kernel has defined bool, lshift, and rshift
 diff --git a/pkg/tcpip/nftables/nft_byteorder.go b/pkg/tcpip/nftables/nft_byteorder.go
-index 3ec3dd8..00c4ca1 100644
+index 3ec3dd89c..00c4ca14a 100644
 --- a/pkg/tcpip/nftables/nft_byteorder.go
 +++ b/pkg/tcpip/nftables/nft_byteorder.go
 @@ -25,6 +25,7 @@ import (
@@ -6180,7 +6249,7 @@ index 3ec3dd8..00c4ca1 100644
  	sregIdx int         // Index of the source register in registerSet.data.
  	dregIdx int         // Index of the destination register in registerSet.data.
 diff --git a/pkg/tcpip/nftables/nft_comparison.go b/pkg/tcpip/nftables/nft_comparison.go
-index 1e64d4d..0a05ade 100644
+index 1e64d4d4b..0a05ade96 100644
 --- a/pkg/tcpip/nftables/nft_comparison.go
 +++ b/pkg/tcpip/nftables/nft_comparison.go
 @@ -30,8 +30,9 @@ import (
@@ -6195,7 +6264,7 @@ index 1e64d4d..0a05ade 100644
  	cop     cmpOp  // Comparison operator.
  }
 diff --git a/pkg/tcpip/nftables/nft_counter.go b/pkg/tcpip/nftables/nft_counter.go
-index 6be6272..fb1dc75 100644
+index 6be62721e..fb1dc751c 100644
 --- a/pkg/tcpip/nftables/nft_counter.go
 +++ b/pkg/tcpip/nftables/nft_counter.go
 @@ -15,21 +15,21 @@
@@ -6225,7 +6294,7 @@ index 6be6272..fb1dc75 100644
  
  // newCounter creates a new counter operation.
 diff --git a/pkg/tcpip/nftables/nft_ct.go b/pkg/tcpip/nftables/nft_ct.go
-index a793c24..b80704b 100644
+index a793c2426..b80704bca 100644
 --- a/pkg/tcpip/nftables/nft_ct.go
 +++ b/pkg/tcpip/nftables/nft_ct.go
 @@ -73,6 +73,7 @@ func (k ctKey) String() string {
@@ -6245,7 +6314,7 @@ index a793c24..b80704b 100644
  	// key is the key to set data for.
  	key uint32
 diff --git a/pkg/tcpip/nftables/nft_fib.go b/pkg/tcpip/nftables/nft_fib.go
-index b2b5c5c..c5122d1 100644
+index b2b5c5c28..c5122d152 100644
 --- a/pkg/tcpip/nftables/nft_fib.go
 +++ b/pkg/tcpip/nftables/nft_fib.go
 @@ -28,6 +28,7 @@ import (
@@ -6257,7 +6326,7 @@ index b2b5c5c..c5122d1 100644
  	result  int
  	flags   uint32
 diff --git a/pkg/tcpip/nftables/nft_immediate.go b/pkg/tcpip/nftables/nft_immediate.go
-index 816b01d..64a67df 100644
+index 816b01d2c..64a67df78 100644
 --- a/pkg/tcpip/nftables/nft_immediate.go
 +++ b/pkg/tcpip/nftables/nft_immediate.go
 @@ -24,10 +24,11 @@ import (
@@ -6274,7 +6343,7 @@ index 816b01d..64a67df 100644
  }
  
 diff --git a/pkg/tcpip/nftables/nft_last.go b/pkg/tcpip/nftables/nft_last.go
-index 7d4d7d8..8f50d42 100644
+index 7d4d7d872..8f50d4250 100644
 --- a/pkg/tcpip/nftables/nft_last.go
 +++ b/pkg/tcpip/nftables/nft_last.go
 @@ -15,7 +15,7 @@
@@ -6307,7 +6376,7 @@ index 7d4d7d8..8f50d42 100644
  	// Note: The last operation has not been observed in the nft binary debug
  	// output, so it has no interpretation, though it is fully implemented.
 diff --git a/pkg/tcpip/nftables/nft_lookup.go b/pkg/tcpip/nftables/nft_lookup.go
-index 3274d7f..caa0e39 100644
+index 3274d7f7f..caa0e39bd 100644
 --- a/pkg/tcpip/nftables/nft_lookup.go
 +++ b/pkg/tcpip/nftables/nft_lookup.go
 @@ -25,6 +25,7 @@ import (
@@ -6319,7 +6388,7 @@ index 3274d7f..caa0e39 100644
  	// sregIdx represents the index of the key in the register set.
  	sregIdx int
 diff --git a/pkg/tcpip/nftables/nft_masq.go b/pkg/tcpip/nftables/nft_masq.go
-index d6be144..3756561 100644
+index d6be144b4..3756561dd 100644
 --- a/pkg/tcpip/nftables/nft_masq.go
 +++ b/pkg/tcpip/nftables/nft_masq.go
 @@ -26,6 +26,7 @@ import (
@@ -6331,7 +6400,7 @@ index d6be144..3756561 100644
  	// Index of the source register for the minimum protocol in the register set.
  	sregProtoMinIdx int8
 diff --git a/pkg/tcpip/nftables/nft_metaload.go b/pkg/tcpip/nftables/nft_metaload.go
-index 8f77eed..9ae0c8f 100644
+index 8f77eed46..9ae0c8fee 100644
 --- a/pkg/tcpip/nftables/nft_metaload.go
 +++ b/pkg/tcpip/nftables/nft_metaload.go
 @@ -27,6 +27,7 @@ import (
@@ -6343,7 +6412,7 @@ index 8f77eed..9ae0c8f 100644
  	key     metaKey // Meta key specifying what data to retrieve.
  	dregIdx int     // Index of the destination register in registerSet.data.
 diff --git a/pkg/tcpip/nftables/nft_metaset.go b/pkg/tcpip/nftables/nft_metaset.go
-index a645cb1..074a48a 100644
+index a645cb139..074a48a1d 100644
 --- a/pkg/tcpip/nftables/nft_metaset.go
 +++ b/pkg/tcpip/nftables/nft_metaset.go
 @@ -27,6 +27,7 @@ import (
@@ -6355,7 +6424,7 @@ index a645cb1..074a48a 100644
  	key     metaKey // Meta key specifying what data to set.
  	sregIdx int     // Index of the source register in registerSet.data.
 diff --git a/pkg/tcpip/nftables/nft_nat.go b/pkg/tcpip/nftables/nft_nat.go
-index 89ed521..cebd04d 100644
+index 89ed52185..cebd04d5a 100644
 --- a/pkg/tcpip/nftables/nft_nat.go
 +++ b/pkg/tcpip/nftables/nft_nat.go
 @@ -27,6 +27,7 @@ import (
@@ -6375,7 +6444,7 @@ index 89ed521..cebd04d 100644
  	minAddr  tcpip.Address
  	maxAddr  tcpip.Address
 diff --git a/pkg/tcpip/nftables/nft_payload_load.go b/pkg/tcpip/nftables/nft_payload_load.go
-index 7c8dcb7..3b1fef1 100644
+index 7c8dcb73e..3b1fef17b 100644
 --- a/pkg/tcpip/nftables/nft_payload_load.go
 +++ b/pkg/tcpip/nftables/nft_payload_load.go
 @@ -27,6 +27,7 @@ import (
@@ -6387,7 +6456,7 @@ index 7c8dcb7..3b1fef1 100644
  	base    payloadBase // Payload base to access data from.
  	offset  uint8       // Number of bytes to skip after the base.
 diff --git a/pkg/tcpip/nftables/nft_payload_set.go b/pkg/tcpip/nftables/nft_payload_set.go
-index feba1ed..9d04518 100644
+index feba1eddc..9d045189e 100644
 --- a/pkg/tcpip/nftables/nft_payload_set.go
 +++ b/pkg/tcpip/nftables/nft_payload_set.go
 @@ -29,6 +29,7 @@ import (
@@ -6399,7 +6468,7 @@ index feba1ed..9d04518 100644
  	base       payloadBase // Payload base to access data from.
  	offset     uint8       // Number of bytes to skip after the base for data.
 diff --git a/pkg/tcpip/nftables/nft_ranged.go b/pkg/tcpip/nftables/nft_ranged.go
-index 89544d6..876ab99 100644
+index 89544d62b..876ab99c4 100644
 --- a/pkg/tcpip/nftables/nft_ranged.go
 +++ b/pkg/tcpip/nftables/nft_ranged.go
 @@ -29,9 +29,10 @@ import (
@@ -6416,7 +6485,7 @@ index 89544d6..876ab99 100644
  	rop     rngOp  // Range operator.
  
 diff --git a/pkg/tcpip/nftables/nft_route.go b/pkg/tcpip/nftables/nft_route.go
-index c443f27..9264f0d 100644
+index c443f2769..9264f0dfa 100644
 --- a/pkg/tcpip/nftables/nft_route.go
 +++ b/pkg/tcpip/nftables/nft_route.go
 @@ -26,6 +26,7 @@ import (
@@ -6428,7 +6497,7 @@ index c443f27..9264f0d 100644
  	key     routeKey // Route key specifying what data to retrieve.
  	dregIdx int      // Index of the destination register in registerSet.data.
 diff --git a/pkg/tcpip/nftables/nft_xt_addrtype.go b/pkg/tcpip/nftables/nft_xt_addrtype.go
-index 9033081..3378498 100644
+index 9033081a4..3378498d8 100644
 --- a/pkg/tcpip/nftables/nft_xt_addrtype.go
 +++ b/pkg/tcpip/nftables/nft_xt_addrtype.go
 @@ -30,6 +30,7 @@ import (
@@ -6454,7 +6523,7 @@ index 9033081..3378498 100644
  	info addrTypeMatchInfo
  }
 diff --git a/pkg/tcpip/nftables/nft_xt_conntrack.go b/pkg/tcpip/nftables/nft_xt_conntrack.go
-index e647246..285dd15 100644
+index e647246d8..285dd1523 100644
 --- a/pkg/tcpip/nftables/nft_xt_conntrack.go
 +++ b/pkg/tcpip/nftables/nft_xt_conntrack.go
 @@ -29,6 +29,7 @@ import (
@@ -6480,7 +6549,7 @@ index e647246..285dd15 100644
  	info ctMatchInfo
  }
 diff --git a/pkg/tcpip/nftables/nft_xt_masq.go b/pkg/tcpip/nftables/nft_xt_masq.go
-index 4772544..5bf9ca8 100644
+index 477254481..5bf9ca819 100644
 --- a/pkg/tcpip/nftables/nft_xt_masq.go
 +++ b/pkg/tcpip/nftables/nft_xt_masq.go
 @@ -32,6 +32,7 @@ import (
@@ -6506,7 +6575,7 @@ index 4772544..5bf9ca8 100644
  	info masqTargetInfo
  }
 diff --git a/pkg/tcpip/nftables/nft_xt_match.go b/pkg/tcpip/nftables/nft_xt_match.go
-index de9a318..7711b6d 100644
+index de9a3185b..7711b6dff 100644
 --- a/pkg/tcpip/nftables/nft_xt_match.go
 +++ b/pkg/tcpip/nftables/nft_xt_match.go
 @@ -27,13 +27,11 @@ import (
@@ -6689,7 +6758,7 @@ index de9a318..7711b6d 100644
  		return nil, syserr.NewAnnotatedError(syserr.ErrNoSuchFile, fmt.Sprintf("match extension %s not supported", name))
  	}
 diff --git a/pkg/tcpip/nftables/nft_xt_nat.go b/pkg/tcpip/nftables/nft_xt_nat.go
-index 3605a48..73fcddb 100644
+index 3605a4805..73fcddbad 100644
 --- a/pkg/tcpip/nftables/nft_xt_nat.go
 +++ b/pkg/tcpip/nftables/nft_xt_nat.go
 @@ -31,6 +31,7 @@ import (
@@ -6717,7 +6786,7 @@ index 3605a48..73fcddb 100644
  	info natTargetInfo
  }
 diff --git a/pkg/tcpip/nftables/nftables_set.go b/pkg/tcpip/nftables/nftables_set.go
-index 9114085..45baf94 100644
+index 9114085e6..45baf942a 100644
 --- a/pkg/tcpip/nftables/nftables_set.go
 +++ b/pkg/tcpip/nftables/nftables_set.go
 @@ -1468,6 +1468,7 @@ func (nf *NFTables) GetSetElements(attrs map[uint16]nlmsg.BytesView, family stac
@@ -6729,7 +6798,7 @@ index 9114085..45baf94 100644
  	keyLen  int
  	dataLen int
 diff --git a/pkg/tcpip/nftables/nftables_test.go b/pkg/tcpip/nftables/nftables_test.go
-index 04d2b77..5785b13 100644
+index 04d2b77b5..5785b13f3 100644
 --- a/pkg/tcpip/nftables/nftables_test.go
 +++ b/pkg/tcpip/nftables/nftables_test.go
 @@ -5775,12 +5775,12 @@ func TestCompatOperationDeepCopy(t *testing.T) {
@@ -6834,7 +6903,7 @@ index 04d2b77..5785b13 100644
  	}
  }
 diff --git a/pkg/tcpip/nftables/nftables_types.go b/pkg/tcpip/nftables/nftables_types.go
-index ff432ff..e2479cd 100644
+index ff432fffa..e2479cde7 100644
 --- a/pkg/tcpip/nftables/nftables_types.go
 +++ b/pkg/tcpip/nftables/nftables_types.go
 @@ -43,7 +43,6 @@ package nftables
@@ -7043,7 +7112,7 @@ index ff432ff..e2479cd 100644
  	Code uint32
 diff --git a/pkg/tcpip/nftables/save_restore.go b/pkg/tcpip/nftables/save_restore.go
 new file mode 100644
-index 0000000..336b3c7
+index 000000000..336b3c73c
 --- /dev/null
 +++ b/pkg/tcpip/nftables/save_restore.go
 @@ -0,0 +1,161 @@
@@ -7210,7 +7279,7 @@ index 0000000..336b3c7
 +}
 diff --git a/pkg/tcpip/nftables/save_restore_test.go b/pkg/tcpip/nftables/save_restore_test.go
 new file mode 100644
-index 0000000..8e0ced1
+index 000000000..8e0ced11e
 --- /dev/null
 +++ b/pkg/tcpip/nftables/save_restore_test.go
 @@ -0,0 +1,142 @@
@@ -7357,7 +7426,7 @@ index 0000000..8e0ced1
 +	}
 +}
 diff --git a/pkg/tcpip/stack/addressable_endpoint_state.go b/pkg/tcpip/stack/addressable_endpoint_state.go
-index 54bf44b..e042d08 100644
+index 54bf44be8..e042d08d1 100644
 --- a/pkg/tcpip/stack/addressable_endpoint_state.go
 +++ b/pkg/tcpip/stack/addressable_endpoint_state.go
 @@ -41,12 +41,10 @@ type AddressableEndpointState struct {
@@ -7394,7 +7463,7 @@ index 54bf44b..e042d08 100644
  	// +checklocks:mu
  	kind AddressKind
 diff --git a/pkg/tcpip/stack/bridge.go b/pkg/tcpip/stack/bridge.go
-index fa7fd56..9d7f48a 100644
+index fa7fd56cb..9d7f48a52 100644
 --- a/pkg/tcpip/stack/bridge.go
 +++ b/pkg/tcpip/stack/bridge.go
 @@ -32,6 +32,8 @@ type bridgePort struct {
@@ -7452,7 +7521,7 @@ index fa7fd56..9d7f48a 100644
  	}
  }
 diff --git a/pkg/tcpip/stack/bridge_test.go b/pkg/tcpip/stack/bridge_test.go
-index 1c29fb7..a81ac46 100644
+index 1c29fb79d..a81ac4691 100644
 --- a/pkg/tcpip/stack/bridge_test.go
 +++ b/pkg/tcpip/stack/bridge_test.go
 @@ -15,6 +15,7 @@
@@ -7572,7 +7641,7 @@ index 1c29fb7..a81ac46 100644
  	const (
  		channelLinkAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x05")
 diff --git a/pkg/tcpip/stack/conntrack.go b/pkg/tcpip/stack/conntrack.go
-index f96c147..f3f8445 100644
+index f96c14728..f3f8445df 100644
 --- a/pkg/tcpip/stack/conntrack.go
 +++ b/pkg/tcpip/stack/conntrack.go
 @@ -52,6 +52,8 @@ const (
@@ -7723,7 +7792,7 @@ index f96c147..f3f8445 100644
  
  // NfConnTrackPriority returns the priority of the conntrack hook.
 diff --git a/pkg/tcpip/stack/conntrack_test.go b/pkg/tcpip/stack/conntrack_test.go
-index 283186b..cf97327 100644
+index 283186bc5..cf9732710 100644
 --- a/pkg/tcpip/stack/conntrack_test.go
 +++ b/pkg/tcpip/stack/conntrack_test.go
 @@ -279,6 +279,58 @@ type genTCPOpts struct {
@@ -7786,7 +7855,7 @@ index 283186b..cf97327 100644
  func genTCPPacket(opts genTCPOpts) *PacketBuffer {
  	// Get values from opts.
 diff --git a/pkg/tcpip/stack/iptables.go b/pkg/tcpip/stack/iptables.go
-index 8dded8a..3d8368d 100644
+index 8dded8a65..3d8368d56 100644
 --- a/pkg/tcpip/stack/iptables.go
 +++ b/pkg/tcpip/stack/iptables.go
 @@ -15,7 +15,6 @@
@@ -7842,7 +7911,7 @@ index 8dded8a..3d8368d 100644
  
  // maxJumps is the maximum allowed depth of recursion when jumping between
 diff --git a/pkg/tcpip/stack/nat.go b/pkg/tcpip/stack/nat.go
-index bc60cab..41e4154 100644
+index bc60cabb6..41e415410 100644
 --- a/pkg/tcpip/stack/nat.go
 +++ b/pkg/tcpip/stack/nat.go
 @@ -266,6 +266,8 @@ func IPTHandlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
@@ -7855,7 +7924,7 @@ index bc60cab..41e4154 100644
  	Start uint16
  	Size  uint32
 diff --git a/pkg/tcpip/stack/neighbor_entry.go b/pkg/tcpip/stack/neighbor_entry.go
-index 427dd05..5ded6ad 100644
+index 427dd05fb..5ded6ad6d 100644
 --- a/pkg/tcpip/stack/neighbor_entry.go
 +++ b/pkg/tcpip/stack/neighbor_entry.go
 @@ -15,6 +15,7 @@
@@ -7884,7 +7953,7 @@ index 427dd05..5ded6ad 100644
 +	}
 +}
 diff --git a/pkg/tcpip/stack/nftables_types.go b/pkg/tcpip/stack/nftables_types.go
-index f75732a..3a47847 100644
+index f75732a96..3a478476e 100644
 --- a/pkg/tcpip/stack/nftables_types.go
 +++ b/pkg/tcpip/stack/nftables_types.go
 @@ -20,6 +20,8 @@ import (
@@ -7897,7 +7966,7 @@ index f75732a..3a47847 100644
  	CheckInput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
  	CheckForward(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 diff --git a/pkg/tcpip/stack/nic.go b/pkg/tcpip/stack/nic.go
-index 7a6bd80..a1ecf2a 100644
+index 7a6bd8079..a1ecf2ad2 100644
 --- a/pkg/tcpip/stack/nic.go
 +++ b/pkg/tcpip/stack/nic.go
 @@ -15,6 +15,7 @@
@@ -7979,7 +8048,7 @@ index 7a6bd80..a1ecf2a 100644
 +}
 +func (n *nic) loadQDisc(_ context.Context, v savedNICQueue) { n.qDisc = v.Queue }
 diff --git a/pkg/tcpip/stack/nic_test.go b/pkg/tcpip/stack/nic_test.go
-index 907747d..0eeb4d9 100644
+index 907747d57..0eeb4d982 100644
 --- a/pkg/tcpip/stack/nic_test.go
 +++ b/pkg/tcpip/stack/nic_test.go
 @@ -29,6 +29,29 @@ var _ AddressableEndpoint = (*testIPv6Endpoint)(nil)
@@ -8013,7 +8082,7 @@ index 907747d..0eeb4d9 100644
  //
  // We use this instead of ipv6.endpoint because the ipv6 package depends on
 diff --git a/pkg/tcpip/stack/nud.go b/pkg/tcpip/stack/nud.go
-index f8e3856..481beb9 100644
+index f8e38566e..481beb9be 100644
 --- a/pkg/tcpip/stack/nud.go
 +++ b/pkg/tcpip/stack/nud.go
 @@ -15,6 +15,7 @@
@@ -8034,7 +8103,7 @@ index f8e3856..481beb9 100644
 +	s.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 +}
 diff --git a/pkg/tcpip/stack/pending_packets.go b/pkg/tcpip/stack/pending_packets.go
-index 6f7909c..e51bf0f 100644
+index 6f7909c96..e51bf0f08 100644
 --- a/pkg/tcpip/stack/pending_packets.go
 +++ b/pkg/tcpip/stack/pending_packets.go
 @@ -15,6 +15,7 @@
@@ -8093,7 +8162,7 @@ index 6f7909c..e51bf0f 100644
 +	f.loadedPackets = nil
 +}
 diff --git a/pkg/tcpip/stack/save_restore.go b/pkg/tcpip/stack/save_restore.go
-index 48ed8c7..999b3c4 100644
+index 48ed8c782..999b3c439 100644
 --- a/pkg/tcpip/stack/save_restore.go
 +++ b/pkg/tcpip/stack/save_restore.go
 @@ -22,6 +22,17 @@ import (
@@ -8115,7 +8184,7 @@ index 48ed8c7..999b3c4 100644
  func (s *Stack) beforeSave() {
  	// removeConf will be set only in case of save/restore.
 diff --git a/pkg/tcpip/stack/stack.go b/pkg/tcpip/stack/stack.go
-index dbe0e83..8c4be15 100644
+index dbe0e83b1..8c4be155e 100644
 --- a/pkg/tcpip/stack/stack.go
 +++ b/pkg/tcpip/stack/stack.go
 @@ -91,18 +91,20 @@ type Stack struct {
@@ -8301,7 +8370,7 @@ index dbe0e83..8c4be15 100644
  	eps := s.resumableEndpoints
  	s.resumableEndpoints = nil
 diff --git a/pkg/tcpip/transport/tcp/endpoint_state.go b/pkg/tcpip/transport/tcp/endpoint_state.go
-index d2a8c6d..75942cf 100644
+index d2a8c6d6e..75942cfa0 100644
 --- a/pkg/tcpip/transport/tcp/endpoint_state.go
 +++ b/pkg/tcpip/transport/tcp/endpoint_state.go
 @@ -263,6 +263,15 @@ func (e *Endpoint) Restore(s *stack.Stack) {
@@ -8321,7 +8390,7 @@ index d2a8c6d..75942cf 100644
  		log.Infof("connect success: %+v", e.TransportEndpointInfo.ID)
  		// For FIN-WAIT-2 and TIME-WAIT we need to start the appropriate timers so
 diff --git a/pkg/tcpip/transport/tcpconntrack/BUILD b/pkg/tcpip/transport/tcpconntrack/BUILD
-index 50b3e90..3a5f000 100644
+index 50b3e90e0..3a5f00043 100644
 --- a/pkg/tcpip/transport/tcpconntrack/BUILD
 +++ b/pkg/tcpip/transport/tcpconntrack/BUILD
 @@ -22,6 +22,7 @@ go_test(
@@ -8333,7 +8402,7 @@ index 50b3e90..3a5f000 100644
      ],
  )
 diff --git a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go
-index 4d74a6d..d1c9aad 100644
+index 4d74a6dd8..d1c9aade9 100644
 --- a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go
 +++ b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack.go
 @@ -61,11 +61,9 @@ type TCB struct {
@@ -8399,7 +8468,7 @@ index 4d74a6d..d1c9aad 100644
  	return ResultAlive
  }
 diff --git a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go
-index 2bda57b..7e07085 100644
+index 2bda57bcb..7e07085c0 100644
 --- a/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go
 +++ b/pkg/tcpip/transport/tcpconntrack/tcp_conntrack_test.go
 @@ -15,10 +15,13 @@
@@ -8465,7 +8534,7 @@ index 2bda57b..7e07085 100644
 +	}
 +}
 diff --git a/runsc/boot/BUILD b/runsc/boot/BUILD
-index 479bfc0..854bb07 100644
+index 479bfc064..854bb07d9 100644
 --- a/runsc/boot/BUILD
 +++ b/runsc/boot/BUILD
 @@ -18,6 +18,7 @@ go_library(
@@ -8477,7 +8546,7 @@ index 479bfc0..854bb07 100644
          "network.go",
          "nvproxy.go",
 diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
-index ae644c4..aad1de3 100644
+index ae644c4f5..aad1de34f 100644
 --- a/runsc/boot/controller.go
 +++ b/runsc/boot/controller.go
 @@ -276,6 +276,13 @@ func (c *controller) stop() {
@@ -8593,7 +8662,7 @@ index ae644c4..aad1de3 100644
  func (cm *containerManager) Pause(_, _ *struct{}) error {
  	cm.l.k.Pause()
 diff --git a/runsc/boot/loader.go b/runsc/boot/loader.go
-index d78a960..37b7dec 100644
+index d78a9606c..37b7dec5c 100644
 --- a/runsc/boot/loader.go
 +++ b/runsc/boot/loader.go
 @@ -359,6 +359,9 @@ type Loader struct {
@@ -8712,7 +8781,7 @@ index d78a960..37b7dec 100644
  		case "":
 diff --git a/runsc/boot/memory_guard.go b/runsc/boot/memory_guard.go
 new file mode 100644
-index 0000000..a9deb96
+index 000000000..a9deb9619
 --- /dev/null
 +++ b/runsc/boot/memory_guard.go
 @@ -0,0 +1,66 @@
@@ -8783,7 +8852,7 @@ index 0000000..a9deb96
 +	}
 +}
 diff --git a/runsc/boot/vfs.go b/runsc/boot/vfs.go
-index f320cd9..4a4ab7a 100644
+index f320cd983..4a4ab7a61 100644
 --- a/runsc/boot/vfs.go
 +++ b/runsc/boot/vfs.go
 @@ -188,6 +188,11 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
@@ -8891,7 +8960,7 @@ index f320cd9..4a4ab7a 100644
  		UseDevGofer:            true,
  	})
 diff --git a/runsc/boot/vfs_test.go b/runsc/boot/vfs_test.go
-index 6d4bddc..791673d 100644
+index 6d4bddcf8..791673d34 100644
 --- a/runsc/boot/vfs_test.go
 +++ b/runsc/boot/vfs_test.go
 @@ -98,6 +98,36 @@ func TestGetMountAccessType(t *testing.T) {
@@ -8932,7 +9001,7 @@ index 6d4bddc..791673d 100644
  	for _, tc := range []struct {
  		name             string
 diff --git a/runsc/cmd/gofer.go b/runsc/cmd/gofer.go
-index bde091e..b42f9b7 100644
+index bde091eda..b42f9b7bd 100644
 --- a/runsc/cmd/gofer.go
 +++ b/runsc/cmd/gofer.go
 @@ -499,6 +499,15 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
@@ -8952,7 +9021,7 @@ index bde091e..b42f9b7 100644
  			connOpts = fsgofer.ConnectionOpts(cfg.readonly)
  		}
 diff --git a/runsc/cmd/sandboxsetup/process.go b/runsc/cmd/sandboxsetup/process.go
-index 60404f1..8fe835e 100644
+index 60404f196..8fe835e52 100644
 --- a/runsc/cmd/sandboxsetup/process.go
 +++ b/runsc/cmd/sandboxsetup/process.go
 @@ -186,7 +186,29 @@ func UmountProcFile(syncFile *os.File) {
@@ -8987,7 +9056,7 @@ index 60404f1..8fe835e 100644
  	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
  		util.Fatalf("/proc is still accessible")
 diff --git a/runsc/cmd/sentry/sentrycmd/boot.go b/runsc/cmd/sentry/sentrycmd/boot.go
-index 3e711fc..ec10b76 100644
+index 3e711fcf7..ec10b7660 100644
 --- a/runsc/cmd/sentry/sentrycmd/boot.go
 +++ b/runsc/cmd/sentry/sentrycmd/boot.go
 @@ -90,7 +90,9 @@ type Boot struct {
@@ -9080,7 +9149,7 @@ index 3e711fc..ec10b76 100644
  			ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
  			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
 diff --git a/runsc/cmd/tar.go b/runsc/cmd/tar.go
-index 640d01f..094d8b4 100644
+index 640d01f3d..094d8b4f4 100644
 --- a/runsc/cmd/tar.go
 +++ b/runsc/cmd/tar.go
 @@ -79,7 +79,10 @@ func createCommander(f *flag.FlagSet) *subcommands.Commander {
@@ -9136,7 +9205,7 @@ index 640d01f..094d8b4 100644
  	}
  	return subcommands.ExitSuccess
 diff --git a/runsc/config/config.go b/runsc/config/config.go
-index 0fbf027..d9dd7f4 100644
+index 0fbf02739..d9dd7f4d3 100644
 --- a/runsc/config/config.go
 +++ b/runsc/config/config.go
 @@ -50,6 +50,13 @@ import (
@@ -9280,7 +9349,7 @@ index 0fbf027..d9dd7f4 100644
 +	return result, nil
 +}
 diff --git a/runsc/config/config_test.go b/runsc/config/config_test.go
-index 710cb07..3e73af3 100644
+index 710cb075d..3e73af327 100644
 --- a/runsc/config/config_test.go
 +++ b/runsc/config/config_test.go
 @@ -966,3 +966,25 @@ func TestParseSerializeOverlay2(t *testing.T) {
@@ -9310,7 +9379,7 @@ index 710cb07..3e73af3 100644
 +	}
 +}
 diff --git a/runsc/config/flags.go b/runsc/config/flags.go
-index f4852a7..5cf1e29 100644
+index f4852a70b..5cf1e296b 100644
 --- a/runsc/config/flags.go
 +++ b/runsc/config/flags.go
 @@ -58,6 +58,9 @@ const (
@@ -9354,7 +9423,7 @@ index f4852a7..5cf1e29 100644
  	flagSet.Bool("rdmaproxy", false, "WIP: enable RDMA support for containers with /dev/infiniband/uverbs* devices.")
  	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
 diff --git a/runsc/container/BUILD b/runsc/container/BUILD
-index 957b4c6..87163c8 100644
+index 957b4c693..87163c832 100644
 --- a/runsc/container/BUILD
 +++ b/runsc/container/BUILD
 @@ -21,6 +21,7 @@ go_library(
@@ -9366,7 +9435,7 @@ index 957b4c6..87163c8 100644
          "//pkg/pinring",
          "//pkg/sentry/control",
 diff --git a/runsc/container/container.go b/runsc/container/container.go
-index f600485..1f7b185 100644
+index f60048504..1f7b18598 100644
 --- a/runsc/container/container.go
 +++ b/runsc/container/container.go
 @@ -34,6 +34,7 @@ import (
@@ -9468,7 +9537,7 @@ index f600485..1f7b185 100644
  
  	// Ensure we don't leak FDs to the gofer process.
 diff --git a/runsc/fsgofer/BUILD b/runsc/fsgofer/BUILD
-index c3b00f8..9194874 100644
+index c3b00f802..91948741a 100644
 --- a/runsc/fsgofer/BUILD
 +++ b/runsc/fsgofer/BUILD
 @@ -9,6 +9,7 @@ go_library(
@@ -9496,7 +9565,7 @@ index c3b00f8..9194874 100644
 +    ],
 +)
 diff --git a/runsc/fsgofer/filter/config/config_main.go b/runsc/fsgofer/filter/config/config_main.go
-index 8453f96..3184a98 100644
+index 8453f9601..3184a9895 100644
 --- a/runsc/fsgofer/filter/config/config_main.go
 +++ b/runsc/fsgofer/filter/config/config_main.go
 @@ -67,6 +67,7 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
@@ -9508,7 +9577,7 @@ index 8453f96..3184a98 100644
  	unix.SYS_FUTEX: seccomp.Or{
  		seccomp.PerArg{
 diff --git a/runsc/fsgofer/lisafs.go b/runsc/fsgofer/lisafs.go
-index d57e54e..151ed20 100644
+index d57e54e3f..151ed20f3 100644
 --- a/runsc/fsgofer/lisafs.go
 +++ b/runsc/fsgofer/lisafs.go
 @@ -51,6 +51,10 @@ const (
@@ -9914,7 +9983,7 @@ index d57e54e..151ed20 100644
  	default:
 diff --git a/runsc/fsgofer/private_owners.go b/runsc/fsgofer/private_owners.go
 new file mode 100644
-index 0000000..fd9b5c1
+index 000000000..fd9b5c19e
 --- /dev/null
 +++ b/runsc/fsgofer/private_owners.go
 @@ -0,0 +1,188 @@
@@ -10108,7 +10177,7 @@ index 0000000..fd9b5c1
 +}
 diff --git a/runsc/fsgofer/private_owners_test.go b/runsc/fsgofer/private_owners_test.go
 new file mode 100644
-index 0000000..1866696
+index 000000000..18666962e
 --- /dev/null
 +++ b/runsc/fsgofer/private_owners_test.go
 @@ -0,0 +1,195 @@
@@ -10309,7 +10378,7 @@ index 0000000..1866696
 +}
 diff --git a/runsc/guesttools/BUILD b/runsc/guesttools/BUILD
 new file mode 100644
-index 0000000..2a06d19
+index 000000000..2a06d19f4
 --- /dev/null
 +++ b/runsc/guesttools/BUILD
 @@ -0,0 +1,37 @@
@@ -10352,7 +10421,7 @@ index 0000000..2a06d19
 +)
 diff --git a/runsc/guesttools/main.c b/runsc/guesttools/main.c
 new file mode 100644
-index 0000000..466e715
+index 000000000..466e7158f
 --- /dev/null
 +++ b/runsc/guesttools/main.c
 @@ -0,0 +1,90 @@
@@ -10447,7 +10516,7 @@ index 0000000..466e715
 +        "mov x0, sp\nbl guest_tools_main\nbrk #0\n");
 +#endif
 diff --git a/runsc/sandbox/BUILD b/runsc/sandbox/BUILD
-index 387957f..899c79a 100644
+index 387957ffb..899c79a45 100644
 --- a/runsc/sandbox/BUILD
 +++ b/runsc/sandbox/BUILD
 @@ -9,6 +9,7 @@ go_library(
@@ -10467,7 +10536,7 @@ index 387957f..899c79a 100644
      library = ":sandbox",
      deps = [
 diff --git a/runsc/sandbox/network.go b/runsc/sandbox/network.go
-index 989bb24..5de050c 100644
+index 989bb242a..5de050c24 100644
 --- a/runsc/sandbox/network.go
 +++ b/runsc/sandbox/network.go
 @@ -62,6 +62,9 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
@@ -10482,7 +10551,7 @@ index 989bb24..5de050c 100644
  		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
 diff --git a/runsc/sandbox/network_socket.go b/runsc/sandbox/network_socket.go
 new file mode 100644
-index 0000000..c3bb425
+index 000000000..c3bb425fc
 --- /dev/null
 +++ b/runsc/sandbox/network_socket.go
 @@ -0,0 +1,119 @@
@@ -10607,7 +10676,7 @@ index 0000000..c3bb425
 +}
 diff --git a/runsc/sandbox/network_socket_test.go b/runsc/sandbox/network_socket_test.go
 new file mode 100644
-index 0000000..02a983d
+index 000000000..02a983df9
 --- /dev/null
 +++ b/runsc/sandbox/network_socket_test.go
 @@ -0,0 +1,80 @@
@@ -10692,7 +10761,7 @@ index 0000000..02a983d
 +	}
 +}
 diff --git a/runsc/sandbox/sandbox.go b/runsc/sandbox/sandbox.go
-index bcc7287..26bed8f 100644
+index bcc7287f6..26bed8f03 100644
 --- a/runsc/sandbox/sandbox.go
 +++ b/runsc/sandbox/sandbox.go
 @@ -1023,6 +1023,31 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
@@ -10783,7 +10852,7 @@ index bcc7287..26bed8f 100644
  func (s *Sandbox) ReadFile(containerID, path string, offset, size int64, outFD *os.File) error {
  	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, offset: %d, size: %d", s.ID, containerID, path, offset, size)
 diff --git a/runsc/specutils/BUILD b/runsc/specutils/BUILD
-index bac4e4e..0f4d59f 100644
+index bac4e4ecf..0f4d59feb 100644
 --- a/runsc/specutils/BUILD
 +++ b/runsc/specutils/BUILD
 @@ -43,6 +43,7 @@ go_test(
@@ -10795,7 +10864,7 @@ index bac4e4e..0f4d59f 100644
      ],
      library = ":specutils",
 diff --git a/runsc/specutils/namespace.go b/runsc/specutils/namespace.go
-index a727884..9cd8228 100644
+index a727884b2..9cd8228ae 100644
 --- a/runsc/specutils/namespace.go
 +++ b/runsc/specutils/namespace.go
 @@ -121,6 +121,15 @@ func ApplyNS(ns specs.LinuxNamespace) (func() error, error) {
@@ -10816,7 +10885,7 @@ index a727884..9cd8228 100644
  	flag := nsCloneFlag(ns.Type)
 diff --git a/runsc/specutils/namespace_test.go b/runsc/specutils/namespace_test.go
 new file mode 100644
-index 0000000..1ce83aa
+index 000000000..1ce83aabf
 --- /dev/null
 +++ b/runsc/specutils/namespace_test.go
 @@ -0,0 +1,43 @@
@@ -10864,7 +10933,7 @@ index 0000000..1ce83aa
 +	}
 +}
 diff --git a/runsc/specutils/specutils.go b/runsc/specutils/specutils.go
-index 435b456..77366af 100644
+index 435b45630..77366af5d 100644
 --- a/runsc/specutils/specutils.go
 +++ b/runsc/specutils/specutils.go
 @@ -830,6 +830,16 @@ func SafeMount(src, dst, fstype string, flags uintptr, data, procPath string) er
@@ -10884,3 +10953,141 @@ index 435b456..77366af 100644
  	if mountErr != nil {
  		return fmt.Errorf("mount(%q, %q, %q, %#x, %q) failed: %w", src, safePath, fstype, flags, data, mountErr)
  	}
+diff --git a/test/syscalls/linux/BUILD b/test/syscalls/linux/BUILD
+index 17bb1970a..faebab477 100644
+--- a/test/syscalls/linux/BUILD
++++ b/test/syscalls/linux/BUILD
+@@ -2253,6 +2253,7 @@ cc_binary(
+         "//test/util:multiprocess_util",
+         "//test/util:posix_error",
+         "//test/util:proc_util",
++        "//test/util:signal_util",
+         "//test/util:temp_path",
+         "//test/util:test_util",
+         "//test/util:thread_util",
+diff --git a/test/syscalls/linux/proc.cc b/test/syscalls/linux/proc.cc
+index 8c9e12970..b57272c69 100644
+--- a/test/syscalls/linux/proc.cc
++++ b/test/syscalls/linux/proc.cc
+@@ -36,6 +36,7 @@
+ 
+ #include <algorithm>
+ #include <atomic>
++#include <ctime>
+ #include <functional>
+ #include <iostream>
+ #include <iterator>
+@@ -79,6 +80,7 @@
+ #include "test/util/multiprocess_util.h"
+ #include "test/util/posix_error.h"
+ #include "test/util/proc_util.h"
++#include "test/util/signal_util.h"
+ #include "test/util/temp_path.h"
+ #include "test/util/test_util.h"
+ #include "test/util/thread_util.h"
+@@ -1890,6 +1892,27 @@ TEST(ParseProcStatusTest, DetectsMissingTabs) {
+                                                           Pair("Pid: 1", ""))));
+ }
+ 
++// Returns the 64-bit signal mask rendered in the given /proc/[pid]/status
++// field.
++PosixErrorOr<uint64_t> ProcStatusSignalMask(
++    const absl::btree_map<std::string, std::string>& status,
++    const std::string& field) {
++  auto it = status.find(field);
++  if (it == status.end()) {
++    return PosixError(EINVAL, absl::StrCat("no \"", field, "\" line"));
++  }
++  if (it->second.size() != 16) {
++    return PosixError(EINVAL, absl::StrCat(field, " value \"", it->second,
++                                           "\" is not a 16-digit hex mask"));
++  }
++  uint64_t mask;
++  if (!absl::SimpleHexAtoi(it->second, &mask)) {
++    return PosixError(EINVAL, absl::StrCat("failed to parse ", field,
++                                           " value \"", it->second, "\""));
++  }
++  return mask;
++}
++
+ TEST(ProcPidStatusTest, HasBasicFields) {
+   // Do this on a separate thread since we want tgid != tid.
+   ScopedThread([] {
+@@ -1962,6 +1985,77 @@ TEST(ProcPidStatusTest, NoNewPrivs) {
+   });
+ }
+ 
++TEST(ProcPidStatusTest, SignalMasks) {
++  const uint64_t kHup = 1ULL << (SIGHUP - 1);
++  const uint64_t kUsr1 = 1ULL << (SIGUSR1 - 1);
++  const uint64_t kUsr2 = 1ULL << (SIGUSR2 - 1);
++  const uint64_t kTerm = 1ULL << (SIGTERM - 1);
++  const uint64_t kWinch = 1ULL << (SIGWINCH - 1);
++
++  // Signal handlers are process-wide, so restore them when done.
++  struct sigaction sa = {};
++  sa.sa_handler = +[](int signo) {};
++  const auto term_cleanup =
++      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGTERM, sa));
++  const auto hup_cleanup =
++      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGHUP, sa));
++  const auto usr1_cleanup =
++      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
++  sa.sa_handler = SIG_IGN;
++  const auto usr2_cleanup =
++      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR2, sa));
++  sa.sa_handler = SIG_DFL;
++  const auto winch_cleanup =
++      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGWINCH, sa));
++
++  // Block SIGUSR1 and SIGHUP, then queue a thread-directed SIGUSR1 and a
++  // process-directed SIGHUP, so that each shows up only in its own pending
++  // mask.
++  sigset_t blocked;
++  sigemptyset(&blocked);
++  sigaddset(&blocked, SIGUSR1);
++  sigaddset(&blocked, SIGHUP);
++  const auto mask_cleanup =
++      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_BLOCK, blocked));
++  const pid_t pid = getpid();
++  const pid_t tid = syscall(SYS_gettid);
++  ASSERT_THAT(tgkill(pid, tid, SIGUSR1), SyscallSucceeds());
++  ASSERT_THAT(kill(pid, SIGHUP), SyscallSucceeds());
++
++  const std::string status_str = ASSERT_NO_ERRNO_AND_VALUE(
++      GetContents(absl::StrCat("/proc/", tid, "/status")));
++  const auto status = ASSERT_NO_ERRNO_AND_VALUE(ParseProcStatus(status_str));
++  const uint64_t sig_pnd =
++      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigPnd"));
++  const uint64_t shd_pnd =
++      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "ShdPnd"));
++  const uint64_t sig_blk =
++      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigBlk"));
++  const uint64_t sig_ign =
++      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigIgn"));
++  const uint64_t sig_cgt =
++      ASSERT_NO_ERRNO_AND_VALUE(ProcStatusSignalMask(status, "SigCgt"));
++
++  EXPECT_EQ(sig_pnd & (kUsr1 | kHup), kUsr1);
++  EXPECT_EQ(shd_pnd & (kUsr1 | kHup), kHup);
++  EXPECT_EQ(sig_blk & (kUsr1 | kHup), kUsr1 | kHup);
++  EXPECT_EQ(sig_ign & (kUsr1 | kUsr2 | kHup | kTerm | kWinch), kUsr2);
++  EXPECT_EQ(sig_cgt & (kUsr1 | kUsr2 | kHup | kTerm | kWinch),
++            kUsr1 | kHup | kTerm);
++
++  // Consume both queued signals before the mask is restored.
++  sigset_t set;
++  sigemptyset(&set);
++  sigaddset(&set, SIGUSR1);
++  const struct timespec zero = {0, 0};
++  EXPECT_THAT(sigtimedwait(&set, nullptr, &zero),
++              SyscallSucceedsWithValue(SIGUSR1));
++  sigemptyset(&set);
++  sigaddset(&set, SIGHUP);
++  EXPECT_THAT(sigtimedwait(&set, nullptr, &zero),
++              SyscallSucceedsWithValue(SIGHUP));
++}
++
+ TEST(ProcPidStatusTest, StateRunning) {
+   // Task must be running when reading the file.
+   const pid_t tid = syscall(SYS_gettid);

@@ -36,6 +36,11 @@ project starts with its own installation. Setup does not search your home or
 parent directories for runtimes. To share an installation explicitly, set
 `SANDWEAVE_HOME` to its storage directory.
 
+Worker-local runtime files honor `SANDWEAVE_LOCAL_DIR`, then `TMPDIR`. Set
+`SANDWEAVE_LOCAL_DIR=/scratch/sandweave` on the worker to use a disk directory
+when its default temporary filesystem is RAM-backed. Checkpoint staging is
+removed after its published copy passes background verification.
+
 To choose storage and prepare a template ahead of time:
 
 ```bash

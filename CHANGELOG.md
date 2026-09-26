@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.34
+
+- Bound gVisor receive queues and deliver packets in batches, fixing reproduced
+  unbounded sentry memory growth during Docker bridge downloads. New launches
+  use runtime 2026.09.26.4; existing memory snapshots retain their pinned engine.
+- Add opt-in `Sandbox(profiling=True)` and `env.profile("heap.pprof")`, including
+  async calls and remote handles. CLI equivalents are `create --profiling` and
+  `profile ID --output heap.pprof`. Capture uses the runtime control socket, so
+  it does not depend on the guest agent responding.
+- Add receive-overflow, reference-release and concurrent-shutdown engine tests,
+  plus live bulk-download, profiling and memory-restore coverage.
+
 ## 0.2.33
 
 - Include upstream gVisor signal masks in `/proc/[pid]/status`, fixing JDK 25

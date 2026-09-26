@@ -70,7 +70,8 @@ def runtime_current(root):
     return (runtime_supported(root) and descriptor.get('cpu_accounting', 0) >= 1
             and descriptor.get('bridge_local_delivery', 0) >= 1
             and descriptor.get('disk_storage', 0) >= 1
-            and descriptor.get('proc_signal_masks', 0) >= 1)
+            and descriptor.get('proc_signal_masks', 0) >= 1
+            and descriptor.get('bounded_network_rx', 0) >= 1)
 
 
 SECCOMP_PROBE = '''import ctypes, os

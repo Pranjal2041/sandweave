@@ -266,7 +266,7 @@ class ClusterConnection:
         # Lifecycle operations retain their durable synchronous implementation.
         # Commands and file traffic stay on the caller's event loop end to end.
         fast = {'command_start', 'process_status', 'process_wait', 'process_output', 'process_stdin',
-                'process_terminate', 'process_resize', 'file', 'describe', 'service_rpc'}
+                'process_terminate', 'process_resize', 'file', 'describe', 'service_rpc', 'runtime_profile'}
         if operation not in fast:
             import asyncio
             return await asyncio.to_thread(self.call, operation, **params)

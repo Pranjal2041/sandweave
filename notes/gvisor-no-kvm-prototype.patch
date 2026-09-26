@@ -5904,6 +5904,252 @@ index 7257c31d7..349c7cdf5 100644
  			return lock.LockRange{}, err
  		}
  		off = curOff
+diff --git a/pkg/tcpip/link/fdbased/BUILD b/pkg/tcpip/link/fdbased/BUILD
+index 6a4b6730b..aa9666139 100644
+--- a/pkg/tcpip/link/fdbased/BUILD
++++ b/pkg/tcpip/link/fdbased/BUILD
+@@ -64,7 +64,10 @@ go_library(
+ go_test(
+     name = "fdbased_test",
+     size = "small",
+-    srcs = ["endpoint_test.go"],
++    srcs = [
++        "endpoint_test.go",
++        "processors_test.go",
++    ],
+     library = ":fdbased",
+     deps = [
+         "//pkg/buffer",
+diff --git a/pkg/tcpip/link/fdbased/processors.go b/pkg/tcpip/link/fdbased/processors.go
+index 05e997b84..6946034c1 100644
+--- a/pkg/tcpip/link/fdbased/processors.go
++++ b/pkg/tcpip/link/fdbased/processors.go
+@@ -31,11 +31,18 @@ import (
+ 	"gvisor.dev/gvisor/pkg/tcpip/stack/gro"
+ )
+ 
++// A receiver must not retain unbounded traffic while its protocol worker is
++// busy. Like a NIC receive ring, each flow-hashed queue drops excess packets;
++// TCP recovers through its normal retransmission and congestion control.
++const maxProcessorQueuedBytes = 4 << 20
++
+ // +stateify savable
+ type processor struct {
+ 	mu processorMutex `state:"nosave"`
+ 	// +checklocks:mu
+ 	pkts stack.PacketBufferList
++	// +checklocks:mu
++	queuedBytes int
+ 
+ 	e           *endpoint
+ 	gro         gro.GRO
+@@ -53,6 +60,7 @@ func (p *processor) start(wg *sync.WaitGroup) {
+ 		case w == &p.closeWaker:
+ 			p.mu.Lock()
+ 			p.pkts.Reset()
++			p.queuedBytes = 0
+ 			p.mu.Unlock()
+ 			return
+ 		}
+@@ -66,20 +74,27 @@ func (p *processor) deliverPackets() {
+ 	if p.gro.Dispatcher == nil {
+ 		p.mu.Lock()
+ 		p.pkts.Reset()
++		p.queuedBytes = 0
+ 		p.mu.Unlock()
+ 		return
+ 	}
+ 
+ 	p.mu.Lock()
+-	for p.pkts.Len() > 0 {
+-		pkt := p.pkts.PopFront()
+-		p.mu.Unlock()
++	batch := p.pkts
++	p.pkts = stack.PacketBufferList{}
++	p.queuedBytes = 0
++	p.mu.Unlock()
++	for _, pkt := range batch.AsSlice() {
+ 		p.gro.Enqueue(pkt)
+-		pkt.DecRef()
+-		p.mu.Lock()
+ 	}
+-	p.mu.Unlock()
+ 	p.gro.Flush()
++	batch.Reset()
++	// Reuse the batch's backing array when no new arrivals raced with delivery.
++	p.mu.Lock()
++	if p.pkts.Len() == 0 {
++		p.pkts = batch
++	}
++	p.mu.Unlock()
+ }
+ 
+ // processorManager handles starting, closing, and queuing packets on processor
+@@ -167,6 +182,11 @@ func (m *processorManager) queuePacket(pkt *stack.PacketBuffer, hasEthHeader boo
+ 	p := &m.processors[pIdx]
+ 	p.mu.Lock()
+ 	defer p.mu.Unlock()
++	if size := pkt.MemSize(); size > maxProcessorQueuedBytes-p.queuedBytes {
++		return
++	} else {
++		p.queuedBytes += size
++	}
+ 	p.pkts.PushBack(pkt.IncRef())
+ 	m.ready[pIdx] = true
+ }
+diff --git a/pkg/tcpip/link/fdbased/processors_test.go b/pkg/tcpip/link/fdbased/processors_test.go
+new file mode 100644
+index 000000000..a8a882b16
+--- /dev/null
++++ b/pkg/tcpip/link/fdbased/processors_test.go
+@@ -0,0 +1,147 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++//go:build linux
++
++package fdbased
++
++import (
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"gvisor.dev/gvisor/pkg/buffer"
++	"gvisor.dev/gvisor/pkg/tcpip"
++	"gvisor.dev/gvisor/pkg/tcpip/stack"
++)
++
++type countingDispatcher struct {
++	count int
++	hook  func()
++}
++
++func (d *countingDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, _ *stack.PacketBuffer) {
++	d.count++
++	if d.hook != nil {
++		hook := d.hook
++		d.hook = nil
++		hook()
++	}
++}
++
++func (*countingDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {}
++
++func TestReceiveQueueBoundedAndRecoverable(t *testing.T) {
++	d := &countingDispatcher{}
++	m := newProcessorManager(&Options{ProcessorsPerChannel: 1}, &endpoint{dispatcher: d})
++	released := 0
++	queue := func(size int) {
++		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
++			Payload:   buffer.MakeWithData(make([]byte, size)),
++			OnRelease: func() { released++ },
++		})
++		m.queuePacket(pkt, true)
++		pkt.DecRef()
++	}
++	const attempts = 20000
++	for i := 0; i < attempts; i++ {
++		queue(1500)
++	}
++	p := &m.processors[0]
++	p.mu.Lock()
++	queued, bytes := p.pkts.Len(), p.queuedBytes
++	p.mu.Unlock()
++	if queued == 0 || queued >= attempts || bytes > maxProcessorQueuedBytes {
++		t.Fatalf("stalled queue retained %d packets / %d bytes", queued, bytes)
++	}
++	if released != attempts-queued {
++		t.Fatalf("overflow retained packet references: released=%d queued=%d", released, queued)
++	}
++	m.wakeReady()
++	if d.count != queued || released != attempts {
++		t.Fatalf("drain delivered=%d released=%d; want %d/%d", d.count, released, queued, attempts)
++	}
++	queue(1500)
++	m.wakeReady()
++	if d.count != queued+1 || released != attempts+1 {
++		t.Fatal("queue did not recover after draining")
++	}
++	// A single oversized packet must not bypass the byte bound.
++	queue(maxProcessorQueuedBytes + 1)
++	if released != attempts+2 {
++		t.Fatal("oversized packet retained")
++	}
++}
++
++func TestReceiveBatchKeepsArrivalsDuringDelivery(t *testing.T) {
++	d := &countingDispatcher{}
++	m := newProcessorManager(&Options{ProcessorsPerChannel: 1}, &endpoint{dispatcher: d})
++	queue := func() {
++		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData([]byte{0})})
++		m.queuePacket(pkt, true)
++		pkt.DecRef()
++	}
++	queue()
++	d.hook = queue
++	m.processors[0].deliverPackets()
++	m.processors[0].deliverPackets()
++	if d.count != 2 {
++		t.Fatalf("delivered %d packets, want 2", d.count)
++	}
++}
++
++func TestReceiveQueueConcurrentShutdownReleasesBacklog(t *testing.T) {
++	entered, resume := make(chan struct{}), make(chan struct{})
++	d := &countingDispatcher{hook: func() { close(entered); <-resume }}
++	m := newProcessorManager(&Options{ProcessorsPerChannel: 2}, &endpoint{dispatcher: d})
++	m.start()
++	var released atomic.Int32
++	queue := func() {
++		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
++			Payload:   buffer.MakeWithData(make([]byte, 1500)),
++			OnRelease: func() { released.Add(1) },
++		})
++		m.queuePacket(pkt, true)
++		pkt.DecRef()
++		m.wakeReady()
++	}
++	queue()
++	select {
++	case <-entered:
++	case <-time.After(5 * time.Second):
++		close(resume)
++		m.close()
++		m.wg.Wait()
++		t.Fatal("processor did not start")
++	}
++	// One delivery is blocked on a different goroutine; producers can still
++	// enqueue and overflow without waiting for protocol processing.
++	const attempts = 20000
++	for i := 0; i < attempts; i++ {
++		queue()
++	}
++	p := &m.processors[0]
++	p.mu.Lock()
++	queued, bytes := p.pkts.Len(), p.queuedBytes
++	p.mu.Unlock()
++	if queued == 0 || bytes > maxProcessorQueuedBytes || released.Load() == 0 {
++		t.Errorf("unbounded stalled producer: queued=%d bytes=%d released=%d", queued, bytes, released.Load())
++	}
++	m.close()
++	close(resume)
++	m.wg.Wait()
++	if got := released.Load(); got != attempts+1 {
++		t.Fatalf("shutdown released %d packets, want %d", got, attempts+1)
++	}
++}
 diff --git a/pkg/tcpip/link/nested/nested.go b/pkg/tcpip/link/nested/nested.go
 index fdb50224b..c29796598 100644
 --- a/pkg/tcpip/link/nested/nested.go

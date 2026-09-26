@@ -1,0 +1,33 @@
+{
+  "host": "babel-u9-24",
+  "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+  "gpu": false,
+  "kvm": false,
+  "guest_memory": "2GiB",
+  "runtime_memory": "2GiB",
+  "cpu_vcpus": 4,
+  "workload": "docker pull python:3.12; Docker bridge container downloads Elasticsearch 9.2.0 Linux x86_64 tar.gz to /dev/null twelve times",
+  "engine_commit": "43c6d4f00",
+  "runtime_release": "2026.09.26.4",
+  "observations": {
+    "docker-download": {
+      "samples": 105,
+      "last_sample_seconds": 105.04029549984261,
+      "peak_sentry_rss_bytes": 2591223808,
+      "last_sentry_rss_bytes": 2591223808,
+      "failure": "Runtime memory guard exceeded after reclaim: used=2309418152 limit=2147483648",
+      "heap_live_mib_at_82_seconds": 1040.31
+    },
+    "docker-bounded": {
+      "samples": 179,
+      "last_sample_seconds": 179.06249726330861,
+      "peak_sentry_rss_bytes": 654532608,
+      "last_sentry_rss_bytes": 545013760,
+      "result": {
+        "returncode": 0,
+        "seconds": 179.77927358727902
+      },
+      "heap_live_mib_after": 86.07
+    }
+  }
+}

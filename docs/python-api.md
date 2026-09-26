@@ -42,6 +42,7 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `name` | User-supplied sandbox name. | None |
 | `ttl` | Seconds of lifetime after readiness. | No TTL |
 | `detached` | Survive the creating Python process exiting. | `False` |
+| `profiling` | Enable runtime heap capture for diagnosis; gVisor only. | Template/snapshot value, normally `False` |
 | `recording` | Record an Xvnc desktop; accepts `True` or `Recording(fps=15, cursor=True)`. | `False` |
 | `startup_timeout` | Sandbox creation deadline in seconds. | `300` |
 | `keep_on_error` | Retain a failed sandbox for diagnosis, subject to its lifetime. | `False` |
@@ -87,6 +88,7 @@ with streams, `wait`, `poll`, `result`, `terminate`, and terminal `resize`.
 | `env.timings` | Recorded startup durations. |
 | `env.spec` | Creation specification. |
 | `env.status()` | Detailed current record. |
+| `env.profile(path)` | Save a Go heap profile on the client; requires `profiling=True` at creation. |
 | `env.cache(key, state="filesystem")` | Save a named cache and return a `SnapshotRef`. |
 | `env.snapshot(state="memory")` | Save a snapshot and return a `SnapshotRef`. |
 | `env.pause()` / `resume()` | Suspend or continue the resident environment. |

@@ -61,6 +61,7 @@ def creation_options(parser):
     parser.add_argument('--startup-timeout', type=float)
     parser.add_argument('--keep-on-error', action='store_true')
     parser.add_argument('--record', action='store_true', help='Record the desktop on the worker until termination')
+    parser.add_argument('--profiling', action='store_true', default=None, help='Enable runtime heap profiling for this diagnostic sandbox')
     parser.add_argument('--experimental-gpu-live', action='store_true')
 
 
@@ -79,7 +80,7 @@ def command_options(parser):
 def creation(args):
     keys = ('template', 'image', 'setup', 'cache', 'snapshot', 'cache_key', 'refresh', 'runtime',
             'target', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
-            'keep_on_error', 'experimental_gpu_live')
+            'keep_on_error', 'experimental_gpu_live', 'profiling')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
     if getattr(args, 'storage', None) is not None or getattr(args, 'storage_path', None) is not None:
         from . import Storage
@@ -198,6 +199,8 @@ def parser():
     shell = sub.add_parser('shell'); shell.add_argument('id'); shell.add_argument('--target')
     command_options(shell); shell.set_defaults(command=['/bin/bash -i'], pty=True)
     listing = sub.add_parser('list'); listing.add_argument('--target'); listing.add_argument('--all', action='store_true')
+    profile = sub.add_parser('profile', help='Save a runtime heap profile on this client')
+    profile.add_argument('id'); profile.add_argument('--target'); profile.add_argument('--output', required=True)
     recording = sub.add_parser('recording', help='Inspect, download or delete retained desktop recordings').add_subparsers(
         dest='recording_operation', required=True)
     for action in ('status', 'stop', 'download', 'delete'):
@@ -426,6 +429,8 @@ def main(argv=None):
                 return execute(env, args)
             if op == 'info':
                 output(env.info)
+            elif op == 'profile':
+                output(str(env.profile(args.output)))
             elif op in ('status', 'inspect', 'pause', 'resume', 'terminate'):
                 output(getattr(env, 'status' if op == 'inspect' else op)())
             elif op in ('stop', 'snapshot'):

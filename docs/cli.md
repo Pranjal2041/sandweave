@@ -73,6 +73,17 @@ sandweave desktop screenshot workbench --output screen.png
 CLI `create` uses `detached=True`. It leaves the sandbox running until its TTL
 expires or you stop or terminate it.
 
+## Runtime heap profiles
+
+Create a diagnostic sandbox with `--profiling`, then save its heap on this client:
+
+```bash
+sandweave create --template docker --profiling
+sandweave profile SANDBOX_ID --output heap.pprof
+```
+
+Use `--target` as usual for remote sandboxes. See [runtime memory diagnosis](troubleshooting.md#runtime-memory-grows-during-downloads).
+
 ## Pause, save, or terminate
 
 ```bash

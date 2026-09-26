@@ -112,6 +112,13 @@ def check_browser(site, output, url=None):
                 page.goto(url + 'commands/#stream-a-process')
                 expect(page.locator('article')).to_contain_text('Long commands do not continuously poll their status')
                 page.screenshot(path=str(output / 'process-wait-desktop.png'), animations='disabled')
+                page.goto(url + 'troubleshooting/#runtime-memory-grows-during-downloads')
+                expect(page.locator('article')).to_contain_text('Sandweave 0.2.34 bounds')
+                section = page.locator('#runtime-memory-grows-during-downloads')
+                section.locator('xpath=following-sibling::div[1]').get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'profiling=True' in copied and 'env.profile("during.pprof")' in copied
+                page.screenshot(path=str(output / 'runtime-profiling-desktop.png'), animations='disabled')
                 page.goto(url + 'resources/#cpu-sharing')
                 expect(page.locator('article')).to_contain_text('Broker pauses expire after 500 ms')
                 page.get_by_text('If CPU control fails, the sandbox stays alive', exact=False).scroll_into_view_if_needed()

@@ -30,7 +30,7 @@ def runtime_files(tmp_path):
     selected = root / 'tools/gvisor-socket/runtime.json'
     selected.parent.mkdir()
     selected.write_text(json.dumps({'path': 'tools/runtime-builds/example', 'sha256': hashes,
-                                    'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1}))
+                                    'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1}))
     from sandweave.network_runtime import revision
     network = root / 'tools/network'
     network.mkdir()
@@ -619,7 +619,7 @@ def test_new_destination_does_not_import_previous_runtime_or_targets(tmp_path, m
     assert json.loads((project / '.sandweave/location.json').read_text()) == {'path': str(new)}
 
 
-@pytest.mark.parametrize('upgrade', ['kernel54', 'cpu_accounting', 'bridge_local_delivery', 'disk_storage', 'proc_signal_masks'])
+@pytest.mark.parametrize('upgrade', ['kernel54', 'cpu_accounting', 'bridge_local_delivery', 'disk_storage', 'proc_signal_masks', 'bounded_network_rx'])
 def test_upgrades_prepared_engine_without_rebuilding_guest(first_use, monkeypatch, tmp_path, upgrade):
     import shutil
     from sandweave import bootstrap, releases
@@ -639,7 +639,7 @@ def test_upgrades_prepared_engine_without_rebuilding_guest(first_use, monkeypatc
     for name in descriptor['sha256']:
         (engine / descriptor['path'] / name).chmod(0o755)
     record_installation(engine)
-    if upgrade in ('cpu_accounting', 'bridge_local_delivery', 'disk_storage', 'proc_signal_masks'):
+    if upgrade in ('cpu_accounting', 'bridge_local_delivery', 'disk_storage', 'proc_signal_masks', 'bounded_network_rx'):
         old_pointer = source / 'tools/gvisor-socket/runtime.json'
         old = json.loads(old_pointer.read_text())
         old.pop(upgrade)

@@ -387,6 +387,17 @@ class Worker:
     def process_status(self, identity, process_id):
         return {**self.agent(identity).call('status', identity=process_id), 'wait_supported': True}
 
+    def runtime_profile(self, identity):
+        # Heap capture can run while guest commands continue. Do not depend on
+        # the guest agent or occupy the sandbox lifecycle lock during the RPC.
+        with self.lock(identity):
+            record = self.read(identity)
+            if (record['spec']['runtime'] != 'gvisor' or not
+                    record['spec']['template'].get('runtime_options', {}).get('profile')):
+                raise UnsupportedFeature('create the sandbox with profiling=True to collect a runtime heap profile')
+            runtime = self.runtime.adapter('gvisor')
+        return runtime.profile(identity)
+
     def process_wait(self, identity, process_id, timeout=10, stream=None, offset=0):
         import math
         if (not isinstance(timeout, (int, float)) or not math.isfinite(timeout)
@@ -777,7 +788,7 @@ class Worker:
                    'process_stdin', 'process_terminate', 'file', 'setup', 'pause', 'resume', 'terminate',
                    'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
         allowed.add('pool')
-        allowed.add('process_resize')
+        allowed.update(('process_resize', 'runtime_profile'))
         allowed.update(('owner_register', 'owner_heartbeat'))
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
@@ -789,7 +800,7 @@ class Worker:
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
-        if identity and operation not in ('describe', 'process_wait'):
+        if identity and operation not in ('describe', 'process_wait', 'runtime_profile'):
             with self.lock(identity):
                 return getattr(self, operation)(**parameters)
         return getattr(self, operation)(**parameters)

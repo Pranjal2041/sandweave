@@ -220,7 +220,7 @@ class Services:
 
     def dispatch(self, identity, service, method, parameters):
         allowed = {'describe', 'command_start', 'process_status', 'process_wait', 'process_output', 'process_stdin',
-                   'process_terminate', 'process_resize', 'file', 'terminate', 'network_policy', 'service_setup'}
+                   'process_terminate', 'process_resize', 'file', 'terminate', 'network_policy', 'service_setup', 'runtime_profile'}
         if method not in allowed:
             raise UnsupportedFeature('unsupported service operation: ' + method)
         record = self.worker.read(identity)

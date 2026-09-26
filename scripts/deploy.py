@@ -179,6 +179,9 @@ def validate(directory, release, tests=None):
         run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
             live / 'test_snapshots.py', live / 'test_checkpoint_storage.py',
             live / 'test_docker_storage_live.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_network_memory_live.py', live / 'test_network_memory_live.py')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_network_memory_live.py', cwd=live, env=env)
         shutil.copyfile(source / 'tests/integration/test_bridge_network_live.py', live / 'test_bridge_network_live.py')
         shutil.copyfile(source / 'scripts/probe-bridge-network.py', live / 'probe-bridge-network.py')
         run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),

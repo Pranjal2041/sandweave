@@ -20,7 +20,7 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
                cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
                keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False,
-               service_network=None, aliases=None, networks=None):
+               service_network=None, aliases=None, networks=None, profiling=None):
     """Resolve a complete portable definition without starting an environment."""
     if sum(x is not None for x in (cache, snapshot)) > 1:
         raise ValueError('cache and snapshot are alternative sources')
@@ -58,6 +58,12 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
     else:
         recipe = Template(template if template is not None else ({} if image else 'coding')).resolve()
         defaults = recipe['resources']
+    if profiling is not None:
+        if type(profiling) is not bool:
+            raise ValueError('profiling must be a bool')
+        recipe['runtime_options']['profile'] = profiling
+    if recipe.get('runtime_options', {}).get('profile') and runtime != 'gvisor':
+        raise UnsupportedFeature('runtime profiling requires runtime="gvisor"')
     selected_image = image if image is not None else recipe.get('image')
     if refresh and cache_key is None and selected_image is None:
         raise ValueError('refresh requires cache_key or image')
@@ -118,7 +124,7 @@ class Sandbox:
                  cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False, recording=False,
-                 service_network=None, aliases=None, networks=None):
+                 service_network=None, aliases=None, networks=None, profiling=None):
         options = dict(locals()); options.pop('self')
         self._connection = None
         try:
@@ -132,7 +138,7 @@ class Sandbox:
                     cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False, recording=False,
-                    service_network=None, aliases=None, networks=None):
+                    service_network=None, aliases=None, networks=None, profiling=None):
         options = dict(locals()); options.pop('self')
         request = definition(**options)
         self._launch(request, target)
@@ -296,6 +302,23 @@ class Sandbox:
     def status(self):
         self._info = self._call('describe')
         return self._info
+
+    @dualmethod
+    def profile(self, path):
+        """Save the runtime's Go heap profile on this client (profiling=True)."""
+        from pathlib import Path
+        data = self._call('runtime_profile')
+        destination = Path(path)
+        destination.write_bytes(data)
+        return destination
+
+    @profile.async_impl
+    async def _profile_async(self, path):
+        from pathlib import Path
+        data = await self._acall('runtime_profile')
+        destination = Path(path)
+        await asyncio.to_thread(destination.write_bytes, data)
+        return destination
 
     @dualmethod
     def exec(self, command=None, *, argv=None, cwd=None, env=None, user=None,

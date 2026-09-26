@@ -84,6 +84,45 @@ again for a fresh link. The startup dashboard link printed by
 `sandweave cluster instructions lab` is reusable while the controller address
 and credential stay unchanged.
 
+## Runtime memory grows during downloads
+
+Sandweave 0.2.34 bounds the engine's receive queues and processes packets in
+batches. This fixes reproduced unbounded packet accumulation during Docker
+bridge downloads. Upgrade the execution workers and create new sandboxes to
+use the corrected engine. Already-running sandboxes and memory snapshots keep
+their original engine; a filesystem snapshot restored with the upgraded worker
+uses the new engine.
+
+Enable heap capture when creating a diagnostic sandbox:
+
+```python
+from sandweave import Sandbox
+
+env = Sandbox(template="docker", profiling=True)
+env.profile("before.pprof")
+# Run the workload that triggers the growth, then capture again.
+env.profile("during.pprof")
+env.terminate()
+env.close()
+```
+
+The destination is on the client, including for SSH and Weave targets.
+Async callers use `await env.profile.aio("during.pprof")`. Capture talks to
+the runtime directly and does not need a responsive guest agent. It captures
+the sentry's Go heap, not guest application memory. Profiling is off by default;
+enabling it also enables gVisor's profiling control interface and its required
+syscalls for that sandbox.
+
+For a diagnostic sandbox created with CLI `--profiling`:
+
+```bash
+sandweave profile SANDBOX_ID --output heap.pprof
+```
+
+Use the usual `--target` option for a remote sandbox. Inspect the file with
+`go tool pprof -top heap.pprof`. Capture while the problem is occurring, before
+the sandbox exits; increasing its memory limit does not fix an unbounded queue.
+
 ## Report a reproducible issue
 
 Open a [GitHub issue](https://github.com/Pranjal2041/sandweave/issues) with your

@@ -118,6 +118,11 @@ class Runtime:
         if cpu['quota'] is not None:
             options += ['--cpu-policy', 'quota', '--cpu-quota', str(cpu['quota'])]
         runtime = spec['template'].get('runtime_options', {})
+        profile = runtime.get('profile', False)
+        if not isinstance(profile, bool):
+            raise ValueError('profile must be a boolean')
+        if profile:
+            options.append('--profile')
         docker_data = runtime.get('docker_data', bool(runtime.get('docker_archive')))
         if not isinstance(docker_data, bool):
             raise ValueError('docker_data must be a boolean')
@@ -150,6 +155,23 @@ class Runtime:
                     options += ['--experimental-gpu-client-memory-mib',
                                 str(memory_bytes(resources['gpu']['client_memory'])//1024**2)]
         return options
+
+    def profile(self, identity):
+        import tempfile
+        # runsc prints informational messages on stdout, so keep its binary
+        # profile in a separate, uniquely owned file in the worker workspace.
+        with tempfile.TemporaryDirectory(prefix='.profile-', dir=self.root / 'runs') as directory:
+            path = Path(directory) / 'heap.pprof'
+            output = '/lab/' + str(path.relative_to(self.root))
+            result = subprocess.run([*self.manager._command(identity, bind_resources=False),
+                                     'profile', 'heap', '--output=' + output, identity],
+                                    capture_output=True, timeout=30)
+            if result.returncode:
+                raise RuntimeError(result.stderr.decode(errors='replace')[-4000:])
+            data = path.read_bytes()
+            if not data.startswith(b'\x1f\x8b'):
+                raise RuntimeError('runtime returned an invalid heap profile')
+            return data
 
     def create(self, identity, spec, *, snapshot=None, token=None):
         token = token or secrets.token_hex(32)

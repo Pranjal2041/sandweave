@@ -112,6 +112,11 @@ class EnvironmentManager:
                 result[key] = json.loads((self._logs(name) / filename).read_text())
             except FileNotFoundError:
                 pass
+        try:
+            reason = (self._logs(name) / 'cpu-controller-degraded.txt').read_text().strip()
+            result['cpu_control'] = {'state': 'degraded', 'reason': reason}
+        except FileNotFoundError:
+            pass
         return result
 
     def list(self, *, active_only=False):

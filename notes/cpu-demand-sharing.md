@@ -1,5 +1,11 @@
 # CPU demand sharing
 
+The 0.2.29 implementation preserves the allocation policy below but replaces
+the original process scans with aggregate runtime accounting. Controller failure
+now releases CPU policy without terminating sandboxes. The original observations
+and acceptance below describe the September 11 implementation; see
+[CPU broker scaling](cpu-broker-scaling.md) for current accounting and validation.
+
 The old broker divided available CPU time among active sandboxes by weight,
 redistributing only around explicit quotas. An active sandbox could leave most
 of its share unused while another sandbox was throttled. The existing tests

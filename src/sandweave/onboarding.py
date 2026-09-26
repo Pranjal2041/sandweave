@@ -518,7 +518,7 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
                 if selected:
                     raise ValueError('The runtime source is incomplete: ' + str(source) + '\n' + str(error)) from error
             continue
-        if not releases.runtime_supported(source):
+        if not releases.runtime_current(source):
             host = releases.check_host(directory)
             engine = releases.install(directory, host)
             if engine is None:
@@ -552,7 +552,7 @@ def install_runtime(template, directory, *, assets=None, sources=(), game_archiv
         workspace._immutable(archive, cached, sha256=GUNSPINNING_SHA256)
     engine = None
     if core is not None:
-        upgrade = releases.install(directory, host) if not releases.runtime_supported(core) else None
+        upgrade = releases.install(directory, host) if not releases.runtime_current(core) else None
         core = import_runtime(core, directory, Template('coding').resolve(), engine=upgrade)
     elif not build:
         engine = releases.install(directory, host)

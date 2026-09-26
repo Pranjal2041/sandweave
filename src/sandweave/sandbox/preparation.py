@@ -59,7 +59,7 @@ def available(recipe, directory):
     """Check required files without hashing images or starting host probes."""
     from ..onboarding import configuration, python_packages, validate_assets
     from ..installation import needs_helpers
-    from ..releases import runtime_supported
+    from ..releases import runtime_current
     directory = Path(directory)
     # First use must publish an installation in this project's storage.
     if not configuration(directory).get('assets'):
@@ -67,7 +67,7 @@ def available(recipe, directory):
     try:
         root, _ = source(directory)
         validate_assets(root, recipe, contents=False)
-        if not runtime_supported(root):
+        if not runtime_current(root):
             return None
         if needs_helpers(root, recipe):
             return None

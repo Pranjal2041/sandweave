@@ -32,7 +32,8 @@ def published_runtime(tmp_path, monkeypatch):
     (build / 'manifest.json').write_text(json.dumps(hashes))
     pointer = root / 'tools/gvisor-socket/runtime.json'
     pointer.parent.mkdir()
-    pointer.write_text(json.dumps({'path': 'tools/runtime-builds/test-build', 'sha256': hashes}))
+    pointer.write_text(json.dumps({'path': 'tools/runtime-builds/test-build', 'sha256': hashes,
+                                   'cpu_accounting': 1}))
     record_installation(root)
     archive = web / 'runtime.tar.gz'
     with tarfile.open(archive, 'w:gz') as stream:

@@ -29,7 +29,8 @@ def runtime_files(tmp_path):
     (build / 'manifest.json').write_text(json.dumps(hashes))
     selected = root / 'tools/gvisor-socket/runtime.json'
     selected.parent.mkdir()
-    selected.write_text(json.dumps({'path': 'tools/runtime-builds/example', 'sha256': hashes}))
+    selected.write_text(json.dumps({'path': 'tools/runtime-builds/example', 'sha256': hashes,
+                                    'cpu_accounting': 1}))
     from sandweave.network_runtime import revision
     network = root / 'tools/network'
     network.mkdir()
@@ -618,16 +619,16 @@ def test_new_destination_does_not_import_previous_runtime_or_targets(tmp_path, m
     assert json.loads((project / '.sandweave/location.json').read_text()) == {'path': str(new)}
 
 
-def test_linux54_upgrades_prepared_engine_without_rebuilding_guest(first_use, monkeypatch, tmp_path):
+@pytest.mark.parametrize('upgrade', ['kernel54', 'cpu_accounting'])
+def test_upgrades_prepared_engine_without_rebuilding_guest(first_use, monkeypatch, tmp_path, upgrade):
     import shutil
     from sandweave import bootstrap, releases
     from sandweave.installation import record_installation
     preparation, storage, source = first_use
-    monkeypatch.setattr(releases.platform, 'release', lambda: '5.4.0-216-generic')
+    monkeypatch.setattr(releases.platform, 'release', lambda: '5.4.0-216-generic' if upgrade == 'kernel54' else '5.14.0')
     monkeypatch.setattr(releases.platform, 'system', lambda: 'Linux')
     monkeypatch.setattr(releases.platform, 'machine', lambda: 'x86_64')
     recipe = Template('coding').resolve()
-    assert preparation.available(recipe, storage) is None
     engine = tmp_path / 'compatible-engine'
     shutil.copytree(source, engine)
     pointer = engine / 'tools/gvisor-socket/runtime.json'
@@ -638,6 +639,13 @@ def test_linux54_upgrades_prepared_engine_without_rebuilding_guest(first_use, mo
     for name in descriptor['sha256']:
         (engine / descriptor['path'] / name).chmod(0o755)
     record_installation(engine)
+    if upgrade == 'cpu_accounting':
+        old_pointer = source / 'tools/gvisor-socket/runtime.json'
+        old = json.loads(old_pointer.read_text())
+        old.pop('cpu_accounting')
+        old_pointer.write_text(json.dumps(old))
+        record_installation(source)
+    assert preparation.available(recipe, storage) is None
     monkeypatch.setattr(releases, 'check_host', lambda *a: {'kernel': (5, 4, 0)})
     monkeypatch.setattr(releases, 'install', lambda *a: engine)
     monkeypatch.setattr(bootstrap.Builder, 'build', lambda *a, **k: pytest.fail('rebuilt guest image'))

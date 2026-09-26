@@ -4,6 +4,12 @@ Sandweave 0.1.1 selects a pinned engine from GitHub Releases before building
 one locally. The Python API and `sandweave setup` share this installation path.
 Existing configured installations keep their recorded runtime files.
 
+SDK 0.2.29 upgrades engines lacking aggregate CPU accounting to runtime
+2026.09.25.1, preserving the prepared guest images. It adds host CPU accounting
+inside systrap and renewable broker pauses; it does not require delegated host
+cgroups or a newer kernel. Existing memory snapshots retain their pinned engine
+and use the broker's compatibility path. See [CPU broker scaling](cpu-broker-scaling.md).
+
 ## Selection and fallback
 
 Doctor, setup and local sandbox preparation check Linux x86-64 and kernel 5.4

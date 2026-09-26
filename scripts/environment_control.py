@@ -50,6 +50,10 @@ def release_cpu(local, name):
                 pass
             deadline = time.monotonic() + 5
             while True:
+                if not registration.exists():
+                    # The launcher revoked a failed controller and released
+                    # its pause. CPU policy loss does not block lifecycle work.
+                    break
                 try:
                     status = json.loads((registration.parent / 'status.json').read_text())
                     job = status['jobs'].get(registration.name)

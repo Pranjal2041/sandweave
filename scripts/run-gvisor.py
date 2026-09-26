@@ -419,17 +419,34 @@ try:
             while not watch_done.wait(1):
                 status = registration.parent / 'status.json'
                 try:
-                    stale = time.time() - json.loads(status.read_text())['time'] > 3
+                    report = json.loads(status.read_text())
+                    stale = time.time() - report['time'] > 3
+                    failure = report.get('jobs', {}).get(registration.name, {}).get('degraded')
                 except (OSError, ValueError):
                     stale = True
+                    failure = None
                 control_failed = registration.with_name(registration.name + '.failed')
-                if stale or control_failed.exists():
-                    # Leave no stopped processes behind if the controller dies.
-                    # A failed controller invalidates the resource experiment.
-                    reason = control_failed.read_text() if control_failed.exists() else 'CPU controller heartbeat expired\n'
-                    (logs / 'cpu-controller-failed.txt').write_text(reason)
-                    cpu_broker.resume_tree(os.getpid(), local / 'gvisor/state' / ('runsc-' + args.name + '.sock'))
-                    cpu_broker.terminate_trees([child.pid for child in children if child.poll() is None])
+                if stale or failure is not None or control_failed.exists():
+                    # CPU policy failure must not destroy application state.
+                    # Revoke this registration and fence late pause requests.
+                    # The runtime also expires individual pause leases itself.
+                    reason = failure or 'CPU controller heartbeat expired'
+                    try:
+                        reason = control_failed.read_text()
+                    except OSError:
+                        pass
+                    reason = reason.rstrip() + '\n'
+                    (logs / 'cpu-controller-degraded.txt').write_text(reason + 'CPU weights/quota released; sandbox remains running.\n')
+                    registration.unlink(missing_ok=True)
+                    connection = cpu_broker.ControlConnection(local / 'gvisor/state' / ('runsc-' + args.name + '.sock'))
+                    while not watch_done.is_set():
+                        try:
+                            cpu_broker.asyncio.run(cpu_broker.release_control(connection))
+                            break
+                        except (OSError, RuntimeError, ValueError, KeyError):
+                            watch_done.wait(1)
+                        finally:
+                            connection.close()
                     return
         threading.Thread(target=watch_broker, daemon=True).start()
     forwards = []

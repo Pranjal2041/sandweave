@@ -42,6 +42,16 @@ def test_summary_reports_vnc_endpoint_without_scheduler_metadata_or_connection_c
     assert 'job_id' not in serialized and 'ssh_command' not in serialized
 
 
+def test_summary_discloses_degraded_cpu_control_without_failing_sandbox():
+    source = record()
+    source['runtime_status']['cpu_control'] = {'state': 'degraded', 'reason': 'CPU controller heartbeat expired'}
+    info = summarize(source)
+    assert info['state'] == 'ready'
+    assert info['cpu_control'] == source['runtime_status']['cpu_control']
+    info['cpu_control']['state'] = 'changed'
+    assert source['runtime_status']['cpu_control']['state'] == 'degraded'
+
+
 @pytest.mark.parametrize('template,state,runtime_state', [
     ('coding', 'ready', 'running'), ('gnome', 'paused', 'paused'),
     ('gnome', 'terminated', 'stopped'), ('gnome', 'failed', 'stopped'),

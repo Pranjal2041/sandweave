@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.29
+
+- Replace CPU broker process-tree scans with aggregate runtime accounting and
+  independent asynchronous control connections. Sleeping guest process counts
+  no longer increase the broker's per-tick accounting work.
+- Keep sandboxes alive when the CPU broker stalls, exits, or loses a runtime
+  connection. Release CPU weights and quotas, report degraded control in
+  `env.info`, and fence late pause requests. Broker pauses expire after 500 ms
+  without renewal; explicit user pauses remain independent.
+- Publish a compatible engine and automatically upgrade older prepared engines
+  while preserving guest images. Retain a bounded compatibility path for
+  memory snapshots pinned to older engines.
+- Cover process-heavy load, weighted sharing, quota enforcement, controller
+  failure, stalled peers, and snapshot lifecycle regressions.
+
 ## 0.2.28
 
 - Add opt-in experimental memory overcommit with

@@ -11,6 +11,7 @@ import time
 import pytest
 
 from sandweave import CPU, Memory, Sandbox
+import sandweave
 from sandweave.sandbox.connection import Connection
 from sandweave.sandbox.targets import Endpoint
 
@@ -25,16 +26,16 @@ class Worker:
 
 
 @pytest.fixture(scope='module')
-def worker():
-    root = Path(os.environ['SANDWEAVE_CPU_INTEGRATION']).resolve()
+def worker(request):
+    root = Path(os.environ['SANDWEAVE_CPU_INTEGRATION']).resolve() / request.module.__name__.split('.')[-1]
     root.mkdir(parents=True, exist_ok=False)
     cpus = sorted(os.sched_getaffinity(0))[:4]
     assert len(cpus) == 4
     marker = root / 'worker.json'
     environment = {**os.environ, 'SANDWEAVE_HOME': str(root),
                    'SANDWEAVE_ASSETS': os.environ.get('SANDWEAVE_ASSETS', str(Path.cwd())),
-                   'SANDWEAVE_MEMORY_BUDGET': '8GiB',
-                   'PYTHONPATH': str(Path(__file__).resolve().parents[2] / 'src')}
+                   'SANDWEAVE_MEMORY_BUDGET': os.environ.get('SANDWEAVE_CPU_TEST_MEMORY', '8GiB'),
+                   'PYTHONPATH': str(Path(sandweave.__file__).resolve().parents[1])}
     connection = None
     with (root / 'worker.log').open('w') as log:
         child = subprocess.Popen(['taskset', '-c', ','.join(map(str, cpus)), sys.executable,

@@ -230,7 +230,7 @@ done
         from .releases import MINIMUM_KERNEL
         workspace.atomic_json(root / 'tools/gvisor-socket/runtime.json', {
             'path': relative, 'sha256': hashes,
-            'minimum_kernel': '.'.join(map(str, MINIMUM_KERNEL[:2]))})
+            'minimum_kernel': '.'.join(map(str, MINIMUM_KERNEL[:2])), 'cpu_accounting': 1})
 
     def erofs(self, root, source, output):
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -276,8 +276,8 @@ done
                 if (Path(base) / name).is_dir():
                     workspace.stage_tree(Path(base) / name, root / name)
             previous = json.loads((Path(base) / 'sandweave-assets.json').read_text())
-            from .releases import runtime_supported
-            if not runtime_supported(base):
+            from .releases import runtime_current
+            if not runtime_current(base):
                 self.pull(BUILDER, self.downloads / 'gvisor-builder.sif')
                 workspace._immutable(self.downloads / 'gvisor-builder.sif', root / 'tools/gvisor-builder.sif')
                 self.engine(root)

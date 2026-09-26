@@ -27,6 +27,7 @@ def summarize(record):
         'template': spec['template']['name'], 'runtime': spec['runtime'],
         'worker': {'hostname': hostname},
         'cpu': resources['cpu'], 'memory': resources['memory'],
+        **({'cpu_control': runtime['cpu_control']} if runtime.get('cpu_control') else {}),
         **({'disk_memory': {key: runtime['disk_memory'].get(key)
                            for key in ('directory', 'host_limit_bytes')}} if runtime.get('disk_memory') else {}),
         'gpus': gpus,

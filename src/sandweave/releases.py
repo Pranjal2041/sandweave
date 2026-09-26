@@ -64,6 +64,12 @@ def runtime_supported(root):
     return check_platform()['kernel'] >= kernel_version(minimum)
 
 
+def runtime_current(root):
+    """New launches need aggregate CPU accounting; live snapshots stay pinned."""
+    descriptor = json.loads((Path(root) / 'tools/gvisor-socket/runtime.json').read_text())
+    return runtime_supported(root) and descriptor.get('cpu_accounting', 0) >= 1
+
+
 SECCOMP_PROBE = '''import ctypes, os
 class Filter(ctypes.Structure):
     _fields_ = [('code',ctypes.c_ushort),('jt',ctypes.c_ubyte),('jf',ctypes.c_ubyte),('k',ctypes.c_uint)]

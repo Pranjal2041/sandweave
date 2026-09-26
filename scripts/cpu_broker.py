@@ -6,6 +6,8 @@ within a sampling/discovery interval. Runtime and transport CPU is accounted,
 but only guest execution is throttled; this is not a hard host CPU ceiling. The launcher itself is never stopped.
 """
 import argparse
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
@@ -16,6 +18,7 @@ import subprocess
 import sys
 import time
 import socket
+import traceback
 
 TICK = .02
 BURST = .10
@@ -34,6 +37,7 @@ def process_table(pids=None):
             result[int(path.parent.name)] = {
                 'state': fields[0], 'parent': int(fields[1]), 'group': int(fields[2]),
                 'start': int(fields[19]), 'threads': int(fields[17]),
+                'self_cpu': sum(map(int, fields[11:13])) / os.sysconf('SC_CLK_TCK'),
                 'cpu': sum(map(int, fields[11:15])) / os.sysconf('SC_CLK_TCK')}
         except (OSError, ValueError):
             pass
@@ -152,8 +156,50 @@ def control_pause(path, paused):
 def resume_tree(root, control_path):
     try:
         control_pause(control_path, False)
-    except (OSError, ConnectionError):
+    except (OSError, ConnectionError, RuntimeError, ValueError, KeyError):
         pass
+
+
+class ControlConnection:
+    """One in-flight request per sandbox; other sandboxes never wait on it."""
+    def __init__(self, path):
+        self.path = path
+        self.socket = None
+
+    def close(self):
+        if self.socket is not None:
+            self.socket.close()
+            self.socket = None
+
+    async def call(self, method, arg):
+        loop = asyncio.get_running_loop()
+        try:
+            async with asyncio.timeout(.5):
+                if self.socket is None:
+                    from _unix_sockets import Address
+                    self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self.socket.setblocking(False)
+                    with Address(self.path) as path:
+                        await loop.sock_connect(self.socket, path)
+                await loop.sock_sendall(self.socket, json.dumps({'method': 'containerManager.' + method,
+                                                               'arg': arg}).encode())
+                data = b''
+                while len(data) < 65536:
+                    part = await loop.sock_recv(self.socket, 4096)
+                    if not part:
+                        raise ConnectionError('CPU control socket closed')
+                    data += part
+                    try:
+                        result = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    if not result['success']:
+                        raise RuntimeError(result['err'])
+                    return result.get('result')
+                raise ValueError('CPU control reply exceeded limit')
+        except BaseException:
+            self.close()
+            raise
 
 
 def terminate_trees(roots):
@@ -188,6 +234,58 @@ class Job:
         self.previous_threads = set()
         self.pending_threads = 0
         self.rate = 0.
+        self.backend = 'runtime'
+        self.desired_pause = False
+        self.degraded = None
+        self.last_sample = 0.
+        self.helpers_cpu = 0.
+        self.helper_samples = {}
+        self.runnable_floor = 0
+        self.runnable_time = 0.
+        self.pending_pause = False
+
+    def update_helpers(self, table, identities):
+        samples = {}
+        for pid, info in table.items():
+            if info['start'] != identities[pid]:
+                continue
+            identity = (pid, info['start'])
+            cpu = info['self_cpu']
+            self.helpers_cpu += max(0., cpu - self.helper_samples.get(identity, cpu))
+            samples[identity] = cpu
+        self.helper_samples = samples
+
+    def update_sample(self, sample, now):
+        cpu = sample['CPUTimeNS'] / 1e9 + self.helpers_cpu
+        delta = max(0., cpu - self.previous) if self.previous is not None else 0.
+        self.previous = cpu
+        self.total += delta
+        self.credit -= delta
+        elapsed = max(0., now - self.last_sample) if self.last_sample else 0.
+        self.last_sample = now
+        runnable = max(0, sample['Runnable'])
+        if self.paused:
+            self.demand = None
+            self.runnable_floor = 0
+            self.runnable_time = now
+        else:
+            self.demand_cpu += delta
+            self.demand_elapsed += elapsed
+            # A brief wakeup is not sustained demand. Keep a lower bound on
+            # runnable tasks over an observation window, without per-task IO.
+            self.runnable_floor = min(self.runnable_floor, runnable)
+            if now - self.runnable_time >= RUNNABLE_WINDOW:
+                self.pending_threads = self.runnable_floor
+                self.runnable_floor = runnable
+                self.runnable_time = now
+            if self.demand_elapsed >= DEMAND_WINDOW:
+                self.observed_demand = self.demand_cpu / self.demand_elapsed
+                self.demand_cpu = self.demand_elapsed = 0.
+            self.demand = None if self.observed_demand is None else max(
+                self.observed_demand, self.pending_threads)
+        if delta > .001 or runnable:
+            self.active_until = now + .10
+        self.paused = sample['Paused']
 
     def update_demand(self, table, delta, now):
         if self.demand_sample is None:
@@ -219,7 +317,7 @@ class Job:
         self.demand = None if self.observed_demand is None else max(
             self.observed_demand, pending + self.pending_threads)
 
-    def update(self, table, now):
+    def update(self, table, now, *, interval=TICK):
         root = self.config['root']
         info = table.get(root)
         if info is None or info['start'] != self.config['start']:
@@ -243,7 +341,7 @@ class Job:
         self.credit -= delta
         self.update_demand(table, delta, now)
         if delta > .001 or any(table[p]['state'] == 'R' for p in members - {root} if p in table):
-            self.active_until = now + .10
+            self.active_until = now + max(.10, 2*interval)
         return True
 
     def set_paused(self, paused, table):
@@ -270,6 +368,183 @@ class Job:
             pass
 
 
+
+async def release_control(connection):
+    try:
+        await connection.call('CPUControl', {'Disable': True})
+    except RuntimeError as error:
+        if 'unknown method' in str(error):
+            await connection.call('SetCPUPaused', False)
+        else:
+            raise
+
+
+async def serve_job(job, path, legacy_executor):
+    connection = ControlConnection(job.config['control_path'])
+    failed_since = None
+    try:
+        while path.exists() and job.degraded is None:
+            started = time.monotonic()
+            if not job.ready:
+                await asyncio.sleep(TICK)
+                continue
+            try:
+                if job.backend == 'legacy':
+                    # Live snapshots pin older engines. Keep their policy,
+                    # but isolate expensive compatibility sampling from the
+                    # broker event loop and bound its worker count/cadence.
+                    table = await asyncio.get_running_loop().run_in_executor(
+                        legacy_executor, discover_trees, [job.config['root']])
+                    if not job.update(table, time.monotonic(), interval=.25):
+                        break
+                    if not path.exists():
+                        break
+                    if job.desired_pause != job.paused:
+                        job.pending_pause = job.desired_pause
+                        await connection.call('SetCPUPaused', job.desired_pause)
+                        job.paused = job.desired_pause
+                        job.pending_pause = False
+                        job.stops += int(job.paused)
+                else:
+                    job.pending_pause = job.desired_pause
+                    sample = await connection.call('CPUControl', {'Paused': job.desired_pause})
+                    if sample['Disabled']:
+                        raise RuntimeError('CPU control disabled by launcher')
+                    if sample['SampleAgeNS'] > 500_000_000:
+                        raise RuntimeError('runtime CPU accounting stalled')
+                    was_paused = job.paused
+                    job.update_sample(sample, time.monotonic())
+                    job.pending_pause = False
+                    job.stops += int(job.paused and not was_paused)
+                failed_since = None
+            except (OSError, RuntimeError, ValueError, KeyError) as error:
+                if 'unknown method' in str(error) and job.backend == 'runtime':
+                    job.backend = 'legacy'
+                    continue
+                failed_since = failed_since or time.monotonic()
+                job.desired_pause = False
+                job.pending_pause = False
+                job.demand = None
+                if time.monotonic() - failed_since >= 3:
+                    job.degraded = str(error) or type(error).__name__
+                    path.with_name(path.name + '.failed').write_text(job.degraded + '\n')
+                    break
+            interval = .25 if job.backend == 'legacy' else TICK
+            await asyncio.sleep(max(0., interval - (time.monotonic() - started)))
+    finally:
+        try:
+            await release_control(connection)
+        except (OSError, RuntimeError, ValueError, KeyError):
+            pass
+        connection.close()
+
+
+async def broker_loop(directory, cpus):
+    jobs, tasks = {}, set()
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(signum, stop.set)
+    previous = idle_since = time.monotonic()
+    last_refresh = last_report = 0.
+    suspended = set()
+    legacy_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='legacy-cpu')
+    def completed(task, job, path):
+        tasks.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            traceback.print_exception(error)
+            job.degraded = str(error) or type(error).__name__
+            try:
+                path.with_name(path.name + '.failed').write_text(job.degraded + '\n')
+            except OSError:
+                pass
+    try:
+        while not stop.is_set():
+            now = time.monotonic()
+            elapsed = min(now - previous, .2)
+            previous = now
+            if now - last_refresh >= .25:
+                paths = {p.name: p for p in directory.glob('job-*.json')}
+                for key, path in paths.items():
+                    if key in jobs:
+                        continue
+                    try:
+                        cfg = json.loads(path.read_text())
+                        if cfg['cpus'] != cpus or cfg['weight'] <= 0:
+                            continue
+                        job = jobs[key] = Job(cfg)
+                        job.task = asyncio.create_task(serve_job(job, path, legacy_executor))
+                        tasks.add(job.task)
+                        job.task.add_done_callback(lambda task, job=job, path=path: completed(task, job, path))
+                    except (OSError, ValueError, KeyError):
+                        continue
+                roots = process_table(j.config['root'] for j in jobs.values())
+                suspended = {p.name.removesuffix('.suspend') for p in directory.glob('*.suspend')}
+                for key, job in list(jobs.items()):
+                    if key not in paths or roots.get(job.config['root'], {}).get('start') != job.config['start']:
+                        job.task.cancel()
+                        # Draining is asynchronous; never wait on a dead peer.
+                        del jobs[key]
+                        continue
+                    if not job.ready:
+                        try:
+                            job.ready = json.loads(Path(job.config['state_path']).read_text())['status'] == 'running'
+                        except (OSError, ValueError, KeyError):
+                            pass
+                    helpers = {job.config['root']: job.config['start']}
+                    try:
+                        record = json.loads(Path(job.config['helpers_path']).read_text())
+                        helpers.update((p['pid'], p['start']) for p in record['processes'])
+                    except (OSError, ValueError, KeyError):
+                        pass
+                    # Only explicitly owned launcher/transport PIDs. Never
+                    # expand these into guest/stub descendants.
+                    job.update_helpers(process_table(helpers), helpers)
+                last_refresh = now
+            if jobs:
+                idle_since = now
+            elif now - idle_since > 30:
+                break
+            eligible = {j for j in jobs.values() if j.degraded is None}
+            active = [j for key,j in jobs.items() if j in eligible and j.ready and key not in suspended
+                      and (j.paused or j.active_until > now)]
+            rates = allocate_rates(active, len(cpus))
+            total_weight = sum(j.config['weight'] for j in eligible)
+            for key, job in jobs.items():
+                if job.degraded is not None:
+                    job.desired_pause = False
+                    continue
+                if job not in rates:
+                    idle_rate = len(cpus)*job.config['weight']/total_weight
+                    if job.config.get('quota') is not None:
+                        idle_rate = min(idle_rate, job.config['quota'])
+                    job.refill(idle_rate, elapsed)
+                    job.rate = 0.
+                    job.desired_pause = False
+                else:
+                    job.rate = rates[job]
+                    job.refill(job.rate, elapsed)
+                    job.desired_pause = job.credit < 0
+            if now - last_report >= .25:
+                report = {'pid': os.getpid(), 'time': time.time(), 'tick_seconds': TICK,
+                          'cpus': cpus, 'jobs': {key: {
+                              'cpu_seconds': j.total, 'credit': j.credit, 'paused': j.paused or j.pending_pause,
+                              'stops': j.stops, 'demand_cpus': j.demand, 'rate_cpus': j.rate,
+                              'accounting': j.backend, 'degraded': j.degraded,
+                              'sample_age_seconds': now - j.last_sample if j.last_sample else None,
+                          } for key,j in jobs.items()}}
+                temp = directory / 'status.tmp'
+                temp.write_text(json.dumps(report))
+                temp.replace(directory / 'status.json')
+                last_report = now
+            await asyncio.sleep(max(0., TICK - (time.monotonic() - now)))
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        legacy_executor.shutdown(wait=False, cancel_futures=True)
+
+
 def run(directory, cpus):
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (directory / 'lock').open('w') as lock:
@@ -277,95 +552,7 @@ def run(directory, cpus):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return
-        jobs = {}
-        stop = False
-        def shutdown(signum, frame):
-            nonlocal stop
-            stop = True
-        signal.signal(signal.SIGTERM, shutdown)
-        signal.signal(signal.SIGINT, shutdown)
-        previous = time.monotonic()
-        idle_since = previous
-        last_report = 0
-        last_discovery = 0
-        table = {}
-        try:
-            while not stop:
-                now = time.monotonic()
-                elapsed = min(now-previous, .2)
-                previous = now
-                if now-last_discovery > .25:
-                    roots = []
-                    for path in directory.glob('job-*.json'):
-                        try:
-                            roots.append(json.loads(path.read_text())['root'])
-                        except (OSError, ValueError):
-                            pass
-                    table = discover_trees(roots)
-                    last_discovery = now
-                else:
-                    hot = set().union(*(j.members for j in jobs.values())) if jobs else set()
-                    for pid in hot:
-                        table.pop(pid, None)
-                    table.update(process_table(hot))
-                for path in directory.glob('job-*.json'):
-                    if path.name in jobs:
-                        continue
-                    try:
-                        cfg = json.loads(path.read_text())
-                    except (OSError, ValueError):
-                        # The launcher may remove its registration after glob.
-                        continue
-                    if cfg['cpus'] != cpus or cfg['weight'] <= 0:
-                        raise ValueError('inconsistent broker registration')
-                    if table.get(cfg['root'], {}).get('start') == cfg['start']:
-                        jobs[path.name] = Job(cfg)
-                for key, job in list(jobs.items()):
-                    if not job.update(table, now) or not (directory / key).exists():
-                        job.close(table)
-                        del jobs[key]
-                if jobs:
-                    idle_since = now
-                elif now-idle_since > 30:
-                    break
-                active = [j for key,j in jobs.items() if j.ready and not (directory / (key + '.suspend')).exists() and (j.paused or j.active_until > now)]
-                rates = allocate_rates(active, len(cpus))
-                total_weight = sum(j.config['weight'] for j in jobs.values())
-                for key, job in list(jobs.items()):
-                    try:
-                        if job not in active:
-                            idle_rate = len(cpus)*job.config['weight']/total_weight
-                            if job.config.get('quota') is not None:
-                                idle_rate = min(idle_rate, job.config['quota'])
-                            job.refill(idle_rate, elapsed)
-                            job.rate = 0
-                            job.set_paused(False, table)
-                            continue
-                        rate = rates[job]
-                        job.rate = rate
-                        job.refill(rate, elapsed)
-                        job.set_paused(job.credit < 0, table)
-                    except (OSError, ConnectionError, RuntimeError, ValueError, KeyError) as error:
-                        # A sandbox can exit between accounting and this RPC.
-                        # Invalidate only that job, never the rest of the pool.
-                        (directory / (key + '.failed')).write_text(str(error) + '\n')
-                        (directory / key).unlink(missing_ok=True)
-                        job.close(table)
-                        del jobs[key]
-                if now-last_report > .25:
-                    report = {'pid': os.getpid(), 'time': time.time(), 'tick_seconds': TICK,
-                              'cpus': cpus, 'jobs': {key: {'cpu_seconds': j.total, 'credit': j.credit,
-                                      'paused': j.paused, 'stops': j.stops,
-                                      'demand_cpus': j.demand, 'rate_cpus': j.rate} for key,j in jobs.items()}}
-                    temp = directory / 'status.tmp'
-                    temp.write_text(json.dumps(report))
-                    temp.replace(directory / 'status.json')
-                    last_report = now
-                time.sleep(max(0, TICK-(time.monotonic()-now)))
-        finally:
-            table = discover_trees([j.config['root'] for j in jobs.values()])
-            for job in jobs.values():
-                job.close(table)
+        asyncio.run(broker_loop(directory, cpus))
 
 
 def register(local, name, cpus, weight, quota):
@@ -379,7 +566,7 @@ def register(local, name, cpus, weight, quota):
     path = directory / ('job-' + name + '.json')
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps({'root': root, 'start': info['start'], 'cpus': sorted(cpus),
-                               'weight': weight, 'quota': quota, 'state_path': str(local / 'gvisor/state' / f'{name}_sandbox:{name}.state'), 'control_path': str(local / 'gvisor/state' / ('runsc-' + name + '.sock'))}))
+                               'weight': weight, 'quota': quota, 'helpers_path': str(Path(__file__).resolve().parent.parent / 'runs/gvisor' / name / 'owned-processes.json'), 'state_path': str(local / 'gvisor/state' / f'{name}_sandbox:{name}.state'), 'control_path': str(local / 'gvisor/state' / ('runsc-' + name + '.sock'))}))
     temp.replace(path)
     with (directory / 'broker.log').open('ab') as output:
         child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--directory', str(directory),

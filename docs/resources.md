@@ -42,13 +42,27 @@ than this count. It is neither a sandbox-wide CPU-time ceiling nor a request to
 resize an application's thread pool automatically. Use `quota` for a CPU-time
 ceiling.
 
-The controller samples CPU time and runnable threads. Demand estimates use
+The controller reads each sandbox's aggregate host CPU time and runnable count;
+it does not scan every guest process. Each sandbox has its own asynchronous
+control connection, so a stalled runtime does not block other sandboxes.
+Demand estimates use
 unthrottled observation windows of about 100 ms; scheduling normally updates
 every 20 ms. It preserves observations across its own pauses and distinguishes
 brief wakeups from threads that keep waiting for CPU. Changes in demand take
 time to observe, and short overshoot is possible. Runtime and transport CPU
 are counted, but only guest execution is
 throttled. These are not hard host cgroup limits.
+
+If CPU control fails, the sandbox stays alive and releases its CPU weights and
+quota. Broker pauses expire after 500 ms without renewal. After a sustained
+failure, `env.info["cpu_control"]` reports `state="degraded"` and the reason.
+Explicit `env.pause()` remains separate and does not expire.
+
+This requires SDK 0.2.29 and its updated engine. New workers automatically update
+older prepared engines while retaining guest images. Existing workers and
+sandboxes keep their running code. Memory snapshots pinned to an older engine
+use compatibility accounting outside the broker's scheduling loop; their pause
+recovery relies on the launcher watchdog instead of the new engine lease.
 
 ## Guest and runtime memory
 

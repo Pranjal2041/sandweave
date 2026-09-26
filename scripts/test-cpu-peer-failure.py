@@ -2,12 +2,15 @@
 """Inject a peer's control-socket failure and verify its CPU pool stays alive."""
 import argparse
 import json
+import os
+import signal
 from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
 import urllib.request
+from environment import EnvironmentManager
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('observer')
@@ -32,22 +35,21 @@ while time.monotonic() < deadline:
 else:
     raise RuntimeError('peer did not enter controlled execution')
 broker = status['pid']
-control = local / 'gvisor/state' / ('runsc-' + name + '.sock')
-saved_control = control.with_suffix('.fault-injection-original')
-control.rename(saved_control)
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as dead:
-    dead.bind(str(control))
-# A bound, closed socket makes the next scheduling RPC fail deterministically.
+manager = EnvironmentManager(lab)
+sentry = manager.status(name)['sentry']['pid']
+os.kill(sentry, signal.SIGSTOP)
+# The peer cannot answer any control RPC while its host runtime is frozen.
 start = time.monotonic()
 try:
     deadline = start + 12
     while time.monotonic() < deadline:
-        if (logs / 'exit-code.txt').exists():
+        if (logs / 'cpu-controller-degraded.txt').exists():
             break
         time.sleep(.1)
     else:
-        raise RuntimeError('failed peer was not stopped')
-    time.sleep(4)
+        raise RuntimeError('stalled peer was not marked degraded')
+    os.kill(sentry, signal.SIGCONT)
+    assert manager._run([*manager._command(name), 'exec', name, '/bin/echo', 'survived']).strip() == 'survived'
     current = json.loads((directory / 'status.json').read_text())
     assert current['pid'] == broker and time.time() - current['time'] < 1, current
     assert 'job-' + a.observer + '.json' in current['jobs'], current
@@ -60,12 +62,15 @@ try:
         banner = r.recv(12).decode().strip()
     assert banner.startswith('RFB ')
     result = {'observer': a.observer, 'failed_peer': name, 'same_broker_survived': True,
-              'peer_exit_code': (logs / 'exit-code.txt').read_text().strip(),
-              'peer_failure_marked': (logs / 'cpu-controller-failed.txt').exists(),
+              'peer_survived': not (logs / 'exit-code.txt').exists(),
+              'peer_failure_marked': (logs / 'cpu-controller-degraded.txt').exists(),
               'observer_probe': probe, 'observer_vnc': banner, 'elapsed_seconds': time.monotonic() - start}
     assert result['peer_failure_marked'], result
     (observer_logs / 'peer-failure-acceptance.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
 finally:
-    saved_control.unlink(missing_ok=True)
-    control.unlink(missing_ok=True)
+    try:
+        os.kill(sentry, signal.SIGCONT)
+    except ProcessLookupError:
+        pass
+    manager.stop(name, discard=True)

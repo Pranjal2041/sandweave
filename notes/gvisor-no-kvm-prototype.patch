@@ -4178,10 +4178,18 @@ index 22c8dc1..0d0bad8 100644
  type Context interface {
  	// Switch resumes execution of the thread specified by the arch.Context64
 diff --git a/pkg/sentry/platform/systrap/BUILD b/pkg/sentry/platform/systrap/BUILD
-index ee3b436..ecb0959 100644
+index ee3b436..50642ee 100644
 --- a/pkg/sentry/platform/systrap/BUILD
 +++ b/pkg/sentry/platform/systrap/BUILD
-@@ -114,14 +114,18 @@ go_test(
+@@ -35,6 +35,7 @@ go_library(
+         "context_list.go",
+         "context_queue.go",
+         "context_queue_unsafe.go",
++        "cpu_accounting.go",
+         "filters.go",
+         "filters_amd64.go",
+         "filters_arm64.go",
+@@ -114,14 +115,18 @@ go_test(
      srcs = [
          "context_queue_test.go",
          "shared_context_test.go",
@@ -4200,11 +4208,153 @@ index ee3b436..ecb0959 100644
          "//pkg/sentry/arch",
          "//pkg/sentry/memmap",
          "//pkg/sentry/pgalloc",
+diff --git a/pkg/sentry/platform/systrap/cpu_accounting.go b/pkg/sentry/platform/systrap/cpu_accounting.go
+new file mode 100644
+index 0000000..d729608
+--- /dev/null
++++ b/pkg/sentry/platform/systrap/cpu_accounting.go
+@@ -0,0 +1,125 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package systrap
++
++import (
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"golang.org/x/sys/unix"
++)
++
++// Account actual host CPU, not the guest CPU clock (which estimates usage from
++// runnable tasks and advertised vCPUs). Stub processes are registered at their
++// creation/wakeup, so neither the broker nor the Sentry walks /proc. Sleeping
++// address spaces leave the sampling set after their stub threads have parked.
++// The fixed-size published sample is independent of the guest process count.
++// Nothing here is guest-controlled or saved in a guest checkpoint.
++var hostCPU = struct {
++	once   sync.Once
++	mu     sync.Mutex
++	active map[*subprocess]time.Time
++	total  int64
++	sample atomic.Pointer[hostCPUSample]
++}{active: make(map[*subprocess]time.Time)}
++
++type hostCPUSample struct {
++	time time.Time
++	ns   int64
++}
++
++func (s *subprocess) trackCPU() {
++	hostCPU.mu.Lock()
++	hostCPU.active[s] = time.Now()
++	hostCPU.mu.Unlock()
++}
++
++func processCPU(pid int32) (int64, error) {
++	// Linux make_process_cpuclock(pid, CPUCLOCK_SCHED). This clock includes all
++	// threads of the process and is available without cgroup delegation.
++	var ts unix.Timespec
++	if err := unix.ClockGettime((^pid<<3)|2, &ts); err != nil {
++		return 0, err
++	}
++	return ts.Nano(), nil
++}
++
++func sampleThreadCPU(t *thread) error {
++	ns, err := processCPU(t.tgid)
++	if err != nil {
++		return err
++	}
++	hostCPU.total += max(0, ns-t.hostCPUNS)
++	t.hostCPUNS = ns
++	return nil
++}
++
++func sampleSubprocessCPU(s *subprocess) error {
++	if err := sampleThreadCPU(s.syscallThread.thread); err != nil {
++		return err
++	}
++	s.sysmsgThreadsMu.RLock()
++	defer s.sysmsgThreadsMu.RUnlock()
++	for _, t := range s.sysmsgThreads {
++		if err := sampleThreadCPU(t.thread); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
++func sampleHostCPU() {
++	for {
++		started := time.Now()
++		hostCPU.mu.Lock()
++		for s, awake := range hostCPU.active {
++			if s.dead.Load() {
++				delete(hostCPU.active, s)
++				continue
++			}
++			if err := sampleSubprocessCPU(s); err != nil {
++				// A dead platform process is handled by its normal lifecycle.
++				// Do not publish a misleading fresh sample on accounting errors.
++				hostCPU.mu.Unlock()
++				time.Sleep(20 * time.Millisecond)
++				goto next
++			}
++			if atomic.LoadUint32(&s.contextQueue.numAwakeContexts) != 0 {
++				hostCPU.active[s] = started
++			} else if started.Sub(awake) > 100*time.Millisecond {
++				delete(hostCPU.active, s)
++			}
++		}
++		{
++			var ts unix.Timespec
++			if unix.ClockGettime(unix.CLOCK_PROCESS_CPUTIME_ID, &ts) == nil {
++				hostCPU.sample.Store(&hostCPUSample{time: started, ns: hostCPU.total + ts.Nano()})
++			}
++		}
++		hostCPU.mu.Unlock()
++		time.Sleep(max(time.Millisecond, 20*time.Millisecond-time.Since(started)))
++	next:
++	}
++}
++
++// HostCPUUsage returns real Sentry+stub CPU time and sample age in nanoseconds.
++// Reading the published sample does not wait on the sampler or guest tasks.
++func (*Systrap) HostCPUUsage() (int64, int64) {
++	if sample := hostCPU.sample.Load(); sample != nil {
++		return sample.ns, time.Since(sample.time).Nanoseconds()
++	}
++	return 0, int64(time.Hour)
++}
 diff --git a/pkg/sentry/platform/systrap/subprocess.go b/pkg/sentry/platform/systrap/subprocess.go
-index 4de8f9a..811a91f 100644
+index 4de8f9a..fba9eee 100644
 --- a/pkg/sentry/platform/systrap/subprocess.go
 +++ b/pkg/sentry/platform/systrap/subprocess.go
-@@ -216,7 +216,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
+@@ -81,6 +81,10 @@ type thread struct {
+ 	tgid int32
+ 	tid  int32
+ 
++	// hostCPUNS is owned by hostCPU.mu. Systrap execution threads are host
++	// processes sharing a VM, not CLONE_THREAD members of the syscall thread.
++	hostCPUNS int64
++
+ 	// sysmsgStackID is a stack ID in subprocess.sysmsgStackPool.
+ 	sysmsgStackID uint64
+ 
+@@ -216,7 +220,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
  	}
  
  	if err := t.init(seccompNotify); err != nil {
@@ -4213,6 +4363,32 @@ index 4de8f9a..811a91f 100644
  	}
  	s.syscallThread = &t
  
+@@ -347,6 +351,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
+ 	if sp := globalPool.fetchAvailable(); sp != nil {
+ 		sp.subprocessRefs.InitRefs()
+ 		sp.usertrap = usertrap.New()
++		sp.trackCPU()
+ 		return sp, nil
+ 	}
+ 
+@@ -406,6 +411,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
+ 		sp.numSysmsgThreads++
+ 	}
+ 
++	sp.trackCPU()
+ 	return sp, nil
+ }
+ 
+@@ -791,6 +797,9 @@ func (t *thread) NotifyInterrupt() {
+ 
+ func (s *subprocess) incAwakeContexts() {
+ 	nr := atomic.AddUint32(&s.contextQueue.numAwakeContexts, 1)
++	if nr == 1 {
++		s.trackCPU()
++	}
+ 	if nr > uint32(maxSysmsgThreads) {
+ 		return
+ 	}
 diff --git a/pkg/sentry/platform/systrap/subprocess_amd64.go b/pkg/sentry/platform/systrap/subprocess_amd64.go
 index 070d84d..2fa568d 100644
 --- a/pkg/sentry/platform/systrap/subprocess_amd64.go
@@ -4429,6 +4605,18 @@ index 0000000..04287b5
 +		}
 +	}
 +}
+diff --git a/pkg/sentry/platform/systrap/systrap.go b/pkg/sentry/platform/systrap/systrap.go
+index 0b77e71..a3fabb4 100644
+--- a/pkg/sentry/platform/systrap/systrap.go
++++ b/pkg/sentry/platform/systrap/systrap.go
+@@ -332,6 +332,7 @@ func New(opts platform.Options) (*Systrap, error) {
+ 		mf.Destroy()
+ 		return nil, stubErr
+ 	}
++	hostCPU.once.Do(func() { go sampleHostCPU() })
+ 
+ 	if !neverEnableFastPath {
+ 		latencyMonitoring.Do(func() {
 diff --git a/pkg/sentry/platform/systrap/systrap_amd64.go b/pkg/sentry/platform/systrap/systrap_amd64.go
 index 7cb8c23..d6c8d57 100644
 --- a/pkg/sentry/platform/systrap/systrap_amd64.go
@@ -4456,6 +4644,36 @@ index 7cb8c23..d6c8d57 100644
  func stackPointer(r *arch.Registers) uintptr {
  	return uintptr(r.Rsp)
  }
+diff --git a/pkg/sentry/platform/systrap/systrap_test.go b/pkg/sentry/platform/systrap/systrap_test.go
+index 7d09752..bec31c0 100644
+--- a/pkg/sentry/platform/systrap/systrap_test.go
++++ b/pkg/sentry/platform/systrap/systrap_test.go
+@@ -39,6 +39,25 @@ func TestMain(m *testing.M) {
+ 	os.Exit(m.Run())
+ }
+ 
++// Dynamic process CPU clocks must measure the whole host process, including
++// non-leader threads. A wrong clock ID silently undercounts sandbox execution.
++func TestProcessCPUClock(t *testing.T) {
++	var before, after unix.Timespec
++	if err := unix.ClockGettime(unix.CLOCK_PROCESS_CPUTIME_ID, &before); err != nil {
++		t.Fatal(err)
++	}
++	ns, err := processCPU(int32(os.Getpid()))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := unix.ClockGettime(unix.CLOCK_PROCESS_CPUTIME_ID, &after); err != nil {
++		t.Fatal(err)
++	}
++	if ns < before.Nano() || ns > after.Nano() {
++		t.Fatalf("dynamic CPU clock %d outside process clock interval [%d,%d]", ns, before.Nano(), after.Nano())
++	}
++}
++
+ // testMemoryManager implements the parts of platform.MemoryManager that
+ // platformContext.Switch touches on the syscall path. Syscall patching is
+ // disabled in the tests, so MMap and friends are never reached.
 diff --git a/pkg/sentry/socket/netfilter/BUILD b/pkg/sentry/socket/netfilter/BUILD
 index 21c625e..697a133 100644
 --- a/pkg/sentry/socket/netfilter/BUILD
@@ -7922,21 +8140,24 @@ index 479bfc0..854bb07 100644
          "network.go",
          "nvproxy.go",
 diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
-index ae644c4..66922b4 100644
+index ae644c4..aad1de3 100644
 --- a/runsc/boot/controller.go
 +++ b/runsc/boot/controller.go
-@@ -276,6 +276,10 @@ func (c *controller) stop() {
+@@ -276,6 +276,13 @@ func (c *controller) stop() {
  
  // containerManager manages sandbox containers.
  type containerManager struct {
 +	// CPU controller pauses are independently owned and idempotent so a host
 +	// controller can safely recover after losing a response or reconnecting.
-+	cpuPauseMu sync.Mutex
-+	cpuPaused  bool
++	cpuPauseMu         sync.Mutex
++	cpuPaused          bool
++	cpuControlDisabled bool
++	cpuPauseTimer      *gtime.Timer
++	cpuPauseGeneration uint64
  	// startChan is used to signal when the root container process should
  	// be started.
  	startChan chan struct{}
-@@ -626,7 +630,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
+@@ -626,7 +633,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
  	}
  
  	// Create the main MemoryFile.
@@ -7946,7 +8167,7 @@ index ae644c4..66922b4 100644
  	if err != nil {
  		return fmt.Errorf("creating memory file: %v", err)
  	}
-@@ -898,6 +903,23 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
+@@ -898,6 +906,87 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
  	return nil
  }
  
@@ -7955,6 +8176,9 @@ index ae644c4..66922b4 100644
 +func (cm *containerManager) SetCPUPaused(paused *bool, _ *struct{}) error {
 +	cm.cpuPauseMu.Lock()
 +	defer cm.cpuPauseMu.Unlock()
++	if *paused && cm.cpuControlDisabled {
++		return fmt.Errorf("CPU control disabled")
++	}
 +	if *paused == cm.cpuPaused {
 +		return nil
 +	}
@@ -7964,6 +8188,67 @@ index ae644c4..66922b4 100644
 +		cm.l.k.Unpause()
 +	}
 +	cm.cpuPaused = *paused
++	return nil
++}
++
++// CPUControlArgs requests a short, renewable scheduling pause. Disable is
++// permanent for this runtime and fences late requests after broker failure.
++type CPUControlArgs struct {
++	Paused  bool
++	Disable bool
++}
++
++// CPUControlStats is a bounded-size host scheduling sample, not guest /proc
++// accounting. The latter estimates time from vCPUs and cannot enforce quotas.
++type CPUControlStats struct {
++	CPUTimeNS   int64
++	SampleAgeNS int64
++	Runnable    int64
++	Paused      bool
++	Disabled    bool
++}
++
++// CPUControl does not walk task lists or wait on the platform's sampler. Each
++// sandbox has its own connection; a stalled pause cannot block other sandboxes.
++func (cm *containerManager) CPUControl(args *CPUControlArgs, out *CPUControlStats) error {
++	cm.cpuPauseMu.Lock()
++	defer cm.cpuPauseMu.Unlock()
++	if args.Disable {
++		cm.cpuControlDisabled = true
++	}
++	paused := args.Paused && !cm.cpuControlDisabled
++	cm.cpuPauseGeneration++
++	generation := cm.cpuPauseGeneration
++	if cm.cpuPauseTimer != nil {
++		cm.cpuPauseTimer.Stop()
++		cm.cpuPauseTimer = nil
++	}
++	if paused != cm.cpuPaused {
++		if paused {
++			cm.l.k.Pause()
++		} else {
++			cm.l.k.Unpause()
++		}
++		cm.cpuPaused = paused
++	}
++	if paused {
++		cm.cpuPauseTimer = gtime.AfterFunc(500*gtime.Millisecond, func() {
++			cm.cpuPauseMu.Lock()
++			defer cm.cpuPauseMu.Unlock()
++			if cm.cpuPauseGeneration == generation && cm.cpuPaused {
++				cm.l.k.Unpause()
++				cm.cpuPaused = false
++			}
++		})
++	}
++	accounting, ok := cm.l.k.Platform.(interface{ HostCPUUsage() (int64, int64) })
++	if !ok {
++		return fmt.Errorf("host CPU accounting unavailable on this platform")
++	}
++	out.CPUTimeNS, out.SampleAgeNS = accounting.HostCPUUsage()
++	out.Runnable = cm.l.k.RunningTasks()
++	out.Paused = cm.cpuPaused
++	out.Disabled = cm.cpuControlDisabled
 +	return nil
 +}
 +

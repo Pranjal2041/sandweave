@@ -116,8 +116,11 @@ def test_workspace_lock_serializes_threads_and_releases_after_errors(tmp_path):
 @pytest.mark.parametrize('method', ['read', 'readline'])
 def test_stream_drains_bytes_arriving_between_empty_read_and_exit(method):
     from types import SimpleNamespace
-    from sandweave.sandbox.process import OutputStream
+    from sandweave.sandbox.process import Process
     chunks = iter([b'', b'last output\n', b'', b''])
-    process = SimpleNamespace(id='test', poll=lambda: 0,
-                              sandbox=SimpleNamespace(_call=lambda *a, **k: next(chunks)))
-    assert getattr(OutputStream(process, 'stdout'), method)() == 'last output\n'
+    def call(operation, **params):
+        if operation == 'process_status':
+            return {'returncode': 0, 'stdout_size': len(b'last output\n'), 'stderr_size': 0}
+        return next(chunks)
+    process = Process(SimpleNamespace(_call=call), 'test')
+    assert getattr(process.stdout, method)() == 'last output\n'

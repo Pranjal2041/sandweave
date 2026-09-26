@@ -47,7 +47,7 @@ def test_expired_readiness_does_not_start_overview_change(monkeypatch):
 def test_status_disconnect_does_not_replay_template_command(persistent):
     starts, polls = [], []
 
-    def status(identity, process):
+    def status(identity, process, **params):
         polls.append(process)
         if len(polls) == 1 or persistent:
             raise OperationUnknown('peer closed the status connection')
@@ -59,7 +59,7 @@ def test_status_disconnect_does_not_replay_template_command(persistent):
         remaining=lambda identity, timeout: timeout,
         command_start=lambda *a, **kw: starts.append(a),
         process_stdin=lambda *a, **kw: None,
-        process_status=status,
+        process_wait=status,
         process_output=lambda *a, **kw: b'')
     if persistent:
         with pytest.raises(OperationUnknown):

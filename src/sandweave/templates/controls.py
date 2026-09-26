@@ -60,16 +60,18 @@ class Context:
         self.worker.process_stdin(self.id, process, close=True)
         def status():
             try:
-                return self.worker.process_status(self.id, process)
+                return self.worker.process_wait(self.id, process,
+                    timeout=self.worker.remaining(self.id, 10))
             except OperationUnknown:
                 # A keep-alive peer can close between the transport's idle
                 # check and the next request. Reading this same process again
                 # is safe; never replay its start or stdin mutations here.
                 self.worker.remaining(self.id, timeout)
-                return self.worker.process_status(self.id, process)
+                return self.worker.process_wait(self.id, process,
+                    timeout=self.worker.remaining(self.id, 10))
 
         while (state := status())['returncode'] is None:
-            time.sleep(.02)
+            pass
         output = {stream: self.worker.process_output(self.id, process, stream=stream, size=1024**2)
                   for stream in ('stdout', 'stderr')}
         if check and (state['returncode'] or state.get('output_limited')):

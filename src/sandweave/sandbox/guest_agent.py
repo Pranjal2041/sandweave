@@ -4,6 +4,7 @@ import hmac
 import errno
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
 import pwd
@@ -349,6 +350,8 @@ class Agent:
                     process.stdout = os.fdopen(master, 'rb', buffering=0)
                 process.sandweave_pty = bool(pty)
                 process.sandweave_maintenance = maintenance
+                process.sandweave_done = threading.Event()
+                process.sandweave_output = threading.Condition()
             except BaseException:
                 if master is not None:
                     os.close(master)
@@ -391,6 +394,8 @@ class Agent:
                         remaining = max_output_bytes - output_state['bytes']
                         written = min(len(data), remaining)
                         destination.write(data[:written]); destination.flush()
+                        with process.sandweave_output:
+                            process.sandweave_output.notify_all()
                         output_state['bytes'] += written
                         if written < len(data):
                             output_state['limited'] = True
@@ -436,6 +441,9 @@ class Agent:
                     process.stdin.close()
                 with self.lock:
                     self.processes.pop(identity, None)
+                process.sandweave_done.set()
+                with process.sandweave_output:
+                    process.sandweave_output.notify_all()
         threading.Thread(target=finish, daemon=True).start()
         return self.status(identity)
 
@@ -456,6 +464,25 @@ class Agent:
         with (self.directory(identity) / stream).open('rb') as source:
             source.seek(offset)
             return source.read(size)
+
+    def wait(self, identity, timeout=10, stream=None, offset=0):
+        """Sleep until exit or new stream bytes, with no status polling."""
+        if (not isinstance(timeout, (int, float)) or not math.isfinite(timeout)
+                or not 0 <= timeout <= 10 or stream not in (None, 'stdout', 'stderr')
+                or type(offset) is not int or offset < 0):
+            raise ValueError('invalid process wait')
+        with self.lock:
+            process = self.processes.get(identity)
+        if process is not None:
+            if stream is None:
+                process.sandweave_done.wait(timeout)
+            else:
+                path = self.directory(identity) / stream
+                with process.sandweave_output:
+                    process.sandweave_output.wait_for(
+                        lambda: process.sandweave_done.is_set() or path.stat().st_size > offset,
+                        timeout=timeout)
+        return self.status(identity)
 
     def stdin(self, identity, data=b'', close=False):
         with self.lock:
@@ -562,7 +589,7 @@ class Agent:
     def call(self, operation, parameters):
         if operation == 'ping':
             return {'pid': os.getpid(), 'monotonic_ns': time.monotonic_ns()}
-        if operation not in ('spawn', 'status', 'output', 'stdin', 'terminate', 'resize', 'file', 'service_setup'):
+        if operation not in ('spawn', 'status', 'wait', 'output', 'stdin', 'terminate', 'resize', 'file', 'service_setup'):
             raise ValueError('unknown agent operation')
         return getattr(self, operation)(**parameters)
 

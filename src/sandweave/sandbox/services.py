@@ -1,5 +1,6 @@
 """Native service groups share placement and admission, with separate sandboxes."""
 import atexit
+import asyncio
 import copy
 from concurrent.futures import ThreadPoolExecutor
 import ipaddress
@@ -23,6 +24,18 @@ class ServiceConnection:
     def call(self, operation, **parameters):
         return self.connection.call('service_rpc', identity=self.identity, service=self.service,
                                     method=operation, parameters=parameters)
+
+    async def acall(self, operation, **parameters):
+        if not hasattr(self.connection, 'acall'):
+            return await asyncio.to_thread(self.call, operation, **parameters)
+        return await self.connection.acall('service_rpc', identity=self.identity, service=self.service,
+                                           method=operation, parameters=parameters)
+
+    async def aclose(self):
+        if hasattr(self.connection, 'aclose'):
+            await self.connection.aclose()
+        else:
+            self.close()
 
     def close(self):
         self.connection.close()
@@ -206,7 +219,7 @@ class Services:
         return {'ready': True}
 
     def dispatch(self, identity, service, method, parameters):
-        allowed = {'describe', 'command_start', 'process_status', 'process_output', 'process_stdin',
+        allowed = {'describe', 'command_start', 'process_status', 'process_wait', 'process_output', 'process_stdin',
                    'process_terminate', 'process_resize', 'file', 'terminate', 'network_policy', 'service_setup'}
         if method not in allowed:
             raise UnsupportedFeature('unsupported service operation: ' + method)

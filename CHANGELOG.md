@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.31
+
+- Replace repeated command-status polling with guest completion and output
+  notifications. Synchronous and asynchronous process waits, stream readers,
+  and template setup commands use bounded server-side waits.
+- Release sandbox lifecycle locks during waits so stdin, termination and other
+  commands remain responsive. Resolve the runtime from the already-read sandbox
+  record instead of decoding that record again for every guest request.
+- Preserve wait deadlines, command deadlines, cancellation, output limits and
+  completed-result caching. Older workers and memory snapshots remain compatible
+  through bounded exponential polling backoff.
+- Add concurrency, wakeup-race, streaming and compatibility regressions, including
+  live ownership registration and unrelated tool latency under 128 waiting calls.
+
 ## 0.2.30
 
 - Fix duplicate bridge delivery in the runtime: switched unicast remains at

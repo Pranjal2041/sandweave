@@ -196,6 +196,9 @@ Each call starts a fresh process. `cwd` and `env` apply to that call; `cd` or
 `run.aio` default to `check=False` starting in 0.1.2. Pass `check=True` to raise
 `CommandError` on a nonzero exit; the exception retains the command's result.
 `exec` returns a process; use `wait(check=True)` to raise on its nonzero exit.
+Process and stream waits use guest notifications; `wait(timeout=...)` expiring
+does not terminate the command. Older workers and saved guest agents use polling
+with backoff. `poll()` remains an immediate status request.
 Timeouts, output limits and sandbox connection failures still raise errors.
 The CLI forwards command output and exits with the guest's exit status.
 

@@ -355,12 +355,12 @@ class Worker:
     def list(self):
         return [self.describe(path.stem) for path in sorted(self.records.glob('*.bin'))]
 
-    def agent(self, identity):
-        record = self.read(identity)
+    def agent(self, identity, record=None):
+        record = self.read(identity) if record is None else record
         diagnostic = record['state'] == 'failed' and record['spec'].get('keep_on_error') and record.get('agent')
         if record['state'] not in ('ready', 'preparing') and not diagnostic:
             raise SandboxError('sandbox is not running: ' + record['state'], sandbox_id=identity)
-        return self.runtime.agent(identity, record['agent'])
+        return self.runtime.adapter(record['spec']['runtime']).agent(identity, record['agent'])
 
     def command_start(self, identity, process_id, command=None, argv=None, cwd=None,
                       env=None, user=None, timeout=None, shell=None, max_output_bytes=None, pty=False, maintenance=False):
@@ -374,7 +374,7 @@ class Worker:
             argv = [shell or spec['template'].get('command_shell', '/bin/sh'), '-c', command]
         elif shell is not None:
             raise ValueError('shell cannot be combined with argv')
-        return self.agent(identity).call('spawn', identity=process_id, argv=argv,
+        return self.agent(identity, record).call('spawn', identity=process_id, argv=argv,
                                          cwd=cwd if cwd is not None else spec['template'].get('workdir', '/workspace'),
                                          env={**spec.get('env', {}), **record['agent'].get('proxy_env', {}), **(env or {})},
                                          user=user if user is not None else spec['template'].get('user', 'root'), timeout=timeout,
@@ -383,7 +383,35 @@ class Worker:
                                          **({'maintenance': True} if maintenance else {}))
 
     def process_status(self, identity, process_id):
-        return self.agent(identity).call('status', identity=process_id)
+        return {**self.agent(identity).call('status', identity=process_id), 'wait_supported': True}
+
+    def process_wait(self, identity, process_id, timeout=10, stream=None, offset=0):
+        import math
+        if (not isinstance(timeout, (int, float)) or not math.isfinite(timeout)
+                or not 0 <= timeout <= 10 or stream not in (None, 'stdout', 'stderr')
+                or type(offset) is not int or offset < 0):
+            raise ValueError('invalid process wait')
+        # Resolve under the lifecycle lock, but never hold it while waiting.
+        # Stdin, termination and unrelated commands must remain runnable.
+        with self.lock(identity):
+            agent = self.agent(identity)
+        if getattr(agent, '_process_wait_supported', True):
+            try:
+                return agent.call('wait', identity=process_id, timeout=timeout, stream=stream, offset=offset)
+            except ValueError as error:
+                if str(error) != 'unknown agent operation':
+                    raise
+                # A memory snapshot retains its original guest agent code.
+                agent._process_wait_supported = False
+        deadline, delay = time.monotonic() + timeout, .01
+        while True:
+            state = agent.call('status', identity=process_id)
+            remaining = deadline - time.monotonic()
+            if (state['returncode'] is not None or remaining <= 0
+                    or stream is not None and state[stream + '_size'] > offset):
+                return state
+            time.sleep(min(delay, remaining))
+            delay = min(.25, delay * 2)
 
     def process_output(self, identity, process_id, **params):
         return self.agent(identity).call('output', identity=process_id, **params)
@@ -416,9 +444,8 @@ class Worker:
         argv = [script] if content.startswith(b'#!') else ['/bin/sh', script]
         self.command_start(identity, process, argv=argv, cwd=directory,
                            user=step.get('user', 'root'), timeout=self.remaining(identity, step.get('timeout')))
-        while (status := self.process_status(identity, process))['returncode'] is None:
+        while (status := self.process_wait(identity, process, timeout=self.remaining(identity, 10)))['returncode'] is None:
             self.remaining(identity)
-            time.sleep(.02)
         if status['returncode']:
             stderr = self.process_output(identity, process, stream='stderr', size=65536).decode(errors='replace')
             raise SetupError(f'setup exited with {status["returncode"]}: {stderr}', sandbox_id=identity)
@@ -744,7 +771,7 @@ class Worker:
                 self.mark_stopping()
             threading.Thread(target=self.shutdown, daemon=True).start()
             return {'stopping': True}
-        allowed = {'create', 'describe', 'list', 'command_start', 'process_status', 'process_output',
+        allowed = {'create', 'describe', 'list', 'command_start', 'process_status', 'process_wait', 'process_output',
                    'process_stdin', 'process_terminate', 'file', 'setup', 'pause', 'resume', 'terminate',
                    'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
         allowed.add('pool')
@@ -760,7 +787,7 @@ class Worker:
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
-        if identity and operation != 'describe':
+        if identity and operation not in ('describe', 'process_wait'):
             with self.lock(identity):
                 return getattr(self, operation)(**parameters)
         return getattr(self, operation)(**parameters)

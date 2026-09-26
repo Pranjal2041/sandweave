@@ -1,0 +1,124 @@
+{
+  "notifications": {
+    "sync": {
+      "worker_cpu_fraction": 0.04394121719642972,
+      "measured_seconds": 2.730921163689345,
+      "waiters": 128,
+      "asynchronous": false,
+      "legacy_polling": false,
+      "calls": {
+        "process_status": 128,
+        "process_wait": 128,
+        "process_stdin": 128,
+        "process_output": 128
+      },
+      "latency_seconds": {
+        "owner_register": {
+          "p50": 0.0010684938170015812,
+          "p95": 0.0013224049471318722,
+          "max": 0.0013224049471318722
+        },
+        "list": {
+          "p50": 0.008114670868963003,
+          "p95": 0.009125504177063704,
+          "max": 0.009125504177063704
+        },
+        "run": {
+          "p50": 0.017945216968655586,
+          "p95": 0.02204194199293852,
+          "max": 0.02204194199293852
+        }
+      }
+    },
+    "async": {
+      "worker_cpu_fraction": 0.061454214743611506,
+      "measured_seconds": 2.7662870758213103,
+      "waiters": 128,
+      "asynchronous": true,
+      "legacy_polling": false,
+      "calls": {
+        "process_status": 128,
+        "process_wait": 128,
+        "process_stdin": 128,
+        "process_output": 128
+      },
+      "latency_seconds": {
+        "owner_register": {
+          "p50": 0.0011085937730967999,
+          "p95": 0.003627403639256954,
+          "max": 0.003627403639256954
+        },
+        "list": {
+          "p50": 0.010288668796420097,
+          "p95": 0.013042518869042397,
+          "max": 0.013042518869042397
+        },
+        "run": {
+          "p50": 0.01813568826764822,
+          "p95": 0.025201283860951662,
+          "max": 0.025201283860951662
+        }
+      }
+    }
+  },
+  "polling_baseline": {
+    "sync": {
+      "worker_cpu_fraction": 1.1177309910845528,
+      "measured_seconds": 3.5697319228202105,
+      "waiters": 128,
+      "asynchronous": false,
+      "legacy_polling": true,
+      "calls": {
+        "process_status": 14076,
+        "process_stdin": 128,
+        "process_output": 128
+      },
+      "latency_seconds": {
+        "owner_register": {
+          "p50": 0.002575480844825506,
+          "p95": 0.0051071299239993095,
+          "max": 0.0051071299239993095
+        },
+        "list": {
+          "p50": 0.06297931307926774,
+          "p95": 0.07182007795199752,
+          "max": 0.07182007795199752
+        },
+        "run": {
+          "p50": 0.03252961998805404,
+          "p95": 0.04607896460220218,
+          "max": 0.04607896460220218
+        }
+      }
+    },
+    "async": {
+      "worker_cpu_fraction": 1.07382479630518,
+      "measured_seconds": 3.697064934298396,
+      "waiters": 128,
+      "asynchronous": true,
+      "legacy_polling": true,
+      "calls": {
+        "process_status": 8969,
+        "process_stdin": 128,
+        "process_output": 128
+      },
+      "latency_seconds": {
+        "owner_register": {
+          "p50": 0.0026838909834623337,
+          "p95": 0.004609609022736549,
+          "max": 0.004609609022736549
+        },
+        "list": {
+          "p50": 0.07217356003820896,
+          "p95": 0.09466954926028848,
+          "max": 0.09466954926028848
+        },
+        "run": {
+          "p50": 0.030183210968971252,
+          "p95": 0.056157516315579414,
+          "max": 0.056157516315579414
+        }
+      }
+    }
+  }
+}

@@ -63,6 +63,13 @@ with Sandbox() as env:
 `poll()`, `wait()`, and `terminate()` methods. The SDK drains command output
 within its configured output limit.
 
+Process waits and output readers wake when the guest exits or produces output.
+Long commands do not continuously poll their status. `wait(timeout=...)` limits
+how long the caller waits; it leaves the command running if that deadline expires.
+The command's own `timeout=` still terminates it when its execution deadline expires.
+Upgrade clients and workers to use notification-based waits. Older workers and
+memory snapshots remain compatible through polling with backoff.
+
 For a terminal, pass `pty=True`. Terminal stdout and stderr share one stream;
 `process.resize(rows, cols)` changes its dimensions.
 

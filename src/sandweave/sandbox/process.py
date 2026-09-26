@@ -29,6 +29,21 @@ class OutputStream:
         self.buffer = b'' if binary else ''
         self.decoder = None if binary else codecs.getincrementaldecoder('utf-8')(errors='replace')
         self.raw_received = 0
+        self.delay = .01
+
+    def _wait(self):
+        state = self.process._waiting(stream=self.name, offset=self.offset)
+        if state['returncode'] is None and not self.process._wait_supported:
+            time.sleep(self.delay)
+            self.delay = min(.25, self.delay * 2)
+        return state['returncode']
+
+    async def _await(self):
+        state = await self.process._awaiting(stream=self.name, offset=self.offset)
+        if state['returncode'] is None and not self.process._wait_supported:
+            await asyncio.sleep(self.delay)
+            self.delay = min(.25, self.delay * 2)
+        return state['returncode']
 
     def _chunk(self):
         data = b'' if self._finished() else self.process.sandbox._call('process_output', process_id=self.process.id,
@@ -42,6 +57,8 @@ class OutputStream:
     def _decode(self, data):
         self.offset += len(data)
         self.raw_received = len(data)
+        if data:
+            self.delay = .01
         return data if self.binary else self.decoder.decode(data)
 
     async def _achunk(self):
@@ -57,14 +74,13 @@ class OutputStream:
             chunk = self._chunk()
             self.buffer += chunk
             if not self.raw_received:
-                if self.process.poll() is not None:
+                if self._wait() is not None:
                     self.buffer += self._chunk()
                     if self.raw_received:
                         continue
                     if not self.binary:
                         self.buffer += self.decoder.decode(b'', final=True)
                     break
-                time.sleep(.01)
         result = self.buffer if size < 0 else self.buffer[:size]
         self.buffer = self.buffer[len(result):]
         return result
@@ -76,7 +92,7 @@ class OutputStream:
             chunk = self._chunk()
             self.buffer += chunk
             if not self.raw_received:
-                if self.process.poll() is not None:
+                if self._wait() is not None:
                     self.buffer += self._chunk()
                     if self.raw_received:
                         continue
@@ -84,7 +100,6 @@ class OutputStream:
                         self.buffer += self.decoder.decode(b'', final=True)
                     result, self.buffer = self.buffer, self.buffer[:0]
                     return result
-                time.sleep(.01)
         index = self.buffer.index(newline) + 1
         result, self.buffer = self.buffer[:index], self.buffer[index:]
         return result
@@ -96,14 +111,13 @@ class OutputStream:
         while size < 0 or len(self.buffer) < size:
             self.buffer += await self._achunk()
             if not self.raw_received:
-                if await self.process.poll.aio() is not None:
+                if await self._await() is not None:
                     self.buffer += await self._achunk()
                     if self.raw_received:
                         continue
                     if not self.binary:
                         self.buffer += self.decoder.decode(b'', final=True)
                     break
-                await asyncio.sleep(.01)
         result = self.buffer if size < 0 else self.buffer[:size]
         self.buffer = self.buffer[len(result):]
         return result
@@ -114,7 +128,7 @@ class OutputStream:
         while newline not in self.buffer:
             self.buffer += await self._achunk()
             if not self.raw_received:
-                if await self.process.poll.aio() is not None:
+                if await self._await() is not None:
                     self.buffer += await self._achunk()
                     if self.raw_received:
                         continue
@@ -122,7 +136,6 @@ class OutputStream:
                         self.buffer += self.decoder.decode(b'', final=True)
                     result, self.buffer = self.buffer, self.buffer[:0]
                     return result
-                await asyncio.sleep(.01)
         index = self.buffer.index(newline) + 1
         result, self.buffer = self.buffer[:index], self.buffer[index:]
         return result
@@ -194,6 +207,7 @@ class Process:
         self.stdout, self.stderr = OutputStream(self, 'stdout', binary), OutputStream(self, 'stderr', binary)
         self.stdin = InputStream(self)
         self._final = None
+        self._wait_supported = False
 
     async def _acall(self, operation, **params):
         if hasattr(self.sandbox, '_acall'):
@@ -201,9 +215,25 @@ class Process:
         return await asyncio.to_thread(self.sandbox._call, operation, process_id=self.id, **params)
 
     def _remember(self, state):
+        if 'wait_supported' in state:
+            self._wait_supported = state['wait_supported']
         if state['returncode'] is not None:
             self._final = state
         return state
+
+    def _waiting(self, timeout=10, **params):
+        if self._final is not None:
+            return self._final
+        operation = 'process_wait' if self._wait_supported else 'process_status'
+        options = dict(timeout=timeout, **params) if self._wait_supported else {}
+        return self._remember(self.sandbox._call(operation, process_id=self.id, **options))
+
+    async def _awaiting(self, timeout=10, **params):
+        if self._final is not None:
+            return self._final
+        operation = 'process_wait' if self._wait_supported else 'process_status'
+        options = dict(timeout=timeout, **params) if self._wait_supported else {}
+        return self._remember(await self._acall(operation, **options))
 
     @dualmethod
     def poll(self):
@@ -250,8 +280,10 @@ class Process:
     @dualmethod
     def wait(self, timeout=None, *, check=False):
         deadline = None if timeout is None else time.monotonic() + timeout
+        delay = .01
         while True:
-            state = self._remember(self._final or self.sandbox._call('process_status', process_id=self.id))
+            remaining = 10 if deadline is None else max(0, min(10, deadline - time.monotonic()))
+            state = self._waiting(timeout=remaining)
             if state['returncode'] is not None:
                 if state.get('output_limited'):
                     raise OutputLimitExceeded('combined command output exceeded its spool budget',
@@ -263,14 +295,18 @@ class Process:
                 return state['returncode']
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError('waiting deadline exceeded; the command is still running')
-            time.sleep(.01)
+            if not self._wait_supported:
+                remaining = delay if deadline is None else max(0, deadline - time.monotonic())
+                time.sleep(min(delay, remaining))
+                delay = min(.25, delay * 2)
 
     @wait.async_impl
     async def _wait_async(self, timeout=None, *, check=False):
         deadline = None if timeout is None else time.monotonic() + timeout
         delay = .01
         while True:
-            state = self._remember(self._final or await self._acall('process_status'))
+            remaining = 10 if deadline is None else max(0, min(10, deadline - time.monotonic()))
+            state = await self._awaiting(timeout=remaining)
             if state['returncode'] is not None:
                 if state.get('output_limited'):
                     raise OutputLimitExceeded('combined command output exceeded its spool budget',
@@ -282,8 +318,10 @@ class Process:
                 return state['returncode']
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError('waiting deadline exceeded; the command is still running')
-            await asyncio.sleep(delay)
-            delay = min(.05, delay * 1.5)
+            if not self._wait_supported:
+                remaining = delay if deadline is None else max(0, deadline - time.monotonic())
+                await asyncio.sleep(min(delay, remaining))
+                delay = min(.25, delay * 2)
 
     @dualmethod
     def terminate(self):

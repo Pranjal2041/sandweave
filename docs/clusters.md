@@ -68,6 +68,58 @@ Paste the address, not the entire CLI join command. Include the `#token=...`
 fragment of an HTTP link. The name `lab` is a project-local saved connection;
 it does not locate a controller on another machine by itself.
 
+## Direct sandbox connections
+
+By default, `connection="cluster"` sends sandbox traffic through Weave. To send
+actions, observations, commands, files and VNC directly to the assigned worker:
+
+```python
+from sandweave import Sandbox, Pool
+
+env = Sandbox(target="lab", template="gnome", connection="direct")
+observation = env.desktop.step({"mouse": {"move": [400, 300]}})
+env.terminate()
+env.close()
+
+pool = Pool(target="lab", template="gnome", size=8, connection="direct")
+pool.start()
+with pool.acquire() as env:
+    image = env.desktop.screenshot()
+pool.close()
+```
+
+Weave still creates and schedules sandboxes. During creation or checkout, the
+SDK obtains the worker endpoint and a credential limited to that sandbox, checks
+the connection, and reuses it for subsequent requests. There is no controller
+lookup or bookkeeping request per action. The worker performs the usual
+authorization and input/observation handling. Ownership heartbeats, pool releases,
+snapshot registration and allocation cleanup retain their existing behavior.
+
+On the worker machine this uses loopback HTTP. From another machine it opens a
+persistent SSH tunnel to the worker, using its registered SSH address or hostname
+and your SSH configuration. It does not open public worker ports. The controller
+address can independently use HTTP, HTTPS or SSH. A worker reachable only through
+its outbound connection to Weave still requires `connection="cluster"` unless
+your client can also reach that worker through SSH.
+
+If direct access fails, creation fails and requests cleanup; a failed pool
+checkout releases its lease. There is no automatic fallback to controller
+forwarding. An uncertain action response is never automatically replayed.
+
+The selection belongs to the client handle, so reconnects select it explicitly:
+
+```python
+env = Sandbox.connect(sandbox_id, target="lab", connection="direct")
+pool = Pool.connect(pool_id, target="lab", connection="direct")
+```
+
+Async calls use the same selection. Local and plain SSH worker targets already
+connect directly; both values leave that behavior unchanged. The option does not
+change sandbox definitions, images, snapshot hashes or guest networking.
+
+Direct routing removes the controller hop. Screenshot size, encoding, application
+repaint time and worker load still affect action-to-observation latency.
+
 ## Open the dashboard
 
 Open the URL printed at startup. To display all connection instructions again:

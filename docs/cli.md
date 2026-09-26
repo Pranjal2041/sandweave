@@ -25,6 +25,18 @@ This creates a sandbox, runs the command, and terminates the sandbox. Output and
 exit status pass through to your terminal. Supply one quoted command string
 after `--`; the guest shell interprets it.
 
+For a cluster sandbox, select direct worker traffic with `--connection direct`:
+
+```bash
+sandweave run --target lab --connection direct -- "python --version"
+sandweave exec --target lab --connection direct SANDBOX_ID -- "python --version"
+sandweave desktop screenshot SANDBOX_ID --target lab --connection direct --output screen.png
+```
+
+This also works with `create`, `shell`, desktop `action`/`step`, and `pool exec`.
+The default is `cluster`. See [direct connections](clusters.md#direct-sandbox-connections)
+for worker reachability and reconnect behavior.
+
 Add disk-backed memory with its own directory on the worker:
 
 ```bash

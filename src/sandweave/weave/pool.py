@@ -35,15 +35,17 @@ class Pool(LocalPool):
         return super().__new__(cls)
 
     @dualclassmethod
-    def connect(cls, identity, *, target):
-        return ManagedPool.connect(identity, target=target)
+    def connect(cls, identity, *, target, connection='cluster'):
+        return ManagedPool.connect(identity, target=target, connection=connection)
 
 
 class ManagedPool(LocalPool):
     def __init__(self, *, target, size=1, warm=0, weight=1, priority=0, labels=None,
                  placement='spread', shared_cache=None, affinity=None, wait_timeout=300,
-                 retain_baseline=True, **options):
+                 retain_baseline=True, connection='cluster', **options):
         from .client import ClusterConnection, cluster_config
+        from ..sandbox.targets import connection_mode
+        self.connection_mode = connection_mode(connection)
         shared_cache = cache_path(shared_cache)
         validate(size=size, warm=warm, weight=weight, priority=priority, labels=labels or {},
                  placement=placement, affinity=affinity, shared_cache=shared_cache)
@@ -60,14 +62,14 @@ class ManagedPool(LocalPool):
         self.name = options.pop('name', None)
         self.options = options
         self.wait_timeout = wait_timeout
-        self.connection = ClusterConnection(cluster_config(target))
+        self.connection = ClusterConnection(cluster_config(target), connection=connection)
         self.started = self.closed = self.initial_ready = False
         self.owned = True
         self.lock = threading.RLock()
 
     @dualclassmethod
-    def connect(cls, identity, *, target):
-        self = cls(target=target)
+    def connect(cls, identity, *, target, connection='cluster'):
+        self = cls(target=target, connection=connection)
         self.id = self.connection.call('pool_status', identity=str(identity))['id']
         info = self.connection.call('pool_status', identity=self.id)
         self.size, self.warm = info['size'], info['warm']
@@ -160,7 +162,7 @@ class ManagedPool(LocalPool):
                 info = self.connection.call('pool_lease', identity=self.id, lease_id=identity)
                 if info['state'] == 'ready':
                     self.connection.remember(info['route'])
-                    env = Sandbox.connect(info['sandbox'], target=self.target)
+                    env = Sandbox.connect(info['sandbox'], target=self.target, connection=self.connection_mode)
                     yield env
                     return
                 if info['state'] in ('failed', 'cancelled'):

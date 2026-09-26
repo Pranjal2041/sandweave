@@ -11,6 +11,32 @@ from sandweave.benchmarks.harbor.provider import AgentSandbox
 from test_harbor import provider
 
 
+def test_compose_group_preserves_client_connection_selection(monkeypatch):
+    from sandweave import Sandbox
+    from sandweave.benchmarks.harbor.compose import Project
+    captured = []
+    class ReachedLaunch(Exception):
+        pass
+    def launch(request, target, **kwargs):
+        captured.append((request, target, kwargs))
+        raise ReachedLaunch()
+    monkeypatch.setattr(Sandbox, '_from_definition', launch)
+    env = SimpleNamespace(
+        options=lambda: {'template': {'name': 'test'}, 'network': 'internet'},
+        task_env_config=SimpleNamespace(build_timeout_sec=10), _effective_memory_mb=256,
+        session=SimpleNamespace(pool=SimpleNamespace(options={'target': 'lab', 'connection': 'direct'},
+            pin=AsyncMock(side_effect=lambda image: image))))
+    config = {'services': {name: {'image': 'busybox:1.37', 'networks': {'default': None}}
+                           for name in ('main', 'sidecar')}}
+    project = Project(env, config)
+    with pytest.raises(ReachedLaunch):
+        asyncio.run(project.start())
+    request, target, kwargs = captured[0]
+    assert target == 'lab' and kwargs == {'connection': 'direct'}
+    assert 'connection' not in request['spec']
+    assert set(request['spec']['services']) == {'sidecar'}
+
+
 def test_sidecar_exec_is_posix_and_does_not_inherit_main_scopes(tmp_path):
     async def run():
         env = provider(tmp_path, persistent_env={'MAIN': 'private'})

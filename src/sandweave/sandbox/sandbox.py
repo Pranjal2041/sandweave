@@ -124,7 +124,7 @@ class Sandbox:
                  cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False, recording=False,
-                 service_network=None, aliases=None, networks=None, profiling=None):
+                 service_network=None, aliases=None, networks=None, profiling=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
         self._connection = None
         try:
@@ -138,25 +138,27 @@ class Sandbox:
                     cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False, recording=False,
-                    service_network=None, aliases=None, networks=None, profiling=None):
+                    service_network=None, aliases=None, networks=None, profiling=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
+        from .targets import connection_mode
+        connection_mode(options.pop('connection'))
         request = definition(**options)
-        self._launch(request, target)
+        self._launch(request, target, connection=connection)
 
     @classmethod
-    def _from_definition(cls, request, target):
+    def _from_definition(cls, request, target, *, connection='cluster'):
         """Launch an internally assigned pool member without changing the public constructor."""
         self = cls.__new__(cls)
         self._connection = None
         try:
-            self._launch(request, target)
+            self._launch(request, target, connection=connection)
             return self
         except BaseException:
             if self._connection is not None:
                 self._connection.close()
             raise
 
-    def _launch(self, request, target):
+    def _launch(self, request, target, *, connection='cluster'):
         spec, recipe, reference = request['spec'], request['spec']['template'], request['reference']
         startup_timeout = spec['startup_timeout']
         self.id = ('vr-sw-' if 'vr' in recipe['capabilities'] else 'sw-') + uuid.uuid4().hex
@@ -167,7 +169,7 @@ class Sandbox:
             self._connection.close()
         # Select the worker after installing the recipe's dependencies. A
         # saved recipe needs the same check when restored on another worker.
-        self._connection = connect(target, template=recipe)
+        self._connection = connect(target, template=recipe, connection=connection)
         initial = self._connection
         self._connection = initial.clone(timeout=startup_timeout + 60)
         initial.close()
@@ -212,9 +214,9 @@ class Sandbox:
             raise
 
     @dualclassmethod
-    def connect(cls, identity, *, target=None):
+    def connect(cls, identity, *, target=None, connection='cluster'):
         self = cls.__new__(cls)
-        self._connection = connect(target)
+        self._connection = connect(target, connection=connection)
         self.id = str(identity)
         self._owned, self._closed, self._terminated = False, False, False
         self._target = target

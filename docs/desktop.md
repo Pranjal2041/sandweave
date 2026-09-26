@@ -12,6 +12,9 @@ image.save("desktop.png")
 
 Dependencies are prepared on first use. GNOME starts at 1920×1080 using Xvnc.
 Add `target="lab"` or a printed cluster address to run on a cluster worker.
+Add `connection="direct"` to bypass controller forwarding for desktop traffic;
+the client must reach the worker locally or through SSH. See
+[direct sandbox connections](clusters.md#direct-sandbox-connections).
 
 For a GPU game example, see [Stunt Rally 3](https://github.com/Pranjal2041/sandweave/tree/main/examples/stuntrally3).
 It starts the standalone Linux game at 1920×1080, accepts keyboard controls,

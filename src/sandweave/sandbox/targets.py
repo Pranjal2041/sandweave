@@ -175,13 +175,20 @@ def local_connection(*, template=None):
         return connection
 
 
-def connect(target=None, *, template=None):
+def connection_mode(value):
+    if value not in ('cluster', 'direct'):
+        raise ValueError('connection must be "cluster" or "direct"')
+    return value
+
+
+def connect(target=None, *, template=None, connection='cluster'):
+    connection_mode(connection)
     if target in (None, 'local'):
         return local_connection(template=template)
     from ..weave.client import ClusterConnection, cluster_config
     cluster = cluster_config(target)
     if cluster is not None:
-        return ClusterConnection(cluster)
+        return ClusterConnection(cluster, connection=connection)
     if isinstance(target, (Slurm, Endpoint)):
         return target.connection()
     if isinstance(target, str) and target.startswith('ssh://'):

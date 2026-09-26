@@ -36,6 +36,7 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `aliases` | DNS names visible to members sharing a named network. | `[]` |
 | `networks` | Named networks this member joins within the service network. | `["default"]` |
 | `target` | Cluster name/address, worker target, or allocation. | Local worker |
+| `connection` | `"cluster"` forwards through Weave; `"direct"` connects to the assigned worker. | `"cluster"` |
 | `runtime` | `"gvisor"` or `"apptainer"` for a new recipe. | `"gvisor"` |
 | `env` | Guest environment variables. | Template environment |
 | `mounts` | Explicit worker-path mounts. | None |
@@ -181,7 +182,10 @@ workers. Cluster pools also accept `weight`, `priority`, `labels`, `placement`,
 and `affinity` (`"worker"`, `"machine"`, or `None`), and support `update(...)`.
 Affinity prefers a location and allows spillover. The cache path is fixed at
 creation; the other placement settings can be updated for future assignments.
-`Pool.connect(name, target=...)` borrows a named cluster pool.
+`Pool.connect(name, target=...)` borrows a named cluster pool. Both creation and
+reconnection accept `connection="direct"`; each lease uses that client-side
+selection. `Sandbox.connect(id, target=..., connection="direct")` selects the same
+path for an existing sandbox. See [direct connections](clusters.md#direct-sandbox-connections).
 See [pools and evaluation](pools.md) for ownership and cleanup.
 
 ## Benchmark

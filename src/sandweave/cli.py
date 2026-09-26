@@ -79,7 +79,7 @@ def command_options(parser):
 
 def creation(args):
     keys = ('template', 'image', 'setup', 'cache', 'snapshot', 'cache_key', 'refresh', 'runtime',
-            'target', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
+            'target', 'connection', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
             'keep_on_error', 'experimental_gpu_live', 'profiling')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
     if getattr(args, 'storage', None) is not None or getattr(args, 'storage_path', None) is not None:
@@ -197,6 +197,11 @@ def parser():
     run = sub.add_parser('run'); creation_options(run); command_options(run)
     existing = sub.add_parser('exec'); existing.add_argument('--target'); existing.add_argument('id'); command_options(existing)
     shell = sub.add_parser('shell'); shell.add_argument('id'); shell.add_argument('--target')
+    def data_connection(parser):
+        parser.add_argument('--connection', choices=('cluster', 'direct'), default='cluster',
+                            help='Route sandbox traffic through the cluster (default) or directly to its worker')
+    for command in (create, run, existing, shell):
+        data_connection(command)
     command_options(shell); shell.set_defaults(command=['/bin/bash -i'], pty=True)
     listing = sub.add_parser('list'); listing.add_argument('--target'); listing.add_argument('--all', action='store_true')
     profile = sub.add_parser('profile', help='Save a runtime heap profile on this client')
@@ -243,6 +248,8 @@ def parser():
     shot = desktop.add_parser('screenshot'); shot.add_argument('id'); shot.add_argument('--output', required=True); shot.add_argument('--target')
     step = desktop.add_parser('step'); step.add_argument('id'); step.add_argument('action', help='JSON action'); step.add_argument('--output', required=True); step.add_argument('--target')
     action = desktop.add_parser('action'); action.add_argument('id'); action.add_argument('--input', required=True, help='JSON action'); action.add_argument('--target')
+    for command in (shot, step, action):
+        data_connection(command)
     record = sub.add_parser('vr').add_subparsers(dest='vr_operation', required=True).add_parser('record')
     record.add_argument('id'); record.add_argument('--duration', type=float, required=True); record.add_argument('--output', required=True)
     record.add_argument('--fps', type=int, default=30); record.add_argument('--target')
@@ -259,6 +266,7 @@ def parser():
     for action in ('status', 'close', 'exec'):
         p = pools.add_parser(action); p.add_argument('name'); p.add_argument('--target')
         if action == 'exec':
+            data_connection(p)
             command_options(p)
     p = pools.add_parser('list'); p.add_argument('--target')
     targets = sub.add_parser('targets').add_subparsers(dest='target_operation', required=True)
@@ -382,7 +390,7 @@ def main(argv=None):
                     return 0
                 lease = connection.call('pool', action='checkout', name=name)
                 try:
-                    with Sandbox.connect(lease['id'], target=args.target) as env:
+                    with Sandbox.connect(lease['id'], target=args.target, connection=args.connection) as env:
                         return execute(env, args)
                 finally:
                     connection.call('pool', action='release', name=name, lease_id=lease['lease_id'])
@@ -422,7 +430,8 @@ def main(argv=None):
             finally:
                 connection.close()
             return 0
-        with Sandbox.connect(args.id, target=getattr(args, 'target', None)) as env:
+        with Sandbox.connect(args.id, target=getattr(args, 'target', None),
+                             connection=getattr(args, 'connection', 'cluster')) as env:
             if op in ('exec', 'shell'):
                 if op == 'shell' and not args.command:
                     args.command = ['/bin/bash -i']

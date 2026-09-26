@@ -22,8 +22,10 @@ def endpoint(information, connection, target=None):
     value = {'hostname': information['hostname'], 'port': information['port'], 'token': connection.token}
     if information.get('workspace'):
         value['workspace'] = information['workspace']
-    if isinstance(target, dict) and target.get('endpoint', {}).get('relay'):
-        value['relay'] = target['endpoint']['relay']
+    if isinstance(target, dict):
+        for key in ('relay', 'ssh_host', 'ssh_port'):
+            if target.get('endpoint', {}).get(key) is not None:
+                value[key] = target['endpoint'][key]
     if isinstance(target, dict) and target.get('host'):
         value['ssh_host'] = target['host']
     elif isinstance(target, str) and target.startswith('ssh://'):

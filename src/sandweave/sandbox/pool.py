@@ -19,7 +19,9 @@ from .resources import positive
 
 class Pool:
     def __init__(self, *, size=1, warm=0, targets=None, shared_cache=None, affinity=None,
-                 retain_baseline=True, **sandbox_options):
+                 retain_baseline=True, connection='cluster', **sandbox_options):
+        from .targets import connection_mode
+        self.connection_mode = connection_mode(connection)
         if type(retain_baseline) is not bool:
             raise ValueError('retain_baseline must be a bool')
         if not retain_baseline:
@@ -160,7 +162,7 @@ class Pool:
             finally:
                 source.close()
         if self.proxy_network is None and not self.options.get('recording'):
-            return Sandbox(target=target, **self.options)
+            return Sandbox(target=target, connection=self.connection_mode, **self.options)
         from .sandbox import definition
         request = definition(target=target, **{**self.options, **(
             {'network': self.proxy_network} if self.proxy_network is not None else {})})
@@ -179,7 +181,7 @@ class Pool:
                 assignment, self.proxy_state = select(self.proxy_network, self.proxy_state, advance=not builder)
             request = copy.deepcopy(request)
             request['spec']['_proxy_assignment'] = assignment
-        return Sandbox._from_definition(request, target)
+        return Sandbox._from_definition(request, target, connection=self.connection_mode)
 
     def acquire(self, *, timeout=None):
         if timeout is not None:

@@ -124,6 +124,8 @@ class Project:
         requests, volumes, mounts = {}, {}, {}
         target = (self.environment.session.pool.options.get('target') if self.environment.session
                   else self.environment.target)
+        connection = (self.environment.session.pool.options.get('connection', 'cluster')
+                      if self.environment.session else 'cluster')
         for name, service in definitions.items():
             if service.get('network_mode') not in (None, 'none'):
                 raise ValueError('Native service groups do not yet implement network_mode=' + service['network_mode'])
@@ -246,7 +248,8 @@ class Project:
             definition['request']['spec']['_guest_tools'] = True
         # Even a one-service Compose project can own shared/bind volumes.
         main['spec']['service_group'] = True
-        pending = asyncio.create_task(asyncio.to_thread(Sandbox._from_definition, main, target))
+        pending = asyncio.create_task(asyncio.to_thread(Sandbox._from_definition, main, target,
+                                                       connection=connection))
         try:
             self.sandbox = await asyncio.shield(pending)
         except asyncio.CancelledError:

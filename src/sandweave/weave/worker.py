@@ -3,6 +3,7 @@ import argparse
 import asyncio
 from collections import OrderedDict
 import hashlib
+import getpass
 import json
 import logging
 import os
@@ -246,7 +247,8 @@ def serve(directory):
         try:
             ping = local.call('ping')
             endpoint = {k: ping[k] for k in ('hostname', 'port', 'workspace')}
-            endpoint.update(token=local.token, relay=settings['channel'])
+            endpoint.update(token=local.token, relay=settings['channel'],
+                            ssh_host=getpass.getuser() + '@' + socket.gethostname())
         finally:
             local.close()
         bridge = Bridge(settings['config'], settings['channel']).start()

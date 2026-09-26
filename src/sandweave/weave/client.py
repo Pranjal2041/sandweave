@@ -68,7 +68,9 @@ def save_target(name, config):
 
 
 class ClusterConnection:
-    def __init__(self, config, *, timeout=300):
+    def __init__(self, config, *, timeout=300, connection='cluster'):
+        from ..sandbox.targets import connection_mode
+        self.connection_mode = connection_mode(connection)
         if config is None:
             raise ValueError('target is not a configured cluster')
         self.config, self.timeout = dict(config), timeout
@@ -96,7 +98,8 @@ class ClusterConnection:
         self.lock = threading.RLock()
 
     def clone(self, *, timeout=None):
-        return ClusterConnection(self.config, timeout=self.timeout if timeout is None else timeout)
+        return ClusterConnection(self.config, timeout=self.timeout if timeout is None else timeout,
+                                 connection=self.connection_mode)
 
     def _rpc(self, operation, **params):
         repeatable = {'ping', 'status', 'events', 'worker_list', 'allocation_get', 'allocation_route',
@@ -144,16 +147,66 @@ class ClusterConnection:
             route = self.remember(self._rpc('allocation_route', identity=identity))
         return route
 
+    @staticmethod
+    def _worker_key(route):
+        return route['id'], json.dumps(route['endpoint'], sort_keys=True)
+
     def _worker(self, route):
-        key = (route['id'], route['endpoint']['port'], route['endpoint']['token'])
+        key = self._worker_key(route)
         with self.lock:
             if key not in self.connections:
-                if 'url' in self.config or self.config.get('forward') or route['endpoint'].get('relay'):
+                if self.connection_mode == 'cluster':
                     from .transport import ForwardedConnection
                     self.connections[key] = ForwardedConnection(self.control, route)
                 else:
-                    self.connections[key] = providers.direct(route['endpoint'], timeout=self.timeout)
+                    # Establish and authenticate the data path once, before
+                    # handing a new sandbox/lease to its caller. Never silently
+                    # relay an explicitly direct connection or replay mutations.
+                    connection = probe = None
+                    try:
+                        connection = providers.direct(route['endpoint'], timeout=self.timeout)
+                        probe = connection.clone(timeout=min(10, self.timeout))
+                        info = probe.call('describe', identity=route['id'])
+                        if info['id'] != route['id']:
+                            raise ResourceUnavailable('worker returned a different sandbox identity')
+                    except Exception as error:
+                        if connection is not None:
+                            connection.close()
+                        raise ResourceUnavailable(
+                            'Direct sandbox connection failed. The client must reach the worker '
+                            'locally or through SSH; connection="cluster" uses the controller route. '
+                            + str(error), sandbox_id=route['id']) from error
+                    finally:
+                        if probe is not None:
+                            probe.close()
+                    self.connections[key] = connection
+                for previous in list(self.connections):
+                    if previous[0] == route['id'] and previous != key:
+                        self.connections.pop(previous).close()
             return self.connections[key]
+
+    async def _aworker(self, route):
+        import asyncio
+        if self.lock.acquire(blocking=False):
+            try:
+                connection = self.connections.get(self._worker_key(route))
+            finally:
+                self.lock.release()
+            if connection is not None:
+                return connection
+        # SSH setup and the initial reachability check must not block the
+        # caller's event loop. Established requests have no executor hop.
+        pending = asyncio.create_task(asyncio.to_thread(self._worker, route))
+        try:
+            return await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            # Drain setup before a caller closes its handle, so a late socket
+            # cannot be inserted into the cache after cleanup has finished.
+            try:
+                await asyncio.shield(pending)
+            except Exception:
+                pass
+            raise
 
     def call(self, operation, **params):
         if operation == 'owner_register':
@@ -197,6 +250,11 @@ class ClusterConnection:
                 while True:
                     result = self._rpc('allocation_get', identity=params['identity'])
                     if result['state'] == 'ready':
+                        if self.connection_mode == 'direct':
+                            # Keep the unacknowledged allocation deadline until
+                            # the direct path works, including detached creates.
+                            route = self.remember(self._rpc('allocation_route', identity=params['identity']))
+                            self._worker(route)
                         route = self.remember(self._rpc('allocation_ack', identity=params['identity']))
                         return route['info']
                     if result['state'] in ('failed', 'terminated', 'stopped'):
@@ -210,6 +268,7 @@ class ClusterConnection:
                     self._rpc('allocation_cancel', identity=params['identity'])
                 except Exception:
                     pass  # The persisted unacknowledged-request deadline remains.
+                self.forget(params['identity'])
                 raise
         if operation == 'list':
             return [a.get('info') or {'id': a['id'], 'state': a['state']} for a in self._rpc('status')['sandboxes']]
@@ -240,6 +299,13 @@ class ClusterConnection:
         return result
 
     async def open_stream(self, identity):
+        if self.connection_mode == 'direct':
+            with self.registry['lock']:
+                route = self.registry['routes'].get(identity)
+            if route is None:
+                route = self.remember(await self.control.acall('allocation_route', identity=identity))
+            worker = await self._aworker(route)
+            return await worker.open_stream(route['id'])
         # Use the controller that this client already reached. Its stream
         # route handles both direct workers and outbound-only worker bridges.
         return await self.control.open_stream(identity)
@@ -266,7 +332,7 @@ class ClusterConnection:
         # Lifecycle operations retain their durable synchronous implementation.
         # Commands and file traffic stay on the caller's event loop end to end.
         fast = {'command_start', 'process_status', 'process_wait', 'process_output', 'process_stdin',
-                'process_terminate', 'process_resize', 'file', 'describe', 'service_rpc', 'runtime_profile'}
+                'process_terminate', 'process_resize', 'file', 'describe', 'control', 'service_rpc', 'runtime_profile'}
         if operation not in fast:
             import asyncio
             return await asyncio.to_thread(self.call, operation, **params)
@@ -279,7 +345,8 @@ class ClusterConnection:
             route = self.remember(await self.control.acall('allocation_route', identity=identity))
         params['identity'] = route['id']
         try:
-            return await self._worker(route).acall(operation, **params)
+            worker = await self._aworker(route)
+            return await worker.acall(operation, **params)
         except OperationUnknown:
             self.forget(route['id'])
             raise

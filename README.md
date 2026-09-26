@@ -481,6 +481,22 @@ with Pool(target="lab", size=8, warm=2) as pool:
     pool.update(size=16, warm=4)
 ```
 
+For latency-sensitive actions and observations, opt into a direct data connection:
+
+```python
+env = Sandbox(target="lab", template="gnome", connection="direct")
+observation = env.desktop.step({"mouse": {"move": [400, 300]}})
+env.terminate()
+env.close()
+```
+
+`connection="cluster"` is the default. Direct mode obtains a sandbox-scoped
+worker endpoint from Weave and reuses a client-to-worker connection for commands,
+files, controls and VNC. Creation, scheduling and lifecycle bookkeeping stay with
+Weave. The client must reach the worker locally or through SSH; worker listeners
+remain private by default. The same option works with `Sandbox.connect(...)`,
+`Pool(...)`, and `Pool.connect(...)`. See [direct connections](https://pranjal2041.github.io/sandweave/clusters/#direct-sandbox-connections).
+
 Reuse image files across workers and prefer placement on the same machine:
 
 ```python

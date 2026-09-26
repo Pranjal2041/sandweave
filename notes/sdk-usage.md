@@ -424,6 +424,15 @@ that host. Existing Slurm workers and explicit worker metadata targets use their
 prepared installation; run setup on those workers before selecting a new
 workload. These targets do not install a runtime on the Python client's host.
 
+Cluster handles default to `connection="cluster"`. Pass `connection="direct"`
+to `Sandbox`, `Sandbox.connect`, `Pool` or `Pool.connect` to reuse the assigned
+worker's sandbox-scoped connection for data traffic. Weave still schedules and
+tracks its lifecycle. Same-host connections use loopback; remote ones use the
+worker's registered SSH address or hostname. No public worker listener is opened.
+Direct access is checked before delivering a new sandbox/lease; failures request
+cleanup rather than silently forwarding. The preference stays client-side and
+does not change snapshot/cache identity. See `docs/clusters.md` for examples.
+
 Pools pin one baseline, bound concurrent leases and discard used episodes.
 `targets=[...]` distributes independent episodes across workers. Async callbacks
 use `async for result in pool.map.aio(callback, inputs)`; sync callbacks stay in

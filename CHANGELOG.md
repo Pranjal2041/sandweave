@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.35
+
+- Add `connection="direct"` to sandbox creation/reconnection and pool clients.
+  Weave supplies a sandbox-scoped worker endpoint; commands, files, desktop
+  controls and VNC reuse a direct connection. The default is `"cluster"`.
+- Check direct access before delivering a new sandbox or pool lease. Failed
+  creation requests cleanup, failed checkout releases its lease, and uncertain
+  actions are never automatically replayed. Scheduling, ownership and snapshot
+  bookkeeping remain managed by Weave.
+- Retain private worker listeners. Same-host access uses loopback; remote direct
+  access uses a persistent SSH tunnel with the registered worker login. Preserve
+  registered SSH ports. The preference stays out of snapshot/image definitions.
+- Add matching CLI options and concurrent routing, authorization, cleanup,
+  pool and VNC tests. Live CPU-only GNOME profiling measured median full-resolution
+  action-plus-image responses of 22.5 ms direct versus 35.5 ms through an outbound
+  worker relay on one host. See `notes/direct-connections.md` for test conditions.
+
 ## 0.2.34
 
 - Bound gVisor receive queues and deliver packets in batches, fixing reproduced

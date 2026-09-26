@@ -1313,6 +1313,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#runtime-memory-grows-during-downloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime memory grows during downloads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#report-a-reproducible-issue" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1476,6 +1487,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#runtime-memory-grows-during-downloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime memory grows during downloads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#report-a-reproducible-issue" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1571,6 +1593,35 @@ and sandbox command transport do not forward that separate VNC connection.</p>
 again for a fresh link. The startup dashboard link printed by
 <code>sandweave cluster instructions lab</code> is reusable while the controller address
 and credential stay unchanged.</p>
+<h2 id="runtime-memory-grows-during-downloads">Runtime memory grows during downloads<a class="headerlink" href="#runtime-memory-grows-during-downloads" title="Permanent link">&para;</a></h2>
+<p>Sandweave 0.2.34 bounds the engine's receive queues and processes packets in
+batches. This fixes reproduced unbounded packet accumulation during Docker
+bridge downloads. Upgrade the execution workers and create new sandboxes to
+use the corrected engine. Already-running sandboxes and memory snapshots keep
+their original engine; a filesystem snapshot restored with the upgraded worker
+uses the new engine.</p>
+<p>Enable heap capture when creating a diagnostic sandbox:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"docker"</span><span class="p">,</span> <span class="n">profiling</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">env</span><span class="o">.</span><span class="n">profile</span><span class="p">(</span><span class="s2">"before.pprof"</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Run the workload that triggers the growth, then capture again.</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">env</span><span class="o">.</span><span class="n">profile</span><span class="p">(</span><span class="s2">"during.pprof"</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p>The destination is on the client, including for SSH and Weave targets.
+Async callers use <code>await env.profile.aio("during.pprof")</code>. Capture talks to
+the runtime directly and does not need a responsive guest agent. It captures
+the sentry's Go heap, not guest application memory. Profiling is off by default;
+enabling it also enables gVisor's profiling control interface and its required
+syscalls for that sandbox.</p>
+<p>For a diagnostic sandbox created with CLI <code>--profiling</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>sandweave<span class="w"> </span>profile<span class="w"> </span>SANDBOX_ID<span class="w"> </span>--output<span class="w"> </span>heap.pprof
+</code></pre></div>
+<p>Use the usual <code>--target</code> option for a remote sandbox. Inspect the file with
+<code>go tool pprof -top heap.pprof</code>. Capture while the problem is occurring, before
+the sandbox exits; increasing its memory limit does not fix an unbounded queue.</p>
 <h2 id="report-a-reproducible-issue">Report a reproducible issue<a class="headerlink" href="#report-a-reproducible-issue" title="Permanent link">&para;</a></h2>
 <p>Open a <a href="https://github.com/Pranjal2041/sandweave/issues">GitHub issue</a> with your
 Sandweave version, the command or short Python example, the failing stage, and

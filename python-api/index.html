@@ -1700,6 +1700,11 @@
 <td><code>False</code></td>
 </tr>
 <tr>
+<td><code>profiling</code></td>
+<td>Enable runtime heap capture for diagnosis; gVisor only.</td>
+<td>Template/snapshot value, normally <code>False</code></td>
+</tr>
+<tr>
 <td><code>recording</code></td>
 <td>Record an Xvnc desktop; accepts <code>True</code> or <code>Recording(fps=15, cursor=True)</code>.</td>
 <td><code>False</code></td>
@@ -1801,6 +1806,10 @@ with streams, <code>wait</code>, <code>poll</code>, <code>result</code>, <code>t
 <tr>
 <td><code>env.status()</code></td>
 <td>Detailed current record.</td>
+</tr>
+<tr>
+<td><code>env.profile(path)</code></td>
+<td>Save a Go heap profile on the client; requires <code>profiling=True</code> at creation.</td>
 </tr>
 <tr>
 <td><code>env.cache(key, state="filesystem")</code></td>

@@ -1,0 +1,139 @@
+{
+  "host": "babel-u9-24",
+  "conditions": "Same existing Slurm allocation; local NVMe, disk-backed writable storage, four guest vCPUs, eight host CPUs per probe. Builds and separate acceptance tests also ran on disjoint CPU sets during candidate measurements. Single runs, not universal throughput guarantees.",
+  "baseline_runtime": "2026.09.26.4",
+  "candidate_runtime": "2026.09.26.5",
+  "profiles": {
+    "baseline": {
+      "mib": 3072,
+      "files": 20000,
+      "storage": "disk",
+      "snapshot_seconds": 6.526558182667941,
+      "export_seconds": {
+        "/": 3.1186872012913227
+      },
+      "pause_seconds": 3.9009987828321755,
+      "bytes": 3418878464,
+      "timings": {
+        "input_setup_seconds": 0.007238604128360748,
+        "controller_release_seconds": 0.25184463197365403,
+        "checkpoint_seconds": 3.901054933667183,
+        "manifest_seconds": 0.0008974731899797916,
+        "publication_seconds": 2.262868332210928,
+        "verifier_start_seconds": 0.0007535926997661591,
+        "total_seconds": 6.424659478012472
+      },
+      "restore_seconds": 4.1892488789744675,
+      "verified": true
+    },
+    "baseline-small": {
+      "mib": 1,
+      "files": 300000,
+      "storage": "disk",
+      "snapshot_seconds": 11.806442963890731,
+      "export_seconds": {
+        "/": 8.927463414147496
+      },
+      "pause_seconds": 9.697329835034907,
+      "bytes": 2922971648,
+      "timings": {
+        "input_setup_seconds": 0.007388736121356487,
+        "controller_release_seconds": 0.10150367487221956,
+        "checkpoint_seconds": 9.697385095059872,
+        "manifest_seconds": 0.0009272829629480839,
+        "publication_seconds": 1.897206427063793,
+        "verifier_start_seconds": 0.0009018532000482082,
+        "total_seconds": 11.705314989201725
+      },
+      "restore_seconds": 9.425915098749101,
+      "verified": true
+    },
+    "candidate": {
+      "mib": 3072,
+      "files": 20000,
+      "storage": "disk",
+      "snapshot_seconds": 6.7896926160901785,
+      "export_seconds": {
+        "/": 3.0010204589925706
+      },
+      "pause_seconds": 3.796770237851888,
+      "bytes": 3418878464,
+      "timings": {
+        "input_setup_seconds": 0.007211807183921337,
+        "controller_release_seconds": 0.20205352222546935,
+        "checkpoint_seconds": 3.7968172868713737,
+        "manifest_seconds": 0.001844916958361864,
+        "publication_seconds": 2.6808902230113745,
+        "verifier_start_seconds": 0.0007574618794023991,
+        "total_seconds": 6.689576878212392
+      },
+      "restore_seconds": 4.718104459811002,
+      "verified": true
+    },
+    "candidate-small": {
+      "mib": 1,
+      "files": 300000,
+      "storage": "disk",
+      "snapshot_seconds": 8.030983811244369,
+      "export_seconds": {
+        "/": 4.665744347963482
+      },
+      "pause_seconds": 5.458628595340997,
+      "bytes": 2922971648,
+      "timings": {
+        "input_setup_seconds": 0.007673858664929867,
+        "controller_release_seconds": 0.15151074714958668,
+        "checkpoint_seconds": 5.45867461618036,
+        "manifest_seconds": 0.000879672821611166,
+        "publication_seconds": 2.3090805457904935,
+        "verifier_start_seconds": 0.0007347729988396168,
+        "total_seconds": 7.928555423859507
+      },
+      "restore_seconds": 9.66042050300166,
+      "verified": true
+    }
+  },
+  "concurrency": {
+    "0": {
+      "pause_seconds": 2.401771157979965,
+      "export_seconds": {
+        "/": 0.6649352968670428,
+        "/var/lib/docker": 0.7652801927179098,
+        "/var/lib/containerd": 0.16420169733464718
+      }
+    },
+    "1": {
+      "pause_seconds": 2.402680782135576,
+      "export_seconds": {
+        "/": 0.7150561739690602,
+        "/var/lib/docker": 0.7152131148613989,
+        "/var/lib/containerd": 0.16431740717962384
+      }
+    },
+    "unrelated_commands": 49,
+    "maximum_command_seconds": 0.05118057178333402,
+    "median_command_seconds": 0.020891969092190266
+  },
+  "legacy_and_current_file_verification": [
+    {
+      "legacy": true,
+      "files": 300000,
+      "passed": true
+    },
+    {
+      "legacy": false,
+      "files": 20000,
+      "passed": true
+    },
+    {
+      "legacy": true,
+      "files": 20000,
+      "passed": true
+    },
+    {
+      "legacy": false,
+      "files": 300000,
+      "passed": true
+    }
+  ]
+}

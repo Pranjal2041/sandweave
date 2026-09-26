@@ -2,14 +2,14 @@
   "gvisor": {
     "path": "sources/gvisor",
     "upstream": "https://github.com/google/gvisor.git",
-    "branch": "fix/network-memory-growth",
+    "branch": "fix/filesystem-export-throughput",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "43c6d4f00ddfc3a19fb9664c645939eac1029920",
+    "commit": "6e21c7bb22ffa2ab8c51da4b4ce803aa26d7ba63",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/cf2cef74239571f909728603b7d2de545073420158ed28463aa7cafee36a49e7",
+    "runtime_build": "tools/runtime-builds/33994895f866d41741cc5c13978f73410edd23e4f71a242205e24d15379ab7c2",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "43c6d4f00ddfc3a19fb9664c645939eac1029920",
+    "runtime_commit": "6e21c7bb22ffa2ab8c51da4b4ce803aa26d7ba63",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
@@ -25,7 +25,8 @@
     "disk_storage_runtime_release": "2026.09.26.2",
     "proc_signal_masks_runtime_release": "2026.09.26.3",
     "proc_signal_masks_upstream_commit": "0ac45dc2546603605487b21dce5360021789e920",
-    "bounded_network_rx_runtime_release": "2026.09.26.4"
+    "bounded_network_rx_runtime_release": "2026.09.26.4",
+    "filesystem_export_runtime_release": "2026.09.26.5"
   },
   "passt": {
     "upstream": "https://passt.top/passt",

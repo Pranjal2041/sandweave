@@ -24,6 +24,18 @@ the published files even while verification is pending, so cleanup does not
 interrupt them. Failed verification retains staging for recovery; diagnostic
 `--local-only` captures are also retained.
 
+Filesystem capture pauses the sandbox for a consistent cut of all its persistent
+mounts, then resumes it before publication and checksum verification. Runtime
+2026.09.26.5 batches archive writes and reuses copy buffers, reducing overhead
+for filesystems with many small files. The archive format is unchanged.
+
+Exports have a ten-minute **no-progress** limit per mount, rather than a fixed
+total duration. Large exports can continue while the archive grows. To change
+this limit, set `SANDWEAVE_SNAPSHOT_STALL_TIMEOUT` to positive seconds in the
+worker's environment before starting it; for example, `1800` allows thirty
+minutes without output progress. This setting applies to filesystem capture,
+including caches, and does not change transport or restore startup deadlines.
+
 ## Pin a particular version
 
 A cache name can point to a newer revision later. Use the returned reference to

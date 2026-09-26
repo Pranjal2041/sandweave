@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.36
+
+- Batch filesystem snapshot archive writes and reuse file-copy buffers in
+  runtime 2026.09.26.5. On Babel, exporting 300,000 small files (2.72 GiB archive)
+  dropped from 8.93 to 4.67 seconds. Snapshot contents and format are unchanged.
+- Replace the fixed 600-second filesystem export deadline with a 600-second
+  no-progress limit per mount, configurable with the worker environment variable
+  `SANDWEAVE_SNAPSHOT_STALL_TIMEOUT`. Healthy larger exports can continue.
+- Verify large-file and small-file exports, concurrent captures with unrelated
+  commands, Docker storage, metadata, and restores of older snapshots. The
+  client's reported 560-second export was not reproduced on the test host.
+
 ## 0.2.35
 
 - Add `connection="direct"` to sandbox creation/reconnection and pool clients.

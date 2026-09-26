@@ -4,6 +4,11 @@ Sandweave 0.1.1 selects a pinned engine from GitHub Releases before building
 one locally. The Python API and `sandweave setup` share this installation path.
 Existing configured installations keep their recorded runtime files.
 
+SDK 0.2.36 upgrades engines for new launches to runtime 2026.09.26.5, which
+batches filesystem archive writes and reuses copy buffers. Existing memory
+snapshots retain their pinned engine. See [filesystem export performance](filesystem-export-performance.md)
+for measurements, progress-based export timeouts and compatibility checks.
+
 SDK 0.2.34 upgrades prepared engines to runtime 2026.09.26.4 with bounded
 receive queues and batch packet delivery. It fixes unbounded sentry memory
 growth reproduced with Docker bridge downloads. See [network receive memory](network-receive-memory.md)

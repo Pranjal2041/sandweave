@@ -3,6 +3,8 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import json
+import math
+import os
 import time
 from filesystem_storage import persistent_mounts
 
@@ -88,7 +90,45 @@ def inventory(spec, mountinfo):
     return result
 
 
+def stall_timeout():
+    """Limit a stalled export, not the total size of a healthy archive."""
+    value = float(os.environ.get('SANDWEAVE_SNAPSHOT_STALL_TIMEOUT', '600'))
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError('SANDWEAVE_SNAPSHOT_STALL_TIMEOUT must be positive finite seconds')
+    return value
+
+
+def export(command, output, log, timeout):
+    """Wait while bytes advance, with bounded waits when storage stops responding."""
+    size = 0
+    deadline = time.monotonic() + timeout
+    with subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT) as process:
+        try:
+            while True:
+                try:
+                    result = process.wait(timeout=min(1, max(.001, deadline - time.monotonic())))
+                except subprocess.TimeoutExpired:
+                    try:
+                        current = output.stat().st_size
+                    except FileNotFoundError:
+                        current = 0
+                    if current > size:
+                        size = current
+                        deadline = time.monotonic() + timeout
+                    elif time.monotonic() >= deadline:
+                        raise TimeoutError(f'filesystem export made no progress for {timeout:g} seconds: {output.name}')
+                else:
+                    if result:
+                        raise subprocess.CalledProcessError(result, command)
+                    return
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+
+
 def capture(command, name, dest, spec, lab, local):
+    timeout = stall_timeout()  # Validate before pausing the guest.
     help_result = subprocess.run([*command, 'tar', 'rootfs-upper', '--help'],
                                  capture_output=True, text=True, timeout=30)
     if 'restore-mount' not in help_result.stdout + help_result.stderr:
@@ -107,9 +147,9 @@ def capture(command, name, dest, spec, lab, local):
         for entry in [{'destination': '/', 'file': 'rootfs-upper.tar'}, *mounts]:
             tick = time.perf_counter()
             with (dest / (entry['file'] + '.log')).open('wb') as log:
-                subprocess.run([*command, 'tar', 'rootfs-upper', '--path=' + entry['destination'],
-                                '--file=' + inside(dest / entry['file'], lab, local), name],
-                               check=True, stdout=log, stderr=subprocess.STDOUT, timeout=600)
+                export([*command, 'tar', 'rootfs-upper', '--path=' + entry['destination'],
+                        '--file=' + inside(dest / entry['file'], lab, local), name],
+                       dest / entry['file'], log, timeout)
             phases[entry['destination']] = time.perf_counter() - tick
         return {'mounts': mounts, 'recreated_on_boot': list(VOLATILE),
                 'consistency': 'crash-consistent filesystem cut; application buffers in RAM are not saved',

@@ -1670,6 +1670,11 @@
 <td>Local worker</td>
 </tr>
 <tr>
+<td><code>connection</code></td>
+<td><code>"cluster"</code> forwards through Weave; <code>"direct"</code> connects to the assigned worker.</td>
+<td><code>"cluster"</code></td>
+</tr>
+<tr>
 <td><code>runtime</code></td>
 <td><code>"gvisor"</code> or <code>"apptainer"</code> for a new recipe.</td>
 <td><code>"gvisor"</code></td>
@@ -1963,7 +1968,10 @@ workers. Cluster pools also accept <code>weight</code>, <code>priority</code>, <
 and <code>affinity</code> (<code>"worker"</code>, <code>"machine"</code>, or <code>None</code>), and support <code>update(...)</code>.
 Affinity prefers a location and allows spillover. The cache path is fixed at
 creation; the other placement settings can be updated for future assignments.
-<code>Pool.connect(name, target=...)</code> borrows a named cluster pool.
+<code>Pool.connect(name, target=...)</code> borrows a named cluster pool. Both creation and
+reconnection accept <code>connection="direct"</code>; each lease uses that client-side
+selection. <code>Sandbox.connect(id, target=..., connection="direct")</code> selects the same
+path for an existing sandbox. See <a href="../clusters/#direct-sandbox-connections">direct connections</a>.
 See <a href="../pools/">pools and evaluation</a> for ownership and cleanup.</p>
 <h2 id="benchmark">Benchmark<a class="headerlink" href="#benchmark" title="Permanent link">&para;</a></h2>
 <p>Available in the <code>0.2.20rc3</code> preview. See <a href="../benchmarks/">benchmarks</a> for installation and OSWorld parity.</p>

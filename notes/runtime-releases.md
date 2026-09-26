@@ -4,6 +4,12 @@ Sandweave 0.1.1 selects a pinned engine from GitHub Releases before building
 one locally. The Python API and `sandweave setup` share this installation path.
 Existing configured installations keep their recorded runtime files.
 
+SDK 0.2.30 upgrades engines lacking corrected bridge local delivery to runtime
+2026.09.26.1, preserving guest images. Switched unicast no longer enters IP
+forwarding a second time, and restored packet sockets receive each frame once.
+See [bridge packet duplication](bridge-local-delivery.md) for reproduction,
+acceptance and the distinction between fresh launches and pinned memory restores.
+
 SDK 0.2.29 upgrades engines lacking aggregate CPU accounting to runtime
 2026.09.25.1, preserving the prepared guest images. It adds host CPU accounting
 inside systrap and renewable broker pauses; it does not require delegated host

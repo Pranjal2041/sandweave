@@ -7271,7 +7271,7 @@ index 54bf44b..e042d08 100644
  	// +checklocks:mu
  	kind AddressKind
 diff --git a/pkg/tcpip/stack/bridge.go b/pkg/tcpip/stack/bridge.go
-index fa7fd56..302fd8d 100644
+index fa7fd56..9d7f48a 100644
 --- a/pkg/tcpip/stack/bridge.go
 +++ b/pkg/tcpip/stack/bridge.go
 @@ -32,6 +32,8 @@ type bridgePort struct {
@@ -7283,6 +7283,171 @@ index fa7fd56..302fd8d 100644
  type BridgeFDBEntry struct {
  	port *bridgePort
  }
+@@ -56,6 +58,9 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber,
+ 	eth := header.Ethernet(pkt.LinkHeader().Slice())
+ 	updateFDB := false
+ 	bridge.mu.RLock()
++	destinationAddress := eth.DestinationAddress()
++	local := destinationAddress == bridge.addr
++	multicast := header.IsMulticastEthernetAddress(destinationAddress)
+ 	// Add an entry at the bridge FDB, it maps a MAC address
+ 	// to a bridge port where the traffic is received when
+ 	// the MAC address is not multicast.
+@@ -66,7 +71,10 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber,
+ 	if _, hasSourceFDB := bridge.fdbTable[BridgeFDBKey(sourceAddress)]; !header.IsMulticastEthernetAddress(sourceAddress) && !hasSourceFDB {
+ 		updateFDB = true
+ 	}
+-	if entry, exist := bridge.fdbTable[BridgeFDBKey(eth.DestinationAddress())]; !exist {
++	if entry, exist := bridge.fdbTable[BridgeFDBKey(destinationAddress)]; local {
++		// Frames addressed to the bridge terminate here. In particular, gateway
++		// traffic must enter the IP stack without also being flooded to ports.
++	} else if !exist {
+ 		// When no FDB entry is found, send the packet to all ports.
+ 		for _, port := range bridge.ports {
+ 			if p == port {
+@@ -100,6 +108,22 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber,
+ 		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
+ 		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
+ 		// bridge.mu to avoid circular locking.
++		switch {
++		case local:
++			// The ingress Ethernet endpoint classified against the port's MAC,
++			// not the bridge's MAC. Reclassify for ARP and packet sockets.
++			pkt.PktType = tcpip.PacketHost
++		case destinationAddress == header.EthernetBroadcastAddress:
++			pkt.PktType = tcpip.PacketBroadcast
++		case multicast:
++			pkt.PktType = tcpip.PacketMulticast
++		default:
++			// Switched unicast belongs to another host. Packet sockets may
++			// observe it, but IP forwarding must not route a duplicate copy.
++			pkt.PktType = tcpip.PacketOtherHost
++			d.DeliverLinkPacket(protocol, pkt)
++			return
++		}
+ 		d.DeliverNetworkPacket(protocol, pkt)
+ 	}
+ }
+diff --git a/pkg/tcpip/stack/bridge_test.go b/pkg/tcpip/stack/bridge_test.go
+index 1c29fb7..a81ac46 100644
+--- a/pkg/tcpip/stack/bridge_test.go
++++ b/pkg/tcpip/stack/bridge_test.go
+@@ -15,6 +15,7 @@
+ package bridge_test
+ 
+ import (
++	"fmt"
+ 	"os"
+ 	"testing"
+ 	"time"
+@@ -29,6 +30,107 @@ import (
+ 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+ )
+ 
++type bridgeDelivery struct {
++	network    int
++	link       int
++	packetType tcpip.PacketType
++}
++
++func (d *bridgeDelivery) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
++	d.network++
++	d.packetType = pkt.PktType
++}
++
++func (d *bridgeDelivery) DeliverLinkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
++	d.link++
++	d.packetType = pkt.PktType
++}
++
++// A switched unicast must not also enter the bridge's IP stack. With IP
++// forwarding enabled that would route a second copy of the same packet.
++func TestBridgeLocalDelivery(t *testing.T) {
++	const bridgeAddr = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x01")
++	const sourceAddr = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x02")
++	const peerAddr = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x03")
++	for _, proto := range []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber, header.IPv6ProtocolNumber, header.ARPProtocolNumber} {
++		for _, tc := range []struct {
++			name       string
++			dst        tcpip.LinkAddress
++			learned    bool
++			local      bool
++			ports      int
++			packetType tcpip.PacketType
++		}{
++			{"learned unicast", peerAddr, true, false, 1, tcpip.PacketOtherHost},
++			{"unknown unicast", peerAddr, false, false, 2, tcpip.PacketOtherHost},
++			{"bridge unicast", bridgeAddr, false, true, 0, tcpip.PacketHost},
++			{"broadcast", header.EthernetBroadcastAddress, false, true, 2, tcpip.PacketBroadcast},
++			{"multicast", tcpip.LinkAddress("\x33\x33\x00\x00\x00\x01"), false, true, 2, tcpip.PacketMulticast},
++		} {
++			t.Run(fmt.Sprintf("%d/%s", proto, tc.name), func(t *testing.T) {
++				s := stack.New(stack.Options{})
++				defer s.Destroy()
++				bridge := stack.NewBridgeEndpoint(1500)
++				bridge.SetLinkAddress(bridgeAddr)
++				if err := s.CreateNIC(1, bridge); err != nil {
++					t.Fatal(err)
++				}
++				d := &bridgeDelivery{}
++				bridge.Attach(d)
++				var ports []*channel.Endpoint
++				for i := 0; i < 3; i++ {
++					ch := channel.New(10, 1500, tcpip.LinkAddress(fmt.Sprintf("\x02\x00\x00\x00\x01%c", i)))
++					defer ch.Close()
++					ports = append(ports, ch)
++					id := tcpip.NICID(i + 2)
++					if err := s.CreateNIC(id, ethernet.New(ch)); err != nil {
++						t.Fatal(err)
++					}
++					if err := s.SetNICCoordinator(id, 1); err != nil {
++						t.Fatal(err)
++					}
++				}
++				inject := func(port int, src, dst tcpip.LinkAddress) {
++					frame := make([]byte, header.EthernetMinimumSize+1)
++					header.Ethernet(frame).Encode(&header.EthernetFields{SrcAddr: src, DstAddr: dst, Type: proto})
++					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(frame)})
++					defer pkt.DecRef()
++					ports[port].InjectInbound(proto, pkt)
++				}
++				drain := func() int {
++					count := 0
++					for _, ch := range ports {
++						for pkt := ch.Read(); pkt != nil; pkt = ch.Read() {
++							count++
++							pkt.DecRef()
++						}
++					}
++					return count
++				}
++				if tc.learned {
++					inject(1, peerAddr, bridgeAddr)
++					drain()
++					*d = bridgeDelivery{}
++				}
++				inject(0, sourceAddr, tc.dst)
++				if got := drain(); got != tc.ports {
++					t.Errorf("forwarded copies = %d, want %d", got, tc.ports)
++				}
++				wantNetwork, wantLink := 0, 1
++				if tc.local {
++					wantNetwork, wantLink = 1, 0
++				}
++				if d.network != wantNetwork || d.link != wantLink {
++					t.Errorf("network/link deliveries = %d/%d, want %d/%d", d.network, d.link, wantNetwork, wantLink)
++				}
++				if d.packetType != tc.packetType {
++					t.Errorf("packet type = %v, want %v", d.packetType, tc.packetType)
++				}
++			})
++		}
++	}
++}
++
+ func TestWritePacketFromBridge(t *testing.T) {
+ 	const (
+ 		channelLinkAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x05")
 diff --git a/pkg/tcpip/stack/conntrack.go b/pkg/tcpip/stack/conntrack.go
 index f96c147..f3f8445 100644
 --- a/pkg/tcpip/stack/conntrack.go
@@ -7609,7 +7774,7 @@ index f75732a..3a47847 100644
  	CheckInput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
  	CheckForward(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 diff --git a/pkg/tcpip/stack/nic.go b/pkg/tcpip/stack/nic.go
-index 7a6bd80..554a3e7 100644
+index 7a6bd80..a1ecf2a 100644
 --- a/pkg/tcpip/stack/nic.go
 +++ b/pkg/tcpip/stack/nic.go
 @@ -15,6 +15,7 @@
@@ -7639,7 +7804,22 @@ index 7a6bd80..554a3e7 100644
  
  	// deliverLinkPackets specifies whether this NIC delivers packets to
  	// packet sockets. It is immutable.
-@@ -184,6 +186,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
+@@ -120,6 +122,14 @@ type packetEndpointList struct {
+ func (p *packetEndpointList) add(ep PacketEndpoint) {
+ 	p.mu.Lock()
+ 	defer p.mu.Unlock()
++	// NIC registrations are saved with the stack. A restored packet socket
++	// registers again while rebuilding its handlers, but must receive only one
++	// copy of each frame. Keep registration idempotent, as unregistration is.
++	for _, existing := range p.eps {
++		if existing == ep {
++			return
++		}
++	}
+ 	p.eps = append(p.eps, ep)
+ }
+ 
+@@ -184,6 +194,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
  	// of IPv6 is supported on this endpoint's LinkEndpoint.
  	nic := &nic{
  		NetworkLinkEndpoint:       ep,
@@ -7647,7 +7827,7 @@ index 7a6bd80..554a3e7 100644
  		stack:                     stack,
  		id:                        id,
  		name:                      opts.Name,
-@@ -1133,3 +1136,27 @@ type CoordinatorNIC interface {
+@@ -1133,3 +1144,27 @@ type CoordinatorNIC interface {
  	// DelNIC deletes the specified NIC device.
  	DelNIC(n *nic) tcpip.Error
  }
@@ -7675,6 +7855,40 @@ index 7a6bd80..554a3e7 100644
 +	return savedNICQueue{Queue: n.qDisc}
 +}
 +func (n *nic) loadQDisc(_ context.Context, v savedNICQueue) { n.qDisc = v.Queue }
+diff --git a/pkg/tcpip/stack/nic_test.go b/pkg/tcpip/stack/nic_test.go
+index 907747d..0eeb4d9 100644
+--- a/pkg/tcpip/stack/nic_test.go
++++ b/pkg/tcpip/stack/nic_test.go
+@@ -29,6 +29,29 @@ var _ AddressableEndpoint = (*testIPv6Endpoint)(nil)
+ var _ NetworkEndpoint = (*testIPv6Endpoint)(nil)
+ var _ NDPEndpoint = (*testIPv6Endpoint)(nil)
+ 
++type countingPacketEndpoint struct{ packets int }
++
++func (e *countingPacketEndpoint) HandlePacket(tcpip.NICID, tcpip.NetworkProtocolNumber, *PacketBuffer) {
++	e.packets++
++}
++
++func TestPacketEndpointRegistrationIsIdempotent(t *testing.T) {
++	var endpoints packetEndpointList
++	first, second := &countingPacketEndpoint{}, &countingPacketEndpoint{}
++	endpoints.add(first)
++	endpoints.add(second)
++	endpoints.add(first) // Packet socket Restore registers its saved endpoint.
++	endpoints.forEach(func(ep PacketEndpoint) { ep.HandlePacket(1, header.IPv4ProtocolNumber, nil) })
++	if first.packets != 1 || second.packets != 1 {
++		t.Fatalf("deliveries = %d/%d, want 1/1", first.packets, second.packets)
++	}
++	endpoints.remove(first)
++	endpoints.forEach(func(ep PacketEndpoint) { ep.HandlePacket(1, header.IPv4ProtocolNumber, nil) })
++	if first.packets != 1 || second.packets != 2 {
++		t.Fatalf("after unregister: deliveries = %d/%d, want 1/2", first.packets, second.packets)
++	}
++}
++
+ // An IPv6 NetworkEndpoint that throws away outgoing packets.
+ //
+ // We use this instead of ipv6.endpoint because the ipv6 package depends on
 diff --git a/pkg/tcpip/stack/nud.go b/pkg/tcpip/stack/nud.go
 index f8e3856..481beb9 100644
 --- a/pkg/tcpip/stack/nud.go

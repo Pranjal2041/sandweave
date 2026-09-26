@@ -230,7 +230,8 @@ done
         from .releases import MINIMUM_KERNEL
         workspace.atomic_json(root / 'tools/gvisor-socket/runtime.json', {
             'path': relative, 'sha256': hashes,
-            'minimum_kernel': '.'.join(map(str, MINIMUM_KERNEL[:2])), 'cpu_accounting': 1})
+            'minimum_kernel': '.'.join(map(str, MINIMUM_KERNEL[:2])),
+            'cpu_accounting': 1, 'bridge_local_delivery': 1})
 
     def erofs(self, root, source, output):
         output.parent.mkdir(parents=True, exist_ok=True)

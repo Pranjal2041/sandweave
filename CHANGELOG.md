@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.30
+
+- Fix duplicate bridge delivery in the runtime: switched unicast remains at
+  the link layer instead of also being routed through the bridge's IP stack.
+  This prevents connection resets and unintended source-port remapping when
+  guest IP forwarding is enabled, including Docker bridge networks.
+- Preserve forwarding, broadcast/multicast delivery, gateway traffic and packet
+  capture. Upgrade prepared engines without rebuilding guest images; existing
+  running sandboxes and memory snapshots retain their recorded engine.
+- Avoid registering restored packet-capture sockets twice, which previously
+  duplicated captured frames after a memory restore.
+- Add packet-level IPv4/IPv6/ARP regressions and live concurrent socket, Docker,
+  NAT, egress and snapshot-restore coverage.
+
 ## 0.2.29
 
 - Replace CPU broker process-tree scans with aggregate runtime accounting and

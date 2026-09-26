@@ -151,7 +151,7 @@ class Project:
                 # Match single-service tasks: explicit benchmark resource
                 # overrides take precedence over the task's resource defaults.
                 options.update({key: value for key, value in self.environment.session.pool.options.items()
-                                if key in ('cpu', 'memory', 'gpu', 'startup_timeout', 'keep_on_error')})
+                                if key in ('cpu', 'memory', 'gpu', 'storage', 'startup_timeout', 'keep_on_error')})
             if service.get('build'):
                 from ...templates.build import build
                 context = service['build']

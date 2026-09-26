@@ -30,6 +30,7 @@ def summarize(record):
         **({'cpu_control': runtime['cpu_control']} if runtime.get('cpu_control') else {}),
         **({'disk_memory': {key: runtime['disk_memory'].get(key)
                            for key in ('directory', 'host_limit_bytes')}} if runtime.get('disk_memory') else {}),
+        'storage': runtime.get('storage', spec.get('storage', {'mode': 'memory'})),
         'gpus': gpus,
         **({'service_network': {**spec['service_network'],
                                 'address': spec.get('_service_network', {}).get('address')}}

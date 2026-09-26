@@ -104,6 +104,10 @@ class Runtime:
                    '--guest-gs', '--no-runtime-debug', '--forward', str(AGENT_PORT),
                    '--network-policy', resources['network']['mode'],
                    '--allowed-hosts', json.dumps(resources['network'].get('allowed_hosts', []))]
+        storage = spec.get('storage', {'mode': 'memory'})
+        options += ['--storage', storage['mode']]
+        if storage.get('path'):
+            options += ['--storage-path', storage['path']]
         if memory.get('disk') is not None:
             options += ['--ram-mib', str((memory_bytes(memory['guest']) + 1024**2-1)//1024**2),
                         '--disk-path', memory['disk_path']]
@@ -210,7 +214,7 @@ class Runtime:
             selected_proxy, proxy_options = proxy.bind(self.root, identity, spec['resources']['network'], snapshot,
                                                        spec.get('_proxy_assignment'))
             options += proxy_options
-            features = []
+            features = ['disk-storage'] if spec.get('storage', {}).get('mode') == 'disk' else []
             if spec.get('_guest_tools') or any(mount.get('_private_volume') for mount in spec.get('mounts', [])):
                 features.append('private-volumes')
             if any(mount.get('_private_volume') for mount in spec.get('mounts', [])):
@@ -356,6 +360,7 @@ class Runtime:
             if status['status'] in ('running', 'paused', 'starting'):
                 raise ResourceUnavailable('cannot discard a live sandbox')
             importlib.import_module('disk_memory').cleanup(self.manager._logs(identity))
+            importlib.import_module('filesystem_storage').cleanup(self.manager._logs(identity))
             remove(self.manager._bundle(identity))
             remove(self.manager.local / 'gvisor/network' / identity)
             (self.root / 'sandboxes' / (identity + '.mounts.json')).unlink(missing_ok=True)

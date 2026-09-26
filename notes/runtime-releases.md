@@ -4,6 +4,11 @@ Sandweave 0.1.1 selects a pinned engine from GitHub Releases before building
 one locally. The Python API and `sandweave setup` share this installation path.
 Existing configured installations keep their recorded runtime files.
 
+SDK 0.2.32 upgrades prepared engines to runtime 2026.09.26.2 for disk-backed
+writable storage. It retains guest images and pinned memory-snapshot engines.
+See [filesystem storage](filesystem-storage.md) for API, capture/restore behavior
+and live acceptance.
+
 SDK 0.2.30 upgrades engines lacking corrected bridge local delivery to runtime
 2026.09.26.1, preserving guest images. Switched unicast no longer enters IP
 forwarding a second time, and restored packet sockets receive each frame once.

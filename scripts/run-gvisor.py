@@ -24,6 +24,7 @@ import signal
 import tempfile
 import build_artifacts
 import disk_memory
+import filesystem_storage
 
 started = phase = time.perf_counter()
 started_at = time.time()
@@ -50,12 +51,14 @@ parser.add_argument('--proxy-index', type=int)
 parser.add_argument('--clear-proxy', action='store_true', help=argparse.SUPPRESS)
 parser.add_argument('--allow-cidr', action='append', default=[], help='explicit additional IPv4 egress network; host addresses remain blocked')
 parser.add_argument('--guest-cpus', type=int, default=4, help='guest execution parallelism, independent of the shared host CPU pool')
-parser.add_argument('--memory-mib', type=int, default=8192, help='guest page budget including anonymous memory and writable filesystem data; excludes runtime overhead')
+parser.add_argument('--memory-mib', type=int, default=8192, help='guest page budget including anonymous memory and RAM-backed files; excludes disk-backed files and runtime overhead')
 parser.add_argument('--runtime-memory-mib', type=int, default=1024, help='separate sampled Go-runtime memory guard; permits transient overshoot')
 parser.add_argument('--ram-mib', type=int, help='resident guest RAM allowance when using disk memory')
 parser.add_argument('--disk-path', help='independent parent directory for private disk-backed memory')
 parser.add_argument('--no-disk-memory', action='store_true', help='clear a saved disk-memory binding on restore')
 parser.add_argument('--disk-memory-inner', type=Path, help=argparse.SUPPRESS)
+parser.add_argument('--storage', choices=['disk', 'memory'], help='writable filesystem backing (new sandboxes default to disk)')
+parser.add_argument('--storage-path', help='parent directory on this worker for private writable disk storage')
 parser.add_argument('--host-nice', type=int, default=0, help='experimental host per-thread nice value (0..19), not a whole-environment CPU weight')
 parser.add_argument('--cpu-policy', choices=['shared', 'weighted', 'quota'], default='weighted')
 parser.add_argument('--cpu-weight', type=int, default=100)
@@ -131,6 +134,10 @@ if args.restore and (args.restore / 'launch-settings.json').is_file():
         option = '--proxy-endpoint' if key == 'proxy_endpoints' else '--' + key.replace('_', '-')
         if not any(x == option or x.startswith(option + '=') for x in sys.argv[1:]):
             setattr(args, key, value)
+if args.storage is None:
+    args.storage = 'memory' if saved_settings else 'disk'
+if args.storage_path and args.storage != 'disk':
+    parser.error('--storage-path requires disk storage')
 filesystem_restore = bool(snapshot_manifest and snapshot_manifest.get('kind') == 'filesystem')
 if args.clear_proxy:
     args.proxy_endpoints = args.proxy_index = None
@@ -212,7 +219,7 @@ if args.docker_archive:
         docker_archive_arg = '/lab/' + str(docker_archive.relative_to(lab))
     else:
         parser.error('Docker archive must be under the lab or its local storage')
-bundle_flags = ['--docker-data'] if args.docker_data else []
+bundle_flags = ['--storage', args.storage] + (['--docker-data'] if args.docker_data else [])
 subprocess.run([sys.executable, str(lab / 'scripts/make-gvisor-bundle.py'), *bundle_flags, args.name, *args.command], check=True)
 bundle = local / 'gvisor/bundles' / args.name
 logs = lab / 'runs/gvisor' / args.name
@@ -226,11 +233,13 @@ elif saved_settings and not args.filesystem_runtime_current:
     runtime = saved_settings['runtime']
 else:
     runtime = json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
-runtime_root = runtime_store.validate(lab, runtime, verify=not bool(args.restore) or args.filesystem_runtime_current)
+runtime_root = runtime_store.validate(lab, runtime, verify=runtime_override is None and (not bool(args.restore) or args.filesystem_runtime_current))
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 settings['virtual_consoles'] = args.virtual_consoles
 settings['docker_data'] = args.docker_data
+settings['storage'] = args.storage
+settings['storage_path'] = args.storage_path
 settings['allowed_hosts'] = args.allowed_hosts
 settings['netlink_address_events'] = args.netlink_address_events
 settings['sysctl_reapply'] = args.sysctl_reapply
@@ -306,6 +315,8 @@ if args.restore and saved_settings.get('gpu'):
         spec['process']['args'].pop(0)
 spec['linux']['resources']['cpu'] = {}
 external_mounts.configure(spec, mounts)
+storage_directory = filesystem_storage.configure(spec, args.storage,
+    args.storage_path or (local / 'gvisor/storage'), logs)
 spec['linux']['resources']['memory']['limit'] = args.memory_mib * 1024**2
 if args.gpu is not None:
     launch_settings['gpu'] = gvisor_gpu.configure(spec, args.gpu, lab / 'tools/gpu', lab)
@@ -500,6 +511,9 @@ try:
             command += ['--private-volumes=enabled', '--private-volume-devices=enabled']
         if any(mount.get('_exclusive') for mount in mounts):
             command.append('--private-volume-cache=enabled')
+    if storage_directory is not None:
+        command[1:1] = ['--storage', str(storage_directory)]
+        command.append('--overlay2=root:dir=/sandbox-storage')
     if args.disk_path:
         command[1:1] = ['--disk-memory', str(args.disk_memory_inner)]
         command += ['--app-memory-directory=/disk-memory']
@@ -517,7 +531,7 @@ try:
         command += ['run']
     if args.docker_archive:
         command += ['--pass-fd=3:3']
-        wrapper_end = 1 + (2 if args.gpu is not None else 0) + (2 if mounts else 0) + (2 if args.disk_path else 0)
+        wrapper_end = 1 + (2 if args.gpu is not None else 0) + (2 if mounts else 0) + (2 if args.disk_path else 0) + (2 if storage_directory is not None else 0)
         command[wrapper_end:wrapper_end] = ['sh', '-c', 'exec 3<"$1"; shift; exec "$@"', 'sh', docker_archive_arg]
     command += [f'--bundle=/local/gvisor/bundles/{args.name}', args.name]
     (logs / 'launch.json').write_text(json.dumps(command, indent=2) + '\n')

@@ -16,6 +16,7 @@ scripts/host_compat.py
 scripts/runtime_store.py
 scripts/snapshot_store.py
 scripts/filesystem_snapshot.py
+scripts/filesystem_storage.py
 scripts/checkpoint-gvisor.py
 scripts/verify-snapshot.py
 scripts/external_mounts.py

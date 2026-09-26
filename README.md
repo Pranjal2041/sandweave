@@ -645,6 +645,23 @@ supports commands and filesystem caches, with fewer isolation and resource
 controls than gVisor, the default runtime. See
 [resource and runtime limits](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#limits-that-matter).
 
+Writable files use disk by default, independently of guest RAM. To choose the
+worker directory (also supported by `Pool`):
+
+```python
+from sandweave import Storage
+
+env = Sandbox(storage=Storage(path="/data/sandbox-disks"))
+print(env.info["storage"])
+env.terminate()
+env.close()
+```
+
+Each sandbox has private backing files, including its persistent Docker storage.
+Snapshots preserve their contents; terminating the sandbox removes its backing
+directory. Use `storage="memory"` for RAM-backed writable storage.
+See [writable disk storage](https://pranjal2041.github.io/sandweave/resources/#writable-disk-storage).
+
 Add disk-backed memory with an explicit directory on the worker:
 
 ```python

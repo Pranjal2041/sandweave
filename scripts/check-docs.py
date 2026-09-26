@@ -116,6 +116,12 @@ def check_browser(site, output, url=None):
                 expect(page.locator('article')).to_contain_text('Broker pauses expire after 500 ms')
                 page.get_by_text('If CPU control fails, the sandbox stays alive', exact=False).scroll_into_view_if_needed()
                 page.screenshot(path=str(output / 'cpu-controller-desktop.png'), animations='disabled')
+                page.goto(url + 'resources/#writable-disk-storage')
+                section = page.locator('#writable-disk-storage')
+                section.locator('xpath=following-sibling::div[1]').get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'Storage(path="/data/sandbox-disks")' in copied and 'env.terminate()' in copied
+                page.screenshot(path=str(output / 'writable-storage-desktop.png'), animations='disabled')
                 page.goto(url + 'resources/#experimental-memory-sharing')
                 section = page.locator('#experimental-memory-sharing')
                 section.locator('xpath=following-sibling::div[1]').get_by_role('button', name='Copy to clipboard').click()

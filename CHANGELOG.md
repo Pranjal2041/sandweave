@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.32
+
+- Use disk-backed writable storage by default for new sandboxes, including
+  persistent Docker and containerd files. File contents no longer consume the
+  guest application-memory budget; volatile tmpfs mounts keep their RAM semantics.
+- Add `Storage(path="/worker/directory")` and `storage="memory"` to sandbox and
+  pool creation, template defaults, CLI options, and storage details in `env.info`.
+  Allocate private backing directories and remove them after runtime termination.
+- Preserve disk backing across filesystem and memory snapshots. Restore into
+  independent backing files, support relocating them, and retain the memory
+  mode and pinned engine of older snapshots.
+- Fix missing backing descriptors in goferless EROFS startup and retain persistent
+  mount allocators during cold restore. Upgrade prepared engines without
+  rebuilding guest images; verify engine features once per immutable worker build.
+- Test writes larger than guest RAM, clone independence, links/xattrs, concurrent
+  tool latency, Docker images/containers/volumes, and both snapshot types.
+
 ## 0.2.31
 
 - Replace repeated command-status polling with guest completion and output

@@ -977,7 +977,7 @@ index c99d770..8490518 100644
          "//pkg/sentry/fsmetric",
          "//pkg/sentry/kernel",
 diff --git a/pkg/sentry/control/fs.go b/pkg/sentry/control/fs.go
-index 054d6ea..9e04ba6 100644
+index 054d6ea..ef2b7a7 100644
 --- a/pkg/sentry/control/fs.go
 +++ b/pkg/sentry/control/fs.go
 @@ -26,6 +26,7 @@ import (
@@ -1000,7 +1000,7 @@ index 054d6ea..9e04ba6 100644
  	// FilePayload contains the destination for output.
  	urpc.FilePayload
  }
-@@ -80,6 +86,55 @@ func (f *Fs) TarRootfsUpperLayer(o *TarRootfsUpperLayerOpts, _ *struct{}) error
+@@ -80,6 +86,58 @@ func (f *Fs) TarRootfsUpperLayer(o *TarRootfsUpperLayerOpts, _ *struct{}) error
  
  	root := mntns.Root(ctx)
  	defer root.DecRef(ctx)
@@ -1021,6 +1021,9 @@ index 054d6ea..9e04ba6 100644
 +		}
 +		if root.Mount().Filesystem().FilesystemType().Name() != "tmpfs" {
 +			return fmt.Errorf("restore target is not tmpfs")
++		}
++		if restored, err := tmpfs.RestoreDiskTar(ctx, root.Mount().Filesystem(), outFD); restored {
++			return err
 +		}
 +		nsRoot := mntns.Root(ctx)
 +		defer nsRoot.DecRef(ctx)
@@ -2418,8 +2421,21 @@ index f043868..c4ad638 100644
  	devicesSub := map[string]kernfs.Inode{} // /sys/devices
  	systemSub := map[string]kernfs.Inode{   // /sys/devices/system
  		"cpu": cpuDir(ctx, fs, creds),
+diff --git a/pkg/sentry/fsimpl/tmpfs/BUILD b/pkg/sentry/fsimpl/tmpfs/BUILD
+index 3ccab4d..7845b02 100644
+--- a/pkg/sentry/fsimpl/tmpfs/BUILD
++++ b/pkg/sentry/fsimpl/tmpfs/BUILD
+@@ -175,6 +175,8 @@ go_test(
+         "//pkg/fspath",
+         "//pkg/hostarch",
+         "//pkg/sentry/contexttest",
++        "//pkg/sentry/checkpoint",
++        "//pkg/sentry/pgalloc",
+         "//pkg/sentry/fsimpl/lock",
+         "//pkg/sentry/kernel/auth",
+         "//pkg/sentry/vfs",
 diff --git a/pkg/sentry/fsimpl/tmpfs/tar.go b/pkg/sentry/fsimpl/tmpfs/tar.go
-index 54d92bc..6acce8e 100644
+index 54d92bc..dd6f389 100644
 --- a/pkg/sentry/fsimpl/tmpfs/tar.go
 +++ b/pkg/sentry/fsimpl/tmpfs/tar.go
 @@ -24,7 +24,6 @@ import (
@@ -2430,7 +2446,33 @@ index 54d92bc..6acce8e 100644
  
  	"gvisor.dev/gvisor/pkg/abi/linux"
  	"gvisor.dev/gvisor/pkg/context"
-@@ -65,6 +64,48 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarRea
+@@ -45,6 +44,25 @@ func (fs *filesystem) tarRead(ctx context.Context, src io.Reader, cb tarReaderCa
+ 	return fs.readFromTar(ctx, tr, cb)
+ }
+ 
++// RestoreDiskTar populates an empty disk-backed tmpfs without replacing its
++// private memory file or checkpoint resource identity. Cold-boot callers must
++// keep applications stopped until restoration completes. The bool is false for
++// memory-backed filesystems, whose legacy replacement path remains available.
++func RestoreDiskTar(ctx context.Context, vfsfs *vfs.Filesystem, src io.Reader) (bool, error) {
++	fs, ok := vfsfs.Impl().(*filesystem)
++	if !ok || !fs.mf.ResourceID().Ok() {
++		return false, nil
++	}
++	fs.mu.Lock()
++	defer fs.mu.Unlock()
++	if !fs.root.inode.isDir() || len(fs.root.inode.impl.(*directory).childMap) != 0 {
++		return true, fmt.Errorf("disk-backed restore requires an empty tmpfs")
++	}
++	return true, fs.readFromTar(ctx, tar.NewReader(src), &tarDefaultReaderCallbacks{
++		headerToContent: make(map[*tar.Header]*bytes.Buffer),
++	})
++}
++
+ // readFromTar creates the corresponding dentry and its children from the given
+ // tar reader.
+ //
+@@ -65,6 +83,48 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarRea
  			return fmt.Errorf("failed to read tar header: %w", err)
  		}
  
@@ -2479,7 +2521,7 @@ index 54d92bc..6acce8e 100644
  		switch header.Typeflag {
  		case tar.TypeDir:
  			directoryToHeader[header.Name] = header
-@@ -83,6 +124,9 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarRea
+@@ -83,6 +143,9 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarRea
  			return fmt.Errorf("readfrom unsupported file type %v for %v", header.Typeflag, header.Name)
  		}
  	}
@@ -2489,7 +2531,7 @@ index 54d92bc..6acce8e 100644
  	// Re-create all directories.
  	for path, hdr := range directoryToHeader {
  		if _, err := fs.mkdirFromTar(hdr, pathToInode, directoryToHeader); err != nil {
-@@ -126,6 +170,14 @@ func (i *inode) setXattrsFromPAXRecords(hdr *tar.Header) {
+@@ -126,6 +189,14 @@ func (i *inode) setXattrsFromPAXRecords(hdr *tar.Header) {
  			}
  			xattrs[strings.TrimPrefix(k, paxXattrPrefix)] = v
  		}
@@ -2504,7 +2546,7 @@ index 54d92bc..6acce8e 100644
  	}
  	if len(xattrs) > 0 {
  		i.xattrs.SetRawXattrs(xattrs)
-@@ -151,6 +203,12 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
+@@ -151,6 +222,12 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
  		ino.defaultACL.Store(defaultACL)
  		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
  		ino.mtime.Store(hdr.ModTime.UnixNano())
@@ -2517,7 +2559,7 @@ index 54d92bc..6acce8e 100644
  		ino.setXattrsFromPAXRecords(hdr)
  		pathToInode[hdr.Name] = ino
  		return ino, nil
-@@ -188,6 +246,12 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
+@@ -188,6 +265,12 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
  	parentDir.inode.incLinksLocked() // from child's ".."
  	parentDir.inode.incRef()         // child directory holds a reference to parent
  	childDir.inode.mtime.Store(hdr.ModTime.UnixNano())
@@ -2530,7 +2572,7 @@ index 54d92bc..6acce8e 100644
  	childDir.inode.setXattrsFromPAXRecords(hdr)
  	parentDir.insertChildLocked(&childDir.dentry, name)
  	pathToInode[path] = childDir.dentry.inode
-@@ -231,6 +295,12 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
+@@ -231,6 +314,12 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
  	childInode.accessACL.Store(acl)
  	childInode.defaultACL.Store(defaultACL)
  	childInode.mtime.Store(hdr.ModTime.UnixNano())
@@ -2543,7 +2585,7 @@ index 54d92bc..6acce8e 100644
  	childInode.setXattrsFromPAXRecords(hdr)
  	child := fs.newDentry(childInode)
  	parentDir.insertChildLocked(child, name)
-@@ -304,6 +374,12 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
+@@ -304,6 +393,12 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
  	child.inode.accessACL.Store(acl)
  	child.inode.defaultACL.Store(defaultACL)
  	child.inode.mtime.Store(hdr.ModTime.UnixNano())
@@ -2556,7 +2598,7 @@ index 54d92bc..6acce8e 100644
  	child.inode.setXattrsFromPAXRecords(hdr)
  	parentDir.insertChildLocked(child, name)
  	pathToInode[hdr.Name] = child.inode
-@@ -431,12 +507,19 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
+@@ -431,12 +526,19 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
  	}
  
  	header := &tar.Header{
@@ -2581,7 +2623,7 @@ index 54d92bc..6acce8e 100644
  	// Hard link: Check if the inode has already been written to the tar archive.
  	if existingPath, ok := inoToPath[d.inode.ino]; ok {
  		header.Typeflag = tar.TypeLink
-@@ -474,23 +557,17 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
+@@ -474,23 +576,17 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
  
  	// Serialize xattrs to PAXRecords.
  	if xattrs := d.inode.xattrs.RawXattrs(); len(xattrs) > 0 {
@@ -2599,6 +2641,10 @@ index 54d92bc..6acce8e 100644
 -			if k == "" || v == "" {
 -				log.Warningf("Skipping xattr (k=%q, v=%q) for file %q while generating tar archive because key or value is empty", k, v, path)
 -				continue
+-			}
+-			if !utf8.ValidString(k) || !utf8.ValidString(v) {
+-				log.Warningf("Skipping xattr (k=%q, v=%q) for file %q while generating tar archive because value is not a valid UTF-8 string", k, v, path)
+-				continue
 +			if strings.Contains(k, "=") || v == "" {
 +				// Empty PAX values mean deletion to some readers. Preserve them,
 +				// and names PAX cannot represent, in a lossless private record.
@@ -2606,15 +2652,11 @@ index 54d92bc..6acce8e 100644
 +			} else {
 +				header.PAXRecords[paxXattrPrefix+k] = v
  			}
--			if !utf8.ValidString(k) || !utf8.ValidString(v) {
--				log.Warningf("Skipping xattr (k=%q, v=%q) for file %q while generating tar archive because value is not a valid UTF-8 string", k, v, path)
--				continue
--			}
 -			header.PAXRecords[paxXattrPrefix+k] = v
  		}
  	}
  
-@@ -534,22 +611,67 @@ func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regul
+@@ -534,22 +630,67 @@ func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regul
  	// it is safe to lock here to ensure no concurrent writes occur.
  	rf.inode.mu.Lock()
  	defer rf.inode.mu.Unlock()
@@ -2695,18 +2737,26 @@ index 54d92bc..6acce8e 100644
  func aclToPAXRecord(acl *vfs.PosixACL) string {
  	// We can use a "fake" root userns for this serialization
 diff --git a/pkg/sentry/fsimpl/tmpfs/tar_test.go b/pkg/sentry/fsimpl/tmpfs/tar_test.go
-index 3ce00a5..d87996d 100644
+index 3ce00a5..2cdeae7 100644
 --- a/pkg/sentry/fsimpl/tmpfs/tar_test.go
 +++ b/pkg/sentry/fsimpl/tmpfs/tar_test.go
-@@ -20,6 +20,7 @@ import (
+@@ -18,11 +18,15 @@ import (
+ 	"archive/tar"
+ 	"bytes"
  	"io"
++	"os"
  	"strings"
  	"testing"
 +	"time"
  
++	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
  	"gvisor.dev/gvisor/pkg/sentry/contexttest"
  	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-@@ -84,3 +85,84 @@ func TestSourceTarLongSymlinkRelease(t *testing.T) {
++	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+ 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+ )
+ 
+@@ -84,3 +88,157 @@ func TestSourceTarLongSymlinkRelease(t *testing.T) {
  	// fs.pagesUsed and panics here.
  	mntns.DecRef(ctx)
  }
@@ -2789,6 +2839,79 @@ index 3ce00a5..d87996d 100644
 +			t.Fatalf("regular=%d links=%d", regular, links)
 +		}
 +		input = output
++	}
++}
++
++// Cold restore must retain the disk-backed allocator and reject a nonempty
++// destination instead of overwriting files already in use.
++func TestRestoreDiskTar(t *testing.T) {
++	ctx := contexttest.Context(t)
++	creds := auth.CredentialsFromContext(ctx)
++	file, err := os.CreateTemp(t.TempDir(), "backing-")
++	if err != nil {
++		t.Fatal(err)
++	}
++	key := checkpoint.ResourceID{ContainerName: "test", Path: "/data"}
++	mf, err := pgalloc.NewMemoryFile(file, pgalloc.MemoryFileOpts{DiskBackedFile: true, ResourceID: key})
++	if err != nil {
++		file.Close()
++		t.Fatal(err)
++	}
++	vfsObj := &vfs.VirtualFilesystem{}
++	if err := vfsObj.Init(ctx); err != nil {
++		t.Fatal(err)
++	}
++	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{AllowUserMount: true})
++	ns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{GetFilesystemOptions: vfs.GetFilesystemOptions{InternalData: FilesystemOpts{MemoryFile: mf}}}, nil)
++	if err != nil {
++		mf.Destroy()
++		t.Fatal(err)
++	}
++	defer ns.DecRef(ctx)
++	root := ns.Root(ctx)
++	defer root.DecRef(ctx)
++	var input bytes.Buffer
++	tw := tar.NewWriter(&input)
++	for _, hdr := range []*tar.Header{
++		{Name: "./", Typeflag: tar.TypeDir, Mode: 0750, PAXRecords: map[string]string{"GVISOR.tmpfs.stream": "1"}, Format: tar.FormatPAX},
++		{Name: "./file", Typeflag: tar.TypeReg, Mode: 0640, Size: 7},
++	} {
++		if err := tw.WriteHeader(hdr); err != nil {
++			t.Fatal(err)
++		}
++		if hdr.Size != 0 {
++			if _, err := tw.Write([]byte("content")); err != nil {
++				t.Fatal(err)
++			}
++		}
++	}
++	if err := tw.Close(); err != nil {
++		t.Fatal(err)
++	}
++	fs := root.Mount().Filesystem()
++	if ok, err := RestoreDiskTar(ctx, fs, bytes.NewReader(input.Bytes())); !ok || err != nil {
++		t.Fatalf("restore: %t, %v", ok, err)
++	}
++	if fs.Impl().(*filesystem).mf != mf || mf.ResourceID() != key {
++		t.Fatal("backing file changed")
++	}
++	var output bytes.Buffer
++	if err := fs.Impl().(*filesystem).tarWrite(ctx, &output, tarDefaultWriterCallbacks{}); err != nil {
++		t.Fatal(err)
++	}
++	tr := tar.NewReader(&output)
++	if _, err := tr.Next(); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := tr.Next(); err != nil {
++		t.Fatal(err)
++	}
++	data, err := io.ReadAll(tr)
++	if err != nil || string(data) != "content" {
++		t.Fatalf("content = %q, %v", data, err)
++	}
++	if ok, err := RestoreDiskTar(ctx, fs, bytes.NewReader(input.Bytes())); !ok || err == nil {
++		t.Fatal("nonempty restore was accepted")
 +	}
 +}
 diff --git a/pkg/sentry/inet/namespace.go b/pkg/sentry/inet/namespace.go
@@ -9243,7 +9366,7 @@ index 957b4c6..87163c8 100644
          "//pkg/pinring",
          "//pkg/sentry/control",
 diff --git a/runsc/container/container.go b/runsc/container/container.go
-index f600485..0cbc679 100644
+index f600485..1f7b185 100644
 --- a/runsc/container/container.go
 +++ b/runsc/container/container.go
 @@ -34,6 +34,7 @@ import (
@@ -9269,7 +9392,41 @@ index f600485..0cbc679 100644
  }
  
  // SignalContainer sends the signal to the container. If all is true and signal
-@@ -1254,11 +1255,11 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
+@@ -1195,14 +1196,24 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
+ // createGoferFilestores creates the regular files that will back the
+ // tmpfs/overlayfs mounts that will overlay some gofer mounts.
+ //
+-// Precondition: gofer process must be running.
++// With a gofer, use its mount namespace. Goferless EROFS sandboxes use the
++// runtime's namespace; their writable tmpfs layers still need backing files.
+ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *boot.PodMountHints) ([]*os.File, error) {
+ 	var goferFilestores []*os.File
++	cu := cleanup.Make(func() {
++		for _, f := range goferFilestores {
++			_ = f.Close()
++		}
++	})
++	defer cu.Clean()
+ 	// NOTE(gvisor.dev/issue/9834): Create the filestores in the gofer mount
+ 	// namespace, so that they don't prevent the host mount points from being
+ 	// unmounted from the host's mount namespace. We will use /proc/pid/root
+ 	// to access gofer's mount namespace. See proc_pid_root(5).
+ 	goferRootfs := fmt.Sprintf("/proc/%d/root", c.GoferPid.Load())
++	if c.GoferPid.Load() == 0 {
++		goferRootfs = "/proc/self/root"
++	}
+ 
+ 	// Handle rootfs first.
+ 	rootfsConf := c.GoferMountConfs[0]
+@@ -1235,6 +1246,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
+ 		// running with seccomp filters that do not allow this.
+ 		pgalloc.IMAWorkAroundForMemFile(filestore.Fd())
+ 	}
++	cu.Release()
+ 	return goferFilestores, nil
+ }
+ 
+@@ -1254,11 +1266,11 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
  
  func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
  	// Create the self filestore file.
@@ -9283,7 +9440,7 @@ index f600485..0cbc679 100644
  	}
  	dirPath := path.Join(goferRootfs, mountSrc)
  	fileName := boot.SelfFilestoreName(c.sandboxID())
-@@ -1269,11 +1270,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
+@@ -1269,11 +1281,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
  	}
  	defer unix.Close(dirFD)
  
@@ -9296,6 +9453,20 @@ index f600485..0cbc679 100644
  	if err != nil {
  		if err == unix.EEXIST {
  			// Note that if the same submount is mounted multiple times within the
+@@ -1500,8 +1508,12 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
+ 			}
+ 			cfgIdx++
+ 		}
++		filestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
++		if err != nil {
++			return nil, nil, nil, nil, fmt.Errorf("creating goferless filestore files: %w", err)
++		}
+ 		cu.Release()
+-		return ioFiles, nil, nil, nil, nil
++		return ioFiles, filestores, nil, nil, nil
+ 	}
+ 
+ 	// Ensure we don't leak FDs to the gofer process.
 diff --git a/runsc/fsgofer/BUILD b/runsc/fsgofer/BUILD
 index c3b00f8..9194874 100644
 --- a/runsc/fsgofer/BUILD

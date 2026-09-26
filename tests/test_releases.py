@@ -33,7 +33,7 @@ def published_runtime(tmp_path, monkeypatch):
     pointer = root / 'tools/gvisor-socket/runtime.json'
     pointer.parent.mkdir()
     pointer.write_text(json.dumps({'path': 'tools/runtime-builds/test-build', 'sha256': hashes,
-                                   'cpu_accounting': 1, 'bridge_local_delivery': 1}))
+                                   'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1}))
     record_installation(root)
     archive = web / 'runtime.tar.gz'
     with tarfile.open(archive, 'w:gz') as stream:

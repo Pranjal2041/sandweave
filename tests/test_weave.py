@@ -73,7 +73,7 @@ class Executor(Worker):
                         scope={'boot': 'test'}, cpus=[self.index], memory=16*1024**3,
                         gpus=[], runtimes=['gvisor'], live=[])
         if operation == 'ping':
-            return dict(hostname=socket.gethostname(), port=self.index, workspace=str(self.root))
+            return dict(hostname=socket.gethostname(), port=self.index, workspace=str(self.root), disk_storage=1)
         if operation == 'managed_prepare':
             return {'information': self.call('ping'), 'token': 'private-worker-token'}
         if operation == 'snapshot_info':

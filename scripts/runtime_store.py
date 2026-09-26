@@ -21,6 +21,8 @@ def from_directory(lab, path):
     descriptor = {'path': str(root.relative_to(lab)),
                   'sha256': json.loads((root / 'manifest.json').read_text())}
     validate(lab, descriptor, verify=True)
+    if "capabilities.json" in descriptor["sha256"]:
+        descriptor.update(json.loads((root / "capabilities.json").read_text()))
     return descriptor
 
 

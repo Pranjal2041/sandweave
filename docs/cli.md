@@ -157,3 +157,14 @@ sandweave terminate gunspin
 
 The VR template needs prepared game files and an available GPU. Recording exports
 both eyes and a synchronized side-by-side preview. See [VR games](vr.md).
+
+## Writable storage
+
+New sandboxes use disk-backed writable files. Choose their directory on the worker:
+
+```bash
+sandweave run --storage-path /data/sandbox-disks -- "python --version"
+```
+
+Use `--storage memory` to retain RAM-backed writable files. This is independent
+of `--disk-memory` and `--disk-path`, which configure application memory.

@@ -99,3 +99,17 @@ The repository's [point-mass example](https://github.com/Pranjal2041/sandweave/t
 shows how to add controls without changing `Sandbox`. A robotics template must
 supply its actual simulator and action implementation; a generic robotics
 adapter is not bundled with Sandweave.
+
+## Writable storage default
+
+A template can choose the backing directory on its worker:
+
+```toml
+[resources.storage]
+mode = "disk"
+path = "/data/sandbox-disks"
+```
+
+`Sandbox(storage=...)` overrides this setting. Each sandbox gets its own private
+subdirectory; the template does not share mutable disk files between instances.
+See [writable disk storage](resources.md#writable-disk-storage).

@@ -146,5 +146,5 @@ def test_engine_feature_probe_uses_flag_listing(tmp_path, monkeypatch, host_memo
         # runsc --help lists subcommands; only `flags` describes config flags.
         return SimpleNamespace(stdout=b'  -app-memory-directory string\n' if command[-1] == 'flags' else b'Usage: runsc')
     monkeypatch.setattr(engine.subprocess, 'run', run)
-    assert engine.supports_disk(tmp_path, {'path': 'tools/runtime-builds/test'})
+    assert engine.supports_disk(tmp_path, {'path': 'tools/runtime-builds/test', 'sha256': {}})
     assert calls[0][-1] == 'flags'

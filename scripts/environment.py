@@ -19,6 +19,7 @@ import runtime_store
 import snapshot_store
 import fast_io
 import disk_memory
+import filesystem_storage
 
 
 def runtime_state(path):
@@ -107,7 +108,7 @@ class EnvironmentManager:
         if not bundle.exists() and launcher is None:
             result['status'] = 'missing'
         for filename, key in [('ports.json', 'ports'), ('stopped.json', 'last_stop'),
-                              ('disk-memory.json', 'disk_memory'), ('proxy.json', 'proxy')]:
+                              ('disk-memory.json', 'disk_memory'), ('storage.json', 'storage'), ('proxy.json', 'proxy')]:
             try:
                 result[key] = json.loads((self._logs(name) / filename).read_text())
             except FileNotFoundError:
@@ -260,6 +261,7 @@ class EnvironmentManager:
                 raise ValueError('unknown environment: ' + name)
             if state['status'] == 'stopped':
                 disk_memory.cleanup(self._logs(name))
+                filesystem_storage.cleanup(self._logs(name))
                 return state
             if state['status'] not in ('running', 'paused') and not discard:
                 raise ValueError('environment is still starting; wait for readiness or explicitly discard it')
@@ -303,6 +305,7 @@ class EnvironmentManager:
             record = {'requested_at': time.time(), 'discarded': discard, 'saved': saved, 'complete': True}
             snapshot_store.write_json(self._logs(name) / 'stopped.json', record)
             disk_memory.cleanup(self._logs(name))
+            filesystem_storage.cleanup(self._logs(name))
             return self.status(name)
 
     @staticmethod

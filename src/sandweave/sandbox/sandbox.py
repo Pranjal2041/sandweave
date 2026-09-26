@@ -10,14 +10,14 @@ from .errors import CommandError, UnsupportedFeature
 from .files import Files
 from .mounts import serialize as mount_spec
 from .process import Process
-from .resources import normalize, positive, CPU, GPU, Memory, Network
+from .resources import normalize, positive, CPU, GPU, Memory, Network, Storage
 from .snapshots import SnapshotRef
 from .targets import connect
 from ..templates.resolve import Template, setup_step
 
 
 def definition(*, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
-               cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
+               cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
                keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False,
                service_network=None, aliases=None, networks=None):
@@ -49,6 +49,7 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
         # Scalar memory overrides change the guest budget, retaining the saved
         # runtime allowance just as fresh launches retain their template's.
         defaults['runtime_memory'] = defaults['memory'].runtime
+        defaults['storage'] = saved['spec'].get('storage', {'mode': 'memory'})
         if env is None:
             env = saved['spec']['env']
         if mounts is None:
@@ -68,6 +69,9 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
         recipe['image'] = selected_image
     if setup:
         recipe['setup_steps'].append(setup_step(setup))
+    selected_storage = storage if storage is not None else defaults.get('storage', 'disk')
+    selected_storage = (selected_storage if isinstance(selected_storage, Storage) else
+                        Storage(**selected_storage) if isinstance(selected_storage, dict) else Storage(selected_storage))
     selected_memory = memory if memory is not None else defaults.get('memory', '1GiB')
     if isinstance(selected_memory, dict):
         selected_memory = Memory(**selected_memory)
@@ -86,6 +90,7 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
     from .recording import validate as recording_options
     recording = recording_options({'recording': recording, 'runtime': runtime, 'template': recipe})
     spec = {'template': recipe, 'resources': resources, 'runtime': runtime,
+            'storage': asdict(selected_storage),
             'env': {**recipe.get('env', {}), **(env or {})}, 'mounts': mount_spec(mounts), 'name': name,
             'ttl': ttl, 'detached': detached, 'startup_timeout': startup_timeout, 'keep_on_error': keep_on_error,
             'experimental_gpu_live': experimental_gpu_live}
@@ -110,7 +115,7 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
 
 class Sandbox:
     def __init__(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
-                 cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
+                 cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False, recording=False,
                  service_network=None, aliases=None, networks=None):
@@ -124,7 +129,7 @@ class Sandbox:
             raise
 
     def _initialize(self, *, template=None, image=None, setup=None, cache=None, snapshot=None, cache_key=None,
-                    cpu=None, memory=None, gpu=None, network=None, target=None, runtime='gvisor',
+                    cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False, recording=False,
                     service_network=None, aliases=None, networks=None):
@@ -172,6 +177,8 @@ class Sandbox:
             raise UnsupportedFeature('Harbor service groups require an updated worker and controller')
         if spec.get('service_network', {}).get('id') and not self._connection.call('ping').get('service_networks'):
             raise UnsupportedFeature('service networks require Sandweave 0.2.24 or newer on the worker and controller')
+        if spec['storage']['mode'] == 'disk' and not self._connection.call('ping').get('disk_storage'):
+            raise UnsupportedFeature('disk-backed storage requires Sandweave 0.2.32 or newer on the worker and controller')
         from .ownership import client_owner
         owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,

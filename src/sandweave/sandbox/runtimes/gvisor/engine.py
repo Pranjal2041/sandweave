@@ -24,7 +24,12 @@ def feature_runtime(root, features, snapshot=None):
         descriptor = (manifest['runtime'] if live else json.loads(
             (pointer if pointer.exists() else root / 'tools/gvisor-socket/runtime.json').read_text()))
         if supports(root, descriptor, features):
-            return [] if live else ['--runtime-build', descriptor['path']]
+            current = json.loads((root / 'tools/gvisor-socket/runtime.json').read_text())
+            if live or (not snapshot and descriptor['path'] == current['path']):
+                return []
+            if manifest and manifest['runtime']['path'] == descriptor['path']:
+                return []
+            return ['--runtime-build', descriptor['path']]
         if live:
             raise UnsupportedFeature('the captured runtime does not support: ' + ', '.join(features))
         from .... import releases
@@ -75,9 +80,23 @@ def supports_disk(root, descriptor):
 
 
 def supports(root, descriptor, features):
+    verify_runtime(str(root), descriptor['path'], json.dumps(descriptor['sha256'], sort_keys=True))
+    required = set(features)
+    if 'disk-storage' in required:
+        marker = Path(root) / descriptor['path'] / 'capabilities.json'
+        if ('capabilities.json' not in descriptor['sha256'] or
+                json.loads(marker.read_text()).get('disk_storage', 0) < 1):
+            return False
+        required.remove('disk-storage')
+    return not required or required <= flags(str(root), descriptor['path'])
+
+
+@lru_cache(maxsize=32)
+def verify_runtime(root, path, hashes):
+    # A worker uses immutable, content-addressed builds. Verify each build once;
+    # don't reread hundreds of megabytes for each pool member.
     import runtime_store
-    runtime_store.validate(root, descriptor)
-    return set(features) <= flags(str(root), descriptor['path'])
+    runtime_store.validate(Path(root), {'path': path, 'sha256': json.loads(hashes)})
 
 
 @lru_cache(maxsize=32)

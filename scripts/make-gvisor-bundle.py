@@ -11,6 +11,7 @@ lab = Path(__file__).resolve().parent.parent
 local = Path((lab / 'runs/local-path.txt').read_text().strip())
 parser = argparse.ArgumentParser()
 parser.add_argument('--docker-data', action='store_true')
+parser.add_argument('--storage', choices=['disk', 'memory'], default='disk')
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
@@ -92,7 +93,7 @@ spec = {
     'annotations': {
         'dev.gvisor.spec.rootfs.source': '/local/gvisor/ubuntu-ready.erofs',
         'dev.gvisor.spec.rootfs.type': 'erofs',
-        'dev.gvisor.spec.rootfs.overlay': 'memory',
+        'dev.gvisor.spec.rootfs.overlay': 'dir=/sandbox-storage' if args.storage == 'disk' else 'memory',
         'dev.gvisor.tar.rootfs.upper': f'/local/gvisor/bundles/{args.name}/fixtures.tar',
     },
 }

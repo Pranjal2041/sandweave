@@ -1,4 +1,4 @@
-# CPU, memory and GPUs
+# CPU, memory, storage and GPUs
 
 Override resources at creation time. You do not need a new template:
 
@@ -141,6 +141,46 @@ The CLI equivalent is:
 ```bash
 sandweave run --memory 16GiB --memory-reservation 4GiB --experimental-memory-sharing -- "python --version"
 ```
+
+## Writable disk storage
+
+New sandboxes store writable files on the worker's disk. File contents no longer
+consume the guest's application-memory budget. Linux can cache disk pages in
+host RAM and reclaim that cache; this does not add RAM to the sandbox.
+
+```python
+from sandweave import Sandbox, Storage
+
+env = Sandbox()  # Disk-backed writable filesystem by default.
+print(env.info["storage"])  # Mode and actual private directory on the worker.
+env.terminate()
+env.close()
+
+env = Sandbox(storage=Storage(path="/data/sandbox-disks"))
+env.terminate()
+env.close()
+```
+
+Each sandbox gets a private random directory, removed when it stops. With no
+explicit path, this directory is under the worker's runtime workspace. The path
+is on the worker, including when using SSH or Weave. The same `storage=` option
+works with `Pool`; templates can set `resources.storage`.
+
+The root writable layer and persistent Docker/containerd mounts use disk.
+`/run`, `/tmp`, `/dev/shm`, and other volatile mounts retain their RAM semantics.
+Explicit external mounts keep their existing backing and snapshot policy.
+Use `storage="memory"` to request the former RAM-backed writable filesystem.
+
+Filesystem and memory snapshots capture writable contents. Restore creates new
+backing files, so clones are independent and do not need the source directory.
+A restore can use a different `Storage(path=...)`. Existing snapshots retain
+their saved mode; older snapshots without a mode remain memory-backed. To change
+modes, restore a filesystem snapshot with an explicit `storage=` option.
+
+Disk storage requires an updated worker/controller and engine. It does not
+require host sudo or delegated cgroups. Available space and I/O performance come
+from the chosen filesystem; Sandweave does not reserve a disk quota. This is
+separate from `Memory(disk=...)`, which backs application memory as described below.
 
 ## Disk-backed memory
 

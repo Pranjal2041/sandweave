@@ -502,6 +502,8 @@ class Controller:
                 raise UnsupportedFeature('Harbor service groups require an updated Sandweave worker')
             if request['spec'].get('service_network', {}).get('id') and not (yield rpc(connection, 'ping')).get('service_networks'):
                 raise UnsupportedFeature('service networks require Sandweave 0.2.24 or newer on the worker')
+            if request['spec'].get('storage', {}).get('mode') == 'disk' and not (yield rpc(connection, 'ping')).get('disk_storage'):
+                raise UnsupportedFeature('disk-backed storage requires Sandweave 0.2.32 or newer on the worker')
             if request['spec'].get('discard_workspace') and not (yield rpc(connection, 'ping')).get('pool_retention'):
                 with self.state.transaction():
                     current = self.state.get('allocation', identity)
@@ -736,7 +738,7 @@ class Controller:
         if operation == 'ping':
             return {'cluster_id': self.id, 'protocol': PROTOCOL,
                     'pool_options': ['shared_cache', 'affinity', 'retain_baseline'], 'proxy_policy': 1,
-                    'memory_reservations': 1,
+                    'memory_reservations': 1, 'disk_storage': 1,
                     'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1, 'desktop_recording': 1,
                     'native_services': 1, 'service_networks': 1}
         if operation.startswith('service_network_'):

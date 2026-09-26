@@ -4,6 +4,7 @@ import re
 import subprocess
 import json
 import time
+from filesystem_storage import persistent_mounts
 
 # These are recreated when the saved filesystem boots with new processes.
 VOLATILE = ('/dev', '/proc', '/sys', '/run', '/tmp')
@@ -46,7 +47,7 @@ def self_bind(mount, mounts):
 
 def inventory(spec, mountinfo):
     """Fail rather than silently omit unrecognized writable storage."""
-    configured = {m['destination']: m for m in spec['mounts']}
+    configured = {m['destination']: m for m in persistent_mounts(spec)}
     external = json.loads(spec.get('annotations', {}).get('dev.sandweave.external-mounts', '[]'))
     if any(m['snapshot'] != 'rebind' for m in external):
         raise ValueError('external mount policy rejects capture; explicitly choose rebind for shared external state')
@@ -80,7 +81,7 @@ def inventory(spec, mountinfo):
         seen.add(destination)
         result.append({'destination': destination, 'options': mount.get('options', []),
                        'file': f'mount-{len(result)}.tar'})
-    expected = {m['destination'] for m in spec['mounts'] if m['type'] == 'tmpfs'
+    expected = {m['destination'] for m in persistent_mounts(spec) if m['type'] == 'tmpfs'
                 and not any(m['destination'] == p or m['destination'].startswith(p + '/') for p in VOLATILE)}
     if expected != {m['destination'] for m in result}:
         raise ValueError('persistent mount layout differs from the launch spec')

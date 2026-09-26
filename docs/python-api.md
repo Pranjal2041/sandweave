@@ -4,7 +4,7 @@ Import the public objects from `sandweave`:
 
 ```python
 from sandweave import Sandbox, Pool, Cluster, Job, Benchmark
-from sandweave import CPU, Memory, GPU, Network, Template, SnapshotRef, Mount, Slurm, Recording
+from sandweave import CPU, Memory, GPU, Network, Storage, Template, SnapshotRef, Mount, Slurm, Recording
 from sandweave import create_service_network, delete_service_network
 ```
 
@@ -30,6 +30,7 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `cpu` | Virtual CPU count or `CPU(...)`. | Template default |
 | `memory` | Guest size or `Memory(...)`. | Template default |
 | `gpu` | Boolean, model name, or `GPU(...)`. | Template default |
+| `storage` | `"disk"`, `"memory"`, or `Storage(path="/worker/path")`. | Template default, normally `"disk"` |
 | `network` | `"internet"`, `"offline"`, or `Network(...)`. | Template default, normally `"internet"` |
 | `service_network` | ID returned by `create_service_network(target=...)`. Pins placement to its worker. | None |
 | `aliases` | DNS names visible to members sharing a named network. | `[]` |
@@ -127,6 +128,7 @@ cpu = CPU(vcpus=2, weight=100, quota=1.5)
 memory = Memory(guest="4GiB", runtime="1GiB")
 gpu = GPU(model="L40S")
 network = Network(mode="offline")
+storage = Storage(path="/data/sandbox-disks")
 ```
 
 These values can be passed to `Sandbox` and pool creation. See

@@ -416,3 +416,21 @@ runtime semantics.
 `run`/`exec` take one quoted command string after `--`, interpreted by the guest
 shell. An explicit `--argv -- PROGRAM ARG ...` selects direct execution; the CLI
 does not guess between forms or join multiple arguments into a shell string.
+
+## Writable filesystem backing
+
+```python
+from sandweave import Sandbox, Storage
+
+env = Sandbox(storage=Storage(path="/data/sandbox-disks"))
+print(env.info["storage"])
+env.terminate()
+env.close()
+```
+
+New sandboxes default to disk backing; `storage="memory"` selects RAM.
+`Pool` accepts the same option. Templates can declare `resources.storage`.
+The directory is on the worker; clones get independent files. Filesystem
+snapshots can change modes, while memory snapshots retain the saved mode and
+allow changing its host directory. `Memory(disk=...)` configures application
+memory separately. See `notes/filesystem-storage.md` for implementation and tests.

@@ -215,6 +215,8 @@ def test_sdk_detached_defaults_and_borrowed_contexts(monkeypatch):
 
         def call(self, operation, **params):
             calls.append((operation, params))
+            if operation == 'ping':
+                return {'disk_storage': 1}
             if operation == 'snapshot_spec':
                 return {'reference': 'snapshot', 'spec': copy.deepcopy(infos['saved']['spec'])}
             if operation == 'create':

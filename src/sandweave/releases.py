@@ -68,7 +68,8 @@ def runtime_current(root):
     """Upgrade prepared engines for new launches; live snapshots stay pinned."""
     descriptor = json.loads((Path(root) / 'tools/gvisor-socket/runtime.json').read_text())
     return (runtime_supported(root) and descriptor.get('cpu_accounting', 0) >= 1
-            and descriptor.get('bridge_local_delivery', 0) >= 1)
+            and descriptor.get('bridge_local_delivery', 0) >= 1
+            and descriptor.get('disk_storage', 0) >= 1)
 
 
 SECCOMP_PROBE = '''import ctypes, os

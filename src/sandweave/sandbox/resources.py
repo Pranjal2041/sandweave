@@ -46,6 +46,24 @@ class CPU:
 
 
 @dataclass(frozen=True)
+class Storage:
+    """Writable filesystem backing. Paths are directories on the worker."""
+    mode: str = 'disk'
+    path: str | None = None
+
+    def __post_init__(self):
+        if self.mode not in ('disk', 'memory'):
+            raise ValueError('storage mode must be disk or memory')
+        if self.path is not None:
+            if self.mode != 'disk':
+                raise ValueError('storage path requires disk mode')
+            if (not isinstance(self.path, str) or not self.path.startswith('/')
+                    or any(c in self.path for c in ('\0', '\n', '\r', ':', ','))
+                    or '..' in PurePosixPath(self.path).parts):
+                raise ValueError('storage path must be an absolute worker directory without .., colons or commas')
+
+
+@dataclass(frozen=True)
 class Memory:
     guest: str | int = '1GiB'
     runtime: str | int = '512MiB'

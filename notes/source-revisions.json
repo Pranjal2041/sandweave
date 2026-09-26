@@ -2,14 +2,14 @@
   "gvisor": {
     "path": "sources/gvisor",
     "upstream": "https://github.com/google/gvisor.git",
-    "branch": "fix/bridge-local-delivery",
+    "branch": "fix/disk-backed-storage",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "939507511d76c10d48867a467e573993e0c6b763",
+    "commit": "09e7ac59a5c73077b4eacbb61a0ade6faf39144c",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/10fdc1340a3c67f0a7204e2684cef29397cc6e12173ab0e3f1bc8a407851b95e",
+    "runtime_build": "tools/runtime-builds/089163c7a93ad197e5d89f45b2c167f9c7bb9ecbec14e2214e6a088df3c76496",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "939507511d76c10d48867a467e573993e0c6b763",
+    "runtime_commit": "09e7ac59a5c73077b4eacbb61a0ade6faf39144c",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
@@ -21,7 +21,8 @@
     "harbor_status": "Private-volume overlay metadata and exclusive caching; legacy stateful IPv4/IPv6 firewall matching and standard reject modes. See notes/harbor-adapter.md for acceptance.",
     "linux54_runtime_release": "2026.09.24.1",
     "cpu_accounting_runtime_release": "2026.09.25.1",
-    "bridge_runtime_release": "2026.09.26.1"
+    "bridge_runtime_release": "2026.09.26.1",
+    "disk_storage_runtime_release": "2026.09.26.2"
   },
   "passt": {
     "upstream": "https://passt.top/passt",

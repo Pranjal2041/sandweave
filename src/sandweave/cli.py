@@ -46,6 +46,8 @@ def creation_options(parser):
     parser.add_argument('--memory-reservation', help='guest RAM counted for admission; requires --experimental-memory-sharing')
     parser.add_argument('--experimental-memory-sharing', action='store_true',
                         help='allow memory limits to exceed reserved RAM; combined usage can exhaust host memory')
+    parser.add_argument('--storage', choices=('disk', 'memory'), help='writable filesystem backing')
+    parser.add_argument('--storage-path', help='worker directory for private writable filesystem backing')
     parser.add_argument('--disk-memory', help='additional disk-backed guest memory, such as 16GiB')
     parser.add_argument('--disk-path', help='independent worker directory for disk-backed memory')
     parser.add_argument('--mount', action='append', default=[], help='JSON Mount object; repeat for multiple mounts')
@@ -79,6 +81,9 @@ def creation(args):
             'target', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
             'keep_on_error', 'experimental_gpu_live')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
+    if getattr(args, 'storage', None) is not None or getattr(args, 'storage_path', None) is not None:
+        from . import Storage
+        options['storage'] = Storage(getattr(args, 'storage', None) or 'disk', getattr(args, 'storage_path', None))
     if getattr(args, 'record', False):
         options['recording'] = True
     if options.get('gpu') in ('auto', 'none'):

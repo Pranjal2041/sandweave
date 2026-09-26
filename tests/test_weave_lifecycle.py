@@ -114,6 +114,8 @@ def test_256_lifecycle_waits_leave_threads_free_and_serialize_allocations(tmp_pa
         entered, calls = set(), Counter()
         count = 256
         async def work(operation, parameters):
+            if operation == 'ping':
+                return {'disk_storage': 1}
             if operation == 'managed_apply':
                 identity = parameters['identity']
                 calls[(identity, parameters['action'], parameters['generation'])] += 1

@@ -1,0 +1,169 @@
+--- a/conf.c
++++ b/conf.c
+@@ -152,8 +152,18 @@
+ 	int ret;
+ 
+ 	if (first == 0) {
+-		die("Can't forward port 0 for option '-%c %s'",
+-		    optname, optarg);
++		/* Only an explicit inbound TCP address and one nonzero target.
++		 * Port zero is bound by this process, never probed and released.
++		 */
++		if (c->mode != MODE_PASST || optname != 't' || !addr ||
++		    last != 0 || !to || bitmap_isset(exclude, 0))
++			die("Invalid ephemeral TCP port specifier: %s", optarg);
++		ret = tcp_sock_init_ephemeral(c, addr, ifname);
++		if (ret < 0)
++			die("Failed to bind ephemeral port (%s)", strerror_(-ret));
++		bitmap_set(fwd->map, ret);
++		fwd->delta[ret] = to - ret;
++		return;
+ 	}
+ 
+ 	if (ifname && c->no_bindtodevice) {
+@@ -1412,6 +1422,42 @@
+ 
+ fail:
+ 	die("Invalid MAC address: %s", str);
++}
++
++/**
++ * conf_tcp_port_report() - Publish ports already owned by this helper
++ * @c:    Execution context
++ * @path: Private output path, must not already exist
++ *
++ * Called before creating the UNIX listener. Its existence is the launcher's
++ * barrier: every reported TCP socket is listening and this file is closed.
++ */
++static void conf_tcp_port_report(const struct ctx *c, const char *path)
++{
++	const struct fwd_ports *fwd = &c->tcp.fwd_in;
++	const char *separator = "";
++	unsigned int port;
++	FILE *output;
++	int fd;
++
++	fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
++	if (fd < 0)
++		die_perror("Couldn't create TCP port report");
++	output = fdopen(fd, "w");
++	if (!output)
++		die_perror("Couldn't open TCP port report");
++	if (fputs("{", output) == EOF)
++		die_perror("Couldn't write TCP port report");
++	for (port = 1; port < NUM_PORTS; port++) {
++		if (!bitmap_isset(fwd->map, port))
++			continue;
++		if (fprintf(output, "%s\"%u\":%u", separator,
++		            (uint16_t)(port + fwd->delta[port]), port) < 0)
++			die_perror("Couldn't write TCP port report");
++		separator = ",";
++	}
++	if (fputs("}\n", output) == EOF || fclose(output))
++		die_perror("Couldn't finish TCP port report");
+ }
+ 
+ /**
+@@ -1495,6 +1541,7 @@
+ 		{"migrate-exit", no_argument,		NULL,		29 },
+ 		{"migrate-no-linger", no_argument,	NULL,		30 },
+ 		{"stats", required_argument,		NULL,		31 },
++		{"tcp-port-report", required_argument, NULL,		32 },
+ 		{ 0 },
+ 	};
+ 	const char *optstring = "+dqfel:hs:F:I:p:P:m:a:n:M:g:i:o:D:S:H:461t:u:T:U:";
+@@ -1507,7 +1554,7 @@
+ 	unsigned long max_mtu = IP_MAX_MTU;
+ 	struct fqdn *dnss = c->dns_search;
+ 	unsigned int ifi4 = 0, ifi6 = 0;
+-	const char *logfile = NULL;
++	const char *logfile = NULL, *tcp_port_report = NULL;
+ 	size_t logsize = 0;
+ 	char *runas = NULL;
+ 	long fd_tap_opt;
+@@ -1534,6 +1581,11 @@
+ 		switch (name) {
+ 		case -1:
+ 		case 0:
++			break;
++		case 32:
++			if (c->mode != MODE_PASST || tcp_port_report)
++				die("--tcp-port-report requires passt and a single path");
++			tcp_port_report = optarg;
+ 			break;
+ 		case 2:
+ 			if (c->mode != MODE_PASTA)
+@@ -2086,6 +2138,9 @@
+ 	else if (optind != argc)
+ 		die("Extra non-option argument: %s", argv[optind]);
+ 
++	if (tcp_port_report)
++		conf_tcp_port_report(c, tcp_port_report);
++
+ 	conf_open_files(c);	/* Before any possible setuid() / setgid() */
+ 
+ 	isolate_user(uid, gid, !netns_only, userns, c->mode);
+--- a/tcp.c
++++ b/tcp.c
+@@ -2749,6 +2749,50 @@
+ }
+ 
+ /**
++ * tcp_sock_init_ephemeral() - Bind once, retaining the kernel-assigned port
++ * @c:      Execution context
++ * @addr:   Explicit address to bind
++ * @ifname: Optional interface
++ *
++ * Return: bound port, or a negative error code. The listening fd remains in
++ * epoll for the entire helper lifetime; there is no reservation handoff.
++ */
++int tcp_sock_init_ephemeral(const struct ctx *c,
++                            const union inany_addr *addr, const char *ifname)
++{
++	union sockaddr_inany sa = { 0 };
++	union epoll_ref ref = { .type = EPOLL_TYPE_TCP_LISTEN };
++	socklen_t len = sizeof(sa);
++	union inany_addr bound;
++	in_port_t port;
++	int ret;
++
++	if (!addr || (inany_v4(addr) ? !c->ifi4 : !c->ifi6))
++		return -EAFNOSUPPORT;
++
++	pif_sockaddr(c, &sa, PIF_HOST, addr, 0);
++	ref.fd = sock_l4(c, EPOLL_TYPE_TCP_LISTEN, &sa, ifname);
++	if (ref.fd < 0)
++		return ref.fd;
++	if (getsockname(ref.fd, &sa.sa, &len)) {
++		ret = -errno;
++		goto fail;
++	}
++	ret = inany_from_sockaddr(&bound, &port, &sa);
++	if (ret < 0)
++		goto fail;
++	ref.tcp_listen.port = port;
++	ref.tcp_listen.pif = PIF_HOST;
++	ret = epoll_add(c->epollfd, EPOLLIN, ref);
++	if (ret < 0)
++		goto fail;
++	return port;
++fail:
++	close(ref.fd);
++	return ret;
++}
++
++/**
+  * tcp_ns_sock_init() - Init socket to listen for spliced outbound connections
+  * @c:		Execution context
+  * @port:	Port, host order
+--- a/tcp.h
++++ b/tcp.h
+@@ -21,6 +21,8 @@
+ int tcp_sock_init(const struct ctx *c, uint8_t pif,
+ 		  const union inany_addr *addr, const char *ifname,
+ 		  in_port_t port);
++int tcp_sock_init_ephemeral(const struct ctx *c,
++                            const union inany_addr *addr, const char *ifname);
+ int tcp_init(struct ctx *c);
+ void tcp_port_rebind_all(struct ctx *c);
+ void tcp_timer(const struct ctx *c, const struct timespec *now);

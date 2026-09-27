@@ -35,8 +35,11 @@
     "patch": "notes/passt-backpressure.patch",
     "regressions": [
       "sources/passt-backpressure-test.c",
-      "sources/passt-retransmission-test.c"
+      "sources/passt-retransmission-test.c",
+      "tests/integration/test_network_ports_live.py"
     ],
-    "runtime_release": "2026.09.16.5"
+    "runtime_release": "2026.09.16.5",
+    "ephemeral_ports_patch": "notes/passt-ephemeral-ports.patch",
+    "ephemeral_ports_runtime_release": "2026.09.26.6"
   }
 }

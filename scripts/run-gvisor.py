@@ -343,17 +343,10 @@ mps = None
 mps_failed = threading.Event()
 mps_watch = None
 watch_done = threading.Event()
-reservations = []
-ports = {}
-for guest_port in dict.fromkeys((80, 8080, 8000, 5901, 22, *args.forward)):
-    reservation = socket.socket()
-    reservation.bind(('127.0.0.1', 0))
-    reservations.append(reservation)
-    ports[str(guest_port)] = reservation.getsockname()[1]
-snapshot_store.write_json(logs / 'ports.json', ports)
+guest_ports = list(dict.fromkeys((80, 8080, 8000, 5901, 22, *args.forward)))
 host_interfaces = json.loads(subprocess.check_output(runtime_tools.command(lab, local, 'ip', '-j', 'address'), text=True))
 policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.2',
-          'dns': '10.0.2.3', 'forwarded_tcp_ports': list(map(int, ports)),
+          'dns': '10.0.2.3', 'forwarded_tcp_ports': guest_ports,
           'host_addresses': [address['local'] for interface in host_interfaces
                              for address in interface['addr_info'] if address['family'] == 'inet'],
           'allow_cidrs': args.allow_cidr, 'proxy_endpoints': args.proxy_endpoints or [],
@@ -461,18 +454,25 @@ try:
                     return
         threading.Thread(target=watch_broker, daemon=True).start()
     forwards = []
-    for guest_port, host_port in ports.items():
-        forwards.extend(['-t', f'127.0.0.1/{host_port}:{guest_port}'])
-    for reservation in reservations:
-        reservation.close()
+    for guest_port in guest_ports:
+        forwards.extend(['-t', f'127.0.0.1/0:{guest_port}'])
     # passt drops privileges, so it cannot dereference the launcher's /proc FD.
     # Its private working directory gives it a short, relative socket address
     # in both host and Apptainer execution, without changing the parent cwd.
     passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', passt_socket.name,
                    '-a', '10.0.2.15', '-n', '24', '-g', '10.0.2.2', '-m', '1500',
-                   '--dns-forward', '10.0.2.3', *forwards, memory_limit=True, cwd=netdir),
+                   '--dns-forward', '10.0.2.3', '--tcp-port-report', 'ports.json',
+                   *forwards, memory_limit=True, cwd=netdir),
                   logs / 'passt.log', cwd=netdir)
     wait_socket(passt_socket, passt)
+    # The helper closes its report before exposing the UNIX socket. It keeps
+    # every TCP listener open: there is no release/rebind window at startup.
+    ports = json.loads((netdir / 'ports.json').read_text())
+    if (set(ports) != set(map(str, guest_ports)) or
+            any(type(port) is not int or not 1 <= port <= 65535 for port in ports.values()) or
+            len(set(ports.values())) != len(ports)):
+        raise RuntimeError('network helper returned an invalid port report')
+    snapshot_store.write_json(logs / 'ports.json', ports)
     relay = spawn(runtime_tools.limited([sys.executable, str(lab / 'scripts/ethernet-relay.py'),
                    '--listen', str(ethernet_socket), '--passt', str(passt_socket),
                    '--policy', str(bundle / 'network-policy.json'),

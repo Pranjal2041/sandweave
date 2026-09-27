@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.37
+
+- Remove the sandbox launch port race. The network helper now binds kernel-selected
+  loopback ports and retains the listening sockets before reporting their numbers;
+  the launcher no longer closes reservations and asks another process to rebind.
+- Keep launches parallel and preserve existing SDK, forwarding and snapshot APIs.
+  Runtime 2026.09.26.6 contains the updated helper and the unchanged gVisor engine.
+- Add live regression coverage for competing listeners, 64 concurrent helpers,
+  50 simultaneous sandbox launches, failure cleanup and snapshot restore.
+
 ## 0.2.36
 
 - Batch filesystem snapshot archive writes and reuse file-copy buffers in

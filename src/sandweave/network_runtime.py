@@ -17,8 +17,9 @@ SOURCE_URL = ('https://salsa.debian.org/sbrivio/passt/-/archive/' + SOURCE_COMMI
 @lru_cache(maxsize=1)
 def revision():
     from .bootstrap import build_input
-    return hashlib.sha256((SOURCE_SHA256 + workspace.file_digest(
-        build_input('passt-backpressure.patch'))).encode()).hexdigest()
+    return hashlib.sha256((SOURCE_SHA256 + ''.join(workspace.file_digest(
+        build_input(name)) for name in ('passt-backpressure.patch',
+                                       'passt-ephemeral-ports.patch'))).encode()).hexdigest()
 
 
 def available(root):
@@ -52,6 +53,7 @@ def install(builder, root, *, engine=None, from_source=False):
     source = root / 'build-tmp/passt-source'
     extract_source(archive, source)
     shutil.copy2(build_input('passt-backpressure.patch'), source / 'sandweave.patch')
+    shutil.copy2(build_input('passt-ephemeral-ports.patch'), source / 'ephemeral-ports.patch')
     shutil.copy2(build_input('passt-backpressure-test.c'), source / 'regression.c')
     shutil.copy2(build_input('passt-retransmission-test.c'), source / 'retransmission.c')
     image = builder.downloads / 'gvisor-builder.sif'
@@ -59,6 +61,7 @@ def install(builder, root, *, engine=None, from_source=False):
     script = '''set -eu
 cd /lab/build-tmp/passt-source
 git apply sandweave.patch
+git apply ephemeral-ports.patch
 cat >> Makefile <<'MAKE'
 regression: seccomp.h
 \t$(CC) $(FLAGS) -Dmain=passt_main -c passt.c -o passt-main.o
@@ -67,7 +70,7 @@ retransmission: seccomp.h
 \t$(CC) $(FLAGS) -Dmain=passt_main -c passt.c -o retransmission-main.o
 \t$(CC) $(FLAGS) -I. retransmission.c $(filter-out passt.c tcp.c,$(PASST_SRCS)) retransmission-main.o -Wl,--wrap=tcp_buf_send_flag -o retransmission
 MAKE
-make -j4 VERSION=2025_12_10.d04c480-sandweave2 passt regression retransmission
+make -j4 VERSION=2025_12_10.d04c480-sandweave3 passt regression retransmission
 ./regression
 ./retransmission
 '''
@@ -77,7 +80,7 @@ make -j4 VERSION=2025_12_10.d04c480-sandweave2 passt regression retransmission
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
-    for name in ('passt', 'regression.c', 'retransmission.c', 'sandweave.patch'):
+    for name in ('passt', 'regression.c', 'retransmission.c', 'sandweave.patch', 'ephemeral-ports.patch'):
         shutil.copy2(source / name, target / name)
     shutil.copytree(source / 'LICENSES', target / 'LICENSES')
     shutil.copy2(archive, target / 'upstream.tar.gz')

@@ -36,6 +36,31 @@ worker's environment before starting it; for example, `1800` allows thirty
 minutes without output progress. This setting applies to filesystem capture,
 including caches, and does not change transport or restore startup deadlines.
 
+## Restore startup timeout
+
+Use `startup_timeout` to allow a large snapshot more time to restore:
+
+```python
+env = Sandbox(snapshot=baseline, startup_timeout=1800)
+```
+
+The default is 300 seconds. This is one total creation budget, shared by boot
+staging, unpacking all saved mounts (including Docker and containerd), and
+service readiness. Starting a new restore phase does not reset it. Since
+0.2.39, these phases respect the requested budget instead of imposing separate
+300-second staging and 600-second per-mount limits.
+
+The same option works with `cache=`, `Pool(..., startup_timeout=1800)`, and Weave
+targets. For the CLI:
+
+```bash
+sandweave create --cache my-workbench --startup-timeout 1800
+```
+
+Upgrade the worker to 0.2.39 or newer; no image or engine rebuild is needed.
+Timeout or cancellation aborts the incomplete restore and retains the saved
+snapshot for retry. `SANDWEAVE_SNAPSHOT_STALL_TIMEOUT` still controls saves only.
+
 ## Pin a particular version
 
 A cache name can point to a newer revision later. Use the returned reference to

@@ -45,7 +45,7 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `detached` | Survive the creating Python process exiting. | `False` |
 | `profiling` | Enable runtime heap capture for diagnosis; gVisor only. | Template/snapshot value, normally `False` |
 | `recording` | Record an Xvnc desktop; accepts `True` or `Recording(fps=15, cursor=True)`. | `False` |
-| `startup_timeout` | Sandbox creation deadline in seconds. | `300` |
+| `startup_timeout` | Total creation deadline, including snapshot staging, unpacking and service readiness. See [restore timeout](snapshots.md#restore-startup-timeout). | `300` |
 | `keep_on_error` | Retain a failed sandbox for diagnosis, subject to its lifetime. | `False` |
 | `experimental_gpu_live` | Opt into qualified experimental CUDA memory restore. | `False` |
 

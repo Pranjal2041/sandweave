@@ -171,28 +171,56 @@ def prepare_boot(spec, command):
         'rm -f /run/engine-fs-waiting /run/engine-fs-ready; exec "$@"', 'fs-restore', *command]
 
 
-def finish_boot(command, name, checkpoint, manifest, lab, local, guest, done):
-    deadline = time.monotonic() + 300
-    while time.monotonic() < deadline and not done.is_set():
-        if guest.poll() is not None:
-            raise RuntimeError('filesystem restore runtime exited before mount setup')
+def restore_remaining(deadline, guest, done, phase):
+    if done.is_set():
+        raise RuntimeError('filesystem restore cancelled during ' + phase)
+    if guest.poll() is not None:
+        raise RuntimeError('filesystem restore runtime exited during ' + phase)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError('filesystem restore startup_timeout exceeded during ' + phase)
+    return remaining
+
+
+def restore_command(command, deadline, guest, done, phase):
+    """Keep one startup deadline and reap the control process on cancellation."""
+    restore_remaining(deadline, guest, done, phase)
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+        try:
+            while True:
+                remaining = restore_remaining(deadline, guest, done, phase)
+                try:
+                    stdout, stderr = process.communicate(timeout=min(1, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
+        except BaseException:
+            process.kill()
+            process.communicate()
+            raise
+
+
+def finish_boot(command, name, checkpoint, manifest, lab, local, guest, done, *, deadline):
+    while True:
+        remaining = restore_remaining(deadline, guest, done, 'boot staging')
         try:
             result = subprocess.run([*command, 'read', name, '/run/engine-fs-waiting'],
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=min(10, remaining))
         except subprocess.TimeoutExpired:
             # Rootfs import can hold the RPC server during a slow cold boot.
             # Retry this read-only check within the overall startup deadline.
             continue
         if result.returncode == 0:
             break
-        time.sleep(.1)
-    else:
-        raise TimeoutError('filesystem restore boot staging did not become ready')
+        done.wait(min(.1, restore_remaining(deadline, guest, done, 'boot staging')))
     for mount in manifest['filesystem']['mounts']:
         # The engine separates generic VFS flags from tmpfs-specific options.
         options = ','.join(mount['options'])
-        subprocess.run([*command, 'tar', 'rootfs-upper', '--restore-mount', '--path=' + mount['destination'],
-                        '--mount-data=' + options,
-                        '--file=' + inside(checkpoint / mount['file'], lab, local), name],
-                       check=True, timeout=600, capture_output=True)
-    subprocess.run([*command, 'exec', name, 'touch', '/run/engine-fs-ready'], check=True, timeout=30, capture_output=True)
+        restore_command([*command, 'tar', 'rootfs-upper', '--restore-mount', '--path=' + mount['destination'],
+                         '--mount-data=' + options,
+                         '--file=' + inside(checkpoint / mount['file'], lab, local), name],
+                        deadline, guest, done, 'unpacking ' + mount['destination'])
+    restore_command([*command, 'exec', name, 'touch', '/run/engine-fs-ready'],
+                    deadline, guest, done, 'boot release')

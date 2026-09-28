@@ -3,6 +3,7 @@ import ctypes
 import errno
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -205,28 +206,36 @@ class EnvironmentManager:
 
     def _launch(self, name, command, options, timeout):
         control.valid_name(name)
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError('startup timeout must be positive finite seconds')
+        deadline = time.monotonic() + timeout
         with control.acquire_lock(self.local, name):
             if self._bundle(name).exists():
                 raise ValueError('environment name already exists; use a fresh name')
+            filesystem_restore = False
+            if '--restore' in options:
+                saved = Path(options[options.index('--restore') + 1])
+                manifest = json.loads((saved / 'snapshot-manifest.json').read_text())
+                filesystem_restore = manifest.get('kind') == 'filesystem'
             self._run([sys.executable, str(self.lab / 'scripts/run-gvisor.py'), '--detach',
-                       *options, name, '--', *command], timeout=30)
-            deadline = time.monotonic() + timeout
+                       *options, '--startup-deadline', str(deadline), name, '--', *command],
+                      timeout=min(30, timeout))
             while time.monotonic() < deadline:
                 state = self.status(name)
+                if filesystem_restore:
+                    error = self._logs(name) / 'filesystem-restore-error.txt'
+                    if error.is_file():
+                        raise RuntimeError(f'{name}: ' + error.read_text().strip())
                 if state['status'] == 'running':
                     # Filesystem restore becomes running before its mounts are installed.
-                    pending_fs = False
-                    if '--restore' in options:
-                        saved = Path(options[options.index('--restore') + 1])
-                        manifest = json.loads((saved / 'snapshot-manifest.json').read_text())
-                        pending_fs = manifest.get('kind') == 'filesystem' and not (self._logs(name) / 'filesystem-ready.json').exists()
+                    pending_fs = filesystem_restore and not (self._logs(name) / 'filesystem-ready.json').exists()
                     if not pending_fs:
                         return state
                 if state['launcher'] is None:
                     output = (self._logs(name) / 'launcher.out').read_text(errors='replace')
                     raise RuntimeError(f'{name}: launcher exited before readiness\n' + output[-6000:])
                 time.sleep(.1)
-            raise TimeoutError(f'{name}: startup is still in progress; inspect {self._logs(name)} or stop it explicitly')
+            raise TimeoutError(f'{name}: startup_timeout exceeded before readiness; inspect {self._logs(name)}')
 
     def start(self, name, *, command=('/sbin/init',), options=(), timeout=120):
         return self._launch(name, list(command), list(options), timeout)

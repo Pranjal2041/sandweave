@@ -44,12 +44,13 @@ class FilesystemSnapshotTest(unittest.TestCase):
         done.is_set.return_value = False
         with mock.patch.object(fs.subprocess, 'run', side_effect=[
                 fs.subprocess.TimeoutExpired(['runtime', 'read'], 10),
-                mock.Mock(returncode=0), mock.Mock(returncode=0)]) as run:
+                mock.Mock(returncode=0)]) as run, \
+             mock.patch.object(fs, 'restore_command') as release:
             fs.finish_boot(['runtime'], 'env', Path('/lab/snapshot'),
                            {'filesystem': {'mounts': []}}, Path('/lab'),
-                           Path('/local'), guest, done)
+                           Path('/local'), guest, done, deadline=fs.time.monotonic() + 300)
         self.assertEqual(run.call_args_list[0].args[0], run.call_args_list[1].args[0])
-        self.assertEqual(run.call_args_list[2].args[0],
+        self.assertEqual(release.call_args.args[0],
                          ['runtime', 'exec', 'env', 'touch', '/run/engine-fs-ready'])
 
     def test_slow_readiness_rpc_still_honors_startup_deadline(self):
@@ -57,13 +58,13 @@ class FilesystemSnapshotTest(unittest.TestCase):
         guest.poll.return_value = None
         done = mock.Mock()
         done.is_set.return_value = False
-        with mock.patch.object(fs.time, 'monotonic', side_effect=[0, 1, 301]), \
+        with mock.patch.object(fs.time, 'monotonic', side_effect=[1, 301]), \
              mock.patch.object(fs.subprocess, 'run', side_effect=
                                fs.subprocess.TimeoutExpired(['runtime', 'read'], 10)) as run:
-            with self.assertRaisesRegex(TimeoutError, 'did not become ready'):
+            with self.assertRaisesRegex(TimeoutError, 'startup_timeout.*boot staging'):
                 fs.finish_boot(['runtime'], 'env', Path('/lab/snapshot'),
                                {'filesystem': {'mounts': []}}, Path('/lab'),
-                               Path('/local'), guest, done)
+                               Path('/local'), guest, done, deadline=300)
         self.assertEqual(run.call_count, 1)
 
 if __name__ == '__main__': unittest.main()

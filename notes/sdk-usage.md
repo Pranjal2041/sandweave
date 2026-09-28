@@ -354,6 +354,14 @@ These are trusted extensions running inside the worker process.
 
 ## Saved state and ownership
 
+`Sandbox(snapshot=saved, startup_timeout=1800)` allows thirty minutes for the
+whole creation, including filesystem boot staging, persistent-mount unpacking
+and service readiness. The default remains 300 seconds. Sandweave 0.2.39 workers
+pass that same deadline through every restore phase; there are no independent
+300/600-second restore cutoffs. `cache=`, pools and `--startup-timeout` use the
+same setting. Existing snapshots need no image or engine rebuild. The separate
+`SANDWEAVE_SNAPSHOT_STALL_TIMEOUT` environment setting applies only to saves.
+
 `cache` captures filesystem state by default; `snapshot(state="memory")`
 captures supported process/kernel state. Each clone gets independent writable
 state. Names can move, while returned references pin a revision. Preparation

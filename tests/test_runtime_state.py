@@ -2,6 +2,9 @@ import fcntl
 import json
 import socket
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 def test_launcher_identity_does_not_depend_on_transient_cmdline(tmp_path, monkeypatch):
@@ -69,3 +72,51 @@ def test_stale_runtime_pid_does_not_block_unrelated_admission(tmp_path, monkeypa
     assert 'sentry' not in status
     monkeypatch.setattr(manager, '_launcher', lambda name: {'pid': 12, 'start': 34})
     assert manager.status('old')['status'] == 'starting'
+
+
+def test_launch_passes_original_deadline_to_detached_restore(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / 'scripts'))
+    import environment
+    manager = environment.EnvironmentManager.__new__(environment.EnvironmentManager)
+    manager.lab = manager.local = tmp_path
+    clock = SimpleNamespace(now=100)
+    monkeypatch.setattr(environment, 'time', SimpleNamespace(monotonic=lambda: clock.now))
+    calls = []
+    def launch(command, **kwargs):
+        calls.append(command)
+        clock.now += 12
+    monkeypatch.setattr(manager, '_run', launch)
+    monkeypatch.setattr(manager, 'status', lambda name: {'status': 'running'})
+    manager.start('long-boot', timeout=1800)
+    args = calls[0]
+    assert float(args[args.index('--startup-deadline') + 1]) == 1900
+    assert args[-3:] == ['long-boot', '--', '/sbin/init']
+
+
+@pytest.mark.parametrize('timeout', [0, -1, float('inf'), float('nan')])
+def test_invalid_startup_timeout_never_launches(tmp_path, monkeypatch, timeout):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / 'scripts'))
+    import environment
+    manager = environment.EnvironmentManager.__new__(environment.EnvironmentManager)
+    manager.lab = manager.local = tmp_path
+    monkeypatch.setattr(manager, '_run', lambda *a, **kw: pytest.fail('must not launch'))
+    with pytest.raises(ValueError, match='positive finite'):
+        manager.start('bad-budget', timeout=timeout)
+
+
+def test_restore_failure_reaches_caller_before_generic_launcher_exit(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / 'scripts'))
+    import environment
+    manager = environment.EnvironmentManager.__new__(environment.EnvironmentManager)
+    manager.lab = manager.local = tmp_path
+    saved = tmp_path / 'saved'
+    saved.mkdir()
+    (saved / 'snapshot-manifest.json').write_text('{"kind":"filesystem"}')
+    def launch(command, **kwargs):
+        logs = manager._logs('failed')
+        logs.mkdir(parents=True)
+        (logs / 'filesystem-restore-error.txt').write_text('unpacking /data failed')
+    monkeypatch.setattr(manager, '_run', launch)
+    monkeypatch.setattr(manager, 'status', lambda name: {'status': 'stopped', 'launcher': None})
+    with pytest.raises(RuntimeError, match='unpacking /data failed'):
+        manager._launch('failed', [], ['--restore', str(saved)], 1800)

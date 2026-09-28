@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.39
+
+- Make filesystem restores honor the existing `startup_timeout` throughout
+  boot staging, saved-mount unpacking, and service readiness. Remove the
+  independent 300-second staging and 600-second per-mount cutoffs. Pools,
+  caches and Weave use the same creation setting; the default stays 300 seconds.
+- Carry one deadline into the detached launcher without resetting it between
+  restore phases. Reap unpacking commands on timeout, runtime exit or shutdown,
+  and report filesystem restore errors through the startup path. Existing
+  snapshots, images and engine binaries remain compatible.
+
 ## 0.2.38
 
 - Add experimental `Memory(runtime_reservation=...)` and the CLI option

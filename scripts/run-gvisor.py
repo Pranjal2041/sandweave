@@ -2,6 +2,7 @@
 """Run an independent no-KVM guest and its unprivileged network helpers."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -74,6 +75,9 @@ parser.add_argument('--virtual-consoles', action='store_true', help='private hea
 parser.add_argument('--netlink-address-events', action='store_true', help='guest IPv4/IPv6 address notifications')
 parser.add_argument('--sysctl-reapply', action='store_true', help='use the Linux desktop PID range and reapply enforced sysctl values')
 parser.add_argument('--restore', type=Path, help='restore a complete lab snapshot using its recorded runtime and settings')
+parser.add_argument('--startup-timeout', type=float, default=300,
+                    help='total filesystem restore startup budget in seconds')
+parser.add_argument('--startup-deadline', type=float, help=argparse.SUPPRESS)
 runtime_choice = parser.add_mutually_exclusive_group()
 runtime_choice.add_argument('--filesystem-runtime-current', action='store_true', help='explicitly test a cold filesystem snapshot with the currently staged runtime')
 runtime_choice.add_argument('--runtime-build', type=Path,
@@ -94,6 +98,12 @@ parser.add_argument('--forward', type=int, action='append', default=[],
 parser.add_argument('name')
 parser.add_argument('command', nargs=argparse.REMAINDER)
 args = parser.parse_args()
+if not math.isfinite(args.startup_timeout) or args.startup_timeout <= 0:
+    parser.error('startup-timeout must be positive finite seconds')
+if args.startup_deadline is None:
+    args.startup_deadline = time.monotonic() + args.startup_timeout
+if not math.isfinite(args.startup_deadline):
+    parser.error('startup-deadline must be finite')
 if args.build_output:
     if args.detach or args.restore or args.docker_data:
         parser.error('--build-output requires a fresh foreground build')
@@ -184,7 +194,8 @@ if (local / 'gvisor/bundles' / args.name).exists():
 if args.detach:
     logs = lab / 'runs/gvisor' / args.name
     logs.mkdir(parents=True, exist_ok=True)
-    command = [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]]
+    command = [sys.executable, str(Path(__file__).resolve()),
+               '--startup-deadline', str(args.startup_deadline), *sys.argv[1:]]
     command.remove('--detach')
     with (logs / 'launcher.out').open('wb') as output:
         child = subprocess.Popen(command, cwd=lab, stdin=subprocess.DEVNULL,
@@ -343,6 +354,7 @@ mps = None
 mps_failed = threading.Event()
 mps_watch = None
 watch_done = threading.Event()
+restore_thread = None
 guest_ports = list(dict.fromkeys((80, 8080, 8000, 5901, 22, *args.forward)))
 host_interfaces = json.loads(subprocess.check_output(runtime_tools.command(lab, local, 'ip', '-j', 'address'), text=True))
 policy = {'mode': args.network_policy, 'guest': '10.0.2.15', 'gateway': '10.0.2.2',
@@ -558,12 +570,14 @@ try:
                     control += ['--gpu', str(args.gpu)]
                 control += [runtime_arg, '--root=/local/gvisor/state']
                 try:
-                    filesystem_snapshot.finish_boot(control, args.name, checkpoint, snapshot_manifest, lab, local, guest, watch_done)
+                    filesystem_snapshot.finish_boot(control, args.name, checkpoint, snapshot_manifest,
+                                                    lab, local, guest, watch_done, deadline=args.startup_deadline)
                     snapshot_store.write_json(logs / 'filesystem-ready.json', {'ready_at': time.time()})
                 except Exception as error:
                     (logs / 'filesystem-restore-error.txt').write_text(str(error) + '\n')
                     cpu_broker.terminate_trees([guest.pid])
-            threading.Thread(target=restore_mounts, daemon=True).start()
+            restore_thread = threading.Thread(target=restore_mounts, daemon=True)
+            restore_thread.start()
 
         if mps_failed.is_set():
             cpu_broker.terminate_trees([guest.pid])
@@ -617,6 +631,10 @@ try:
     raise SystemExit(result)
 finally:
     watch_done.set()
+    if restore_thread is not None:
+        # A readiness probe can take up to ten seconds; let the restorer reap
+        # its control process before the launcher exits.
+        restore_thread.join(12)
     if mps_watch is not None:
         mps_watch.join(2)
     if registration is not None:

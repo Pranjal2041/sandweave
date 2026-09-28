@@ -546,6 +546,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#import-a-local-oci-archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import a local OCI archive
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#combine-an-image-with-a-template" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1302,6 +1313,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#import-a-local-oci-archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import a local OCI archive
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#combine-an-image-with-a-template" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1393,26 +1415,50 @@
 the prepared image with separate writable filesystems. A Docker daemon is not
 required. Images run through Sandweave's existing gVisor runtime, without KVM
 or host sudo.</p>
+<h2 id="import-a-local-oci-archive">Import a local OCI archive<a class="headerlink" href="#import-a-local-oci-archive" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span><span class="p">,</span> <span class="n">Pool</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">image</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="o">.</span><span class="n">import_image</span><span class="p">(</span><span class="s2">"./app.oci.tar"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">600</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">snapshot</span><span class="o">=</span><span class="n">image</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"echo ready"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">env</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">pool</span> <span class="o">=</span> <span class="n">Pool</span><span class="p">(</span><span class="n">snapshot</span><span class="o">=</span><span class="n">image</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+</code></pre></div>
+<p><code>import_image()</code> reads the file on the client and uploads it to the target over
+the existing local, SSH, or Weave connection. It returns a reusable filesystem
+snapshot; other cluster workers obtain it through the normal snapshot transfer
+path. No registry publication or Docker daemon is needed. Omit <code>target</code> to use a
+local worker. <code>Sandbox.import_image.aio(...)</code> is also available.</p>
+<p>The file must be an uncompressed OCI image-layout tar containing <code>oci-layout</code>,
+<code>index.json</code>, and content-addressed blobs, selecting one Linux amd64 image.
+Docker-save archives and bare rootfs tarballs are different formats. Layer and
+metadata digests are verified. Image user, environment, and working-directory
+defaults are preserved. Pass <code>template=</code> to add setup and services before saving
+the imported snapshot. The archive and prepared image remain reusable in the
+worker's image cache; temporary import sandboxes are deleted automatically.</p>
+<p>Requires Sandweave 0.2.40 on the client, controller (when used), and workers.</p>
 <h2 id="combine-an-image-with-a-template">Combine an image with a template<a class="headerlink" href="#combine-an-image-with-a-template" title="Permanent link">&para;</a></h2>
 <p>An image supplies files and installed software. A template supplies setup,
 services, resources, and controls. A custom template can choose its default image:</p>
-<div class="highlight"><span class="filename">python-env.toml</span><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"docker://python:3.12-slim"</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">[setup]</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">script</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"install.sh"</span>
+<div class="highlight"><span class="filename">python-env.toml</span><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"docker://python:3.12-slim"</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">[setup]</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">script</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"install.sh"</span>
 </code></pre></div>
-<div class="highlight"><span class="filename">install.sh</span><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="ch">#!/bin/sh</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">set</span><span class="w"> </span>-eu
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>pytest
+<div class="highlight"><span class="filename">install.sh</span><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="ch">#!/bin/sh</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">set</span><span class="w"> </span>-eu
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>pytest
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"./python-env.toml"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"pytest --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Override the base and keep the template's setup and services.</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"./python-env.toml"</span><span class="p">,</span> <span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.13-slim"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"./python-env.toml"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"pytest --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Override the base and keep the template's setup and services.</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">"./python-env.toml"</span><span class="p">,</span> <span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.13-slim"</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p>Setup scripts and services must support the selected image. For example, a
 script using <code>apt-get</code> needs a base that provides it. Selecting the <code>gnome</code>
@@ -1431,14 +1477,14 @@ in <code>env.spec["image"]["settings"]</code>.</p>
 <p>Images do not need Python. Sandweave keeps its own control runtime in a private
 directory without replacing the image's Python or libraries. If an image has
 no shell, use literal arguments:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">argv</span><span class="o">=</span><span class="p">[</span><span class="s2">"/app/program"</span><span class="p">,</span> <span class="s2">"--version"</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">argv</span><span class="o">=</span><span class="p">[</span><span class="s2">"/app/program"</span><span class="p">,</span> <span class="s2">"--version"</span><span class="p">])</span>
 </code></pre></div>
 <h2 id="reuse-and-reproducibility">Reuse and reproducibility<a class="headerlink" href="#reuse-and-reproducibility" title="Permanent link">&para;</a></h2>
 <p>A tag is resolved when first used in the selected Sandweave storage directory.
 Subsequent launches reuse that resolution without contacting the registry.
 Pass <code>refresh=True</code> to resolve the tag again:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">,</span> <span class="n">refresh</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"image"</span><span class="p">][</span><span class="s2">"digest"</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">with</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">,</span> <span class="n">refresh</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"image"</span><span class="p">][</span><span class="s2">"digest"</span><span class="p">])</span>
 </code></pre></div>
 <p>For an exact base across machines, pass a digest reference such as
 <code>docker://registry.example.org/team/image@sha256:&lt;digest&gt;</code>.
@@ -1450,13 +1496,13 @@ again. <code>cache_key=</code> also caches completed template setup.</p>
 worker-side downloads. Blobs and prepared images stay under <code>images</code> in the
 selected Sandweave storage directory. They are not automatically evicted.</p>
 <h2 id="cli-and-pools">CLI and pools<a class="headerlink" href="#cli-and-pools" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--image<span class="w"> </span>docker://python:3.12-slim<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>sandweave<span class="w"> </span>run<span class="w"> </span>--image<span class="w"> </span>docker://python:3.12-slim<span class="w"> </span>--<span class="w"> </span><span class="s2">"python --version"</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pool</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pool</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">with</span> <span class="n">Pool</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="s2">"docker://python:3.12-slim"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="k">with</span> <span class="n">pool</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
 </code></pre></div>
 <p><code>target=</code> places image-backed sandboxes on a cluster in the same way as other
 sandboxes. Each worker prepares an image when it first needs it. Pool baselines

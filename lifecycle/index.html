@@ -688,6 +688,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Close, stop, or terminate?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#delete-private-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete private files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1343,6 +1360,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Close, stop, or terminate?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#delete-private-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete private files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1454,6 +1488,10 @@ on exit.</p>
 <td>Release the runtime and discard unsaved state. Existing caches and external volumes remain.</td>
 </tr>
 <tr>
+<td><code>env.delete()</code></td>
+<td>Terminate and remove private runtime files, logs, and recordings. Retain published snapshots, shared images, external mounts, and a small identity tombstone.</td>
+</tr>
+<tr>
 <td><code>env.stop()</code></td>
 <td>Save a checkpoint before releasing the runtime. Return a snapshot reference; if saving fails, preserve the source.</td>
 </tr>
@@ -1470,15 +1508,30 @@ on exit.</p>
 <p><code>close()</code> is why an environment can still appear as running in the dashboard
 after you disconnect. <code>terminate()</code> stops it; the dashboard can retain its record
 as terminated history.</p>
+<h3 id="delete-private-files">Delete private files<a class="headerlink" href="#delete-private-files" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">env</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>                  <span class="c1"># Wait for cleanup, up to 300 seconds.</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">env</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>        <span class="c1"># Return after the deletion request is persisted.</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">env</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p>Deletion is explicit and safe to repeat. Once acknowledged, cleanup continues
+after the client disconnects or exits. The worker retries failures and resumes
+pending deletions after restart; Weave also persists the request on its
+controller. <code>timeout=</code> limits how long this caller waits, without cancelling
+cleanup. Async callers can use <code>await env.delete.aio(...)</code>. The CLI equivalent is
+<code>sandweave delete SANDBOX_ID --target lab</code>.</p>
+<p>Export any recordings or logs you want to keep before deleting. Published
+snapshots and caches remain usable. Private files on an unavailable worker stay
+pending until that worker returns; they are not reported as deleted.
+Requires Sandweave 0.2.40 on the client, controller (when used), and workers.</p>
 <p>For an environment acquired from a <a href="../benchmarks/">benchmark task</a>, <code>env.close()</code>
 also releases its task lease and pool capacity. <code>task.close()</code> does the same;
 both are safe to repeat. A task context performs this cleanup on exit.</p>
 <h2 id="reconnect">Reconnect<a class="headerlink" href="#reconnect" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"SANDBOX_ID"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sandbox</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">"SANDBOX_ID"</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"python --version"</span><span class="p">)</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">env</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
 </code></pre></div>
 <p>Replace <code>SANDBOX_ID</code> with the saved ID and <code>lab</code> with the original target. Omit
 <code>target</code> for a local sandbox. Connecting borrows a handle; it does not transfer
@@ -1486,7 +1539,7 @@ ownership or extend the original lifetime.</p>
 <p>Leaving a <code>with Sandbox.connect(...)</code> block only disconnects the borrowed handle.
 It does not terminate the sandbox.</p>
 <h2 id="add-a-lifetime-limit">Add a lifetime limit<a class="headerlink" href="#add-a-lifetime-limit" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">detached</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">env</span> <span class="o">=</span> <span class="n">Sandbox</span><span class="p">(</span><span class="n">detached</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
 </code></pre></div>
 <p>The five-minute TTL starts at readiness and counts time spent paused or
 disconnected. Automatic cleanup does not create a checkpoint.</p>

@@ -1837,6 +1837,10 @@ with streams, <code>wait</code>, <code>poll</code>, <code>result</code>, <code>t
 <td>Release the runtime and discard unsaved state.</td>
 </tr>
 <tr>
+<td><code>env.delete(wait=True, timeout=300)</code></td>
+<td>Persist deletion, stop the sandbox, and remove private files. Published snapshots and external mounts remain.</td>
+</tr>
+<tr>
 <td><code>env.close()</code></td>
 <td>Disconnect the handle; a benchmark-owned handle also releases its task lease.</td>
 </tr>
@@ -1859,6 +1863,10 @@ with streams, <code>wait</code>, <code>poll</code>, <code>result</code>, <code>t
 <tr>
 <td><code>Sandbox.connect(id, target=...)</code></td>
 <td>Borrow a handle to an existing sandbox.</td>
+</tr>
+<tr>
+<td><code>Sandbox.import_image(path, template=None, target=None, timeout=600)</code></td>
+<td>Import a client-local OCI tar and return a reusable filesystem snapshot.</td>
 </tr>
 <tr>
 <td><code>Sandbox.create.aio(...)</code></td>

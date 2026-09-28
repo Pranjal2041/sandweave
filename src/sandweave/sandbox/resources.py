@@ -71,6 +71,7 @@ class Memory:
     disk_path: str | None = None
     reservation: str | int | None = None
     experimental: bool = False
+    runtime_reservation: str | int | None = None
 
     def __post_init__(self):
         if memory_bytes(self.guest) < 64 * 1024**2:
@@ -84,6 +85,11 @@ class Memory:
                 raise ValueError('memory sharing requires experimental=True')
             if not 64 * 1024**2 <= memory_bytes(self.reservation) <= memory_bytes(self.guest):
                 raise ValueError('memory reservation must be between 64MiB and guest memory')
+        if self.runtime_reservation is not None:
+            if not self.experimental:
+                raise ValueError('runtime memory sharing requires experimental=True')
+            if not 32 * 1024**2 <= memory_bytes(self.runtime_reservation) <= memory_bytes(self.runtime):
+                raise ValueError('runtime memory reservation must be between 32MiB and runtime memory')
         if (self.disk is None) != (self.disk_path is None):
             raise ValueError('disk memory requires both disk and disk_path')
         if self.disk is not None:
@@ -202,11 +208,21 @@ def restore_resources(resources):
     result = copy.deepcopy(resources)
     result['memory'].pop('disk_path', None)
     result['memory'].pop('reservation', None)
+    result['memory'].pop('runtime_reservation', None)
     result['memory'].pop('experimental', None)
     return result
 
 
-def uses_memory_reservations(spec):
-    return (spec['resources']['memory'].get('reservation') is not None or
-            any(uses_memory_reservations(service['request']['spec'])
+def uses_memory_reservations(spec, *, runtime_only=False):
+    keys = ('runtime_reservation',) if runtime_only else ('reservation', 'runtime_reservation')
+    return (any(spec['resources']['memory'].get(key) is not None for key in keys) or
+            any(uses_memory_reservations(service['request']['spec'], runtime_only=runtime_only)
                 for service in spec.get('services', {}).values()))
+
+
+def check_memory_reservations(spec, features):
+    from .errors import UnsupportedFeature
+    if uses_memory_reservations(spec, runtime_only=True) and not features.get('runtime_memory_reservations'):
+        raise UnsupportedFeature('runtime memory reservations require Sandweave 0.2.38 or newer on the worker and controller')
+    if uses_memory_reservations(spec) and not features.get('memory_reservations'):
+        raise UnsupportedFeature('memory reservations require Sandweave 0.2.28 or newer on the worker and controller')

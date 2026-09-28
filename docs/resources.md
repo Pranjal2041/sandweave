@@ -91,29 +91,34 @@ budgets still need to fit within that shared allocation.
 
 ## Experimental memory sharing
 
-Give each sandbox a guest-memory limit and a smaller admission reservation:
+Give guest and runtime memory separate limits and smaller admission reservations:
 
 ```python
 from sandweave import Memory, Sandbox
 
-memory = Memory(guest="16GiB", reservation="4GiB", runtime="512MiB", experimental=True)
+memory = Memory(guest="16GiB", reservation="4GiB",
+                runtime="4GiB", runtime_reservation="512MiB", experimental=True)
 env = Sandbox(memory=memory)
 print(env.info["memory"])
 # Run your agent, then release its sandbox.
+env.terminate()
 env.close()
 ```
 
 This sandbox sees 16 GiB and can allocate beyond 4 GiB automatically. There is
 no burst timer or extra call for the agent. Sandweave counts 4 GiB plus 512 MiB
-of runtime memory for admission; it does not allocate or pin that RAM upfront.
+of runtime memory for admission; the runtime guard remains 4 GiB. It does not
+allocate or pin that RAM upfront. Either reservation can be set independently.
 The reservation is scheduling accounting, not a protected minimum of physical
 RAM. Four such sandboxes reserve 18 GiB on a worker with a 32 GiB budget, even
 though their combined guest limits are 64 GiB. Ordinary sandboxes continue to
 reserve their full guest and runtime budgets.
 
 The same `memory=` object works with `Pool`, local workers, and Weave targets.
-The controller and workers must run Sandweave 0.2.28 or newer for consistent
-reservation accounting. Pool weights govern scheduling; they do not divide RAM
+Guest reservations require Sandweave 0.2.28 or newer. Runtime reservations
+require 0.2.38 or newer on the client, controller and workers. Older endpoints
+are rejected before launching a sandbox with unsupported accounting.
+Pool weights govern scheduling; they do not divide RAM
 between running sandboxes. There is no automatic ballooning, memory weighting,
 or reclamation of another sandbox's live private data.
 
@@ -125,21 +130,23 @@ killed. Existing host swap, if any, follows the host's policy; this option does
 not create swap or disk backing. Leave capacity for host and worker processes.
 
 `reservation` must be at least 64 MiB and no greater than `guest`, and requires
-`experimental=True`. Omitting it retains full reservation, even with
-`experimental=True`. Runtime memory is always reserved in full, as are service
-and image-import requirements according to their own resource settings.
-With disk-backed memory, the reservation replaces only the guest RAM amount
-counted for admission; the existing kernel cap remains `guest + runtime`.
+`experimental=True`. `runtime_reservation` must be at least 32 MiB and no greater
+than `runtime`, with the same experimental opt-in. Omitting either reservation
+counts that component's full limit, even with `experimental=True`. Services use
+their own reservations; image-import allowances remain fully counted.
+With disk-backed memory, these settings change admission accounting only;
+the existing kernel RAM cap remains `guest + runtime`.
 
-Snapshots retain the setting. On restore, an explicit `Memory(...)` can change
-or remove the reservation without changing saved guest contents; live restores
-still require the same guest, runtime and disk sizes. A scalar `memory=` override
+Snapshots retain both settings. On restore, an explicit `Memory(...)` can add,
+change or remove reservations without rebuilding the image or changing saved
+guest contents; live restores still require the same guest, runtime and disk
+sizes. A scalar `memory=` override
 selects full reservation, retaining the saved runtime budget.
 
 The CLI equivalent is:
 
 ```bash
-sandweave run --memory 16GiB --memory-reservation 4GiB --experimental-memory-sharing -- "python --version"
+sandweave run --memory 16GiB --memory-reservation 4GiB --runtime-memory 4GiB --runtime-memory-reservation 512MiB --experimental-memory-sharing -- "python --version"
 ```
 
 ## Writable disk storage

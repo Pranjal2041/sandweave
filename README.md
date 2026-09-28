@@ -666,6 +666,18 @@ supports commands and filesystem caches, with fewer isolation and resource
 controls than gVisor, the default runtime. See
 [resource and runtime limits](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#limits-that-matter).
 
+Experimental memory sharing separates admission reservations from limits:
+
+```python
+memory = Memory(guest="16GiB", reservation="4GiB",
+                runtime="4GiB", runtime_reservation="512MiB", experimental=True)
+env = Sandbox(memory=memory)
+```
+
+This counts 4.5 GiB for admission while preserving the 16 GiB guest limit and
+4 GiB runtime cap. Either reservation can be set independently. Combined actual
+usage can exhaust host RAM. See [memory sharing](https://pranjal2041.github.io/sandweave/resources/#experimental-memory-sharing).
+
 Writable files use disk by default, independently of guest RAM. To choose the
 worker directory (also supported by `Pool`):
 

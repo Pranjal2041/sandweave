@@ -203,6 +203,16 @@ def validate(directory, release, tests=None):
                 live / 'test_harbor.py', live / 'test_harbor_live.py',
                 live / 'test_harbor_contract.py', live / 'test_harbor_contract_live.py',
                 live / 'test_harbor_services_live.py', cwd=live, env=env)
+        # Runtime reservations need no guest/engine build, but must agree
+        # between real controller and worker processes and preserve snapshots.
+        for name in ('test_weave_live.py', 'test_memory_sharing_live.py',
+                     'test_runtime_memory_reservation_live.py'):
+            shutil.copyfile(source / 'tests/integration' / name, live / name)
+        env['SANDWEAVE_WEAVE_INTEGRATION'] = str(work / 'runtime-memory-reservations')
+        env['SANDWEAVE_ASSETS'] = json.loads((work / 'worker/config.json').read_text())['assets']
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_memory_sharing_live.py',
+            live / 'test_runtime_memory_reservation_live.py', cwd=live, env=env)
     # Copy artifacts only after every check passes. A receipt is never partial.
     for path in files:
         shutil.copyfile(path, directory / path.name)

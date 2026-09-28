@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.38
+
+- Add experimental `Memory(runtime_reservation=...)` and the CLI option
+  `--runtime-memory-reservation`. Count the smaller runtime reservation for
+  worker and Weave admission while preserving the runtime cap. Guest and runtime
+  reservations can be set independently; omitted reservations retain full accounting.
+- Preserve the setting in templates, pools and snapshots. Existing filesystem
+  and memory snapshots can add, change or remove reservations without changing
+  their guest/runtime limits or rebuilding images. Disk-memory caps stay unchanged.
+- Detect older workers/controllers before using runtime reservations. Validate
+  concurrent admission, reservation release, pooled execution, and restored state
+  using the existing runtime; no engine or image release is required.
+
 ## 0.2.37
 
 - Remove the sandbox launch port race. The network helper now binds kernel-selected

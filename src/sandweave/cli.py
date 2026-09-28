@@ -44,6 +44,7 @@ def creation_options(parser):
     parser.add_argument('--memory')
     parser.add_argument('--runtime-memory')
     parser.add_argument('--memory-reservation', help='guest RAM counted for admission; requires --experimental-memory-sharing')
+    parser.add_argument('--runtime-memory-reservation', help='runtime RAM counted for admission; requires --experimental-memory-sharing')
     parser.add_argument('--experimental-memory-sharing', action='store_true',
                         help='allow memory limits to exceed reserved RAM; combined usage can exhaust host memory')
     parser.add_argument('--storage', choices=('disk', 'memory'), help='writable filesystem backing')
@@ -94,10 +95,11 @@ def creation(args):
                              args.cpu_weight if args.cpu_weight is not None else 100,
                              args.cpu_quota)
     if any(getattr(args, key, None) for key in ('runtime_memory', 'disk_memory', 'disk_path',
-                                             'memory_reservation', 'experimental_memory_sharing')):
+                                             'memory_reservation', 'runtime_memory_reservation', 'experimental_memory_sharing')):
         options['memory'] = Memory(args.memory or '1GiB', args.runtime_memory or '512MiB',
                                    getattr(args, 'disk_memory', None), getattr(args, 'disk_path', None),
                                    reservation=getattr(args, 'memory_reservation', None),
+                                   runtime_reservation=getattr(args, 'runtime_memory_reservation', None),
                                    experimental=getattr(args, 'experimental_memory_sharing', False))
     if getattr(args, 'mount', None):
         options['mounts'] = [Mount(**json.loads(value)) for value in args.mount]

@@ -101,7 +101,9 @@ def test_memory_restore_can_change_admission_without_changing_saved_pages(cluste
         saved = env.snapshot(state='memory')
         process.stdin.write('source\n')
         assert process.wait(timeout=30) == 0
-    for policy in (memory, Memory('512MiB', '256MiB')):
+    for policy in (memory,
+                   Memory('512MiB', '256MiB', runtime_reservation='64MiB', experimental=True),
+                   Memory('512MiB', '256MiB')):
         with Sandbox(target=target, snapshot=saved, memory=policy) as restored:
             restored_process = Process(restored, process.id)
             assert restored_process.stdout.readline() == 'ready\n'
@@ -109,4 +111,6 @@ def test_memory_restore_can_change_admission_without_changing_saved_pages(cluste
             assert restored_process.stdout.readline() == str(192 * 1024**2) + '\n'
             assert restored_process.wait(timeout=30) == 0
             assert restored.info['memory'].get('reservation') == policy.reservation
-    receipt('memory-restore', {'captured_guest_pages_mib': 192, 'shared_and_full_reservation_restores': True})
+            assert restored.info['memory'].get('runtime_reservation') == policy.runtime_reservation
+    receipt('memory-restore', {'captured_guest_pages_mib': 192, 'shared_and_full_reservation_restores': True,
+                               'added_runtime_reservation_to_existing_snapshot': True})

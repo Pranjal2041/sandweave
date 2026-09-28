@@ -93,14 +93,17 @@ def reservation(spec):
         raise ValueError('invalid image import memory reservation')
     services += extra
     guest = memory['guest']
-    if memory.get('reservation') is not None:
+    runtime = memory['runtime']
+    if memory.get('reservation') is not None or memory.get('runtime_reservation') is not None:
         # Validate at both controller and worker admission, including requests
         # arriving over the wire rather than through the Python constructor.
-        guest = Memory(**memory).reservation
+        selected = Memory(**memory)
+        guest = selected.reservation if selected.reservation is not None else selected.guest
+        runtime = selected.runtime_reservation if selected.runtime_reservation is not None else selected.runtime
     if memory.get('disk') is not None:
         return services + sum(((memory_bytes(value) + 1024**2 - 1) // 1024**2) * 1024**2
-                              for value in (guest, memory['runtime']))
-    return services + memory_bytes(guest) + memory_bytes(memory['runtime'])
+                              for value in (guest, runtime))
+    return services + memory_bytes(guest) + memory_bytes(runtime)
 
 
 def live(worker, record, *, records=None):
@@ -138,6 +141,6 @@ def admit(worker, spec):
     requested = reservation(spec)
     if requested + reserved > worker.memory_budget:
         raise ResourceUnavailable(f'worker memory budget exhausted: requested {requested}, reserved {reserved}, '
-                                  f'budget {worker.memory_budget} bytes; guest reservations and runtime budgets are both counted')
+                                  f'budget {worker.memory_budget} bytes; guest and runtime reservations are both counted')
     return {'memory_reserved': requested, 'worker_memory_budget': worker.memory_budget,
             'cpu_policy': 'shared eligible CPU pool; advertised vCPUs do not reserve physical cores'}

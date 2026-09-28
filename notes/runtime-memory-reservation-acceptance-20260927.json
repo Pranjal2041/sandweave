@@ -1,0 +1,70 @@
+{
+  "sdk_version": "0.2.38",
+  "host": "babel-u9-24",
+  "runtime_release": "2026.09.26.6",
+  "engine_changed": false,
+  "image_rebuilt": false,
+  "admission": {
+    "worker_budget_mib": 1024,
+    "concurrent_sandboxes": 4,
+    "guest_mib_each": 128,
+    "runtime_cap_mib_each": 1024,
+    "runtime_reservation_mib_each": 32,
+    "total_reserved_including_control_mib": 960,
+    "fifth_rejected": true,
+    "reservation_reused": true,
+    "peer_command_seconds": [
+      0.14142454927787185,
+      0.0534646175801754,
+      0.0543878716416657,
+      0.02013823902234435,
+      0.056462571024894714,
+      0.02365658525377512,
+      0.02364495489746332,
+      0.0974418232217431,
+      0.020523791201412678,
+      0.01991284778341651
+    ]
+  },
+  "pool": {
+    "workers": 2,
+    "worker_budget_mib": 1024,
+    "sandboxes": 4,
+    "reserved_mib_each": 256,
+    "runtime_cap_mib_each": 1024,
+    "pristine_replacement": true
+  },
+  "filesystem": {
+    "kind": "filesystem",
+    "restores": 4,
+    "runtime_cap_mib": 512,
+    "runtime_reservations_mib": [
+      64,
+      32,
+      512,
+      512
+    ],
+    "guest_files_preserved": true
+  },
+  "memory": {
+    "kind": "memory",
+    "restores": 4,
+    "runtime_cap_mib": 512,
+    "runtime_reservations_mib": [
+      64,
+      32,
+      512,
+      512
+    ],
+    "guest_files_preserved": true
+  },
+  "guest_sharing_regression": {
+    "captured_guest_pages_mib": 192,
+    "shared_and_full_reservation_restores": true,
+    "added_runtime_reservation_to_existing_snapshot": true
+  },
+  "validation": {
+    "unit_tests": 154,
+    "live_tests": 7
+  }
+}

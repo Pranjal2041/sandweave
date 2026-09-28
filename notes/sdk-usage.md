@@ -8,6 +8,14 @@ For `Memory(disk=..., disk_path=...)`, see
 [disk-backed memory](https://pranjal2041.github.io/sandweave/resources/#disk-backed-memory).
 Its backing directory is independent of installation storage and caches.
 
+`Memory(runtime="4GiB", runtime_reservation="512MiB", experimental=True)` counts
+512 MiB of runtime memory for admission while retaining the 4 GiB runtime guard.
+Guest `reservation` and `runtime_reservation` are independent; omitting either
+counts that component's full limit. Runtime sharing requires 0.2.38 or newer on
+the client, workers and controller. Existing snapshots can be restored with a
+different reservation, without rebuilding their images. This experimental
+overcommit can exhaust host RAM; see [memory sharing](https://pranjal2041.github.io/sandweave/resources/#experimental-memory-sharing).
+
 For `Network(proxy=...)`, see [proxy networking](https://pranjal2041.github.io/sandweave/networking/#use-a-proxy).
 The [QUEST-RL assessment](quest-proxy-assessment.md) records measured source and search access.
 `Network(policy=ProxyPolicy(...), proxy=...)` adds region constraints and pool

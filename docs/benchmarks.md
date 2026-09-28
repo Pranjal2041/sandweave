@@ -7,7 +7,7 @@ attempt gets its own writable state.
 Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.37'
+uv pip install 'sandweave[benchmarks]==0.2.38'
 ```
 
 ## Run tasks

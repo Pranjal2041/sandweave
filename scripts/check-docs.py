@@ -141,6 +141,7 @@ def check_browser(site, output, url=None):
                 section.locator('xpath=following-sibling::div[1]').get_by_role('button', name='Copy to clipboard').click()
                 copied = page.evaluate('navigator.clipboard.readText()')
                 assert 'reservation="4GiB"' in copied and 'experimental=True' in copied
+                assert 'runtime_reservation="512MiB"' in copied and 'runtime="4GiB"' in copied
                 expect(page.locator('article')).to_contain_text('possible host out-of-memory failures')
                 page.screenshot(path=str(output / 'memory-sharing-desktop.png'), animations='disabled')
                 search = page.get_by_role('textbox', name='Search')

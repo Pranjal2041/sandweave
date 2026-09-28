@@ -23,6 +23,11 @@ def shared():
     return Memory('16GiB', reservation='4GiB', experimental=True)
 
 
+def shared_runtime():
+    return Memory('16GiB', '4GiB', reservation='4GiB',
+                  runtime_reservation='512MiB', experimental=True)
+
+
 @pytest.mark.parametrize('fields', [
     {'reservation': '256MiB'}, {'reservation': True, 'experimental': True},
     {'reservation': '0GiB', 'experimental': True},
@@ -30,6 +35,12 @@ def shared():
     {'reservation': '2GiB', 'experimental': True},
     {'reservation': '256MiB', 'experimental': 1},
     {'reservation': '256MiB', 'experimental': 'true'},
+    {'runtime_reservation': '256MiB'},
+    {'runtime_reservation': True, 'experimental': True},
+    {'runtime_reservation': '0GiB', 'experimental': True},
+    {'runtime_reservation': '31MiB', 'experimental': True},
+    {'runtime_reservation': '1GiB', 'experimental': True},
+    {'runtime_reservation': '256MiB', 'experimental': 1},
 ])
 def test_invalid_reservation(fields):
     with pytest.raises(ValueError):
@@ -58,15 +69,16 @@ def test_service_and_import_memory_are_not_discounted():
     assert uses_memory_reservations(parent)
 
 
-def test_disk_ram_cap_and_guest_limit_do_not_change(tmp_path):
+@pytest.mark.parametrize('runtime_reservation', [None, '128MiB'])
+def test_disk_ram_cap_and_guest_limit_do_not_change(tmp_path, runtime_reservation):
     from sandweave.sandbox.runtimes.gvisor.driver import Runtime
     runtime = object.__new__(Runtime)
     runtime.root = tmp_path
     runtime.gpu = lambda *a, **kw: None
     memory = Memory('4GiB', disk='16GiB', disk_path=str(tmp_path),
-                    reservation='2GiB', experimental=True)
+                    reservation='2GiB', runtime_reservation=runtime_reservation, experimental=True)
     spec = definition(memory=memory)['spec']
-    assert reservation(spec) == 2.5 * GiB
+    assert reservation(spec) == (2.125 if runtime_reservation else 2.5) * GiB
     options = runtime.options(spec)
     assert options[options.index('--memory-mib') + 1] == '20480'
     assert options[options.index('--ram-mib') + 1] == '4096'
@@ -105,11 +117,13 @@ def test_four_sixteen_gib_guests_on_thirty_two_gib_worker():
     assert len(waiting) == 3
 
 
-def test_worker_concurrent_admission_keeps_reservations_bounded(tmp_path):
+@pytest.mark.parametrize('memory', [shared(), shared_runtime(),
+    Memory('4GiB', '16GiB', runtime_reservation='512MiB', experimental=True)])
+def test_worker_concurrent_admission_keeps_reservations_bounded(tmp_path, memory):
     records = {}
     worker = SimpleNamespace(records=tmp_path, memory_budget=18 * GiB, read=records.__getitem__)
     guard = threading.Lock()
-    spec = definition(memory=shared())['spec']
+    spec = definition(memory=memory)['spec']
     def launch(index):
         with guard:  # The real worker holds this guard through record publication.
             try:
@@ -128,47 +142,56 @@ def test_worker_concurrent_admission_keeps_reservations_bounded(tmp_path):
     assert not launch(129)
 
 
-def test_restore_inherits_reservation_and_allows_rebinding(monkeypatch):
-    saved = definition(memory=shared())['spec']
+@pytest.mark.parametrize('memory', [shared(), shared_runtime()])
+def test_restore_inherits_reservation_and_allows_rebinding(monkeypatch, memory):
+    saved = definition(memory=memory)['spec']
     original = copy.deepcopy(saved)
     connection = SimpleNamespace(call=lambda *a, **kw: {'reference': 'snap-pinned', 'spec': saved}, close=lambda: None)
     monkeypatch.setattr('sandweave.sandbox.sandbox.connect', lambda *a, **kw: connection)
     inherited = definition(snapshot='saved')['spec']['resources']
     strict = definition(snapshot='saved', memory='16GiB')['spec']['resources']
-    changed = definition(snapshot='saved', memory=Memory('16GiB', reservation='8GiB', experimental=True))['spec']['resources']
+    changed = definition(snapshot='saved', memory=Memory('16GiB', memory.runtime, reservation='8GiB',
+        runtime_reservation='128MiB', experimental=True))['spec']['resources']
     assert inherited['memory']['reservation'] == '4GiB'
     assert 'reservation' not in strict['memory']
+    assert 'runtime_reservation' not in strict['memory']
+    assert inherited['memory'].get('runtime_reservation') == memory.runtime_reservation
+    assert changed['memory']['runtime_reservation'] == '128MiB'
     assert changed['memory']['reservation'] == '8GiB'
     assert restore_resources(inherited) == restore_resources(strict) == restore_resources(changed)
     assert saved == original
 
 
-def test_client_rejects_older_endpoint_before_creating(monkeypatch):
+@pytest.mark.parametrize('memory,features', [(shared(), {}),
+    (shared_runtime(), {'memory_reservations': 1})])
+def test_client_rejects_older_endpoint_before_creating(monkeypatch, memory, features):
     calls = []
     def call(operation, **kwargs):
         calls.append(operation)
         assert operation == 'ping'
-        return {}
+        return features
     connection = SimpleNamespace(call=call, close=lambda: None)
     connection.clone = lambda **kw: connection
     monkeypatch.setattr('sandweave.sandbox.sandbox.connect', lambda *a, **kw: connection)
     with pytest.raises(UnsupportedFeature, match='memory reservations'):
-        Sandbox(memory=shared())
+        Sandbox(memory=memory)
     assert calls == ['ping']
 
 
-def test_pool_rejects_older_controller_before_declaring():
+@pytest.mark.parametrize('memory,features', [(shared(), {}),
+    (shared_runtime(), {'memory_reservations': 1})])
+def test_pool_rejects_older_controller_before_declaring(memory, features):
     from sandweave.weave.pool import ManagedPool
     pool = ManagedPool.__new__(ManagedPool)
     pool.lock = threading.RLock()
     pool.closed = pool.started = False
     pool.target = None
-    pool.options = {'memory': shared()}
+    pool.options = {'memory': memory}
     pool.policy = {}
     calls = []
     def call(operation, **params):
         calls.append(operation)
-        return {}
+        return features
     pool.connection = SimpleNamespace(call=call)
     with pytest.raises(UnsupportedFeature, match='memory reservations'):
         pool._declare()
@@ -176,12 +199,71 @@ def test_pool_rejects_older_controller_before_declaring():
     assert pool.started is False
 
 
-def test_controller_releases_assignment_when_worker_is_too_old(lab):
+@pytest.mark.parametrize('runtime_sharing', [False, True])
+def test_controller_releases_assignment_when_worker_is_too_old(lab, monkeypatch, runtime_sharing):
     controller = lab.controller
-    request = definition(memory=Memory('2GiB', reservation='256MiB', experimental=True), detached=True)
+    if runtime_sharing:
+        for executor in lab.executors.values():
+            original = executor.call
+            def call(operation, _original=original, **params):
+                result = _original(operation, **params)
+                return {**result, 'memory_reservations': 1} if operation == 'ping' else result
+            monkeypatch.setattr(executor, 'call', call)
+    request = definition(memory=Memory('2GiB', reservation='256MiB', experimental=True,
+        runtime_reservation='128MiB' if runtime_sharing else None), detached=True)
     controller.create('shared-old-worker', **request, operation_id='operation')
     until(lab, lambda: controller.allocation_get('shared-old-worker')['released'])
     record = controller.allocation_get('shared-old-worker')
     assert record['state'] in ('failed', 'terminated')
     assert 'memory reservations' in str(record.get('error'))
     assert sum(executor.starts for executor in lab.executors.values()) == 0
+
+
+def test_runtime_only_admission_and_raw_wire_validation():
+    memory = Memory('1GiB', '4GiB', runtime_reservation='256MiB', experimental=True)
+    spec = definition(memory=memory)['spec']
+    assert reservation(spec) == 1.25 * GiB
+    assert uses_memory_reservations(spec, runtime_only=True)
+    assert normalize(memory=Memory('1GiB', '4GiB', experimental=True))['memory']['runtime'] == '4GiB'
+    assert reservation(definition(memory=Memory('1GiB', '4GiB', experimental=True))['spec']) == 5 * GiB
+    for value in ('31MiB', '5GiB', False):
+        invalid = copy.deepcopy(spec)
+        invalid['resources']['memory']['runtime_reservation'] = value
+        with pytest.raises(ValueError):
+            reservation(invalid)
+    del spec['resources']['memory']['experimental']
+    with pytest.raises(ValueError, match='experimental=True'):
+        reservation(spec)
+
+
+def test_runtime_sharing_requires_support_for_nested_services():
+    from sandweave.sandbox.resources import check_memory_reservations
+    spec = definition(memory='1GiB')['spec']
+    child = definition(memory=Memory('2GiB', '4GiB', runtime_reservation='256MiB', experimental=True))
+    spec['services'] = {'db': {'request': child}}
+    spec['_image_import_memory'] = GiB
+    assert reservation(spec) == 4.75 * GiB
+    with pytest.raises(UnsupportedFeature, match='0.2.38'):
+        check_memory_reservations(spec, {'memory_reservations': 1})
+    check_memory_reservations(spec, {'memory_reservations': 1, 'runtime_memory_reservations': 1})
+    check_memory_reservations(definition(memory=shared())['spec'], {'memory_reservations': 1})
+
+
+def test_runtime_reservation_template_cli_info_and_scheduler(tmp_path):
+    template = tmp_path / 'template.toml'
+    template.write_text('extends="coding"\n[resources.memory]\nguest="16GiB"\n'
+                        'runtime="4GiB"\nreservation="4GiB"\nruntime_reservation="512MiB"\nexperimental=true\n')
+    request = definition(template=template)
+    parser = argparse.ArgumentParser()
+    creation_options(parser)
+    args = parser.parse_args(['--memory', '16GiB', '--runtime-memory', '4GiB',
+        '--memory-reservation', '4GiB', '--runtime-memory-reservation', '512MiB', '--experimental-memory-sharing'])
+    assert creation(args)['memory'] == shared_runtime()
+    assert summarize({'id': 'runtime-sharing', 'state': 'ready', 'spec': request['spec']})['memory'] == normalize(memory=shared_runtime())['memory']
+    worker = {'id': 'one', 'state': 'ready', 'capacity': {'memory': 18 * GiB, 'slots': 8, 'gpu': 0}}
+    requests = [{'id': str(i), 'created': i, 'spec': request['spec']} for i in range(5)]
+    assignments, waiting = plan(requests, [worker], [], {})
+    assert len(assignments) == 4 and set(waiting) == {'4'}
+    args.experimental_memory_sharing = False
+    with pytest.raises(ValueError):
+        creation(args)

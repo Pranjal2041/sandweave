@@ -173,6 +173,16 @@ A custom template can define `image = "docker://python:3.12-slim"` alongside its
 setup and services. Passing both `template=` and `image=` overrides the template's
 base while retaining its recipe. No Docker daemon is needed.
 
+To import a local OCI archive without publishing it to a registry:
+
+```python
+image = Sandbox.import_image("./app.oci.tar", target="lab")
+env = Sandbox(snapshot=image, target="lab")
+```
+
+The returned snapshot also works with `Pool(snapshot=image, target="lab")`.
+The archive is read on the client and transferred to the selected worker.
+
 Commands inherit the image's environment, user, and working directory. Sandweave
 starts its command service; the image's `ENTRYPOINT` and `CMD` do not run
 automatically. See [image defaults, caching, and supported images](https://pranjal2041.github.io/sandweave/images/).

@@ -47,6 +47,12 @@ class Inode:
 class Filesystem:
     def __init__(self):
         self.entries = {}
+        self.children = {}
+
+    def put(self, name, inode):
+        self.entries[name] = inode
+        if name != '.':
+            self.children.setdefault(posixpath.dirname(name) or '.', set()).add(name)
 
     def resolve(self, name, *, follow=False):
         """Resolve parent links within the guest root, including absolute links."""
@@ -74,10 +80,18 @@ class Filesystem:
         return '/'.join(resolved) or '.'
 
     def remove(self, name, *, children_only=False):
-        for key in list(self.entries):
-            child = key != name and (name == '.' or key.startswith(name.rstrip('/') + '/'))
-            if (key == name and not children_only) or child:
-                del self.entries[key]
+        pending = list(self.children.pop(name, ()))
+        if not children_only:
+            pending.append(name)
+        while pending:
+            key = pending.pop()
+            pending.extend(self.children.pop(key, ()))
+            self.entries.pop(key, None)
+            parent = posixpath.dirname(key) or '.'
+            if siblings := self.children.get(parent):
+                siblings.discard(key)
+                if not siblings:
+                    self.children.pop(parent, None)
 
     def parents(self, name):
         name = path(name)
@@ -90,7 +104,7 @@ class Filesystem:
             if previous is None:
                 info = tarfile.TarInfo(parent)
                 info.type, info.mode = tarfile.DIRTYPE, 0o755
-                self.entries[parent] = Inode(info, None)
+                self.put(parent, Inode(info, None))
 
     def apply(self, archive, *, prefix=''):
         with tarfile.open(archive, mode='r:') as source:
@@ -130,7 +144,7 @@ class Filesystem:
                     raise ValueError('image hard link must refer to a regular file')
             else:
                 inode = Inode(copy.copy(member), Path(archive))
-            self.entries[name] = inode
+            self.put(name, inode)
         while pending:
             waiting = []
             for name, target in pending:
@@ -140,7 +154,7 @@ class Filesystem:
                 elif not inode.info.isreg():
                     raise ValueError('image hard link must refer to a regular file')
                 else:
-                    self.entries[name] = inode
+                    self.put(name, inode)
             if len(waiting) == len(pending):
                 raise ValueError('image contains an unresolved hard link')
             pending = waiting

@@ -153,8 +153,8 @@ class Management:
         if operation not in {'describe', 'command_start', 'process_status', 'process_wait', 'process_output',
                              'process_stdin', 'process_terminate', 'process_resize', 'file', 'setup',
                              'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording',
-                             'image_capture', 'network_policy', 'service_rpc', 'service_volume_import', 'service_setup',
-                             'vnc_stream', 'runtime_profile'}:
+                             'image_capture', 'image_upload', 'network_policy', 'service_rpc', 'service_volume_import', 'service_setup',
+                             'vnc_stream', 'runtime_profile', 'delete', 'delete_status'}:
             return False
         return parameters.get('identity') == value['id']
 
@@ -173,7 +173,7 @@ class Management:
         except (ImportError, OSError, RuntimeError, subprocess.SubprocessError):
             pass
         live = []
-        records = self.worker.list()
+        records = self.worker.list(live_only=True)
         by_id = {record['id']: record for record in records}
         for record in records:
             if record.get('service_parent'):

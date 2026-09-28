@@ -42,7 +42,7 @@ def project(record, fields):
 
 
 class State:
-    FIELDS = ('state', 'parent', 'worker', 'owner', 'released')
+    FIELDS = ('state', 'parent', 'worker', 'owner', 'released', 'deletion_pending')
 
     def __init__(self, directory):
         self.root = Path(directory).expanduser().resolve()
@@ -236,9 +236,10 @@ class State:
                         values[identity] = value
         return values.values()
 
-    def list(self, kind, *, state=None, parent=None, worker=None, owner=None, released=None, fields=None):
+    def list(self, kind, *, state=None, parent=None, worker=None, owner=None, released=None,
+             deletion_pending=None, fields=None):
         filters = {k: v for k, v in dict(state=state, parent=parent, worker=worker,
-                                        owner=owner, released=released).items() if v is not None}
+                                        owner=owner, released=released, deletion_pending=deletion_pending).items() if v is not None}
         values = self._select(kind, filters)
         return [clone(project(v, fields)) for v in sorted(values, key=lambda v: (v['created'], v['id']))]
 

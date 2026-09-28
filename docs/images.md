@@ -15,6 +15,36 @@ the prepared image with separate writable filesystems. A Docker daemon is not
 required. Images run through Sandweave's existing gVisor runtime, without KVM
 or host sudo.
 
+## Import a local OCI archive
+
+```python
+from sandweave import Sandbox, Pool
+
+image = Sandbox.import_image("./app.oci.tar", target="lab", timeout=600)
+env = Sandbox(snapshot=image, target="lab")
+print(env.run("echo ready").stdout)
+env.delete()
+env.close()
+
+pool = Pool(snapshot=image, target="lab", size=8)
+```
+
+`import_image()` reads the file on the client and uploads it to the target over
+the existing local, SSH, or Weave connection. It returns a reusable filesystem
+snapshot; other cluster workers obtain it through the normal snapshot transfer
+path. No registry publication or Docker daemon is needed. Omit `target` to use a
+local worker. `Sandbox.import_image.aio(...)` is also available.
+
+The file must be an uncompressed OCI image-layout tar containing `oci-layout`,
+`index.json`, and content-addressed blobs, selecting one Linux amd64 image.
+Docker-save archives and bare rootfs tarballs are different formats. Layer and
+metadata digests are verified. Image user, environment, and working-directory
+defaults are preserved. Pass `template=` to add setup and services before saving
+the imported snapshot. The archive and prepared image remain reusable in the
+worker's image cache; temporary import sandboxes are deleted automatically.
+
+Requires Sandweave 0.2.40 on the client, controller (when used), and workers.
+
 ## Combine an image with a template
 
 An image supplies files and installed software. A template supplies setup,

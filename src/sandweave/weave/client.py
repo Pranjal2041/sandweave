@@ -103,7 +103,7 @@ class ClusterConnection:
 
     def _rpc(self, operation, **params):
         repeatable = {'ping', 'status', 'events', 'worker_list', 'allocation_get', 'allocation_route',
-                      'allocation_ack', 'allocation_cancel', 'owner_register', 'owner_heartbeat', 'owner_routes',
+                      'allocation_ack', 'allocation_cancel', 'allocation_delete', 'owner_register', 'owner_heartbeat', 'owner_routes',
                       'pool_status', 'pool_create', 'pool_checkout', 'pool_lease', 'pool_release', 'pool_close',
                       'job_create', 'job_status', 'job_results', 'job_cancel',
                       'snapshot_spec', 'snapshot_info', 'snapshot_verify', 'snapshot_alias'}
@@ -209,6 +209,13 @@ class ClusterConnection:
             raise
 
     def call(self, operation, **params):
+        if operation in ('delete', 'delete_status'):
+            result = self._rpc('allocation_delete' if operation == 'delete' else 'allocation_get', **params)
+            if result.get('deleted'):
+                self.forget(result['id'])
+            return {'id': result['id'], 'state': 'deleted' if result.get('deleted') else
+                    'pending' if result.get('delete_requested') else 'not_requested',
+                    **({'error': result['error']} if result.get('error') else {})}
         if operation == 'owner_register':
             result = self._rpc(operation, **params)
             with self.registry['lock']:

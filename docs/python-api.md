@@ -95,12 +95,14 @@ with streams, `wait`, `poll`, `result`, `terminate`, and terminal `resize`.
 | `env.pause()` / `resume()` | Suspend or continue the resident environment. |
 | `env.stop(state="auto")` | Save, then release the runtime. |
 | `env.terminate()` | Release the runtime and discard unsaved state. |
+| `env.delete(wait=True, timeout=300)` | Persist deletion, stop the sandbox, and remove private files. Published snapshots and external mounts remain. |
 | `env.close()` | Disconnect the handle; a benchmark-owned handle also releases its task lease. |
 | `env.recording.info` | Recording segments, capture timings, drops and worker storage. |
 | `env.recording.stop()` | Finalize recording, leaving the desktop running. |
 | `env.recording.download(directory)` | Finalize and export to an empty client directory; works after termination. |
 | `env.recording.delete()` | Delete finalized recording files from the worker. |
 | `Sandbox.connect(id, target=...)` | Borrow a handle to an existing sandbox. |
+| `Sandbox.import_image(path, template=None, target=None, timeout=600)` | Import a client-local OCI tar and return a reusable filesystem snapshot. |
 | `Sandbox.create.aio(...)` | Asynchronous creation. |
 
 `SnapshotRef.verify()` waits for content verification and returns a status

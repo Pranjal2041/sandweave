@@ -386,3 +386,8 @@ class Runtime:
             remove(self.manager._bundle(identity))
             remove(self.manager.local / 'gvisor/network' / identity)
             (self.root / 'sandboxes' / (identity + '.mounts.json')).unlink(missing_ok=True)
+
+    def delete(self, identity):
+        from ...retention import remove
+        self.discard(identity)
+        remove(self.manager._logs(identity))

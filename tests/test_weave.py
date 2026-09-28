@@ -46,6 +46,7 @@ class Executor(Worker):
         self.records.mkdir()
         self.owners = Owners(root)
         self.guard, self.locks = threading.RLock(), {}
+        self.active = set()
         self.management = Management(self)
         self.index = index
         self.starts = 0

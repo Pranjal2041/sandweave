@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.40
+
+- Import client-local OCI archives with `Sandbox.import_image(...)`, returning
+  reusable filesystem snapshots for sandboxes and pools through local, SSH, and
+  Weave targets. Upload directly to worker storage and preserve image defaults.
+- Index image-layer children so replacements and whiteouts visit only affected
+  entries instead of scanning the entire accumulated filesystem.
+- Drain command output written between a pipe-read timeout and process exit;
+  successful short commands no longer lose their final stdout/stderr in that race.
+- Maintain the worker's active inventory on lifecycle writes, rebuilding once
+  at restart. Health checks and ownership cleanup skip historical records.
+- Add explicit `env.delete()` and `sandweave delete` with durable, retryable
+  cleanup independent of the client. Remove private runtime files, logs, and
+  recordings while preserving published snapshots, shared images, and external
+  mounts. Keep small tombstones to reject late creates with a deleted identity.
+- Upgrade clients, controllers, and workers for the new APIs. Restart workers
+  to pick up inventory and command-output fixes; the gVisor binary is unchanged.
+
 ## 0.2.39
 
 - Make filesystem restores honor the existing `startup_timeout` throughout

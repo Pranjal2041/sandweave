@@ -214,6 +214,12 @@ class Sandbox:
             raise
 
     @dualclassmethod
+    def import_image(cls, path, *, template=None, target=None, timeout=600):
+        """Import a local OCI tar and return a reusable SnapshotRef on the target."""
+        from .image_import import import_image
+        return import_image(path, template=template, target=target, timeout=timeout)
+
+    @dualclassmethod
     def connect(cls, identity, *, target=None, connection='cluster'):
         self = cls.__new__(cls)
         self._connection = connect(target, connection=connection)
@@ -412,6 +418,49 @@ class Sandbox:
             # owned context whose client was disconnected inside its body.
             self._info = self._connection.call('terminate', identity=self.id)
             self._terminated = True
+
+    @dualmethod
+    def delete(self, *, wait=True, timeout=300):
+        """Stop and remove private files; acknowledged cleanup survives this client."""
+        if type(wait) is not bool:
+            raise ValueError('wait must be a bool')
+        positive(timeout, 'timeout')
+        deadline = time.monotonic() + timeout
+        result = self._connection.call('delete', identity=self.id)
+        delay = .025
+        while wait and result['state'] != 'deleted':
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('sandbox deletion is still pending; cleanup will continue: ' +
+                                   result.get('error', self.id))
+            time.sleep(min(delay, remaining))
+            delay = min(.5, delay * 2)
+            result = self._connection.call('delete_status', identity=self.id)
+        self._terminated = result['state'] == 'deleted'
+        return result
+
+    @delete.async_impl
+    async def _delete_async(self, *, wait=True, timeout=300):
+        if type(wait) is not bool:
+            raise ValueError('wait must be a bool')
+        positive(timeout, 'timeout')
+        async def call(operation):
+            if hasattr(self._connection, 'acall'):
+                return await self._connection.acall(operation, identity=self.id)
+            return await asyncio.to_thread(self._connection.call, operation, identity=self.id)
+        deadline = time.monotonic() + timeout
+        result = await call('delete')
+        delay = .025
+        while wait and result['state'] != 'deleted':
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('sandbox deletion is still pending; cleanup will continue: ' +
+                                   result.get('error', self.id))
+            await asyncio.sleep(min(delay, remaining))
+            delay = min(.5, delay * 2)
+            result = await call('delete_status')
+        self._terminated = result['state'] == 'deleted'
+        return result
 
     @dualmethod
     def close(self):

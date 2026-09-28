@@ -141,7 +141,10 @@ class Runtime:
 
     def _memory_guard(self, identity):
         while True:
-            record = self.metadata(identity)
+            try:
+                record = self.metadata(identity)
+            except FileNotFoundError:
+                return  # Explicit deletion already stopped and removed it.
             members = self._members(record)
             if not members:
                 return
@@ -228,6 +231,13 @@ class Runtime:
         record['state'] = 'stopped'
         atomic_json(self.directory(identity) / 'native.json', record)
         return self.status(identity)
+
+    def delete(self, identity):
+        from ...retention import remove
+        if self.status(identity)['status'] in ('running', 'paused', 'starting'):
+            raise ResourceUnavailable('cannot delete a live sandbox')
+        self._detach(identity)
+        remove(self.directory(identity))
 
     def capture(self, identity, label, state, *, experimental_gpu_live=False):
         if any(m['snapshot'] != 'rebind' for m in self.metadata(identity).get('mounts', [])):

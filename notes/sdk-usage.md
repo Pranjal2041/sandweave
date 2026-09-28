@@ -4,6 +4,18 @@ For installation, tutorials, and the Python and CLI reference, see the
 [Sandweave documentation](https://pranjal2041.github.io/sandweave/).
 This page retains the detailed SDK behavior notes.
 
+Sandweave 0.2.40 adds `Sandbox.import_image(path, template=None, target=None,
+timeout=600)`, returning a filesystem `SnapshotRef` from a client-local OCI tar.
+Use the reference with `Sandbox(snapshot=...)` or `Pool(snapshot=...)` on the same
+target. Import verifies image metadata and layers and retains image defaults.
+
+`env.delete(wait=True, timeout=300)` persists worker-side cleanup and removes
+private files, logs, and recordings after termination. `wait=False` returns
+after the request is saved; a timeout or client exit does not cancel it.
+Worker/controller restarts resume pending cleanup. Published snapshots, shared
+images, external mounts, and small identity tombstones remain. Both new methods
+also provide `.aio(...)`; ordinary `terminate()` semantics are unchanged.
+
 For `Memory(disk=..., disk_path=...)`, see
 [disk-backed memory](https://pranjal2041.github.io/sandweave/resources/#disk-backed-memory).
 Its backing directory is independent of installation storage and caches.

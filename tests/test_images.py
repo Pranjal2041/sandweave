@@ -42,6 +42,28 @@ def contents(filesystem, tmp_path):
                 for m in stream}
 
 
+def test_replacements_and_whiteouts_do_not_scan_unrelated_entries(tmp_path):
+    filesystem = Filesystem()
+    filesystem.apply(layer(tmp_path/'base.tar', [(f'untouched/{i}', 'keep') for i in range(2000)] +
+                           [('replace/file', 'old'), ('replace/other', 'remove')]))
+    class NoScan(dict):
+        def __iter__(self):
+            pytest.fail('replacement scanned the whole image')
+        def keys(self):
+            pytest.fail('replacement scanned the whole image')
+        def items(self):
+            pytest.fail('replacement scanned the whole image')
+    filesystem.entries = NoScan(filesystem.entries)
+    filesystem.apply(layer(tmp_path/'update.tar', [('replace/file', 'new'), ('replace/.wh.other', '')]))
+    assert 'replace/other' not in filesystem.entries
+    assert filesystem.entries['untouched/1999'].info.size == 4
+    filesystem.apply(layer(tmp_path/'opaque.tar', [('replace/.wh..wh..opq', ''), ('replace/final', 'last')]))
+    assert 'replace/file' not in filesystem.entries and 'replace/final' in filesystem.entries
+    filesystem.remove('replace')
+    assert 'replace/final' not in filesystem.entries
+    assert len(filesystem.entries) == 2001
+
+
 def test_image_and_template_are_independent_and_explicit_image_wins(tmp_path):
     setup = tmp_path / 'install.sh'
     setup.write_text('echo installed')

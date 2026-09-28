@@ -118,6 +118,7 @@ def worker(tmp_path):
     worker.owners = Owners(tmp_path)
     worker.runtime = Runtime()
     worker.guard, worker.locks = threading.RLock(), {}
+    worker.active = set()
     worker.controls, worker.deadlines = {}, {}
     return worker
 

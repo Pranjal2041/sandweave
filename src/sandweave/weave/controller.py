@@ -19,7 +19,7 @@ from ..sandbox.wire import encode
 
 LOG = logging.getLogger(__name__)
 ALLOCATION_FIELDS = ('id', 'state', 'parent', 'worker', 'created', 'updated',
-                     'reason', 'error', 'released', 'info', 'deadline')
+                     'reason', 'error', 'released', 'info', 'deadline', 'delete_requested', 'deleted')
 ROUTE_FIELDS = ('id', 'state', 'endpoint', 'token', 'owner', 'info')
 
 
@@ -458,6 +458,17 @@ class Controller:
                 self.state.put('allocation', record, event={'message': 'termination requested'})
         return self._public_allocation(record)
 
+    def allocation_delete(self, identity):
+        with self.state.transaction():
+            record = self._resolve(identity)
+            if not record.get('delete_requested'):
+                record.update(delete_requested=True, deletion_pending=True, desired='terminated', released=False,
+                              generation=record['generation'] + 1)
+                if not record.get('worker'):
+                    record.update(state='terminated', released=True, deleted=True, deletion_pending=False)
+                self.state.put('allocation', record, event={'message': 'deletion requested'})
+        return self._public_allocation(record)
+
     @lifecycle
     def _launch(self, identity):
         record = self.state.get('allocation', identity)
@@ -576,7 +587,7 @@ class Controller:
     def _uncertain(self, identity, error, *, generation):
         with self.state.transaction():
             record = self.state.get('allocation', identity)
-            if record['generation'] != generation or record.get('released'):
+            if record['generation'] != generation or (record.get('released') and not record.get('deletion_pending')):
                 return
             self.state.put('allocation', {**record, 'state': 'unknown', 'error': record.get('error') or str(error)})
 
@@ -620,19 +631,45 @@ class Controller:
     @lifecycle
     def _terminate(self, identity):
         record = self.state.get('allocation', identity)
-        if record['desired'] != 'terminated' or record.get('released'):
+        if record['desired'] != 'terminated' or (record.get('released') and not record.get('deletion_pending')):
             return
         route = record.get('endpoint') or self.state.get('worker', record['worker'])['endpoint']
         connection = None
         try:
             connection = self.connection(route)
-            response = yield rpc(connection, 'managed_apply', identity=identity, cluster=self.id,
-                generation=record['generation'], action='terminate')
+            if record.get('delete_requested') and not record.get('deletion_started'):
+                features = yield rpc(connection, 'ping')
+                if not features.get('sandbox_deletion'):
+                    raise RuntimeError('sandbox deletion requires upgrading the worker to Sandweave 0.2.40')
+            if record.get('deletion_started'):
+                response = {'sandbox': record.get('info'), 'token': record['token']}
+            else:
+                response = yield rpc(connection, 'managed_apply', identity=identity, cluster=self.id,
+                    generation=record['generation'], action='terminate')
+            if record.get('delete_requested') and 'spec' in response['sandbox']:
+                deletion = yield rpc(connection, 'delete_status' if record.get('deletion_started') else 'delete', identity=identity)
+                if deletion['state'] != 'deleted':
+                    with self.state.transaction():
+                        current = self.state.get('allocation', identity)
+                        if current['generation'] != record['generation']:
+                            return
+                        if not current.get('deletion_started'):
+                            current.update(deletion_started=True, released=True, state='terminated', info=response['sandbox'],
+                                           token=response['token'], endpoint=route)
+                            self.state.put('allocation', current)
+                    if deletion.get('error'):
+                        self._uncertain(identity, RuntimeError(deletion['error']), generation=record['generation'])
+                    return
+                response['sandbox'] = yield rpc(connection, 'describe', identity=identity)
             with self.state.transaction():
                 current = self.state.get('allocation', identity)
-                if current['generation'] != record['generation'] or current.get('released'):
+                if current['generation'] != record['generation'] or (current.get('released') and not current.get('deletion_pending')):
                     return
                 current.update(state='terminated', released=True, info=response['sandbox'], token=response['token'], endpoint=route)
+                if record.get('delete_requested'):
+                    current['deleted'] = True
+                    current['deletion_pending'] = False
+                    current.pop('error', None)
                 self.state.put('allocation', current, event={'message': 'termination confirmed'})
         except Exception as error:
             self._uncertain(identity, error, generation=record['generation'])
@@ -657,6 +694,10 @@ class Controller:
         self._reconcile_jobs()
         observations = []
         active = self.state.list('allocation', released=False)
+        # File deletion retains its durable intent without retaining a stopped
+        # sandbox's CPU/memory/slot reservation or scanning allocation history.
+        for record in self.state.list('allocation', released=True, deletion_pending=True, fields=('id',)):
+            self._submit(('allocation', record['id']), self._terminate, record['id'])
         self.preparation.reap({a['id']: a['generation'] for a in active if a['desired'] == 'running'})
         for record in active:
             if record.get('released'):
@@ -758,7 +799,7 @@ class Controller:
             from .artifacts import dispatch
             return dispatch(self, operation, parameters)
         if operation not in {'create', 'allocation_get', 'allocation_route', 'allocation_ack',
-                             'allocation_cancel', 'worker_add', 'worker_get', 'worker_list', 'worker_update',
+                             'allocation_cancel', 'allocation_delete', 'worker_add', 'worker_get', 'worker_list', 'worker_update',
                              'owner_register', 'owner_heartbeat', 'owner_routes', 'status', 'sandbox_rpc'}:
             raise ValueError('unknown cluster operation: ' + operation)
         return getattr(self, operation)(**parameters)

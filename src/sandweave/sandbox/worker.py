@@ -29,6 +29,10 @@ class Worker:
         self.records = self.root / 'sandboxes'
         self.records.mkdir(exist_ok=True)
         self.locks, self.guard, self.controls, self.deadlines = {}, threading.RLock(), {}, {}
+        # Rebuild once on restart. Heartbeats and cleanup never walk historical
+        # records; every committed lifecycle write maintains this index.
+        self.active = {path.stem for path in self.records.glob('*.bin')
+                       if self.is_active(self.read(path.stem))}
         self.stopping = False
         self.pools = {}
         self.services = None
@@ -42,6 +46,8 @@ class Worker:
         self.artifacts = Artifacts(self)
         from ..templates.gnome.recording import Recordings
         self.recordings = Recordings(self)
+        from .deletion import Deletions
+        self.deletions = Deletions(self)
         if ((self.root / 'service-networks').exists() or
                 any(self.read(path.stem).get('service_group') for path in self.records.glob('*.bin'))):
             from .services import Services
@@ -49,7 +55,7 @@ class Worker:
         threading.Thread(target=self.expire, name='sandweave-cleanup', daemon=True).start()
 
     def expire(self):
-        while True:
+        while not self.stopping:
             try:
                 self.expire_once()
             except Exception:
@@ -68,7 +74,12 @@ class Worker:
         return self.owners.reason(record.get('owner'))
 
     def expire_once(self):
-        for path in self.records.glob('*.bin'):
+        if hasattr(self, 'deletions'):
+            self.deletions.tick()
+        with self.guard:
+            identities = tuple(self.active)
+        for identity in identities:
+            path = self.path(identity)
             try:
                 if not self.expiry_reason(self.read(path.stem)):
                     continue
@@ -119,12 +130,32 @@ class Worker:
     def read(self, identity):
         return decode(self.path(identity).read_bytes())
 
-    def write(self, record):
+    def write(self, record, *, durable=False):
         destination = self.path(record['id'])
         temporary = destination.with_suffix('.tmp')
-        temporary.write_bytes(encode(record))
+        with temporary.open('wb') as stream:
+            stream.write(encode(record))
+            if durable:
+                stream.flush()
+                os.fsync(stream.fileno())
         temporary.chmod(0o600)
         os.replace(temporary, destination)
+        if durable:
+            directory = os.open(self.records, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        with self.guard:
+            if self.is_active(record):
+                self.active.add(record['id'])
+            else:
+                self.active.discard(record['id'])
+
+    @staticmethod
+    def is_active(record):
+        return (record['state'] not in ('terminated', 'stopped')
+                and not record.get('cleanup_complete'))
 
     def create(self, spec, identity, *, operation_id=None, reference=None, cache_key=None, refresh=False, owner=None):
         if self.path(identity).exists():
@@ -340,6 +371,9 @@ class Worker:
                 raise FileNotFoundError('sandbox name is missing or ambiguous: ' + identity)
             identity = matches[0]
         record = self.read(identity)
+        if record.get('deleted'):
+            return {**record, 'runtime_status': {'status': 'missing'},
+                    'worker': {'hostname': socket.gethostname(), 'job_id': os.environ.get('SLURM_JOB_ID')}}
         status = self.runtime.status(identity)
         if record['state'] in ('ready', 'paused') and status['status'] not in ('running', 'paused'):
             with self.lock(identity):
@@ -354,8 +388,13 @@ class Worker:
         return {key: value for key, value in {**record, **recording, 'runtime_status': status, 'worker': worker}.items()
                 if key not in ('agent', 'owner')}
 
-    def list(self):
-        return [self.describe(path.stem) for path in sorted(self.records.glob('*.bin'))]
+    def list(self, *, live_only=False):
+        if live_only:
+            with self.guard:
+                identities = sorted(self.active)
+        else:
+            identities = sorted(path.stem for path in self.records.glob('*.bin'))
+        return [self.describe(identity) for identity in identities]
 
     def agent(self, identity, record=None):
         record = self.read(identity) if record is None else record
@@ -550,6 +589,8 @@ class Worker:
 
     def terminate(self, identity):
         record = self.read(identity)
+        if record.get('deleted'):
+            return self.describe(identity)
         try:
             self._terminate_runtime(record)
         except Exception as error:
@@ -563,6 +604,16 @@ class Worker:
         record.pop('cleanup_error', None)
         self.write(record)
         return self.describe(identity)
+
+    def delete(self, identity):
+        previous = self.deletions.status(identity)
+        if previous['state'] != 'not_requested':
+            return previous
+        with self.lock(identity):
+            return self.deletions.request(identity)
+
+    def delete_status(self, identity):
+        return self.deletions.status(identity)
 
     def _terminate_runtime(self, record):
         identity, errors = record['id'], []
@@ -709,6 +760,10 @@ class Worker:
         raise ValueError('unknown pool operation')
 
     def dispatch(self, operation, parameters):
+        if operation == 'image_upload':
+            from .image_import import upload
+            with self.lock(parameters['identity']):
+                return upload(self, **parameters)
         if operation.startswith('service_network_'):
             return self.service_manager().networks.dispatch(operation, **parameters)
         if operation == 'service_setup':
@@ -776,6 +831,8 @@ class Worker:
                     raise RuntimeError('worker still owns service networks; delete them before shutdown')
                 if self.pools:
                     raise RuntimeError('worker still owns named pools')
+                if self.deletions.pending:
+                    raise RuntimeError('worker still has pending deletions')
                 if any(self.read(p.stem)['state'] in ('creating', 'preparing') or
                        self.runtime.status(p.stem)['status'] in ('running', 'paused', 'starting')
                        for p in self.records.glob('*.bin')):
@@ -789,6 +846,7 @@ class Worker:
                    'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
         allowed.add('pool')
         allowed.update(('process_resize', 'runtime_profile'))
+        allowed.update(('delete', 'delete_status'))
         allowed.update(('owner_register', 'owner_heartbeat'))
         if operation == 'ping':
             return {'hostname': socket.gethostname(), 'pid': os.getpid(), 'workspace': str(self.root),
@@ -796,11 +854,12 @@ class Worker:
                     'port': self.endpoint.port, 'weave_protocol': 1, 'proxy_policy': 1, 'pool_retention': 1,
                     'memory_reservations': 1, 'runtime_memory_reservations': 1, 'disk_storage': 1,
                     'desktop_recording': 1, 'oci_image_import': 1, 'native_services': 1,
-                    'dynamic_network_policy': 1, 'service_networks': 1}
+                    'dynamic_network_policy': 1, 'service_networks': 1, 'sandbox_deletion': 1,
+                    'local_oci_import': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
-        if identity and operation not in ('describe', 'process_wait', 'runtime_profile'):
+        if identity and operation not in ('describe', 'process_wait', 'runtime_profile', 'delete', 'delete_status'):
             with self.lock(identity):
                 return getattr(self, operation)(**parameters)
         return getattr(self, operation)(**parameters)
@@ -891,6 +950,8 @@ def serve(metadata_path):
     finally:
         server.server_close()
         worker.streams.close()
+        worker.stopping = True
+        worker.deletions.close()
         authority.close()
         if metadata_path.exists() and json.loads(metadata_path.read_text()).get('pid') == os.getpid():
             metadata_path.unlink()

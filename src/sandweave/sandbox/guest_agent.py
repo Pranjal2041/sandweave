@@ -377,9 +377,13 @@ class Agent:
             try:
                 while True:
                     if not select.select([source], [], [], .05)[0]:
-                        if process.poll() is not None:
+                        if process.poll() is None:
+                            continue
+                        # The child can write and exit between select's timeout
+                        # and poll(). Drain those final bytes before reporting
+                        # completion, even when descendants retain the pipe.
+                        if not select.select([source], [], [], 0)[0]:
                             break
-                        continue
                     try:
                         data = os.read(source.fileno(), 64*1024)
                     except BlockingIOError:

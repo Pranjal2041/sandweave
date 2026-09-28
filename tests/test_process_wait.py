@@ -161,6 +161,7 @@ def worker(tmp_path, agent):
     value.root, value.records = tmp_path, tmp_path / 'sandboxes'
     value.records.mkdir()
     value.guard, value.locks = threading.RLock(), {}
+    value.active = set()
     class Connection:
         def call(self, operation, **params):
             return agent.call(operation, params)
@@ -168,6 +169,40 @@ def worker(tmp_path, agent):
     value.runtime = SimpleNamespace(adapter=lambda name: SimpleNamespace(agent=lambda *args: connection))
     value.write({'id': 'sandbox', 'state': 'ready', 'agent': {}, 'spec': {'runtime': 'gvisor'}})
     return value, connection
+
+
+@pytest.mark.parametrize('stream', ['stdout', 'stderr'])
+def test_final_output_after_select_timeout_before_exit_check(agent, monkeypatch, stream):
+    from sandweave.sandbox import guest_agent
+    original = guest_agent.select
+    release, ready, lock = threading.Event(), threading.Event(), threading.Lock()
+    waiting = 0
+
+    def delayed_select(reads, writes, errors, timeout):
+        nonlocal waiting
+        result = original.select(reads, writes, errors, timeout)
+        if timeout and not result[0]:
+            with lock:
+                waiting += 1
+                if waiting == 2:
+                    ready.set()
+            assert release.wait(5)
+        return result
+
+    monkeypatch.setattr(guest_agent, 'select', SimpleNamespace(select=delayed_select))
+    try:
+        spawn(agent, 'import sys; sys.stdin.readline(); print("last bytes", file=sys.' + stream + ')')
+        assert ready.wait(3)
+        process = agent.processes['p']
+        agent.stdin('p', b'go\n')
+        process.wait(timeout=3)
+        release.set()
+        state = agent.wait('p', timeout=3)
+        assert state['returncode'] == 0
+        assert state[stream + '_size'] == len(b'last bytes\n')
+        assert agent.output('p', stream) == b'last bytes\n'
+    finally:
+        release.set()
 
 
 def test_worker_reads_record_once_and_releases_lifecycle_lock(tmp_path, agent):

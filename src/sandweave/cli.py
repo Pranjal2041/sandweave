@@ -215,7 +215,7 @@ def parser():
         p.add_argument('id'); p.add_argument('--target')
         if action == 'download':
             p.add_argument('--output', required=True)
-    for name in ('info', 'status', 'inspect', 'pause', 'resume', 'terminate', 'stop', 'snapshot'):
+    for name in ('info', 'status', 'inspect', 'pause', 'resume', 'terminate', 'delete', 'stop', 'snapshot'):
         p = sub.add_parser(name); p.add_argument('id'); p.add_argument('--target')
         if name in ('stop', 'snapshot'):
             p.add_argument('--state', default='auto' if name == 'stop' else 'memory',
@@ -442,7 +442,7 @@ def main(argv=None):
                 output(env.info)
             elif op == 'profile':
                 output(str(env.profile(args.output)))
-            elif op in ('status', 'inspect', 'pause', 'resume', 'terminate'):
+            elif op in ('status', 'inspect', 'pause', 'resume', 'terminate', 'delete'):
                 output(getattr(env, 'status' if op == 'inspect' else op)())
             elif op in ('stop', 'snapshot'):
                 output(getattr(env, op)(state=args.state, experimental_gpu_live=args.experimental_gpu_live))

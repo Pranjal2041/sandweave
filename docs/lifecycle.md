@@ -50,6 +50,7 @@ on exit.
 | --- | --- |
 | `env.close()` | Disconnect this Python handle. The sandbox's ownership and TTL still apply. |
 | `env.terminate()` | Release the runtime and discard unsaved state. Existing caches and external volumes remain. |
+| `env.delete()` | Terminate and remove private runtime files, logs, and recordings. Retain published snapshots, shared images, external mounts, and a small identity tombstone. |
 | `env.stop()` | Save a checkpoint before releasing the runtime. Return a snapshot reference; if saving fails, preserve the source. |
 | `env.pause()` | Suspend the resident sandbox while retaining its memory and GPU state. |
 | `env.resume()` | Continue the same paused sandbox. |
@@ -57,6 +58,26 @@ on exit.
 `close()` is why an environment can still appear as running in the dashboard
 after you disconnect. `terminate()` stops it; the dashboard can retain its record
 as terminated history.
+
+### Delete private files
+
+```python
+env.delete()                  # Wait for cleanup, up to 300 seconds.
+env.delete(wait=False)        # Return after the deletion request is persisted.
+env.close()
+```
+
+Deletion is explicit and safe to repeat. Once acknowledged, cleanup continues
+after the client disconnects or exits. The worker retries failures and resumes
+pending deletions after restart; Weave also persists the request on its
+controller. `timeout=` limits how long this caller waits, without cancelling
+cleanup. Async callers can use `await env.delete.aio(...)`. The CLI equivalent is
+`sandweave delete SANDBOX_ID --target lab`.
+
+Export any recordings or logs you want to keep before deleting. Published
+snapshots and caches remain usable. Private files on an unavailable worker stay
+pending until that worker returns; they are not reported as deleted.
+Requires Sandweave 0.2.40 on the client, controller (when used), and workers.
 
 For an environment acquired from a [benchmark task](benchmarks.md), `env.close()`
 also releases its task lease and pool capacity. `task.close()` does the same;

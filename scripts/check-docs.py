@@ -214,6 +214,13 @@ def check_browser(site, output, url=None):
                 expect(page.locator('article')).to_contain_text('private')
                 expect(page.locator('article')).to_contain_text('Full VM parity is not claimed')
                 page.screenshot(path=str(output / 'benchmarks-desktop.png'), animations='disabled')
+                page.goto(url + 'benchmarks/#the-295-task-split')
+                section = page.locator('#the-295-task-split')
+                section.locator('xpath=following-sibling::div[1]').get_by_role('button', name='Copy to clipboard').click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'Benchmark("osworld-unanimous-295", capacity=8)' in copied
+                assert 'task.close()' in copied and 'bench.close()' in copied
+                page.screenshot(path=str(output / 'osworld295-desktop.png'), animations='disabled')
                 page.goto(url + 'benchmarks/#harbor')
                 section = page.locator('#harbor')
                 example = section.locator('xpath=following-sibling::div[2]')
@@ -266,6 +273,9 @@ def check_browser(site, output, url=None):
                 page.goto(url + 'benchmarks/')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'benchmarks-mobile.png'), animations='disabled')
+                page.goto(url + 'benchmarks/#the-295-task-split')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.screenshot(path=str(output / 'osworld295-mobile.png'), animations='disabled')
                 page.goto(url + 'benchmarks/#harbor')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(output / 'harbor-mobile.png'), animations='disabled')

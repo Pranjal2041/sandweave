@@ -57,8 +57,8 @@ class LoggedSetup:
 
 
 class AuditedOSWorld(OSWorld):
-    def __init__(self, source, output):
-        super().__init__('osworld-energy50-representative', source=source)
+    def __init__(self, source, output, name='osworld-energy50-representative'):
+        super().__init__(name, source=source)
         self.output = output
 
     def setup(self, env, task):
@@ -86,12 +86,12 @@ class AuditedOSWorld(OSWorld):
                     (directory / (Path(path).name + '.error')).write_text(str(exc))
 
 
-def prepare_evaluator(source, output):
+def prepare_evaluator(source, output, name='osworld-energy50-representative'):
     """Exercise first-use evaluator installation without starting a desktop."""
     from sandweave.benchmarks.osworld import OSWorld
 
     started = time.monotonic()
-    suite = OSWorld('osworld-energy50-representative', source=source)
+    suite = OSWorld(name, source=source)
     try:
         suite.prepare()
         process = suite.evaluators._start()
@@ -176,6 +176,8 @@ def audit(bench, output, task_ids=None, actions=None, *, pull=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--benchmark', default='osworld-energy50-representative',
+                        choices=['osworld', 'osworld-energy50-representative', 'osworld-unanimous-295'])
     parser.add_argument('--source', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--task', action='append')
@@ -189,14 +191,14 @@ def main():
     if args.prepare_only:
         if args.cache or args.actions or args.task or args.sample is not None or args.seed is not None or args.pull:
             parser.error('--prepare-only cannot be combined with task or sandbox options')
-        prepare_evaluator(args.source, args.output)
+        prepare_evaluator(args.source, args.output, args.benchmark)
         return
     options = {'template': None, 'cache': args.cache} if args.cache else {}
     if args.sample is not None and (args.task or args.actions):
         parser.error('--sample cannot be combined with --task or --actions')
     if args.seed is not None and args.sample is None:
         parser.error('--seed requires --sample')
-    suite = AuditedOSWorld(args.source, args.output)
+    suite = AuditedOSWorld(args.source, args.output, args.benchmark)
     if args.sample is not None:
         if not 1 <= args.sample <= len(suite.tasks):
             parser.error('--sample must be between 1 and the number of tasks')

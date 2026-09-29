@@ -7,7 +7,7 @@ attempt gets its own writable state.
 Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.40'
+uv pip install 'sandweave[benchmarks]==0.2.41'
 ```
 
 ## Run tasks
@@ -284,12 +284,43 @@ lists the tasks and lifecycle checks exercised. Existing OSWorld behavior is unc
 
 ## OSWorld setup
 
-Both `"osworld"` and `"osworld-energy50-representative"` use the desktop recipe
-and evaluation integration from the private
+The OSWorld benchmarks use the desktop recipe and evaluation integration from the private
 [`Pranjal2041/cua-speed-run`](https://github.com/Pranjal2041/cua-speed-run)
-repository at commit `681f8dbc695ff3a7e3af2f532bec982725818211`. The first name
-selects the pinned OSWorld task list; the second selects its 50-task representative
-split, including the split's setup patches and source checksums.
+repository at commit `681f8dbc695ff3a7e3af2f532bec982725818211`:
+
+| Benchmark name | Tasks |
+| --- | ---: |
+| `"osworld"` | 369, the full pinned task list |
+| `"osworld-energy50-representative"` | 50, the representative split |
+| `"osworld-unanimous-295"` | 295, the unanimously retained review split |
+
+Both subsets preserve their reference task order, source checksums and setup
+patches. Selecting a different split changes the task list; the desktop recipe,
+controls and canonical evaluator are the same.
+
+### The 295-task split
+
+Available since Sandweave 0.2.41. Use the same task-pull API:
+
+```python
+from sandweave import Benchmark
+
+bench = Benchmark("osworld-unanimous-295", capacity=8)
+try:
+    task = bench.next()
+    try:
+        run_agent(task.env, task.instruction)
+        result = task.evaluate()
+    finally:
+        task.close()
+finally:
+    bench.close()
+```
+
+Your client can keep pulling until `StopIteration`, with up to eight concurrent
+task leases in this example. Add `target=` to place those sandboxes through Weave.
+
+### Reference access and preparation
 
 Authenticate `gh` with an account that can read that repository. Sandweave fetches
 the pinned source automatically. Alternatively, pass an unchanged local checkout:
@@ -350,8 +381,8 @@ evaluator. After GUI launch and document-open commands, Sandweave waits for the
 matching application window before continuing setup or exposing the first
 observation. Original application prompts, such as a color-profile choice, are
 left for the agent to answer. OSWorld scores are returned on the reference's
-0–100 scale; a pass requires canonical reward 1. The representative split pins all 50 task JSON
-checksums. A screenshot/setup audit is not an agent accuracy measurement.
+0–100 scale; a pass requires canonical reward 1. Both subsets pin every selected
+task JSON checksum. A screenshot/setup audit is not an agent accuracy measurement.
 
 The OSWorld template enables the engine support used by the original Avahi,
 console palette and sysctl services. It does not modify the shared base image or

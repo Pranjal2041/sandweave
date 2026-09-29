@@ -391,7 +391,7 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.21'
+uv pip install 'sandweave[benchmarks]==0.2.41'
 ```
 
 ```python
@@ -425,7 +425,12 @@ closing its `env` releases that lease. Outside a context, use `task.env` and
 close the task in `finally`. Evaluation happens only when your client calls it.
 Pass `target=` with a complete cluster join URL to schedule through Weave.
 
-This split requires read access to the pinned `cua-speed-run` repository through
+Use `Benchmark("osworld-unanimous-295", capacity=8)` for the 295-task reviewed
+split, or `Benchmark("osworld")` for all 369 pinned tasks. The desktop setup,
+controls and evaluator are shared; subset membership and task order come from
+the reference manifests.
+
+These benchmarks require read access to the pinned `cua-speed-run` repository through
 `gh`, or a checkout passed as `source=`. First use downloads the original OSWorld
 Ubuntu image and prepares its desktop. See [benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/)
 for setup, resource requirements and the measured limits of VM parity.

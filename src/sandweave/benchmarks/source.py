@@ -73,7 +73,7 @@ def tasks(reference, name):
     from .benchmark import TaskSpec
     base_url = ('https://raw.githubusercontent.com/xlang-ai/OSWorld/' +
                 OSWORLD_REVISION + '/evaluation_examples/')
-    if name == 'osworld-energy50-representative':
+    if name != 'osworld':
         selected = module(reference / 'scripts/build_osworld_subset.py')._read_spec(
             reference / 'benchmarks' / name / 'benchmark-source.yaml')['tasks']
     else:

@@ -561,6 +561,11 @@ See the [image guide](../docs/images.md) for registry support and examples.
 
 ## Benchmark task leases
 
+OSWorld names are `osworld` (369 tasks), `osworld-energy50-representative`
+(50 tasks), and `osworld-unanimous-295` (295 tasks, added in 0.2.41).
+They share the same pinned desktop recipe and canonical evaluator; both subsets
+retain the reference manifest's exact task order, source hashes and setup patches.
+
 `bench.next(timeout=None)` and `next(bench)` return an acquired, prepared task.
 Use `task.env` directly or `with task as env`. `task.evaluate()` is explicit.
 `task.close()`, closing its environment, and leaving the task context release

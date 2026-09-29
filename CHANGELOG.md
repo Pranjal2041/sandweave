@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.41
+
+- Add `Benchmark("osworld-unanimous-295", ...)` for cua-speed-run's pinned
+  295-task review split. Preserve its exact task order, source checksums and
+  setup patches through the existing OSWorld desktop and canonical evaluator.
+- Keep the full OSWorld and Energy50 task lists unchanged. The new split uses
+  the existing pool, task-pull and evaluation APIs; no engine rebuild is needed.
+- Let the OSWorld acceptance script select a benchmark with `--benchmark`.
+
 ## 0.2.40
 
 - Import client-local OCI archives with `Sandbox.import_image(...)`, returning

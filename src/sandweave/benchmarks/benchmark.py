@@ -73,7 +73,7 @@ def load(name, source):
             raise ValueError('duplicate benchmark integration: ' + name)
         from .harbor import Harbor
         return Harbor(source=source)
-    if name in ('osworld', 'osworld-energy50-representative'):
+    if name in ('osworld', 'osworld-energy50-representative', 'osworld-unanimous-295'):
         if entries:
             raise ValueError('duplicate benchmark integration: ' + name)
         from .osworld import OSWorld

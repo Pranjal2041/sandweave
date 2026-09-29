@@ -844,6 +844,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="OSWorld setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-295-task-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The 295-task split
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reference-access-and-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference access and preparation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1354,6 +1382,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="OSWorld setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-295-task-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The 295-task split
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reference-access-and-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference access and preparation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1408,7 +1464,7 @@
 It uses a <a href="../pools/">pool</a> to prepare and reuse the starting filesystem. Each
 attempt gets its own writable state.</p>
 <p>Install the benchmark dependencies for OSWorld:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.40'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'sandweave[benchmarks]==0.2.41'</span>
 </code></pre></div>
 <h2 id="run-tasks">Run tasks<a class="headerlink" href="#run-tasks" title="Permanent link">&para;</a></h2>
 <p>Create a benchmark once, then pull a task whenever your client needs a sandbox:</p>
@@ -1620,19 +1676,59 @@ Your client loads that trajectory and retains its own model conversation.</p>
 <p>The <a href="https://github.com/Pranjal2041/sandweave/blob/main/notes/harbor-adapter.md">acceptance record</a>
 lists the tasks and lifecycle checks exercised. Existing OSWorld behavior is unchanged.</p>
 <h2 id="osworld-setup">OSWorld setup<a class="headerlink" href="#osworld-setup" title="Permanent link">&para;</a></h2>
-<p>Both <code>"osworld"</code> and <code>"osworld-energy50-representative"</code> use the desktop recipe
-and evaluation integration from the private
+<p>The OSWorld benchmarks use the desktop recipe and evaluation integration from the private
 <a href="https://github.com/Pranjal2041/cua-speed-run"><code>Pranjal2041/cua-speed-run</code></a>
-repository at commit <code>681f8dbc695ff3a7e3af2f532bec982725818211</code>. The first name
-selects the pinned OSWorld task list; the second selects its 50-task representative
-split, including the split's setup patches and source checksums.</p>
+repository at commit <code>681f8dbc695ff3a7e3af2f532bec982725818211</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Benchmark name</th>
+<th style="text-align: right;">Tasks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"osworld"</code></td>
+<td style="text-align: right;">369, the full pinned task list</td>
+</tr>
+<tr>
+<td><code>"osworld-energy50-representative"</code></td>
+<td style="text-align: right;">50, the representative split</td>
+</tr>
+<tr>
+<td><code>"osworld-unanimous-295"</code></td>
+<td style="text-align: right;">295, the unanimously retained review split</td>
+</tr>
+</tbody>
+</table>
+<p>Both subsets preserve their reference task order, source checksums and setup
+patches. Selecting a different split changes the task list; the desktop recipe,
+controls and canonical evaluator are the same.</p>
+<h3 id="the-295-task-split">The 295-task split<a class="headerlink" href="#the-295-task-split" title="Permanent link">&para;</a></h3>
+<p>Available since Sandweave 0.2.41. Use the same task-pull API:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"osworld-unanimous-295"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>    <span class="n">task</span> <span class="o">=</span> <span class="n">bench</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>        <span class="n">run_agent</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">instruction</span><span class="p">)</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">evaluate</span><span class="p">()</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>    <span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>        <span class="n">task</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>    <span class="n">bench</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p>Your client can keep pulling until <code>StopIteration</code>, with up to eight concurrent
+task leases in this example. Add <code>target=</code> to place those sandboxes through Weave.</p>
+<h3 id="reference-access-and-preparation">Reference access and preparation<a class="headerlink" href="#reference-access-and-preparation" title="Permanent link">&para;</a></h3>
 <p>Authenticate <code>gh</code> with an account that can read that repository. Sandweave fetches
 the pinned source automatically. Alternatively, pass an unchanged local checkout:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>    <span class="s2">"osworld-energy50-representative"</span><span class="p">,</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="n">source</span><span class="o">=</span><span class="s2">"/path/to/cua-speed-run"</span><span class="p">,</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>    <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">bench</span> <span class="o">=</span> <span class="n">Benchmark</span><span class="p">(</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>    <span class="s2">"osworld-energy50-representative"</span><span class="p">,</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="n">source</span><span class="o">=</span><span class="s2">"/path/to/cua-speed-run"</span><span class="p">,</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="n">capacity</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="p">)</span>
 </code></pre></div>
 <p>The checkout must be at the commit above. Sandweave reads it without editing it.
 Private source files are not included in Sandweave's package or runtime release.
@@ -1653,10 +1749,10 @@ otherwise files stay in the project's <code>.sandweave</code> directory.</p>
 runtime memory. <code>capacity=4</code> therefore requires workers with enough admission
 capacity for four such environments. <code>preload</code> controls the initial ready reserve
 and defaults to <code>capacity</code>. Ordinary pool options pass through:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"osworld-energy50-representative"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">preload</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>               <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">shared_cache</span><span class="o">=</span><span class="s2">"/shared/sandweave"</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="s2">"osworld-energy50-representative"</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">preload</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>               <span class="n">target</span><span class="o">=</span><span class="s2">"lab"</span><span class="p">,</span> <span class="n">shared_cache</span><span class="o">=</span><span class="s2">"/shared/sandweave"</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
 </code></pre></div>
 <p>Install the same SDK version on the client, controller and participating workers.
 Changing resource settings changes the benchmark conditions; it does not change
@@ -1673,8 +1769,8 @@ evaluator. After GUI launch and document-open commands, Sandweave waits for the
 matching application window before continuing setup or exposing the first
 observation. Original application prompts, such as a color-profile choice, are
 left for the agent to answer. OSWorld scores are returned on the reference's
-0–100 scale; a pass requires canonical reward 1. The representative split pins all 50 task JSON
-checksums. A screenshot/setup audit is not an agent accuracy measurement.</p>
+0–100 scale; a pass requires canonical reward 1. Both subsets pin every selected
+task JSON checksum. A screenshot/setup audit is not an agent accuracy measurement.</p>
 <p>The OSWorld template enables the engine support used by the original Avahi,
 console palette and sysctl services. It does not modify the shared base image or
 mask these units. These settings also survive live snapshots.</p>
@@ -1688,26 +1784,26 @@ identifies those differences and the tasks exercised.</p>
 <code>evaluate(env, task)</code>. <code>prepare()</code> returns sandbox options for the pool.
 Evaluators return <code>Evaluation</code>; optional <code>close()</code> releases integration-owned
 resources. Keep task-specific setup and evaluation with that integration.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave.benchmarks</span><span class="w"> </span><span class="kn">import</span> <span class="n">Evaluation</span><span class="p">,</span> <span class="n">TaskSpec</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">Arithmetic</span><span class="p">:</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>    <span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="n">TaskSpec</span><span class="p">(</span><span class="s2">"addition"</span><span class="p">,</span> <span class="s2">"Write 2 + 2 to /workspace/answer.txt."</span><span class="p">)]</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>        <span class="k">return</span> <span class="p">{</span><span class="s2">"template"</span><span class="p">:</span> <span class="s2">"coding"</span><span class="p">}</span>
-<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>
-<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
-<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>        <span class="k">pass</span>
-<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>
-<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
-<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"cat /workspace/answer.txt"</span><span class="p">)</span>
-<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a>        <span class="n">passed</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"4"</span>
-<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a>        <span class="k">return</span> <span class="n">Evaluation</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mf">100.0</span> <span class="k">if</span> <span class="n">passed</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">passed</span><span class="p">)</span>
-<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a>
-<a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="n">Arithmetic</span><span class="p">(),</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
-<a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
-<a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Benchmark</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave.benchmarks</span><span class="w"> </span><span class="kn">import</span> <span class="n">Evaluation</span><span class="p">,</span> <span class="n">TaskSpec</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">Arithmetic</span><span class="p">:</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>    <span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="n">TaskSpec</span><span class="p">(</span><span class="s2">"addition"</span><span class="p">,</span> <span class="s2">"Write 2 + 2 to /workspace/answer.txt."</span><span class="p">)]</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>        <span class="k">return</span> <span class="p">{</span><span class="s2">"template"</span><span class="p">:</span> <span class="s2">"coding"</span><span class="p">}</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>        <span class="k">pass</span>
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">task</span><span class="p">):</span>
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="s2">"cat /workspace/answer.txt"</span><span class="p">)</span>
+<a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>        <span class="n">passed</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"4"</span>
+<a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a>        <span class="k">return</span> <span class="n">Evaluation</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mf">100.0</span> <span class="k">if</span> <span class="n">passed</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">passed</span><span class="p">)</span>
+<a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a>
+<a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a><span class="k">with</span> <span class="n">Benchmark</span><span class="p">(</span><span class="n">Arithmetic</span><span class="p">(),</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="k">as</span> <span class="n">bench</span><span class="p">:</span>
+<a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a>    <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">bench</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_agent</span><span class="p">):</span>
+<a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
 </code></pre></div>
 <p>Installed packages can register a factory under <code>sandweave.benchmarks.v1</code>.
 The entry-point name becomes the first <code>Benchmark</code> argument; its factory

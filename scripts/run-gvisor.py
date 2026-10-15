@@ -92,6 +92,9 @@ parser.add_argument('--experimental-gpu-client-memory-mib', type=int,
                     help='optional MPS CUDA memory ceiling per client, including context overhead; not an environment VRAM cap')
 parser.add_argument('--runtime-debug', action=argparse.BooleanOptionalAction, default=True,
                     help='verbose engine logging; disable when measuring GPU throughput')
+parser.add_argument('--hidepid', type=int, choices=(0, 1, 2), default=0)
+parser.add_argument('--audit-max-bytes', type=int, default=1024**3)
+parser.add_argument('--audit', action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument('--profile', action='store_true', help='enable runtime profiling RPCs for a diagnostic guest')
 parser.add_argument('--forward', type=int, action='append', default=[],
                     help='additional guest TCP port to forward on a fresh host loopback port')
@@ -142,13 +145,18 @@ if args.restore and (args.restore / 'launch-settings.json').is_file():
     saved_settings = json.loads((args.restore / 'launch-settings.json').read_text())
     for key, value in saved_settings['settings'].items():
         option = '--proxy-endpoint' if key == 'proxy_endpoints' else '--' + key.replace('_', '-')
-        if not any(x == option or x.startswith(option + '=') for x in sys.argv[1:]):
+        if not any(x == option or x.startswith(option + '=') or (key == 'audit' and x == '--no-audit') for x in sys.argv[1:]):
             setattr(args, key, value)
 if args.storage is None:
     args.storage = 'memory' if saved_settings else 'disk'
 if args.storage_path and args.storage != 'disk':
     parser.error('--storage-path requires disk storage')
 filesystem_restore = bool(snapshot_manifest and snapshot_manifest.get('kind') == 'filesystem')
+if args.restore and not args.detach and not filesystem_restore:
+    if args.audit or (saved_settings or {}).get('settings', {}).get('audit'):
+        parser.error('audit requires a fresh launch or filesystem restore; live audit continuity is unsupported')
+    if args.hidepid != (saved_settings or {}).get('settings', {}).get('hidepid', 0):
+        parser.error('changing hidepid requires a filesystem restore')
 if args.clear_proxy:
     args.proxy_endpoints = args.proxy_index = None
 if args.network_policy == 'proxy':
@@ -249,6 +257,9 @@ runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
 settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
 settings['virtual_consoles'] = args.virtual_consoles
 settings['docker_data'] = args.docker_data
+settings['hidepid'] = args.hidepid
+settings['audit'] = args.audit
+settings['audit_max_bytes'] = args.audit_max_bytes
 settings['storage'] = args.storage
 settings['storage_path'] = args.storage_path
 settings['allowed_hosts'] = args.allowed_hosts
@@ -282,6 +293,11 @@ if args.restore:
         shutil.copy2(args.restore / 'fixtures.tar', bundle / 'fixtures.tar')
 spec = json.loads((bundle / 'config.json').read_text())
 host_compat.configure_user_namespace(spec)
+for mount in spec['mounts']:
+    if mount['type'] == 'proc':
+        mount['options'] = [option for option in mount.get('options', []) if not option.startswith('hidepid=')]
+        if args.hidepid:
+            mount['options'].append('hidepid=' + str(args.hidepid))
 if args.restore and not filesystem_restore:
     base = lab / snapshot_manifest['base_image']['path']
     # Older lab snapshots used node-local aliases. Materialize those immutable
@@ -507,6 +523,10 @@ try:
         command.append('--netlink-address-events=enabled')
     if args.sysctl_reapply:
         command.append('--sysctl-reapply=fixed')
+    if args.audit:
+        import audit_log
+        configuration = audit_log.configure(lab, logs, runtime_arg, max_bytes=args.audit_max_bytes)
+        command.append('--pod-init-config=/lab/' + str(configuration.relative_to(lab)))
     if args.profile:
         command.append('--profile')
     if args.guest_gs:

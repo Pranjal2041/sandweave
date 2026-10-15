@@ -31,7 +31,13 @@ artifacts = [
     ('runsc/guesttools/sandweave-guest-tools', 'gvisor-bin/sandweave-guest-tools'),
     ('runsc/cmd/metricserver/runsc-metric-server_/runsc-metric-server', 'gvisor-bin/runsc-metric-server'),
 ]
-descriptor = runtime_store.publish(lab, {destination: base / source for source, destination in artifacts})
+capabilities = {'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1,
+                'buffered_filesystem_export': 1, 'proc_hidepid': 1, 'audit_log': 1}
+marker = lab / 'runs/runtime-capabilities.json'
+marker.write_text(json.dumps(capabilities, sort_keys=True) + '\n')
+descriptor = runtime_store.publish(lab, {**{destination: base / source for source, destination in artifacts},
+                                       'capabilities.json': marker})
+descriptor.update(capabilities, minimum_kernel='5.4', cpu_accounting=1, bridge_local_delivery=1)
 for source, destination in artifacts:
     if args.publish_only:
         continue

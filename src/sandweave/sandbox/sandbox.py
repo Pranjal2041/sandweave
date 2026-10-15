@@ -20,7 +20,7 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
                cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
                keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False,
-               service_network=None, aliases=None, networks=None, profiling=None):
+               service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None):
     """Resolve a complete portable definition without starting an environment."""
     if sum(x is not None for x in (cache, snapshot)) > 1:
         raise ValueError('cache and snapshot are alternative sources')
@@ -64,6 +64,8 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
         recipe['runtime_options']['profile'] = profiling
     if recipe.get('runtime_options', {}).get('profile') and runtime != 'gvisor':
         raise UnsupportedFeature('runtime profiling requires runtime="gvisor"')
+    from .audit import configure
+    configure(recipe, runtime, hidepid=hidepid, audit=audit)
     selected_image = image if image is not None else recipe.get('image')
     if refresh and cache_key is None and selected_image is None:
         raise ValueError('refresh requires cache_key or image')
@@ -124,7 +126,7 @@ class Sandbox:
                  cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False, recording=False,
-                 service_network=None, aliases=None, networks=None, profiling=None, connection='cluster'):
+                 service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
         self._connection = None
         try:
@@ -138,7 +140,7 @@ class Sandbox:
                     cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False, recording=False,
-                    service_network=None, aliases=None, networks=None, profiling=None, connection='cluster'):
+                    service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
         from .targets import connection_mode
         connection_mode(options.pop('connection'))
@@ -187,6 +189,8 @@ class Sandbox:
             raise UnsupportedFeature('service networks require Sandweave 0.2.24 or newer on the worker and controller')
         if spec['storage']['mode'] == 'disk' and not self._connection.call('ping').get('disk_storage'):
             raise UnsupportedFeature('disk-backed storage requires Sandweave 0.2.32 or newer on the worker and controller')
+        from .audit import check_worker
+        check_worker(spec, self._connection)
         from .ownership import client_owner
         owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,
@@ -310,6 +314,17 @@ class Sandbox:
     def status(self):
         self._info = self._call('describe')
         return self._info
+
+    @dualmethod
+    def audit_log(self, path):
+        """Export a flushed audit prefix and its coverage/loss metadata."""
+        from .audit import export
+        return export(self, path)
+
+    @audit_log.async_impl
+    async def _audit_log_async(self, path):
+        from .audit import export_async
+        return await export_async(self, path)
 
     @dualmethod
     def profile(self, path):

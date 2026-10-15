@@ -154,7 +154,7 @@ class Management:
                              'process_stdin', 'process_terminate', 'process_resize', 'file', 'setup',
                              'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording',
                              'image_capture', 'image_upload', 'network_policy', 'service_rpc', 'service_volume_import', 'service_setup',
-                             'vnc_stream', 'runtime_profile', 'delete', 'delete_status'}:
+                             'vnc_stream', 'runtime_profile', 'runtime_audit', 'delete', 'delete_status'}:
             return False
         return parameters.get('identity') == value['id']
 

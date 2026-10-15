@@ -97,6 +97,7 @@ nav:
       - Files and setup: files.md
       - CPU, memory and GPUs: resources.md
       - Networking: networking.md
+      - Process visibility and audit: process-audit.md
       - Lifetime and cleanup: lifecycle.md
       - Caches and snapshots: snapshots.md
       - Async Python: async.md

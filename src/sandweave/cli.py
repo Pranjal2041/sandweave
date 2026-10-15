@@ -62,6 +62,8 @@ def creation_options(parser):
     parser.add_argument('--startup-timeout', type=float)
     parser.add_argument('--keep-on-error', action='store_true')
     parser.add_argument('--record', action='store_true', help='Record the desktop on the worker until termination')
+    parser.add_argument('--hidepid', type=int, choices=(0, 1, 2), default=None)
+    parser.add_argument('--audit', action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument('--profiling', action='store_true', default=None, help='Enable runtime heap profiling for this diagnostic sandbox')
     parser.add_argument('--experimental-gpu-live', action='store_true')
 
@@ -81,7 +83,7 @@ def command_options(parser):
 def creation(args):
     keys = ('template', 'image', 'setup', 'cache', 'snapshot', 'cache_key', 'refresh', 'runtime',
             'target', 'connection', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
-            'keep_on_error', 'experimental_gpu_live', 'profiling')
+            'keep_on_error', 'experimental_gpu_live', 'profiling', 'hidepid', 'audit')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
     if getattr(args, 'storage', None) is not None or getattr(args, 'storage_path', None) is not None:
         from . import Storage

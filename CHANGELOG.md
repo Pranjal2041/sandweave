@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.42
+
+- Add independent, experimental `hidepid=0|1|2` and `audit=True` creation flags
+  for all gVisor templates and pools. Both default off. Enforce cross-user procfs
+  permissions on listings and cached/direct paths in the runtime.
+- Export protected runtime event logs through `env.audit_log(path)` and `.aio`,
+  including exact coverage, a flushed prefix boundary, event counts and loss
+  status. Bounded asynchronous writes keep slow audit storage off guest syscall
+  execution. Collection failure cannot produce a complete export.
+- Preserve flags on filesystem snapshots, starting a new audit stream on
+  restore. Reject audit memory snapshots/live restores explicitly. This is
+  SecCheck runtime auditing, not Linux auditd compatibility.
+
 ## 0.2.41
 
 - Add `Benchmark("osworld-unanimous-295", ...)` for cua-speed-run's pinned

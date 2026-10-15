@@ -426,6 +426,15 @@ class Worker:
     def process_status(self, identity, process_id):
         return {**self.agent(identity).call('status', identity=process_id), 'wait_supported': True}
 
+    def runtime_audit(self, identity, offset=None, size=1024**2):
+        with self.lock(identity):
+            record = self.read(identity)
+            if (record['spec']['runtime'] != 'gvisor' or not
+                    record['spec']['template'].get('runtime_options', {}).get('audit')):
+                raise UnsupportedFeature('create the sandbox with audit=True to collect runtime events')
+            runtime = self.runtime.adapter('gvisor')
+        return runtime.audit(identity, offset=offset, size=size)
+
     def runtime_profile(self, identity):
         # Heap capture can run while guest commands continue. Do not depend on
         # the guest agent or occupy the sandbox lifecycle lock during the RPC.
@@ -845,7 +854,7 @@ class Worker:
                    'process_stdin', 'process_terminate', 'file', 'setup', 'pause', 'resume', 'terminate',
                    'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
         allowed.add('pool')
-        allowed.update(('process_resize', 'runtime_profile'))
+        allowed.update(('process_resize', 'runtime_profile', 'runtime_audit'))
         allowed.update(('delete', 'delete_status'))
         allowed.update(('owner_register', 'owner_heartbeat'))
         if operation == 'ping':
@@ -855,11 +864,11 @@ class Worker:
                     'memory_reservations': 1, 'runtime_memory_reservations': 1, 'disk_storage': 1,
                     'desktop_recording': 1, 'oci_image_import': 1, 'native_services': 1,
                     'dynamic_network_policy': 1, 'service_networks': 1, 'sandbox_deletion': 1,
-                    'local_oci_import': 1}
+                    'local_oci_import': 1, 'proc_audit': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
-        if identity and operation not in ('describe', 'process_wait', 'runtime_profile', 'delete', 'delete_status'):
+        if identity and operation not in ('describe', 'process_wait', 'runtime_profile', 'runtime_audit', 'delete', 'delete_status'):
             with self.lock(identity):
                 return getattr(self, operation)(**parameters)
         return getattr(self, operation)(**parameters)

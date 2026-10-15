@@ -43,6 +43,8 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `name` | User-supplied sandbox name. | None |
 | `ttl` | Seconds of lifetime after readiness. | No TTL |
 | `detached` | Survive the creating Python process exiting. | `False` |
+| `hidepid` | Experimental `/proc` visibility: `0`, `1`, or `2`. See [process visibility](process-audit.md). | Template/snapshot value, normally `0` |
+| `audit` | Experimental protected runtime event log. Export with `env.audit_log(path)` or its `.aio` form. See [coverage and limits](process-audit.md). | Template/snapshot value, normally `False` |
 | `profiling` | Enable runtime heap capture for diagnosis; gVisor only. | Template/snapshot value, normally `False` |
 | `recording` | Record an Xvnc desktop; accepts `True` or `Recording(fps=15, cursor=True)`. | `False` |
 | `startup_timeout` | Total creation deadline, including snapshot staging, unpacking and service readiness. See [restore timeout](snapshots.md#restore-startup-timeout). | `300` |

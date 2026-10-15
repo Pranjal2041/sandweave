@@ -2197,8 +2197,83 @@ index dabaee88d..768b487ce 100644
  		}
  		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
  		upperRoot.DecRef(ctx)
+diff --git a/pkg/sentry/fsimpl/proc/filesystem.go b/pkg/sentry/fsimpl/proc/filesystem.go
+index 42370b92c..fd3205226 100644
+--- a/pkg/sentry/fsimpl/proc/filesystem.go
++++ b/pkg/sentry/fsimpl/proc/filesystem.go
+@@ -52,6 +52,7 @@ type filesystem struct {
+ 	kernfs.Filesystem
+ 
+ 	devMinor uint32
++	hidePID  uint8
+ }
+ 
+ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
+@@ -89,7 +90,15 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
+ 		}
+ 	}
+ 
++	var hidePID uint64
++	if value, ok := mopts["hidepid"]; ok {
++		hidePID, err = strconv.ParseUint(value, 10, 8)
++		if err != nil || hidePID > 2 {
++			return nil, nil, linuxerr.EINVAL
++		}
++	}
+ 	procfs := &filesystem{
++		hidePID:  uint8(hidePID),
+ 		devMinor: devMinor,
+ 	}
+ 	procfs.MaxCachedDentries = maxCachedDentries
+@@ -120,7 +129,11 @@ func (fs *filesystem) Release(ctx context.Context) {
+ 
+ // MountOptions implements vfs.FilesystemImpl.MountOptions.
+ func (fs *filesystem) MountOptions() string {
+-	return fmt.Sprintf("dentry_cache_limit=%d", fs.MaxCachedDentries)
++	options := fmt.Sprintf("dentry_cache_limit=%d", fs.MaxCachedDentries)
++	if fs.hidePID != 0 {
++		options += fmt.Sprintf(",hidepid=%d", fs.hidePID)
++	}
++	return options
+ }
+ 
+ // dynamicInode is an overfitted interface for common Inodes with
+@@ -190,3 +203,20 @@ type implStatFS struct{}
+ func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
+ 	return vfs.GenericStatFS(linux.PROC_SUPER_MAGIC), nil
+ }
++
++// taskAccess is evaluated for each caller, including cached proc dentries.
++func (fs *filesystem) taskAccess(ctx context.Context, creds *auth.Credentials, target *kernel.Task) bool {
++	if fs.hidePID == 0 {
++		return true
++	}
++	if task := kernel.TaskFromContext(ctx); task != nil {
++		return task.CanReadProc(target, creds)
++	}
++	return creds.HasCapabilityIn(linux.CAP_SYS_PTRACE, target.Credentials().UserNamespace)
++}
++func (fs *filesystem) taskAccessError() error {
++	if fs.hidePID == 2 {
++		return linuxerr.ENOENT
++	}
++	return linuxerr.EACCES
++}
+diff --git a/pkg/sentry/fsimpl/proc/subtasks.go b/pkg/sentry/fsimpl/proc/subtasks.go
+index 0b873a46c..0bb7038f1 100644
+--- a/pkg/sentry/fsimpl/proc/subtasks.go
++++ b/pkg/sentry/fsimpl/proc/subtasks.go
+@@ -65,7 +65,7 @@ func (fs *filesystem) newSubtasks(ctx context.Context, task *kernel.Task, pidns
+ 	subInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+ 	subInode.InitRefs()
+ 
+-	inode := &taskOwnedInode{Inode: subInode, owner: task}
++	inode := &taskOwnedInode{Inode: subInode, owner: task, fs: fs}
+ 	return inode
+ }
+ 
 diff --git a/pkg/sentry/fsimpl/proc/task.go b/pkg/sentry/fsimpl/proc/task.go
-index 69c94a61f..1b24a49c9 100644
+index 69c94a61f..2e9c75133 100644
 --- a/pkg/sentry/fsimpl/proc/task.go
 +++ b/pkg/sentry/fsimpl/proc/task.go
 @@ -66,9 +66,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
@@ -2212,10 +2287,83 @@ index 69c94a61f..1b24a49c9 100644
  
  	contents := map[string]kernfs.Inode{
  		"auxv":            fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, &mmFile{task: task, ftype: auxvMMFile}),
+@@ -118,7 +116,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
+ 	taskInode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+ 	taskInode.InitRefs()
+ 
+-	inode := &taskOwnedInode{Inode: taskInode, owner: task}
++	inode := &taskOwnedInode{Inode: taskInode, owner: task, fs: fs}
+ 
+ 	taskInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+ 	links := taskInode.OrderedChildren.Populate(contents)
+@@ -213,6 +211,7 @@ type taskOwnedInode struct {
+ 
+ 	// owner is the task that owns this inode.
+ 	owner *kernel.Task
++	fs    *filesystem
+ }
+ 
+ // TaskFromProcPIDInode implements kernel.TaskOwnedInode.
+@@ -230,7 +229,7 @@ func (fs *filesystem) newTaskOwnedInode(ctx context.Context, task *kernel.Task,
+ 	// Note: credentials are overridden by taskOwnedInode.
+ 	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, inode, perm)
+ 
+-	return &taskOwnedInode{Inode: inode, owner: task}
++	return &taskOwnedInode{Inode: inode, owner: task, fs: fs}
+ }
+ 
+ func (fs *filesystem) newTaskOwnedDir(ctx context.Context, task *kernel.Task, ino uint64, perm linux.FileMode, children map[string]kernfs.Inode) kernfs.Inode {
+@@ -238,7 +237,7 @@ func (fs *filesystem) newTaskOwnedDir(ctx context.Context, task *kernel.Task, in
+ 	fdOpts := kernfs.GenericDirectoryFDOptions{SeekEnd: kernfs.SeekEndZero}
+ 	dir := kernfs.NewStaticDir(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm, children, fdOpts)
+ 
+-	return &taskOwnedInode{Inode: dir, owner: task}
++	return &taskOwnedInode{Inode: dir, owner: task, fs: fs}
+ }
+ 
+ func (i *taskOwnedInode) Valid(ctx context.Context, parent *kernfs.Dentry, name string) bool {
+@@ -247,6 +246,9 @@ func (i *taskOwnedInode) Valid(ctx context.Context, parent *kernfs.Dentry, name
+ 
+ // Stat implements kernfs.Inode.Stat.
+ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
++	if i.fs.hidePID == 2 && !i.fs.taskAccess(ctx, auth.CredentialsFromContext(ctx), i.owner) {
++		return linux.Statx{}, linuxerr.ENOENT
++	}
+ 	stat, err := i.Inode.Stat(ctx, fs, opts)
+ 	if err != nil {
+ 		return linux.Statx{}, err
+@@ -265,6 +267,9 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
+ 
+ // CheckPermissions implements kernfs.Inode.CheckPermissions.
+ func (i *taskOwnedInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
++	if !i.fs.taskAccess(ctx, creds, i.owner) {
++		return i.fs.taskAccessError()
++	}
+ 	mode := i.Mode()
+ 	uid, gid := i.getOwner(mode)
+ 	return vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid)
 diff --git a/pkg/sentry/fsimpl/proc/task_files.go b/pkg/sentry/fsimpl/proc/task_files.go
-index 460227787..04b8a1300 100644
+index 460227787..fe68b64b5 100644
 --- a/pkg/sentry/fsimpl/proc/task_files.go
 +++ b/pkg/sentry/fsimpl/proc/task_files.go
+@@ -488,7 +488,7 @@ func (fs *filesystem) newMemInode(ctx context.Context, task *kernel.Task, ino ui
+ 	// Note: credentials are overridden by taskOwnedInode.
+ 	inode := &memInode{task: task}
+ 	inode.init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, perm)
+-	return &taskOwnedInode{Inode: inode, owner: task}
++	return &taskOwnedInode{Inode: inode, owner: task, fs: fs}
+ }
+ 
+ func (f *memInode) init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
+@@ -944,7 +944,7 @@ func (fs *filesystem) newStatusInode(ctx context.Context, task *kernel.Task, pid
+ 		pidns: pidns,
+ 	}
+ 	inode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeRegular|perm)
+-	return &taskOwnedInode{Inode: inode, owner: task}
++	return &taskOwnedInode{Inode: inode, owner: task, fs: fs}
+ }
+ 
+ // Open implements kernfs.Inode.Open.
 @@ -1041,6 +1041,15 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
  	fmt.Fprintf(buf, "VmData:\t%d kB\n", data>>10)
  
@@ -2232,6 +2380,24 @@ index 460227787..04b8a1300 100644
  	fmt.Fprintf(buf, "CapInh:\t%016x\n", creds.InheritableCaps)
  	fmt.Fprintf(buf, "CapPrm:\t%016x\n", creds.PermittedCaps)
  	fmt.Fprintf(buf, "CapEff:\t%016x\n", creds.EffectiveCaps)
+@@ -1439,7 +1448,7 @@ func (fs *filesystem) newNamespaceSymlink(ctx context.Context, task *kernel.Task
+ 	// Note: credentials are overridden by taskOwnedInode.
+ 	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, "")
+ 
+-	taskInode := &taskOwnedInode{Inode: inode, owner: task}
++	taskInode := &taskOwnedInode{Inode: inode, owner: task, fs: fs}
+ 	return taskInode
+ }
+ 
+@@ -1453,7 +1462,7 @@ func (fs *filesystem) newFakeNamespaceSymlink(ctx context.Context, task *kernel.
+ 	// Note: credentials are overridden by taskOwnedInode.
+ 	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
+ 
+-	taskInode := &taskOwnedInode{Inode: inode, owner: task}
++	taskInode := &taskOwnedInode{Inode: inode, owner: task, fs: fs}
+ 	return taskInode
+ }
+ 
 @@ -1476,9 +1485,6 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
  		}
  		return nil
@@ -2262,6 +2428,28 @@ index 460227787..04b8a1300 100644
  		if cg2Entry := d.task.GetCgroup2Entry(readerNS); cg2Entry != nil {
  			fmt.Fprintf(buf, "0::%s\n", cg2Entry.Path)
  		}
+diff --git a/pkg/sentry/fsimpl/proc/tasks.go b/pkg/sentry/fsimpl/proc/tasks.go
+index 336e5e0b0..4149c5632 100644
+--- a/pkg/sentry/fsimpl/proc/tasks.go
++++ b/pkg/sentry/fsimpl/proc/tasks.go
+@@ -152,7 +152,7 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
+ 	}
+ 
+ 	task := i.pidns.TaskWithID(kernel.ThreadID(tid))
+-	if task == nil {
++	if task == nil || (i.fs.hidePID == 2 && !i.fs.taskAccess(ctx, auth.CredentialsFromContext(ctx), task)) {
+ 		return nil, linuxerr.ENOENT
+ 	}
+ 
+@@ -212,7 +212,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
+ 		if int64(tid) < startTid {
+ 			continue
+ 		}
+-		if leader := tg.Leader(); leader != nil {
++		if leader := tg.Leader(); leader != nil && (i.fs.hidePID != 2 || i.fs.taskAccess(ctx, auth.CredentialsFromContext(ctx), leader)) {
+ 			tids = append(tids, int(tid))
+ 		}
+ 	}
 diff --git a/pkg/sentry/fsimpl/proc/tasks_sys.go b/pkg/sentry/fsimpl/proc/tasks_sys.go
 index 03c9150d7..9a37abfa7 100644
 --- a/pkg/sentry/fsimpl/proc/tasks_sys.go
@@ -3964,6 +4152,59 @@ index 32afe64a6..4473a17b3 100644
  
  	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
  		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
+diff --git a/pkg/sentry/kernel/ptrace.go b/pkg/sentry/kernel/ptrace.go
+index 8701a3c1a..09bc0db23 100644
+--- a/pkg/sentry/kernel/ptrace.go
++++ b/pkg/sentry/kernel/ptrace.go
+@@ -21,6 +21,7 @@ import (
+ 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+ 	"gvisor.dev/gvisor/pkg/hostarch"
+ 	"gvisor.dev/gvisor/pkg/marshal/primitive"
++	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+ 	"gvisor.dev/gvisor/pkg/sentry/mm"
+ 	"gvisor.dev/gvisor/pkg/usermem"
+ )
+@@ -200,15 +201,28 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
+ 	// PTRACE_MODE_READ and PTRACE_MODE_ATTACH. (ED: From earlier in this
+ 	// section: "the commoncap LSM ... is always invoked".)
+ 	// """
+-	callerCreds := t.Credentials()
++	return t.canTraceCredentials(target, t.Credentials(), false)
++}
++
++// CanReadProc checks PTRACE_MODE_READ_FSCREDS for procfs hidepid permissions.
++// The supplied credentials are the filesystem operation's credentials.
++func (t *Task) CanReadProc(target *Task, creds *auth.Credentials) bool {
++	return t.tg == target.tg || t.canTraceCredentials(target, creds, true)
++}
++
++func (t *Task) canTraceCredentials(target *Task, callerCreds *auth.Credentials, fscreds bool) bool {
++	uid, gid, caps := callerCreds.RealKUID, callerCreds.RealKGID, callerCreds.PermittedCaps
++	if fscreds {
++		uid, gid, caps = callerCreds.EffectiveKUID, callerCreds.EffectiveKGID, callerCreds.EffectiveCaps
++	}
+ 	targetCreds := target.Credentials()
+ 	if callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace) {
+ 		return true
+ 	}
+-	if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
++	if cuid := uid; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
+ 		return false
+ 	}
+-	if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
++	if cgid := gid; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
+ 		return false
+ 	}
+ 	var targetMM *mm.MemoryManager
+@@ -229,7 +243,7 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
+ 	if callerCreds.UserNamespace != targetCreds.UserNamespace {
+ 		return false
+ 	}
+-	if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
++	if targetCreds.PermittedCaps&^caps != 0 {
+ 		return false
+ 	}
+ 	return true
 diff --git a/pkg/sentry/kernel/task_cgroup.go b/pkg/sentry/kernel/task_cgroup.go
 index 365eed06c..2e3a91780 100644
 --- a/pkg/sentry/kernel/task_cgroup.go
@@ -5020,6 +5261,424 @@ index 7d09752f8..bec31c0f5 100644
  // testMemoryManager implements the parts of platform.MemoryManager that
  // platformContext.Switch touches on the syscall path. Syscall patching is
  // disabled in the tests, so MMap and friends are never reached.
+diff --git a/pkg/sentry/seccheck/seccheck.go b/pkg/sentry/seccheck/seccheck.go
+index 7422baf1c..c0ea377d9 100644
+--- a/pkg/sentry/seccheck/seccheck.go
++++ b/pkg/sentry/seccheck/seccheck.go
+@@ -122,6 +122,12 @@ type Sink interface {
+ type SinkStatus struct {
+ 	// DroppedCount is the number of trace points dropped.
+ 	DroppedCount uint64
++	// Audit-only fields describe a flushed prefix at a requested barrier.
++	ByteCount    uint64 `json:",omitempty"`
++	EventCount   uint64 `json:",omitempty"`
++	LastSequence uint64 `json:",omitempty"`
++	Complete     bool   `json:",omitempty"`
++	Error        string `json:",omitempty"`
+ }
+ 
+ // SinkDefaults may be embedded by implementations of Sink to obtain
+diff --git a/pkg/sentry/seccheck/sinks/audit/BUILD b/pkg/sentry/seccheck/sinks/audit/BUILD
+new file mode 100644
+index 000000000..271a7368f
+--- /dev/null
++++ b/pkg/sentry/seccheck/sinks/audit/BUILD
+@@ -0,0 +1,23 @@
++load("//tools:defs.bzl", "go_library", "go_test")
++package(default_applicable_licenses = ["//:license"])
++go_library(
++    name = "audit",
++    srcs = ["audit.go"],
++    visibility = ["//:sandbox"],
++    deps = [
++        "//pkg/context",
++        "//pkg/fd",
++        "//pkg/sentry/seccheck",
++        "//pkg/sentry/seccheck/points:points_go_proto",
++        "@org_golang_google_protobuf//encoding/protojson:go_default_library",
++        "@org_golang_google_protobuf//proto:go_default_library",
++    ],
++)
++
++go_test(
++    name = "audit_test",
++    size = "small",
++    srcs = ["audit_test.go"],
++    library = ":audit",
++    deps = ["//pkg/fd", "//pkg/sentry/seccheck/points:points_go_proto"],
++)
+diff --git a/pkg/sentry/seccheck/sinks/audit/audit.go b/pkg/sentry/seccheck/sinks/audit/audit.go
+new file mode 100644
+index 000000000..774002f9f
+--- /dev/null
++++ b/pkg/sentry/seccheck/sinks/audit/audit.go
+@@ -0,0 +1,227 @@
++// Copyright 2026 The gVisor Authors.
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy at https://www.apache.org/licenses/LICENSE-2.0
++
++// Package audit writes bounded, host-owned JSONL security records. File access
++// is established by runsc before sandbox entry; no guest path exposes the FD.
++package audit
++
++import (
++	"bufio"
++	"encoding/json"
++	"fmt"
++	"math"
++	"os"
++	"sync"
++	"time"
++
++	"google.golang.org/protobuf/encoding/protojson"
++	"google.golang.org/protobuf/proto"
++	"gvisor.dev/gvisor/pkg/context"
++	"gvisor.dev/gvisor/pkg/fd"
++	"gvisor.dev/gvisor/pkg/sentry/seccheck"
++	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
++)
++
++const name = "audit"
++const queueBytes = 8 << 20
++const maxRecordBytes = 1 << 20
++const maxLogBytes = 1 << 30
++
++func init() {
++	seccheck.RegisterSink(seccheck.SinkDesc{Name: name, Setup: setup, New: newSink})
++}
++
++func setup(config map[string]any) (*os.File, error) {
++	path, ok := config["path"].(string)
++	if !ok || path == "" {
++		return nil, fmt.Errorf("audit requires a host log path")
++	}
++	// Never overwrite an existing episode, or follow a planted symlink.
++	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
++}
++
++type item struct {
++	data     []byte
++	sequence uint64
++	dropped  uint64
++	reply    chan seccheck.SinkStatus
++}
++
++type sink struct {
++	seccheck.SinkDefaults
++	mu       sync.Mutex
++	queue    chan item
++	done     chan struct{}
++	limit    uint64
++	bytes    int
++	sequence uint64
++	dropped  uint64
++	stopped  bool
++}
++
++func newSink(config map[string]any, file *fd.FD) (seccheck.Sink, error) {
++	if file == nil {
++		return nil, fmt.Errorf("audit host FD is missing")
++	}
++	limit := uint64(maxLogBytes)
++	if value, ok := config["max_bytes"]; ok {
++		n, ok := value.(float64)
++		if !ok || n < 1 || n > 1<<50 || math.Trunc(n) != n {
++			return nil, fmt.Errorf("invalid audit max_bytes")
++		}
++		limit = uint64(n)
++	}
++	s := &sink{queue: make(chan item, 1024), done: make(chan struct{}), limit: limit}
++	go s.write(os.NewFile(uintptr(file.Release()), "audit"))
++	return s, nil
++}
++
++func (*sink) Name() string { return name }
++
++// emit never waits for disk or for queue space. Loss is explicit and sticky.
++func (s *sink) emit(message proto.Message, kind pb.MessageType) {
++	data, err := (protojson.MarshalOptions{UseProtoNames: true, EmitDefaultValues: true}).Marshal(message)
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.sequence++
++	if s.stopped || err != nil || len(data) > maxRecordBytes || s.bytes+len(data) > queueBytes {
++		s.dropped++
++		return
++	}
++	record, err := json.Marshal(struct {
++		Sequence uint64          `json:"sequence"`
++		Type     string          `json:"type"`
++		Data     json.RawMessage `json:"data"`
++	}{s.sequence, kind.String(), data})
++	if err != nil {
++		s.dropped++
++		return
++	}
++	record = append(record, '\n')
++	select {
++	case s.queue <- item{data: record, sequence: s.sequence}:
++		s.bytes += len(record)
++	default:
++		s.dropped++
++	}
++}
++
++// Status inserts a barrier into the ordered queue. ByteCount identifies an
++// immutable, flushed prefix of the file, not an assurance about future events.
++func (s *sink) Status() seccheck.SinkStatus {
++	reply := make(chan seccheck.SinkStatus, 1)
++	s.mu.Lock()
++	status := seccheck.SinkStatus{DroppedCount: s.dropped, LastSequence: s.sequence}
++	if s.stopped {
++		s.mu.Unlock()
++		status.Error = "audit session is stopped"
++		return status
++	}
++	select {
++	case s.queue <- item{sequence: s.sequence, dropped: s.dropped, reply: reply}:
++		s.mu.Unlock()
++	default:
++		s.mu.Unlock()
++		status.Error = "audit barrier queue is full; retry export"
++		return status
++	}
++	select {
++	case result := <-reply:
++		return result
++	case <-time.After(10 * time.Second):
++		status.Error = "audit flush timed out"
++		return status
++	}
++}
++
++func (s *sink) Stop() {
++	s.mu.Lock()
++	if !s.stopped {
++		s.stopped = true
++		close(s.queue)
++	}
++	s.mu.Unlock()
++	select {
++	case <-s.done:
++	case <-time.After(10 * time.Second):
++	}
++}
++
++func (s *sink) write(file *os.File) {
++	defer close(s.done)
++	defer file.Close()
++	writer := bufio.NewWriterSize(file, 64<<10)
++	var count, bytes uint64
++	var failure error
++	for entry := range s.queue {
++		if entry.reply != nil {
++			if failure == nil {
++				failure = writer.Flush()
++			}
++			// A successful barrier is durable on the worker filesystem.
++			if failure == nil {
++				failure = file.Sync()
++			}
++			status := seccheck.SinkStatus{DroppedCount: entry.dropped, LastSequence: entry.sequence,
++				EventCount: count, ByteCount: bytes, Complete: failure == nil && entry.dropped == 0}
++			if failure != nil {
++				status.Error = failure.Error()
++			}
++			entry.reply <- status
++			continue
++		}
++		if failure == nil && bytes+uint64(len(entry.data)) > s.limit {
++			failure = fmt.Errorf("audit log reached its configured byte limit")
++		}
++		if failure == nil {
++			n, err := writer.Write(entry.data)
++			failure = err
++			bytes += uint64(n)
++			if err == nil {
++				count++
++			}
++		}
++		s.mu.Lock()
++		s.bytes -= len(entry.data)
++		s.mu.Unlock()
++	}
++	if failure == nil {
++		_ = writer.Flush()
++		_ = file.Sync()
++	}
++}
++
++func (s *sink) Clone(_ context.Context, _ seccheck.FieldSet, m *pb.CloneInfo) error {
++	s.emit(m, pb.MessageType_MESSAGE_SENTRY_CLONE)
++	return nil
++}
++func (s *sink) Execve(_ context.Context, _ seccheck.FieldSet, m *pb.ExecveInfo) error {
++	s.emit(m, pb.MessageType_MESSAGE_SENTRY_EXEC)
++	return nil
++}
++func (s *sink) ExitNotifyParent(_ context.Context, _ seccheck.FieldSet, m *pb.ExitNotifyParentInfo) error {
++	s.emit(m, pb.MessageType_MESSAGE_SENTRY_EXIT_NOTIFY_PARENT)
++	return nil
++}
++func (s *sink) TaskExit(_ context.Context, _ seccheck.FieldSet, m *pb.TaskExit) error {
++	s.emit(m, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
++	return nil
++}
++func (s *sink) Mmap(_ context.Context, _ seccheck.FieldSet, m *pb.MmapInfo) error {
++	s.emit(m, pb.MessageType_MESSAGE_SENTRY_MMAP)
++	return nil
++}
++func (s *sink) ContainerStart(_ context.Context, _ seccheck.FieldSet, m *pb.Start) error {
++	s.emit(m, pb.MessageType_MESSAGE_CONTAINER_START)
++	return nil
++}
++func (s *sink) RawSyscall(_ context.Context, _ seccheck.FieldSet, m *pb.Syscall) error {
++	s.emit(m, pb.MessageType_MESSAGE_SYSCALL_RAW)
++	return nil
++}
++func (s *sink) Syscall(_ context.Context, _ seccheck.FieldSet, _ *pb.ContextData, kind pb.MessageType, m proto.Message) error {
++	s.emit(m, kind)
++	return nil
++}
+diff --git a/pkg/sentry/seccheck/sinks/audit/audit_test.go b/pkg/sentry/seccheck/sinks/audit/audit_test.go
+new file mode 100644
+index 000000000..fd7d5b15c
+--- /dev/null
++++ b/pkg/sentry/seccheck/sinks/audit/audit_test.go
+@@ -0,0 +1,133 @@
++package audit
++
++import (
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync"
++	"testing"
++
++	"gvisor.dev/gvisor/pkg/fd"
++	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
++)
++
++func openSink(t *testing.T, config map[string]any) (*sink, string) {
++	t.Helper()
++	path := filepath.Join(t.TempDir(), "audit.jsonl")
++	config["path"] = path
++	f, err := setup(config)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// Dup ownership as runsc's FD donation does; release os.File finalizer.
++	raw, err := fd.NewFromFile(f)
++	f.Close()
++	if err != nil {
++		t.Fatal(err)
++	}
++	created, err := newSink(config, raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	s := created.(*sink)
++	t.Cleanup(s.Stop)
++	return s, path
++}
++
++func TestBarrierExportsOrderedConcurrentEvents(t *testing.T) {
++	s, path := openSink(t, map[string]any{})
++	var wg sync.WaitGroup
++	for n := 0; n < 8; n++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for i := 0; i < 50; i++ {
++				s.emit(&pb.TaskExit{}, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
++			}
++		}()
++	}
++	wg.Wait()
++	status := s.Status()
++	if !status.Complete || status.DroppedCount != 0 || status.EventCount != 400 {
++		t.Fatalf("status: %+v", status)
++	}
++	data, err := os.ReadFile(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if uint64(len(data)) != status.ByteCount {
++		t.Fatalf("byte boundary: %d vs %d", len(data), status.ByteCount)
++	}
++	for index, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
++		var record struct{ Sequence uint64 }
++		if err := json.Unmarshal([]byte(line), &record); err != nil {
++			t.Fatal(err)
++		}
++		if record.Sequence != uint64(index+1) {
++			t.Fatalf("sequence %d at %d", record.Sequence, index)
++		}
++	}
++}
++
++func TestFullQueueReportsLossWithoutBlocking(t *testing.T) {
++	s := &sink{queue: make(chan item, 1), done: make(chan struct{})}
++	s.emit(&pb.TaskExit{}, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
++	s.emit(&pb.TaskExit{}, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
++	status := s.Status()
++	if status.Complete || status.DroppedCount != 1 || status.Error == "" {
++		t.Fatalf("status: %+v", status)
++	}
++}
++
++func TestByteLimitIsNeverClean(t *testing.T) {
++	s, _ := openSink(t, map[string]any{"max_bytes": float64(1)})
++	s.emit(&pb.TaskExit{}, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
++	status := s.Status()
++	if status.Complete || status.Error == "" || status.EventCount != 0 {
++		t.Fatalf("status: %+v", status)
++	}
++}
++
++func TestSetupRefusesExistingFileAndSymlink(t *testing.T) {
++	_, path := openSink(t, map[string]any{})
++	if f, err := setup(map[string]any{"path": path}); err == nil {
++		f.Close()
++		t.Fatal("overwrote existing episode")
++	}
++	link := path + ".link"
++	if err := os.Symlink(path, link); err != nil {
++		t.Fatal(err)
++	}
++	if f, err := setup(map[string]any{"path": link}); err == nil {
++		f.Close()
++		t.Fatal("followed symlink")
++	}
++}
++
++func TestWriteFailureCannotBeClean(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "readonly")
++	if err := os.WriteFile(path, nil, 0600); err != nil {
++		t.Fatal(err)
++	}
++	f, err := os.Open(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	raw, err := fd.NewFromFile(f)
++	f.Close()
++	if err != nil {
++		t.Fatal(err)
++	}
++	created, err := newSink(map[string]any{}, raw)
++	if err != nil {
++		t.Fatal(err)
++	}
++	s := created.(*sink)
++	defer s.Stop()
++	s.emit(&pb.TaskExit{}, pb.MessageType_MESSAGE_SENTRY_TASK_EXIT)
++	status := s.Status()
++	if status.Complete || status.Error == "" {
++		t.Fatalf("write failure status: %+v", status)
++	}
++}
 diff --git a/pkg/sentry/socket/netfilter/BUILD b/pkg/sentry/socket/netfilter/BUILD
 index 21c625e14..697a133b9 100644
 --- a/pkg/sentry/socket/netfilter/BUILD
@@ -8934,7 +9593,7 @@ index 2bda57bcb..7e07085c0 100644
 +	}
 +}
 diff --git a/runsc/boot/BUILD b/runsc/boot/BUILD
-index 479bfc064..854bb07d9 100644
+index 479bfc064..09887a422 100644
 --- a/runsc/boot/BUILD
 +++ b/runsc/boot/BUILD
 @@ -18,6 +18,7 @@ go_library(
@@ -8945,6 +9604,14 @@ index 479bfc064..854bb07d9 100644
          "mount_hints.go",
          "network.go",
          "nvproxy.go",
+@@ -104,6 +105,7 @@ go_library(
+         "//pkg/sentry/platform/platforms",
+         "//pkg/sentry/seccheck",
+         "//pkg/sentry/seccheck/points:points_go_proto",
++        "//pkg/sentry/seccheck/sinks/audit",
+         "//pkg/sentry/seccheck/sinks/null",
+         "//pkg/sentry/seccheck/sinks/remote",
+         "//pkg/sentry/socket/hostinet",
 diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
 index ae644c4f5..aad1de34f 100644
 --- a/runsc/boot/controller.go
@@ -9062,7 +9729,7 @@ index ae644c4f5..aad1de34f 100644
  func (cm *containerManager) Pause(_, _ *struct{}) error {
  	cm.l.k.Pause()
 diff --git a/runsc/boot/loader.go b/runsc/boot/loader.go
-index d78a9606c..37b7dec5c 100644
+index d78a9606c..ef3a3ebba 100644
 --- a/runsc/boot/loader.go
 +++ b/runsc/boot/loader.go
 @@ -359,6 +359,9 @@ type Loader struct {
@@ -9126,7 +9793,19 @@ index d78a9606c..37b7dec5c 100644
  	if err != nil {
  		return nil, fmt.Errorf("creating memory file: %w", err)
  	}
-@@ -1026,6 +1037,10 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
+@@ -897,7 +908,10 @@ func New(args Args) (*Loader, error) {
+ 	args.StartupTimer.Reached("host FS mount created")
+ 
+ 	if args.PodInitConfigFD >= 0 {
+-		if err := setupSeccheck(args.PodInitConfigFD, args.SinkFDs); err != nil {
++		if required, err := setupSeccheck(args.PodInitConfigFD, args.SinkFDs); err != nil {
++			if required {
++				return nil, fmt.Errorf("unable to configure required event session: %w", err)
++			}
+ 			log.Warningf("unable to configure event session: %v", err)
+ 		}
+ 	}
+@@ -1026,6 +1040,10 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
  // been closed. For that reason, this should NOT be called in a defer, because
  // a panic in a control server rpc would then hang forever.
  func (l *Loader) Destroy() {
@@ -9137,7 +9816,7 @@ index d78a9606c..37b7dec5c 100644
  	if l.stopSignalForwarding != nil {
  		l.stopSignalForwarding()
  	}
-@@ -1103,19 +1118,36 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
+@@ -1103,19 +1121,36 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
  	})
  }
  
@@ -9251,8 +9930,42 @@ index 000000000..a9deb9619
 +		runtimeDebug.SetMemoryLimit(previous)
 +	}
 +}
+diff --git a/runsc/boot/seccheck.go b/runsc/boot/seccheck.go
+index b765a9d45..40a89a69f 100644
+--- a/runsc/boot/seccheck.go
++++ b/runsc/boot/seccheck.go
+@@ -23,6 +23,7 @@ import (
+ 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+ 
+ 	// Register supported of sinks.
++	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/audit"
+ 	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/null"
+ 	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote"
+ )
+@@ -31,17 +32,18 @@ import (
+ // now, it supports setting up a seccheck session.
+ type InitConfig struct {
+ 	TraceSession seccheck.SessionConfig `json:"trace_session"`
++	FailOnError  bool                   `json:"fail_on_error,omitempty"`
+ }
+ 
+-func setupSeccheck(configFD int, sinkFDs []int) error {
++func setupSeccheck(configFD int, sinkFDs []int) (bool, error) {
+ 	config := fd.New(configFD)
+ 	defer config.Close()
+ 
+ 	initConf, err := loadInitConfig(config)
+ 	if err != nil {
+-		return err
++		return true, err
+ 	}
+-	return initConf.create(sinkFDs)
++	return initConf.FailOnError, initConf.create(sinkFDs)
+ }
+ 
+ // LoadInitConfig loads an InitConfig struct from a json formatted file.
 diff --git a/runsc/boot/vfs.go b/runsc/boot/vfs.go
-index f320cd983..4a4ab7a61 100644
+index f320cd983..0be0391d9 100644
 --- a/runsc/boot/vfs.go
 +++ b/runsc/boot/vfs.go
 @@ -188,6 +188,11 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
@@ -9287,7 +10000,19 @@ index f320cd983..4a4ab7a61 100644
  func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Credentials, spec *specs.Spec, conf *config.Config, rootProcArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
  	log.Infof("Configuring container's file system")
  
-@@ -1141,8 +1159,9 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
+@@ -1088,6 +1106,11 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
+ 		fsName = sys.Name
+ 
+ 	case proc.Name:
++		var err error
++		mopts, data, err = consumeMountOptions(mopts, "hidepid", "dentry_cache_limit")
++		if err != nil {
++			return "", nil, err
++		}
+ 		internalData = newProcInternalData(conf, spec)
+ 
+ 	case sys.Name:
+@@ -1141,8 +1164,9 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
  		if err != nil {
  			return "", nil, err
  		}
@@ -9298,7 +10023,7 @@ index f320cd983..4a4ab7a61 100644
  			UniqueID: checkpoint.ResourceID{
  				ContainerName: containerName,
  				Path:          m.mount.Destination,
-@@ -1542,14 +1561,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
+@@ -1542,14 +1566,18 @@ func (l *Loader) removeCgroup2Subtree(ctx context.Context, creds *auth.Credentia
  	return l.k.VFS().RmdirAt(ctx, creds, &pop)
  }
  
@@ -9319,7 +10044,7 @@ index f320cd983..4a4ab7a61 100644
  			if defaults := cgroupfsCPUDefaults(l.cpuQuota, l.cpuPeriod); defaults != nil {
  				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
  				log.Infof("Setting cgroupfs cpu defaults: quota=%d, period=%d (raw quota=%d, raw period=%d)", defaults["cpu.cfs_quota_us"], defaults["cpu.cfs_period_us"], l.cpuQuota, l.cpuPeriod)
-@@ -1618,7 +1641,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1618,7 +1646,7 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  
  	// Mount all the cgroup controllers in the container's mount namespace.
  	mountCtx := vfs.WithRoot(vfs.WithMountNamespace(ctx, mns), root)
@@ -9328,7 +10053,7 @@ index f320cd983..4a4ab7a61 100644
  		ctrlName := string(ctrl)
  		cgroupMnt := c.l.k.GetCgroupMount(ctrlName)
  		if cgroupMnt == nil {
-@@ -1655,6 +1678,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
+@@ -1655,6 +1683,14 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
  			log.Infof("error in bind mounting %v", err)
  			return err
  		}
@@ -9343,7 +10068,7 @@ index f320cd983..4a4ab7a61 100644
  	}
  	c.cgroupsMounted = true
  	return nil
-@@ -1976,10 +2007,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
+@@ -1976,10 +2012,15 @@ func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem,
  	if err != nil {
  		return fmt.Errorf("NVIDIA driver capabilities: %w", err)
  	}
@@ -9604,6 +10329,53 @@ index 640d01f3d..094d8b4f4 100644
  		util.Fatalf("TarRootfsUpperLayer failed: %v", err)
  	}
  	return subcommands.ExitSuccess
+diff --git a/runsc/cmd/trace/list.go b/runsc/cmd/trace/list.go
+index 4cd72bc84..d6f69d005 100644
+--- a/runsc/cmd/trace/list.go
++++ b/runsc/cmd/trace/list.go
+@@ -16,6 +16,7 @@ package trace
+ 
+ import (
+ 	"context"
++	"encoding/json"
+ 	"fmt"
+ 
+ 	"github.com/google/subcommands"
+@@ -26,7 +27,7 @@ import (
+ )
+ 
+ // list implements subcommands.Command for the "list" command.
+-type list struct{}
++type list struct{ json bool }
+ 
+ // Name implements subcommands.Command.
+ func (*list) Name() string {
+@@ -44,7 +45,9 @@ func (*list) Usage() string {
+ }
+ 
+ // SetFlags implements subcommands.Command.
+-func (*list) SetFlags(*flag.FlagSet) {}
++func (l *list) SetFlags(f *flag.FlagSet) {
++	f.BoolVar(&l.json, "json", false, "return trace status as JSON")
++}
+ 
+ // Execute implements subcommands.Command.
+ func (l *list) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+@@ -69,6 +72,14 @@ func (l *list) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
+ 	if err != nil {
+ 		util.Fatalf("listing sessions: %v", err)
+ 	}
++	if l.json {
++		data, err := json.Marshal(sessions)
++		if err != nil {
++			util.Fatalf("encoding sessions: %v", err)
++		}
++		fmt.Println(string(data))
++		return subcommands.ExitSuccess
++	}
+ 	fmt.Printf("SESSIONS (%d)\n", len(sessions))
+ 	for _, session := range sessions {
+ 		fmt.Printf("%q\n", session.Name)
 diff --git a/runsc/config/config.go b/runsc/config/config.go
 index 0fbf02739..d9dd7f4d3 100644
 --- a/runsc/config/config.go

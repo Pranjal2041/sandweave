@@ -191,3 +191,11 @@ sandweave run --storage-path /data/sandbox-disks -- "python --version"
 
 Use `--storage memory` to retain RAM-backed writable files. This is independent
 of `--disk-memory` and `--disk-path`, which configure application memory.
+
+## Process visibility and audit
+
+Use `sandweave create --hidepid 2 --audit` to opt into hidden cross-user process
+entries and protected runtime audit. `--hidepid 0 --no-audit` explicitly disables
+template defaults. Export records through `Sandbox.connect(id).audit_log(path)`.
+See [process visibility and audit](process-audit.md) for privilege requirements,
+coverage, and snapshot support.

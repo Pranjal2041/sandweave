@@ -82,12 +82,13 @@ def supports_disk(root, descriptor):
 def supports(root, descriptor, features):
     verify_runtime(str(root), descriptor['path'], json.dumps(descriptor['sha256'], sort_keys=True))
     required = set(features)
-    if 'disk-storage' in required:
-        marker = Path(root) / descriptor['path'] / 'capabilities.json'
-        if ('capabilities.json' not in descriptor['sha256'] or
-                json.loads(marker.read_text()).get('disk_storage', 0) < 1):
-            return False
-        required.remove('disk-storage')
+    for feature, key in (('disk-storage', 'disk_storage'), ('proc-hidepid', 'proc_hidepid'), ('audit-log', 'audit_log')):
+        if feature in required:
+            marker = Path(root) / descriptor['path'] / 'capabilities.json'
+            if ('capabilities.json' not in descriptor['sha256'] or
+                    json.loads(marker.read_text()).get(key, 0) < 1):
+                return False
+            required.remove(feature)
     return not required or required <= flags(str(root), descriptor['path'])
 
 

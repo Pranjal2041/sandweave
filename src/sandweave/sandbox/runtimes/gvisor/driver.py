@@ -118,6 +118,12 @@ class Runtime:
         if cpu['quota'] is not None:
             options += ['--cpu-policy', 'quota', '--cpu-quota', str(cpu['quota'])]
         runtime = spec['template'].get('runtime_options', {})
+        from ...audit import configure
+        configure(spec['template'], 'gvisor')
+        options += ['--hidepid', str(runtime.get('hidepid', 0))]
+        options.append('--audit' if runtime.get('audit') else '--no-audit')
+        if 'audit_max_bytes' in runtime:
+            options += ['--audit-max-bytes', str(runtime['audit_max_bytes'])]
         profile = runtime.get('profile', False)
         if not isinstance(profile, bool):
             raise ValueError('profile must be a boolean')
@@ -155,6 +161,30 @@ class Runtime:
                     options += ['--experimental-gpu-client-memory-mib',
                                 str(memory_bytes(resources['gpu']['client_memory'])//1024**2)]
         return options
+
+    def audit(self, identity, offset=None, size=1024**2):
+        directory = self.root / 'runs/gvisor' / identity
+        if offset is not None:
+            if type(offset) is not int or offset < 0 or type(size) is not int or not 1 <= size <= 1024**2:
+                raise ValueError('invalid audit read range')
+            with (directory / 'audit.jsonl').open('rb') as stream:
+                stream.seek(offset)
+                return stream.read(size)
+        result = subprocess.run([*self.manager._command(identity, bind_resources=False),
+                                 'trace', 'list', '--json', identity], capture_output=True, timeout=20)
+        if result.returncode:
+            return {'complete': False, 'bytes': (directory / 'audit.jsonl').stat().st_size,
+                    'error': 'runtime audit status unavailable; partial log only', 'scope': 'partial runtime events'}
+        sessions = json.loads(result.stdout)
+        status = next((sink['status'] for session in sessions for sink in session.get('sinks', [])
+                       if sink['name'] == 'audit'), None)
+        if status is None:
+            raise RuntimeError('audit session is missing; log is incomplete')
+        return {'complete': status.get('Complete', False), 'bytes': status.get('ByteCount', 0),
+                'events': status.get('EventCount', 0), 'last_sequence': status.get('LastSequence', 0),
+                'dropped': status.get('DroppedCount', 0), 'error': status.get('Error'),
+                'scope': 'selected runtime events through the export barrier',
+                'coverage': json.loads((directory / 'audit-config.json').read_text())['trace_session']['points']}
 
     def profile(self, identity):
         import tempfile
@@ -250,6 +280,10 @@ class Runtime:
             for feature in ('netlink_address_events', 'sysctl_reapply'):
                 if spec['template'].get('runtime_options', {}).get(feature):
                     features.append(feature.replace('_', '-'))
+            if spec['template'].get('runtime_options', {}).get('hidepid'):
+                features.append('proc-hidepid')
+            if spec['template'].get('runtime_options', {}).get('audit'):
+                features.append('audit-log')
             if features:
                 from .engine import feature_runtime
                 selected_runtime = feature_runtime(self.root, features, snapshot)
@@ -361,6 +395,11 @@ class Runtime:
     def capture(self, identity, label, state, *, experimental_gpu_live=False):
         if any(m['snapshot'] != 'rebind' for m in self.manager._settings(identity).get('external_mounts', [])):
             raise UnsupportedFeature('external writable mount rejects capture; explicitly choose snapshot="rebind" for shared state')
+        if self.manager._settings(identity).get('settings', {}).get('audit'):
+            if state == 'memory':
+                raise UnsupportedFeature('audited sandboxes support filesystem snapshots; memory snapshots cannot preserve audit continuity')
+            if state == 'auto':
+                state = 'filesystem'
         self.detach(identity)
         mode = {'memory': 'live', 'filesystem': 'filesystem', 'auto': 'auto'}.get(state)
         if experimental_gpu_live and state == 'memory':

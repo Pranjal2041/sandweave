@@ -111,6 +111,12 @@ def check_browser(site, output, url=None):
                 section.locator('xpath=following-sibling::div[1]').get_by_role('button', name='Copy to clipboard').click()
                 assert 'connection="direct"' in page.evaluate('navigator.clipboard.readText()')
                 page.screenshot(path=str(output / 'direct-connections-desktop.png'), animations='disabled')
+                page.goto(url + 'process-audit/')
+                expect(page.locator('article')).to_contain_text('These experimental gVisor options are independent and disabled by default.')
+                page.get_by_role('button', name='Copy to clipboard').first.click()
+                copied = page.evaluate('navigator.clipboard.readText()')
+                assert 'hidepid=2, audit=True' in copied and 'env.audit_log(' in copied
+                page.screenshot(path=str(output / 'process-audit-desktop.png'), animations='disabled')
                 page.goto(url + 'installation/#worker-requirements')
                 expect(page.locator('article')).to_contain_text('kernel 5.4 or newer')
                 expect(page.locator('article')).to_contain_text('Linux 5.4 support requires Sandweave 0.2.27')

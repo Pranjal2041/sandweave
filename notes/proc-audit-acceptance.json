@@ -1,0 +1,51 @@
+{
+  "status": "passed",
+  "host": "babel-u9-24",
+  "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+  "architecture": "x86_64",
+  "python": "3.12.13 (main, Jun  1 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
+  "sdk": "0.2.42",
+  "distribution": "candidate-local-http",
+  "installation": "cli-setup",
+  "first_setup_seconds": 78.1491707470268,
+  "engine": {
+    "audit_log": 1,
+    "bounded_network_rx": 1,
+    "bridge_local_delivery": 1,
+    "buffered_filesystem_export": 1,
+    "cpu_accounting": 1,
+    "disk_storage": 1,
+    "minimum_kernel": "5.4",
+    "path": "tools/runtime-builds/e48cdf54e189d4039070acfdc61cf89df99f7e39aca27d5e24609c8f3ee1c389",
+    "proc_hidepid": 1,
+    "proc_signal_masks": 1,
+    "sha256": {
+      "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+      "capabilities.json": "6f52fb984485f3772abff66e3cc0f467ccc6dbbf33d89718f054618ecc8edab0",
+      "gvisor-bin/checkpointgofer": "02302b6aeee92ca0ffd823da19401ae44eb67d901cc0af23d6eb892bdbdf28fa",
+      "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+      "gvisor-bin/gvisor_sentry": "16036e7dc55ed3f61de72fdd6d742b57457440a7b8b60d997ec5e97dd95f48d2",
+      "gvisor-bin/runsc-metric-server": "fa2d6981a43a2d5162c9ee11222af2855c960a6f3ae44ad255ace5de5656c933",
+      "gvisor-bin/sandweave-guest-tools": "fdff7df37bf7b1f026c06b97fd55b5dc6d428825a995c018cdb8d5097fe71afd",
+      "runsc": "2efe392329eb1ced34cea548932de9f6c5f7b7e769ea0914087ea94b5e585b50"
+    }
+  },
+  "compiler_downloaded_or_run": false,
+  "engine_source_commit": "094566fc9",
+  "runtime_release": "2026.10.14.1",
+  "sdk_host_tests": {
+    "passed": 813,
+    "skipped": 8
+  },
+  "live": {
+    "proc_audit_tests": 4,
+    "weave_pool_tests": 1,
+    "concurrent_commands": 48,
+    "concurrency": 16,
+    "events": 29821,
+    "dropped": 0,
+    "gnome_events": 778653,
+    "gnome_bytes": 507020566,
+    "gnome_dropped": 0
+  }
+}

@@ -87,6 +87,13 @@ Any gVisor template can join. Terminate the members before calling
 See [service networks](https://pranjal2041.github.io/sandweave/networking/#connect-sandboxes)
 for a complete example and cleanup.
 
+## Process visibility and audit
+
+Optional `Sandbox(hidepid=2, audit=True)` restricts cross-user `/proc` visibility
+and records runtime events outside the guest. Both options default off.
+Export with `env.audit_log("episode.jsonl")` and check its completeness status.
+See [coverage and privilege requirements](https://pranjal2041.github.io/sandweave/process-audit/).
+
 ## Run commands
 
 ```python
@@ -391,7 +398,7 @@ prepared environment or `targets=[...]` to distribute tasks across workers.
 Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.41'
+uv pip install 'sandweave[benchmarks]==0.2.42'
 ```
 
 ```python

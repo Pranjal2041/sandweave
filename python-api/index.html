@@ -598,6 +598,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../process-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process visibility and audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../lifecycle/" class="md-nav__link">
         
   
@@ -1703,6 +1731,16 @@
 <td><code>detached</code></td>
 <td>Survive the creating Python process exiting.</td>
 <td><code>False</code></td>
+</tr>
+<tr>
+<td><code>hidepid</code></td>
+<td>Experimental <code>/proc</code> visibility: <code>0</code>, <code>1</code>, or <code>2</code>. See <a href="../process-audit/">process visibility</a>.</td>
+<td>Template/snapshot value, normally <code>0</code></td>
+</tr>
+<tr>
+<td><code>audit</code></td>
+<td>Experimental protected runtime event log. Export with <code>env.audit_log(path)</code> or its <code>.aio</code> form. See <a href="../process-audit/">coverage and limits</a>.</td>
+<td>Template/snapshot value, normally <code>False</code></td>
 </tr>
 <tr>
 <td><code>profiling</code></td>

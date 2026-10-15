@@ -598,6 +598,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../process-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process visibility and audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../lifecycle/" class="md-nav__link">
         
   
@@ -1297,6 +1325,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#process-visibility-and-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Process visibility and audit
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1488,6 +1527,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#process-visibility-and-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Process visibility and audit
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1633,6 +1683,12 @@ both eyes and a synchronized side-by-side preview. See <a href="../vr/">VR games
 </code></pre></div>
 <p>Use <code>--storage memory</code> to retain RAM-backed writable files. This is independent
 of <code>--disk-memory</code> and <code>--disk-path</code>, which configure application memory.</p>
+<h2 id="process-visibility-and-audit">Process visibility and audit<a class="headerlink" href="#process-visibility-and-audit" title="Permanent link">&para;</a></h2>
+<p>Use <code>sandweave create --hidepid 2 --audit</code> to opt into hidden cross-user process
+entries and protected runtime audit. <code>--hidepid 0 --no-audit</code> explicitly disables
+template defaults. Export records through <code>Sandbox.connect(id).audit_log(path)</code>.
+See <a href="../process-audit/">process visibility and audit</a> for privilege requirements,
+coverage, and snapshot support.</p>
 
 
 

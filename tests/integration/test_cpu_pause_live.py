@@ -34,7 +34,8 @@ def test_unacknowledged_pause_releases_guest_and_preserves_peer(worker, monkeypa
         try:
             # Let the broker release any existing pause before fault injection.
             time.sleep(.4)
-            control = broker.ControlConnection(json.loads(registration.read_text())['control_path'])
+            control_path = json.loads(registration.read_text())['control_path']
+            control = broker.ControlConnection(control_path)
             async def call(arg):
                 try:
                     return await control.call('CPUControl', arg)
@@ -96,8 +97,8 @@ def test_unacknowledged_pause_releases_guest_and_preserves_peer(worker, monkeypa
             os.kill(broker_frozen, signal.SIGCONT)
             broker_frozen = None
             deadline = time.monotonic() + 6
-            while env.info['cpu_control']['state'] != 'degraded':
-                assert time.monotonic() < deadline, env.info['cpu_control']
+            while env.info.get('cpu_control', {}).get('state') != 'degraded':
+                assert time.monotonic() < deadline, env.info.get('cpu_control')
                 time.sleep(.1)
             assert 'did not quiesce' in env.info['cpu_control']['reason']
             (worker.root / f'pause-recovery-{renew}.json').write_text(json.dumps(result, indent=2) + '\n')
@@ -108,7 +109,7 @@ def test_unacknowledged_pause_releases_guest_and_preserves_peer(worker, monkeypa
             # This also recovers the old-engine negative control after its
             # timed-out request, so the test never leaves a frozen process.
             try:
-                broker.control_pause(json.loads(registration.read_text())['control_path'], False)
+                broker.control_pause(control_path, False)
             finally:
                 if broker_frozen is not None:
                     os.kill(broker_frozen, signal.SIGCONT)

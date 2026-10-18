@@ -15,6 +15,19 @@ from sandweave.installation import record_installation
 HOST = {'architecture': 'x86_64', 'kernel': (5, 14, 0), 'cpu_flags': ['sse2']}
 
 
+def test_prepared_runtime_upgrades_for_cancellable_cpu_pauses(tmp_path, monkeypatch):
+    monkeypatch.setattr(releases, 'runtime_supported', lambda root: True)
+    path = tmp_path / 'tools/gvisor-socket/runtime.json'
+    path.parent.mkdir(parents=True)
+    capabilities = {name: 1 for name in ('cpu_accounting', 'bridge_local_delivery',
+        'disk_storage', 'proc_signal_masks', 'bounded_network_rx', 'buffered_filesystem_export')}
+    path.write_text(json.dumps(capabilities))
+    assert not releases.runtime_current(tmp_path)
+    capabilities['cancellable_cpu_pause'] = 1
+    path.write_text(json.dumps(capabilities))
+    assert releases.runtime_current(tmp_path)
+
+
 @pytest.fixture
 def published_runtime(tmp_path, monkeypatch):
     web = tmp_path / 'web'
@@ -33,7 +46,7 @@ def published_runtime(tmp_path, monkeypatch):
     pointer = root / 'tools/gvisor-socket/runtime.json'
     pointer.parent.mkdir()
     pointer.write_text(json.dumps({'path': 'tools/runtime-builds/test-build', 'sha256': hashes,
-                                   'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1, 'buffered_filesystem_export': 1}))
+                                   'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1, 'buffered_filesystem_export': 1, 'cancellable_cpu_pause': 1}))
     record_installation(root)
     archive = web / 'runtime.tar.gz'
     with tarfile.open(archive, 'w:gz') as stream:

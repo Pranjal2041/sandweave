@@ -221,7 +221,7 @@ done
                  label='Build gVisor')
         artifacts = root / 'artifacts'
         workspace.atomic_json(artifacts / 'capabilities.json', {'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1,
-                                                            'buffered_filesystem_export': 1, 'proc_hidepid': 1, 'audit_log': 1})
+                                                            'buffered_filesystem_export': 1, 'proc_hidepid': 1, 'audit_log': 1, 'cancellable_cpu_pause': 1})
         hashes = {str(path.relative_to(artifacts)): workspace.file_digest(path)
                   for path in artifacts.rglob('*') if path.is_file()}
         identity = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
@@ -234,7 +234,7 @@ done
             'path': relative, 'sha256': hashes,
             'minimum_kernel': '.'.join(map(str, MINIMUM_KERNEL[:2])),
             'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1,
-            'buffered_filesystem_export': 1, 'proc_hidepid': 1, 'audit_log': 1})
+            'buffered_filesystem_export': 1, 'proc_hidepid': 1, 'audit_log': 1, 'cancellable_cpu_pause': 1})
 
     def erofs(self, root, source, output):
         output.parent.mkdir(parents=True, exist_ok=True)

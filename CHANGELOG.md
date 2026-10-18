@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.43
+
+- Fix CPU throttling holding its resume lock while waiting indefinitely for
+  guest threads to stop. Scheduling stops are now cancellable and do not wait
+  for task or I/O quiescence; explicit user pauses and checkpoint barriers
+  retain their existing semantics.
+- Bound pause acknowledgement to 500 ms, independently of broker renewals.
+  Failure releases the broker-owned stop, fences later throttle requests, and
+  reports degraded CPU control while preserving the sandbox and peer workloads.
+- Upgrade prepared engines for new launches. Running sandboxes and memory
+  snapshots retain their original engine; filesystem restores can use the fix.
+
 ## 0.2.42
 
 - Add independent, experimental `hidepid=0|1|2` and `audit=True` creation flags

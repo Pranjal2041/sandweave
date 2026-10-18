@@ -1,5 +1,63 @@
 # CPU broker scaling and failure recovery
 
+## Cancellable scheduling stops, 0.2.43
+
+The 500 ms recovery guarantee below was incomplete in earlier engines.
+`CPUControl` and `SetCPUPaused` called the full `Kernel.Pause()` while holding
+the same mutex needed for resume. That call waits for all task and asynchronous
+I/O goroutines. The lease timer was installed only after the wait. A task that
+never acknowledged an interrupt therefore blocked both cancellation and lease
+recovery. Source inspection confirms this defect; the client's specific
+RabbitMQ thread and lost-signal origin were not independently inspected.
+
+CPU scheduling now uses `Kernel.RequestCPUPause()`, which installs an external
+stop without waiting for quiescence. Full `Pause()` still waits and remains the
+barrier for explicit user pauses and snapshots. The controller owns one nested
+stop, so releasing it cannot release someone else's pause.
+
+The existing runnable-task counter checks scheduling progress without a new
+process scan. A stop that has not quiesced within 500 ms is released, CPU control
+is permanently disabled for that runtime, and its reason reaches the broker's
+degraded report. Acknowledgement has an absolute deadline independent of lease
+renewals. Healthy acknowledged pauses retain their renewable 500 ms lease.
+Generation checks fence stale timer callbacks and late requests after disable.
+No goroutine waits for a scheduling stop to complete.
+
+Prepared engines upgrade for new launches through the `cancellable_cpu_pause`
+capability. Existing sandboxes and pinned memory snapshots retain their engine;
+recreate or use a filesystem restore to move to this runtime.
+
+Acceptance on Babel u9-24, allocation 10689224, without host sudo/KVM/GPU:
+
+- The released 0.2.42 runtime timed out its CPU pause RPC when an owned, busy
+  application executor was host-stopped. Cleanup resumed that executor.
+- The fixed engine passed kernel and CPU-controller unit tests, including
+  unacknowledged stops, cancellation, nested stops, stale timers, permanent
+  disable, healthy renewal and lease expiry. The broader boot suite encountered
+  mount-fixture permission failures; it is not reported as passing.
+- The complete host suite passed: 834 tests, four skips. Prepared-installation
+  fixtures were updated for the new required runtime capability, and the
+  upgrade test confirms that existing guest images are preserved.
+- Both real-runtime fault cases passed, with and without continuing renewal.
+  Pause requests returned in about 0.6 ms; renewal could not extend the recovery
+  deadline. Commands worked while the deliberately frozen executor remained
+  frozen. This injects non-acknowledgement, not RabbitMQ's exact signal-loss race.
+- Eight guest threads spinning on a userspace lock made progress under a
+  0.5-CPU quota, through 43 throttle stops, while a peer kept answering commands.
+- All five demand-sharing cases passed. The 36-sandbox scale test used 17,821
+  host processes, about 0.21 broker CPU, and 42 ms median / 144 ms maximum command
+  latency. Broker freeze/death and an unresponsive Sentry also passed recovery.
+  These are measurements from this shared host, not general latency guarantees.
+
+The first fault-test fixture incorrectly let the broker cancel its injected
+pause; the corrected fixture briefly freezes only its disposable worker's
+broker. A test also passed an unsupported timeout argument to `Process.result`;
+that fixture was corrected. The final seven CPU failure/scale cases passed,
+with the separate old-engine compatibility case skipped. Summaries are in
+`cpu-pause-acceptance.json`; raw logs stay in the ignored scratch test directory.
+
+## Earlier scaling implementation
+
 The old broker rediscovered every registered process tree every 250 ms and
 read process statistics on its 20 ms scheduling tick. Cost grew with host stub
 processes, not just sandbox count. A synchronous control RPC could also stall

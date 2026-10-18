@@ -2,14 +2,14 @@
   "gvisor": {
     "path": "sources/gvisor",
     "upstream": "https://github.com/google/gvisor.git",
-    "branch": "feat/optional-proc-audit",
+    "branch": "fix/cpu-pause-deadlock",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "094566fc9b11cd9d3e8f3598e522b62359728902",
+    "commit": "6bf5da1bb2e26a145952e64bd406f4a257711b23",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/37eeabc135bce732001c2063dfbebec842ce436135b37b32a888e31b63c15886",
+    "runtime_build": "tools/runtime-builds/109097ed0df62585a30116d495cadac6b1c8659b88e1d4bcb05336e16f59cfe2",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "094566fc9b11cd9d3e8f3598e522b62359728902",
+    "runtime_commit": "6bf5da1bb2e26a145952e64bd406f4a257711b23",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
@@ -28,7 +28,9 @@
     "bounded_network_rx_runtime_release": "2026.09.26.4",
     "filesystem_export_runtime_release": "2026.09.26.5",
     "proc_audit_runtime_release": "2026.10.14.1",
-    "proc_audit_release_runtime_build": "tools/runtime-builds/e48cdf54e189d4039070acfdc61cf89df99f7e39aca27d5e24609c8f3ee1c389"
+    "proc_audit_release_runtime_build": "tools/runtime-builds/e48cdf54e189d4039070acfdc61cf89df99f7e39aca27d5e24609c8f3ee1c389",
+    "cpu_pause_runtime_release": "2026.10.18.1",
+    "cpu_pause_release_runtime_build": "tools/runtime-builds/1436f7c2cb026adf47b3c64f39390a0eb4c0af70cdb549cf26318936d430937c"
   },
   "passt": {
     "upstream": "https://passt.top/passt",

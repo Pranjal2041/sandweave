@@ -409,7 +409,7 @@ async def serve_job(job, path, legacy_executor):
                     job.pending_pause = job.desired_pause
                     sample = await connection.call('CPUControl', {'Paused': job.desired_pause})
                     if sample['Disabled']:
-                        raise RuntimeError('CPU control disabled by launcher')
+                        raise RuntimeError(sample.get('Reason') or 'CPU control disabled by launcher')
                     if sample['SampleAgeNS'] > 500_000_000:
                         raise RuntimeError('runtime CPU accounting stalled')
                     was_paused = job.paused

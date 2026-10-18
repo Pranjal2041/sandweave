@@ -58,11 +58,18 @@ quota. Broker pauses expire after 500 ms without renewal. After a sustained
 failure, `env.info["cpu_control"]` reports `state="degraded"` and the reason.
 Explicit `env.pause()` remains separate and does not expire.
 
-This requires SDK 0.2.29 and its updated engine. New workers automatically update
-older prepared engines while retaining guest images. Existing workers and
-sandboxes keep their running code. Memory snapshots pinned to an older engine
-use compatibility accounting outside the broker's scheduling loop; their pause
-recovery relies on the launcher watchdog instead of the new engine lease.
+Starting with 0.2.43, CPU throttling does not wait for every guest thread to stop.
+If runnable tasks fail to quiesce within 500 ms, the runtime releases its stop
+and disables CPU throttling for that sandbox. Broker renewals cannot extend this
+deadline. The guest survives, but its weight and quota no longer apply. This
+does not change the full pause required for explicit pauses and snapshots.
+
+New workers automatically update older prepared engines while retaining guest
+images. Existing workers and sandboxes keep their running code: restart workers
+and recreate affected sandboxes to apply this fix. Memory snapshots retain
+their captured engine and its limitations; use a filesystem snapshot to move
+saved files to the fixed engine. Very old memory snapshots use compatibility
+accounting outside the broker's scheduling loop and lack runtime pause leases.
 
 ## Guest and runtime memory
 

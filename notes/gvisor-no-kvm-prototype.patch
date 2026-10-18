@@ -3419,6 +3419,18 @@ index 1efd7a50c..eaa581806 100644
  // NewNetlinkMcastTable creates a new McastTable.
  func NewNetlinkMcastTable() *McastTable {
  	return &McastTable{
+diff --git a/pkg/sentry/kernel/BUILD b/pkg/sentry/kernel/BUILD
+index 7b6d37136..3a9e0f849 100644
+--- a/pkg/sentry/kernel/BUILD
++++ b/pkg/sentry/kernel/BUILD
+@@ -435,6 +435,7 @@ go_test(
+     size = "small",
+     srcs = [
+         "fd_table_test.go",
++        "cpu_pause_test.go",
+         "table_test.go",
+         "task_syscall_benchmark_test.go",
+         "task_test.go",
 diff --git a/pkg/sentry/kernel/auth/BUILD b/pkg/sentry/kernel/auth/BUILD
 index fd238f473..984cbafe6 100644
 --- a/pkg/sentry/kernel/auth/BUILD
@@ -3934,6 +3946,56 @@ index 31434924a..be138220b 100644
  
  // SetInode sets the nsfs inode of the cgroup namespace.
  func (ns *CgroupNamespace) SetInode(inode *nsfs.Inode) {
+diff --git a/pkg/sentry/kernel/cpu_pause_test.go b/pkg/sentry/kernel/cpu_pause_test.go
+new file mode 100644
+index 000000000..7fcafa5fa
+--- /dev/null
++++ b/pkg/sentry/kernel/cpu_pause_test.go
+@@ -0,0 +1,44 @@
++// Copyright 2026 The gVisor Authors.
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
++// Unless required by applicable law or agreed to in writing, software distributed
++// under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++package kernel
++
++import (
++	"testing"
++	"time"
++)
++
++func TestCPUPauseDoesNotWaitForTasksOrIO(t *testing.T) {
++	k := &Kernel{tasks: newTaskSet(newPIDNamespace(nil, nil, nil))}
++	// Keep both counters nonzero, like a task that missed an interrupt and
++	// an I/O callback that has not completed. Neither may block CPU control.
++	k.tasks.runningGoroutines.Add(1)
++	k.tasks.aioGoroutines.Add(1)
++	done := make(chan struct{})
++	go func() {
++		k.RequestCPUPause()
++		k.RequestCPUPause()
++		k.Unpause()
++		close(done)
++	}()
++	select {
++	case <-done:
++	case <-time.After(time.Second):
++		t.Fatal("CPU pause waited for quiescence")
++	}
++	if !k.IsPaused() {
++		t.Fatal("nested independent stop was released")
++	}
++	k.Unpause()
++	k.tasks.runningGoroutines.Done()
++	k.tasks.aioGoroutines.Done()
++	if k.IsPaused() {
++		t.Fatal("CPU stop remained after cancellation")
++	}
++}
 diff --git a/pkg/sentry/kernel/futex/BUILD b/pkg/sentry/kernel/futex/BUILD
 index 971dcf111..ef7d6b072 100644
 --- a/pkg/sentry/kernel/futex/BUILD
@@ -4079,7 +4141,7 @@ index 9fe1c6cec..472b77d4e 100644
  	for _, private := range []bool{false, true} {
  		t.Run(futexKind(private), func(t *testing.T) {
 diff --git a/pkg/sentry/kernel/kernel.go b/pkg/sentry/kernel/kernel.go
-index 32afe64a6..4473a17b3 100644
+index 32afe64a6..73c3d1a5f 100644
 --- a/pkg/sentry/kernel/kernel.go
 +++ b/pkg/sentry/kernel/kernel.go
 @@ -147,6 +147,13 @@ type SaveRestoreExecConfig struct {
@@ -4152,6 +4214,29 @@ index 32afe64a6..4473a17b3 100644
  
  	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
  		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
+@@ -1745,11 +1764,20 @@ func (k *Kernel) Kill(ws linux.WaitStatus) {
+ // calls to Pause nest and require an equal number of calls to Unpause to
+ // resume execution.
+ func (k *Kernel) Pause() {
++	k.RequestCPUPause()
++	k.tasks.runningGoroutines.Wait()
++	k.tasks.aioGoroutines.Wait()
++}
++
++// RequestCPUPause requests a scheduling stop without waiting for tasks or I/O
++// to quiesce. The caller must pair it with Unpause, even if a task never stops.
++// CPU throttling must remain cancellable when an application context fails to
++// acknowledge its interrupt. This is NOT a checkpoint consistency barrier;
++// callers needing one must use Pause instead.
++func (k *Kernel) RequestCPUPause() {
+ 	k.extMu.Lock()
+ 	k.tasks.BeginExternalStop()
+ 	k.extMu.Unlock()
+-	k.tasks.runningGoroutines.Wait()
+-	k.tasks.aioGoroutines.Wait()
+ }
+ 
+ // IsPaused returns true if the kernel is currently paused.
 diff --git a/pkg/sentry/kernel/ptrace.go b/pkg/sentry/kernel/ptrace.go
 index 8701a3c1a..09bc0db23 100644
 --- a/pkg/sentry/kernel/ptrace.go
@@ -9593,10 +9678,16 @@ index 2bda57bcb..7e07085c0 100644
 +	}
 +}
 diff --git a/runsc/boot/BUILD b/runsc/boot/BUILD
-index 479bfc064..09887a422 100644
+index 479bfc064..5e24985b2 100644
 --- a/runsc/boot/BUILD
 +++ b/runsc/boot/BUILD
-@@ -18,6 +18,7 @@ go_library(
+@@ -13,11 +13,13 @@ go_library(
+         "compat_amd64.go",
+         "compat_arm64.go",
+         "controller.go",
++        "cpu_control.go",
+         "debug.go",
+         "events.go",
          "fscheckpoint.go",
          "limits.go",
          "loader.go",
@@ -9604,7 +9695,7 @@ index 479bfc064..09887a422 100644
          "mount_hints.go",
          "network.go",
          "nvproxy.go",
-@@ -104,6 +105,7 @@ go_library(
+@@ -104,6 +106,7 @@ go_library(
          "//pkg/sentry/platform/platforms",
          "//pkg/sentry/seccheck",
          "//pkg/sentry/seccheck/points:points_go_proto",
@@ -9612,25 +9703,31 @@ index 479bfc064..09887a422 100644
          "//pkg/sentry/seccheck/sinks/null",
          "//pkg/sentry/seccheck/sinks/remote",
          "//pkg/sentry/socket/hostinet",
+@@ -201,3 +204,11 @@ go_test(
+         "@org_golang_x_sys//unix:go_default_library",
+     ],
+ )
++
++# Pure controller tests do not need the filesystem fixtures used by boot_test.
++go_test(
++    name = "cpu_control_test",
++    size = "small",
++    srcs = ["cpu_control_test.go"],
++    library = ":boot",
++)
 diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
-index ae644c4f5..aad1de34f 100644
+index ae644c4f5..e68d2e01c 100644
 --- a/runsc/boot/controller.go
 +++ b/runsc/boot/controller.go
-@@ -276,6 +276,13 @@ func (c *controller) stop() {
+@@ -276,6 +276,7 @@ func (c *controller) stop() {
  
  // containerManager manages sandbox containers.
  type containerManager struct {
-+	// CPU controller pauses are independently owned and idempotent so a host
-+	// controller can safely recover after losing a response or reconnecting.
-+	cpuPauseMu         sync.Mutex
-+	cpuPaused          bool
-+	cpuControlDisabled bool
-+	cpuPauseTimer      *gtime.Timer
-+	cpuPauseGeneration uint64
++	cpuControl cpuPauseController
  	// startChan is used to signal when the root container process should
  	// be started.
  	startChan chan struct{}
-@@ -626,7 +633,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
+@@ -626,7 +627,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
  	}
  
  	// Create the main MemoryFile.
@@ -9640,27 +9737,17 @@ index ae644c4f5..aad1de34f 100644
  	if err != nil {
  		return fmt.Errorf("creating memory file: %v", err)
  	}
-@@ -898,6 +906,87 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
+@@ -898,6 +900,48 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
  	return nil
  }
  
 +// SetCPUPaused is a host-only scheduling hook. Unlike host SIGSTOP, this
 +// interrupts application contexts safely without cancelling seccomp requests.
 +func (cm *containerManager) SetCPUPaused(paused *bool, _ *struct{}) error {
-+	cm.cpuPauseMu.Lock()
-+	defer cm.cpuPauseMu.Unlock()
-+	if *paused && cm.cpuControlDisabled {
-+		return fmt.Errorf("CPU control disabled")
++	_, disabled, reason := cm.cpuControl.update(cm.l.k, *paused, false)
++	if *paused && disabled {
++		return fmt.Errorf("CPU control disabled: %s", reason)
 +	}
-+	if *paused == cm.cpuPaused {
-+		return nil
-+	}
-+	if *paused {
-+		cm.l.k.Pause()
-+	} else {
-+		cm.l.k.Unpause()
-+	}
-+	cm.cpuPaused = *paused
 +	return nil
 +}
 +
@@ -9679,55 +9766,239 @@ index ae644c4f5..aad1de34f 100644
 +	Runnable    int64
 +	Paused      bool
 +	Disabled    bool
++	Reason      string
 +}
 +
-+// CPUControl does not walk task lists or wait on the platform's sampler. Each
-+// sandbox has its own connection; a stalled pause cannot block other sandboxes.
++// CPUControl reads cached accounting and requests scheduling stops without
++// waiting for task quiescence. Pause acknowledgement and broker leases have
++// independent deadlines; neither can prevent cancellation or recovery.
 +func (cm *containerManager) CPUControl(args *CPUControlArgs, out *CPUControlStats) error {
-+	cm.cpuPauseMu.Lock()
-+	defer cm.cpuPauseMu.Unlock()
-+	if args.Disable {
-+		cm.cpuControlDisabled = true
-+	}
-+	paused := args.Paused && !cm.cpuControlDisabled
-+	cm.cpuPauseGeneration++
-+	generation := cm.cpuPauseGeneration
-+	if cm.cpuPauseTimer != nil {
-+		cm.cpuPauseTimer.Stop()
-+		cm.cpuPauseTimer = nil
-+	}
-+	if paused != cm.cpuPaused {
-+		if paused {
-+			cm.l.k.Pause()
-+		} else {
-+			cm.l.k.Unpause()
-+		}
-+		cm.cpuPaused = paused
-+	}
-+	if paused {
-+		cm.cpuPauseTimer = gtime.AfterFunc(500*gtime.Millisecond, func() {
-+			cm.cpuPauseMu.Lock()
-+			defer cm.cpuPauseMu.Unlock()
-+			if cm.cpuPauseGeneration == generation && cm.cpuPaused {
-+				cm.l.k.Unpause()
-+				cm.cpuPaused = false
-+			}
-+		})
-+	}
 +	accounting, ok := cm.l.k.Platform.(interface{ HostCPUUsage() (int64, int64) })
 +	if !ok {
 +		return fmt.Errorf("host CPU accounting unavailable on this platform")
 +	}
++	out.Paused, out.Disabled, out.Reason = cm.cpuControl.update(cm.l.k, args.Paused, args.Disable)
 +	out.CPUTimeNS, out.SampleAgeNS = accounting.HostCPUUsage()
 +	out.Runnable = cm.l.k.RunningTasks()
-+	out.Paused = cm.cpuPaused
-+	out.Disabled = cm.cpuControlDisabled
 +	return nil
 +}
 +
  // Pause pauses all tasks, blocking until they are stopped.
  func (cm *containerManager) Pause(_, _ *struct{}) error {
  	cm.l.k.Pause()
+diff --git a/runsc/boot/cpu_control.go b/runsc/boot/cpu_control.go
+new file mode 100644
+index 000000000..6407a2931
+--- /dev/null
++++ b/runsc/boot/cpu_control.go
+@@ -0,0 +1,109 @@
++// Copyright 2026 The gVisor Authors.
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package boot
++
++import (
++	"sync"
++	"time"
++)
++
++const cpuPauseLease = 500 * time.Millisecond
++
++type cpuPauseKernel interface {
++	RequestCPUPause()
++	Unpause()
++	RunningTasks() int64
++}
++
++// cpuPauseController owns exactly one external stop. User pauses and snapshot
++// barriers own separate stops, so releasing ours cannot release theirs.
++// All methods, including timer callbacks, serialize through mu. No method
++// waits for application threads to acknowledge an interrupt.
++type cpuPauseController struct {
++	mu           sync.Mutex
++	paused       bool
++	disabled     bool
++	reason       string
++	acknowledged bool
++	started      time.Time
++	generation   uint64
++	timer        *time.Timer
++}
++
++// checkProgressLocked uses the existing O(1) runnable counter. Once no task is
++// executing, the stop prevents further application execution until released.
++// This is only CPU scheduling acknowledgement, not an I/O/checkpoint barrier.
++func (c *cpuPauseController) checkProgressLocked(k cpuPauseKernel, now time.Time) {
++	if !c.paused || c.acknowledged {
++		return
++	}
++	if k.RunningTasks() == 0 {
++		c.acknowledged = true
++	} else if !now.Before(c.started.Add(cpuPauseLease)) {
++		c.disabled = true
++		c.reason = "CPU pause did not quiesce within 500ms"
++	}
++}
++
++func (c *cpuPauseController) update(k cpuPauseKernel, paused, disable bool) (bool, bool, string) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	now := time.Now()
++	c.checkProgressLocked(k, now)
++	if disable {
++		c.disabled = true
++		if c.reason == "" {
++			c.reason = "CPU control disabled by host"
++		}
++	}
++	paused = paused && !c.disabled
++	c.generation++
++	if c.timer != nil {
++		c.timer.Stop()
++		c.timer = nil
++	}
++	if paused != c.paused {
++		if paused {
++			c.started, c.acknowledged = now, false
++			k.RequestCPUPause()
++		} else {
++			k.Unpause()
++		}
++		c.paused = paused
++	}
++	if paused {
++		// Renewal must not postpone the acknowledgement deadline: a live
++		// broker can keep requesting a pause while a single thread spins.
++		delay := cpuPauseLease
++		if !c.acknowledged {
++			delay = time.Until(c.started.Add(cpuPauseLease))
++		}
++		generation := c.generation
++		c.timer = time.AfterFunc(delay, func() { c.expire(k, generation) })
++	}
++	return c.paused, c.disabled, c.reason
++}
++
++func (c *cpuPauseController) expire(k cpuPauseKernel, generation uint64) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	if generation != c.generation || !c.paused {
++		return
++	}
++	c.checkProgressLocked(k, time.Now())
++	k.Unpause()
++	c.paused = false
++	c.timer = nil
++}
+diff --git a/runsc/boot/cpu_control_test.go b/runsc/boot/cpu_control_test.go
+new file mode 100644
+index 000000000..7811fb72b
+--- /dev/null
++++ b/runsc/boot/cpu_control_test.go
+@@ -0,0 +1,92 @@
++// Copyright 2026 The gVisor Authors.
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
++// Unless required by applicable law or agreed to in writing, software distributed
++// under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
++// CONDITIONS OF ANY KIND, either express or implied. See the License for the
++// specific language governing permissions and limitations under the License.
++
++package boot
++
++import (
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++type pauseTestKernel struct {
++	stops   atomic.Int64
++	running atomic.Int64
++}
++
++func (k *pauseTestKernel) RequestCPUPause()    { k.stops.Add(1) }
++func (k *pauseTestKernel) Unpause()            { k.stops.Add(-1) }
++func (k *pauseTestKernel) RunningTasks() int64 { return k.running.Load() }
++
++func TestCPUPauseMissingAcknowledgement(t *testing.T) {
++	for _, renew := range []bool{false, true} {
++		c, k := &cpuPauseController{}, &pauseTestKernel{}
++		k.running.Store(1) // A context that never acknowledges its interrupt.
++		c.update(k, true, false)
++		started := time.Now()
++		deadline := started.Add(3 * time.Second)
++		for k.stops.Load() != 0 && time.Now().Before(deadline) {
++			if renew {
++				c.update(k, true, false)
++			}
++			time.Sleep(10 * time.Millisecond)
++		}
++		paused, disabled, reason := c.update(k, true, false)
++		if paused || !disabled || reason == "" || k.stops.Load() != 0 {
++			t.Fatalf("renew=%v: paused=%v disabled=%v reason=%q stops=%d", renew, paused, disabled, reason, k.stops.Load())
++		}
++		if time.Since(started) >= 2*time.Second {
++			t.Fatal("unacknowledged pause was not released promptly")
++		}
++	}
++}
++
++func TestCPUPauseCancellationAndNestedStop(t *testing.T) {
++	c, k := &cpuPauseController{}, &pauseTestKernel{}
++	k.stops.Store(1) // Independently owned explicit user pause.
++	k.running.Store(1)
++	c.update(k, true, false)
++	old := c.generation
++	c.update(k, false, false)
++	c.update(k, true, false)
++	c.expire(k, old) // A callback queued before cancellation must be fenced.
++	if k.stops.Load() != 2 {
++		t.Fatalf("stale timer removed a new or explicit pause: %d", k.stops.Load())
++	}
++	paused, disabled, _ := c.update(k, false, true)
++	c.update(k, true, false) // Late broker request after revocation.
++	if paused || !disabled || k.stops.Load() != 1 {
++		t.Fatalf("disable did not release exactly its stop: %d", k.stops.Load())
++	}
++}
++
++func TestCPUPauseHealthyRenewalAndLeaseExpiry(t *testing.T) {
++	c, k := &cpuPauseController{}, &pauseTestKernel{}
++	c.update(k, true, false)
++	defer c.update(k, false, true)
++	deadline := time.Now().Add(2 * cpuPauseLease)
++	for time.Now().Before(deadline) {
++		paused, disabled, _ := c.update(k, true, false)
++		if !paused || disabled || k.stops.Load() != 1 {
++			t.Fatal("healthy renewed pause expired or accumulated stops")
++		}
++		time.Sleep(20 * time.Millisecond)
++	}
++	deadline = time.Now().Add(3 * time.Second)
++	for k.stops.Load() != 0 && time.Now().Before(deadline) {
++		time.Sleep(10 * time.Millisecond)
++	}
++	if k.stops.Load() != 0 {
++		t.Fatal("pause survived lost broker lease")
++	}
++	paused, disabled, _ := c.update(k, false, false)
++	if paused || disabled {
++		t.Fatal("healthy lease expiration should release without permanent revocation")
++	}
++}
 diff --git a/runsc/boot/loader.go b/runsc/boot/loader.go
 index d78a9606c..ef3a3ebba 100644
 --- a/runsc/boot/loader.go

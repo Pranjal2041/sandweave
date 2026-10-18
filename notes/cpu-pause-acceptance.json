@@ -1,0 +1,95 @@
+{
+  "pause-recovery-False": {
+    "renew": false,
+    "pause_request_seconds": 0.0005342615768313408,
+    "recovery_seconds": 0.7397171426564455,
+    "peer_max_seconds": 0,
+    "disabled_reason": "CPU pause did not quiesce within 500ms",
+    "both_guests_survived": true
+  },
+  "pause-recovery-True": {
+    "renew": true,
+    "pause_request_seconds": 0.0005713533610105515,
+    "recovery_seconds": 0.5470493398606777,
+    "peer_max_seconds": 0.024318342097103596,
+    "disabled_reason": "CPU pause did not quiesce within 500ms",
+    "both_guests_survived": true
+  },
+  "spinlocks": {
+    "counts": [
+      48931,
+      64680,
+      89949,
+      102408,
+      114994
+    ],
+    "stops": 43
+  },
+  "scale": {
+    "sandboxes": 36,
+    "sleepers_per_guest": 240,
+    "host_processes": 17821,
+    "broker_idle_cpu": 0.18331593905780336,
+    "broker_process_heavy_cpu": 0.2102304738992282,
+    "max_status_age_seconds": 0.25319433212280273,
+    "command_median_seconds": 0.041950664948672056,
+    "command_max_seconds": 0.14436120074242353,
+    "busy_cpu_rates": [
+      1.118546903709678,
+      1.059476865273231,
+      0.030801531103974288,
+      0.029539063363762396,
+      0.031177709947821652,
+      0.03142484662879781,
+      0.030644689195321317,
+      0.029963238662916863,
+      0.029929684339280862,
+      0.03001297671772021,
+      0.030122856394704686,
+      0.030115978293280908,
+      0.031124950620494654,
+      0.029810860998284245,
+      0.02943547895564671,
+      0.03002420906872689,
+      0.029349145613547234,
+      0.031481658818440804,
+      0.029604721639683928,
+      0.030447742211074533,
+      0.031142994725083174,
+      0.029162622389499755,
+      0.029323546258198985,
+      0.030131243062939583,
+      0.029556018435625445,
+      0.03053094315742166,
+      0.029893278187231757,
+      0.03001139151852447,
+      0.030473341190158997,
+      0.029967256031018682,
+      0.030440467025969004,
+      0.030044047826000845,
+      0.03285190530425584,
+      0.02975695958504252,
+      0.029296902520090817,
+      0.029883433246107458
+    ],
+    "host_idle_fraction": 0.11291866028708133,
+    "independent_host_cpu": 3.238006922123313
+  },
+  "broker-failure-SIGSTOP": {
+    "recovery_seconds": 0.6016199802979827,
+    "both_survived": true,
+    "late_requests_fenced": true,
+    "user_pause_resume": true
+  },
+  "broker-failure-SIGKILL": {
+    "recovery_seconds": 0.593746549449861,
+    "both_survived": true,
+    "late_requests_fenced": true,
+    "user_pause_resume": true
+  },
+  "peer-failure": {
+    "max_command_seconds": 0.02023504488170147,
+    "max_status_age_seconds": 0.25757932662963867,
+    "both_survived": true
+  }
+}

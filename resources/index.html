@@ -1538,11 +1538,17 @@ throttled. These are not hard host cgroup limits.</p>
 quota. Broker pauses expire after 500 ms without renewal. After a sustained
 failure, <code>env.info["cpu_control"]</code> reports <code>state="degraded"</code> and the reason.
 Explicit <code>env.pause()</code> remains separate and does not expire.</p>
-<p>This requires SDK 0.2.29 and its updated engine. New workers automatically update
-older prepared engines while retaining guest images. Existing workers and
-sandboxes keep their running code. Memory snapshots pinned to an older engine
-use compatibility accounting outside the broker's scheduling loop; their pause
-recovery relies on the launcher watchdog instead of the new engine lease.</p>
+<p>Starting with 0.2.43, CPU throttling does not wait for every guest thread to stop.
+If runnable tasks fail to quiesce within 500 ms, the runtime releases its stop
+and disables CPU throttling for that sandbox. Broker renewals cannot extend this
+deadline. The guest survives, but its weight and quota no longer apply. This
+does not change the full pause required for explicit pauses and snapshots.</p>
+<p>New workers automatically update older prepared engines while retaining guest
+images. Existing workers and sandboxes keep their running code: restart workers
+and recreate affected sandboxes to apply this fix. Memory snapshots retain
+their captured engine and its limitations; use a filesystem snapshot to move
+saved files to the fixed engine. Very old memory snapshots use compatibility
+accounting outside the broker's scheduling loop and lack runtime pause leases.</p>
 <h2 id="guest-and-runtime-memory">Guest and runtime memory<a class="headerlink" href="#guest-and-runtime-memory" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sandweave</span><span class="w"> </span><span class="kn">import</span> <span class="n">Memory</span><span class="p">,</span> <span class="n">Sandbox</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>

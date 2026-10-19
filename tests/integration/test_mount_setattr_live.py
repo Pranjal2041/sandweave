@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from sandweave import Memory, Sandbox
+from sandweave import Memory, Sandbox, SandboxError
 from sandweave.sandbox.targets import local_connection
 
 pytestmark = [pytest.mark.integration, pytest.mark.skipif(
@@ -64,6 +64,67 @@ with tempfile.TemporaryDirectory(prefix='mount-setattr-') as target:
         assert libc.umount2(path, 0) == 0, ('ordinary unmount', iteration, c.get_errno())
 print(json.dumps({'calls': calls, 'ordinary_unmounts': 32, 'held_fd_ebusy': True}))
 '''
+
+
+MINIMAL_PROBE = r'''
+import ctypes as c
+import errno
+import json
+import os
+import sys
+libc = c.CDLL(None, use_errno=True)
+libc.syscall.restype = c.c_long
+libc.mount.argtypes = [c.c_char_p, c.c_char_p, c.c_char_p, c.c_ulong, c.c_char_p]
+libc.umount2.argtypes = [c.c_char_p, c.c_int]
+target = b'/var/lib/probe-rro'
+os.makedirs(target)
+assert libc.mount(b'', target, b'tmpfs', 0, b'') == 0, c.get_errno()
+result = {'mode': sys.argv[1], 'mount': 0}
+if sys.argv[1] == 'rro':
+    attr = (c.c_uint64 * 4)(1, 0, 0, 0)
+    rc = libc.syscall(c.c_long(442), c.c_int(-1), c.c_char_p(target),
+                      c.c_uint(0x8000), c.byref(attr), c.c_size_t(32))
+    result.update(mount_setattr=rc, mount_setattr_errno=c.get_errno())
+    assert rc == -1 and c.get_errno() == errno.ENOSYS, result
+if sys.argv[1] != 'leave-mounted':
+    result['umount'] = libc.umount2(target, 0)
+    result['umount_errno'] = c.get_errno() if result['umount'] else 0
+    assert result['umount'] == 0, result
+result['remaining_mounts'] = [line.strip() for line in open('/proc/self/mountinfo')
+                             if ' /var/lib/probe-rro ' in line]
+print(json.dumps(result))
+'''
+
+
+@pytest.mark.parametrize('mode', ['control', 'rro', 'leave-mounted'])
+def test_var_lib_mount_probe_and_filesystem_checkpoint(mode):
+    try:
+        with Sandbox(memory=Memory('256MiB', '256MiB')) as env:
+            result = json.loads(env.run(argv=['python3', '-c', MINIMAL_PROBE, mode],
+                                        timeout=10, check=True).stdout)
+            if mode == 'leave-mounted':
+                # The new location must exercise the reported snapshot guard;
+                # /tmp mounts are deliberately excluded from filesystem saves.
+                assert len(result['remaining_mounts']) == 1
+                with pytest.raises(SandboxError, match='unsupported writable mount'):
+                    env.snapshot(state='filesystem')
+                assert env.run('echo alive', check=True).stdout == 'alive\n'
+                env.run('umount /var/lib/probe-rro', check=True)
+                result['checkpoint'] = 'rejected until ordinary unmount'
+            else:
+                assert result['remaining_mounts'] == []
+                result['checkpoint'] = 'passed'
+            env.files.write_text('/workspace/preserved', mode)
+            saved = env.snapshot(state='filesystem')
+            assert saved.verify()['status'] == 'passed'
+            with Sandbox(snapshot=saved) as restored:
+                assert restored.files.read_text('/workspace/preserved') == mode
+                assert '/var/lib/probe-rro' not in restored.run('cat /proc/1/mountinfo').stdout
+            print(json.dumps(result))
+    finally:
+        connection = local_connection()
+        connection.call('_shutdown_if_idle')
+        connection.close()
 
 
 def test_failed_mount_setattr_keeps_mounts_releasable_under_concurrency():

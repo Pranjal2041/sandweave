@@ -67,3 +67,37 @@ The next diagnostic input needed is the client's complete reproducer path and
 the exact engine used by the failing sandbox. An SDK upgrade alone does not
 identify an already-running sandbox's engine or a memory snapshot's pinned
 engine. There is no runtime fix or new PyPI release from this investigation.
+
+## Follow-up: /var/lib and checkpoint reproduction
+
+The second report identified an installation of SDK 0.2.43 on October 18 and
+provided the sequence `mount tmpfs -> mount_setattr(AT_RECURSIVE,
+MOUNT_ATTR_RDONLY) -> ordinary unmount`, at `/var/lib/probe-rro`. It reported
+`ENOSYS`, then `EBUSY`, followed by filesystem-checkpoint rejection of the
+remaining writable mount. The actual reproducer script and failing engine
+hashes are still unavailable.
+
+The added `test_var_lib_mount_probe_and_filesystem_checkpoint` covers that
+location and one syscall invocation with no other target descriptors opened.
+It uses dirfd `-1` and a 32-byte mount-attribute structure, matching
+[Moby's recursive-read-only detection](https://github.com/moby/moby/blob/v27.4.0/daemon/daemon_linux.go).
+This is a direct syscall-sequence test; it does not start Docker itself.
+
+All three cases passed against the same unmodified released binaries:
+
+| Case | Ordinary unmount | Mount left behind | Filesystem save and restore |
+| --- | --- | --- | --- |
+| Mount only | Succeeded | No | Passed |
+| Mount, syscall 442 returns ENOSYS | Succeeded | No | Passed |
+| Deliberately leave mount present | Not initially attempted | Yes | Rejected until ordinary unmount; then passed |
+
+The negative control produced the reported `unsupported writable mount` error
+for `/var/lib/probe-rro`, and the sandbox remained usable after the failed save.
+The positive cases saved a marker and restored it in a new sandbox, with no
+probe mount in the restored mount table. Three tests passed in 21.79 seconds;
+raw output is `checkpoint-repro.log` in the same ignored scratch directory.
+
+The follow-up establishes a concrete reported failure to investigate, but
+does not reconcile its outcome with the released-source implementation or
+these live results. A different call sequence, a retained descriptor, or a
+different running engine remain possibilities, not established diagnoses.

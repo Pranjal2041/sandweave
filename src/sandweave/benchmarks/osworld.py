@@ -42,7 +42,7 @@ exec env -i container=gvisor TERM=linux PATH=/usr/sbin:/usr/bin:/sbin:/bin /sbin
     recipe['runtime_options']['init_command'] = ['/bin/bash', '-c', script, 'osworld-init']
     recipe['capabilities']['desktop']['keyboard_source'] = (
         reference / 'src/cua_speedrun/envs/_pyautogui_keyboard.py').read_text()
-    recipe['name'] = 'osworld@' + source.CUA_REVISION
+    recipe['name'] = 'osworld@' + source.cua_revision(reference)
     return recipe, base
 
 

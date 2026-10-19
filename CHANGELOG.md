@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.44
+
+- Fetch OSWorld integration resources anonymously from the official public
+  `cua-speedrun/cua-speedrun` repository, pinned and checksum-verified. GitHub
+  authentication is no longer required.
+- Preserve the existing 50- and 295-task benchmark names, membership, order,
+  task checksums and setup patches. Use the public setup hooks, including their
+  relative-path and directory-ownership fixes; keep the desktop recipe and
+  canonical evaluator revision unchanged.
+- Continue accepting the old pinned private checkout through `source=`, with
+  separate cache identities. The full 369-task list uses the public hooks,
+  which omit three legacy patches outside the two subsets.
+
 ## 0.2.43
 
 - Fix CPU throttling holding its resume lock while waiting indefinitely for

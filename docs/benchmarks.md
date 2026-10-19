@@ -7,7 +7,7 @@ attempt gets its own writable state.
 Install the benchmark dependencies for OSWorld:
 
 ```bash
-uv pip install 'sandweave[benchmarks]==0.2.43'
+uv pip install 'sandweave[benchmarks]==0.2.44'
 ```
 
 ## Run tasks
@@ -284,9 +284,9 @@ lists the tasks and lifecycle checks exercised. Existing OSWorld behavior is unc
 
 ## OSWorld setup
 
-The OSWorld benchmarks use the desktop recipe and evaluation integration from the private
-[`Pranjal2041/cua-speed-run`](https://github.com/Pranjal2041/cua-speed-run)
-repository at commit `681f8dbc695ff3a7e3af2f532bec982725818211`:
+The OSWorld benchmarks use the desktop recipe and evaluation integration from the official public
+[`cua-speedrun/cua-speedrun`](https://github.com/cua-speedrun/cua-speedrun)
+repository at commit `be17c72c5efbb145d06f86028336fdf2743a3d98` (since 0.2.44):
 
 | Benchmark name | Tasks |
 | --- | ---: |
@@ -296,7 +296,9 @@ repository at commit `681f8dbc695ff3a7e3af2f532bec982725818211`:
 
 Both subsets preserve their reference task order, source checksums and setup
 patches. Selecting a different split changes the task list; the desktop recipe,
-controls and canonical evaluator are the same.
+controls and canonical evaluator are the same. The existing Sandweave subset
+names map to the public source's `osworld-50` and `osworld-offline`, respectively;
+their membership, order, task JSON and setup patches are unchanged.
 
 ### The 295-task split
 
@@ -322,19 +324,26 @@ task leases in this example. Add `target=` to place those sandboxes through Weav
 
 ### Reference access and preparation
 
-Authenticate `gh` with an account that can read that repository. Sandweave fetches
-the pinned source automatically. Alternatively, pass an unchanged local checkout:
+Sandweave downloads and verifies the pinned public source automatically, without
+`gh`, a GitHub token or a login. Alternatively, pass an unchanged local checkout:
 
 ```python
 bench = Benchmark(
     "osworld-energy50-representative",
-    source="/path/to/cua-speed-run",
+    source="/path/to/cua-speedrun",
     capacity=4,
 )
 ```
 
 The checkout must be at the commit above. Sandweave reads it without editing it.
-Private source files are not included in Sandweave's package or runtime release.
+For reproducing older runs, `source=` also accepts the previous private checkout
+at `681f8dbc695ff3a7e3af2f532bec982725818211`. Its cache remains separate.
+
+The public setup handles relative download paths under the desktop user's home
+and fixes ownership of newly created directories. It omits three legacy setup
+patches for tasks outside both subsets, so those full-list tasks now use their
+canonical setup. The desktop recipe and canonical evaluator revision are unchanged.
+
 The canonical evaluator runs in separate processes on the client. Its dependencies
 are prepared automatically if a compatible interpreter is not already available.
 The evaluator client needs the Linux `file` command for the upstream file-type

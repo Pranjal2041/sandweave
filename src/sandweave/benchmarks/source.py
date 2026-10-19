@@ -12,9 +12,27 @@ import urllib.request
 
 from ..sandbox.workspace import home, locked
 
-CUA_REPOSITORY = 'Pranjal2041/cua-speed-run'
-CUA_REVISION = '681f8dbc695ff3a7e3af2f532bec982725818211'
+CUA_REPOSITORY = 'cua-speedrun/cua-speedrun'
+CUA_REVISION = 'be17c72c5efbb145d06f86028336fdf2743a3d98'
+CUA_ARCHIVE_SHA256 = '19769c938fb64b514080dd592b5c5d93c0543ad5ec4f92069aaa0c9df9bbd369'
+LEGACY_CUA_REVISION = '681f8dbc695ff3a7e3af2f532bec982725818211'
 OSWORLD_REVISION = '315a7603173feadf1b8a85cbc006c93ffe1dc1a1'
+SUBSETS = {'osworld-energy50-representative': 'osworld-50',
+           'osworld-unanimous-295': 'osworld-offline'}
+
+
+def cua_revision(reference):
+    """Identify a validated local checkout or the downloaded public source."""
+    if (reference / '.git').exists():
+        return subprocess.run(['git', '-C', str(reference), 'rev-parse', 'HEAD'],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    return CUA_REVISION
+
+
+def subset_manifest(reference, name):
+    public = reference / 'benchmarks' / SUBSETS[name] / 'benchmark-source.yaml'
+    # Keep explicitly supplied legacy checkouts reproducible.
+    return public if public.is_file() else reference / 'benchmarks' / name / 'benchmark-source.yaml'
 
 
 def module(path):
@@ -31,8 +49,9 @@ def cua(source=None):
         source = Path(source).expanduser().resolve()
         result = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'],
                                 capture_output=True, text=True, check=True)
-        if result.stdout.strip() != CUA_REVISION:
-            raise ValueError('OSWorld integration requires cua-speed-run commit ' + CUA_REVISION)
+        if result.stdout.strip() not in (CUA_REVISION, LEGACY_CUA_REVISION):
+            raise ValueError('OSWorld integration requires cua-speedrun commit ' + CUA_REVISION +
+                             ' (or legacy cua-speed-run commit ' + LEGACY_CUA_REVISION + ')')
         changed = subprocess.run(['git', '-C', str(source), 'diff', '--name-only', 'HEAD', '--',
                                   'scripts', 'benchmarks', 'src/cua_speedrun/envs',
                                   'src/cua_speedrun/remote/osworld_modal_base.py'],
@@ -50,15 +69,13 @@ def cua(source=None):
         with tempfile.TemporaryDirectory(prefix='.cua-', dir=directory) as temporary:
             temporary = Path(temporary)
             archive = temporary / 'source.tar.gz'
-            if shutil.which('gh') is None:
-                raise RuntimeError('This OSWorld split uses a private GitHub repository. '
-                                   'Authenticate with gh auth login, or pass source= with its pinned checkout.')
-            with archive.open('wb') as output:
-                result = subprocess.run(['gh', 'api', 'repos/' + CUA_REPOSITORY + '/tarball/' + CUA_REVISION],
-                                        stdout=output, stderr=subprocess.PIPE, timeout=180)
-            if result.returncode:
-                raise RuntimeError('Could not read the pinned cua-speed-run repository. '
-                                   'Check gh auth status and repository access.')
+            url = 'https://codeload.github.com/' + CUA_REPOSITORY + '/tar.gz/' + CUA_REVISION
+            with urllib.request.urlopen(url, timeout=180) as response, archive.open('wb') as output:
+                shutil.copyfileobj(response, output)
+            with archive.open('rb') as stream:
+                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if digest != CUA_ARCHIVE_SHA256:
+                raise ValueError('OSWorld integration source archive checksum mismatch')
             extract_source(archive, temporary / 'source')
             (temporary / 'source').rename(destination)
         return destination
@@ -75,13 +92,13 @@ def tasks(reference, name):
                 OSWORLD_REVISION + '/evaluation_examples/')
     if name != 'osworld':
         selected = module(reference / 'scripts/build_osworld_subset.py')._read_spec(
-            reference / 'benchmarks' / name / 'benchmark-source.yaml')['tasks']
+            subset_manifest(reference, name))['tasks']
     else:
         with urllib.request.urlopen(base_url + 'test_all.json', timeout=60) as response:
             manifest = json.load(response)
         selected = [{'id': 'osworld_' + domain + '_' + identity}
                     for domain, identities in manifest.items() for identity in identities]
-    root = home() / 'benchmarks/tasks' / CUA_REVISION / name
+    root = home() / 'benchmarks/tasks' / cua_revision(reference) / name
     root.mkdir(parents=True, exist_ok=True)
 
     def fetch(item):
@@ -107,6 +124,8 @@ def tasks(reference, name):
             patch = reference / 'scripts/osworld_task_patches' / (directory.name + '.json')
             if patch.is_file():
                 shutil.copyfile(patch, directory / 'setup-patch.json')
+            else:
+                (directory / 'setup-patch.json').unlink(missing_ok=True)
         return TaskSpec(identity, source['instruction'], {'domain': domain, 'osworld_id': uid,
                         'directory': str(directory)})
 

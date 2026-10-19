@@ -437,9 +437,10 @@ split, or `Benchmark("osworld")` for all 369 pinned tasks. The desktop setup,
 controls and evaluator are shared; subset membership and task order come from
 the reference manifests.
 
-These benchmarks require read access to the pinned `cua-speed-run` repository through
-`gh`, or a checkout passed as `source=`. First use downloads the original OSWorld
-Ubuntu image and prepares its desktop. See [benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/)
+These benchmarks download the pinned public [CUA Speedrun source](https://github.com/cua-speedrun/cua-speedrun)
+automatically; no GitHub login is needed. An unchanged pinned checkout can also
+be passed as `source=`. First use downloads the original OSWorld Ubuntu image
+and prepares its desktop. See [benchmarks](https://pranjal2041.github.io/sandweave/benchmarks/)
 for setup, resource requirements and the measured limits of VM parity.
 
 ### Harbor

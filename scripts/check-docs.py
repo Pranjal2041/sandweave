@@ -218,7 +218,7 @@ def check_browser(site, output, url=None):
                 page.get_by_role('button', name='Copy to clipboard').first.click()
                 version = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version']
                 assert 'sandweave[benchmarks]==' + version in page.evaluate('navigator.clipboard.readText()')
-                expect(page.locator('article')).to_contain_text('private')
+                expect(page.locator('article')).to_contain_text('official public')
                 expect(page.locator('article')).to_contain_text('Full VM parity is not claimed')
                 page.screenshot(path=str(output / 'benchmarks-desktop.png'), animations='disabled')
                 page.goto(url + 'benchmarks/#the-295-task-split')
@@ -228,6 +228,11 @@ def check_browser(site, output, url=None):
                 assert 'Benchmark("osworld-unanimous-295", capacity=8)' in copied
                 assert 'task.close()' in copied and 'bench.close()' in copied
                 page.screenshot(path=str(output / 'osworld295-desktop.png'), animations='disabled')
+                page.goto(url + 'benchmarks/#reference-access-and-preparation')
+                expect(page.locator('article')).to_contain_text('without gh, a GitHub token or a login')
+                expect(page.locator('article').get_by_role('link', name='cua-speedrun/cua-speedrun', exact=True)).to_have_attribute(
+                    'href', 'https://github.com/cua-speedrun/cua-speedrun')
+                page.screenshot(path=str(output / 'osworld-public-source.png'), animations='disabled')
                 page.goto(url + 'benchmarks/#harbor')
                 section = page.locator('#harbor')
                 example = section.locator('xpath=following-sibling::div[2]')

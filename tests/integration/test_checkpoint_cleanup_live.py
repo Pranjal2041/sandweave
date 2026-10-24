@@ -24,16 +24,17 @@ def stop_owned_worker():
 
 @pytest.mark.parametrize('state', ['filesystem', 'memory'])
 def test_repeated_snapshots_reclaim_staging_while_clones_run(state):
-    c = local_connection()
-    try:
-        root = Path(c.call('ping')['workspace'])
-    finally:
-        c.close()
-    local = Path((root / 'runs/local-path.txt').read_text().strip())
-    expected = os.environ.get('SANDWEAVE_LOCAL_DIR') or os.environ.get('TMPDIR')
-    if expected:
-        assert local.parent == Path(expected).resolve()
+    # Creating the source first installs the runtime in fresh release storage.
     with Sandbox(memory=Memory('256MiB','512MiB')) as source:
+        c = local_connection()
+        try:
+            root = Path(c.call('ping')['workspace'])
+        finally:
+            c.close()
+        local = Path((root / 'runs/local-path.txt').read_text().strip())
+        expected = os.environ.get('SANDWEAVE_LOCAL_DIR') or os.environ.get('TMPDIR')
+        if expected:
+            assert local.parent == Path(expected).resolve()
         source.run('dd if=/dev/zero of=/workspace/large bs=1M count=32',check=True)
         for index in range(3):
             source.files.write_text('/workspace/iteration',str(index))

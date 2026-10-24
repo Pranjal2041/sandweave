@@ -654,6 +654,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../clock/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guest clock
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../snapshots/" class="md-nav__link">
         
   
@@ -1336,6 +1364,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#guest-clock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guest clock
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1538,6 +1577,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#guest-clock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guest clock
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1689,6 +1739,11 @@ entries and protected runtime audit. <code>--hidepid 0 --no-audit</code> explici
 template defaults. Export records through <code>Sandbox.connect(id).audit_log(path)</code>.
 See <a href="../process-audit/">process visibility and audit</a> for privilege requirements,
 coverage, and snapshot support.</p>
+<h2 id="guest-clock">Guest clock<a class="headerlink" href="#guest-clock" title="Permanent link">&para;</a></h2>
+<p>Use <code>--clock-offset SECONDS</code> or <code>--clock-start 2025-03-01T00:00:00Z</code> with
+<code>create</code>, <code>run</code> or <code>pool create</code> to set the guest's wall clock. A clock setting
+freezes guest time during <code>sandweave pause</code>; add <code>--clock-pause continue</code> to
+keep it running. See <a href="../clock/">guest clock</a>.</p>
 
 
 

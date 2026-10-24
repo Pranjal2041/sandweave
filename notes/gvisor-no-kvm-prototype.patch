@@ -22,6 +22,48 @@ index 4fedb33d9..ac7f9a922 100644
 +	KEYCTL_UNLINK               = 9
 +	KEYCTL_READ                 = 11
  )
+diff --git a/pkg/abi/linux/mm.go b/pkg/abi/linux/mm.go
+index 6a53f284c..336edb073 100644
+--- a/pkg/abi/linux/mm.go
++++ b/pkg/abi/linux/mm.go
+@@ -141,19 +141,27 @@ const (
+ var TaskSize = func() uintptr {
+ 	pageSize := uintptr(unix.Getpagesize())
+ 	for _, s := range feasibleTaskSizes {
+-		// mmap returns ENOMEM if addr is greater than TASK_SIZE,
+-		// otherwise it returns EINVAL, because addr isn't aligned to
+-		// the page size.
+-		_, _, errno := unix.RawSyscall6(
++		// Probe the last page below s. mmap returns ENOMEM if the address is
++		// above TASK_SIZE and EEXIST if the page is already mapped. The probe
++		// must be page aligned: gVisor hosts reject an unaligned address with
++		// EINVAL before checking its range.
++		addr, _, errno := unix.RawSyscall6(
+ 			unix.SYS_MMAP,
+-			s-pageSize-1,
+-			512,
++			s-pageSize,
++			pageSize,
+ 			uintptr(unix.PROT_NONE),
+-			uintptr(unix.MAP_ANONYMOUS|unix.MAP_PRIVATE|unix.MAP_FIXED), 0, 0)
+-		if errno == unix.EINVAL {
++			uintptr(unix.MAP_ANONYMOUS|unix.MAP_PRIVATE|unix.MAP_FIXED_NOREPLACE), ^uintptr(0), 0)
++		switch errno {
++		case 0:
++			unix.RawSyscall(unix.SYS_MUNMAP, addr, pageSize, 0)
++			// Kernels without MAP_FIXED_NOREPLACE treat the address as a hint.
++			if addr == s-pageSize {
++				return s
++			}
++		case unix.EEXIST:
+ 			return s
+-		}
+-		if errno != unix.ENOMEM {
++		case unix.ENOMEM:
++		default:
+ 			panic(fmt.Sprintf("mmap returned unexpected error: %d", errno))
+ 		}
+ 	}
 diff --git a/pkg/abi/linux/netlink.go b/pkg/abi/linux/netlink.go
 index 46717a077..5e0e0ff4e 100644
 --- a/pkg/abi/linux/netlink.go
@@ -5132,10 +5174,10 @@ index feb4941a4..4fbbc076d 100644
      deps = [
 diff --git a/pkg/sentry/pgalloc/limit_test.go b/pkg/sentry/pgalloc/limit_test.go
 new file mode 100644
-index 000000000..2a17c113e
+index 000000000..0a196d0fc
 --- /dev/null
 +++ b/pkg/sentry/pgalloc/limit_test.go
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,146 @@
 +// Copyright 2026 The gVisor Authors.
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
@@ -5157,6 +5199,7 @@ index 000000000..2a17c113e
 +	"sync"
 +	"sync/atomic"
 +	"testing"
++	"time"
 +
 +	"gvisor.dev/gvisor/pkg/hostarch"
 +	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -5175,6 +5218,42 @@ index 000000000..2a17c113e
 +	}
 +	t.Cleanup(f.Destroy)
 +	return f
++}
++
++func TestDestroyReleasesPrivateBackingFile(t *testing.T) {
++	file, err := os.CreateTemp(t.TempDir(), "private-memory")
++	if err != nil {
++		t.Fatal(err)
++	}
++	path := file.Name()
++	f, err := NewMemoryFile(file, MemoryFileOpts{DiskBackedFile: true, DecommitOnDestroy: true})
++	if err != nil {
++		file.Close()
++		t.Fatal(err)
++	}
++	fr, err := f.Allocate(hostarch.PageSize, AllocOpts{})
++	if err != nil {
++		f.Destroy()
++		t.Fatal(err)
++	}
++	f.DecRef(fr)
++	f.Destroy()
++	// Destruction runs on the release goroutine. Observe only the external
++	// file after Destroy, since the MemoryFile itself is no longer usable.
++	deadline := time.Now().Add(5 * time.Second)
++	for {
++		info, err := os.Stat(path)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if info.Size() == 0 {
++			break
++		}
++		if time.Now().After(deadline) {
++			t.Fatalf("private backing file still has size %d after destruction", info.Size())
++		}
++		time.Sleep(time.Millisecond)
++	}
 +}
 +
 +func TestMemoryLimitConcurrentAndRestore(t *testing.T) {
@@ -5246,7 +5325,7 @@ index 000000000..2a17c113e
 +	f.DecRef(replacement)
 +}
 diff --git a/pkg/sentry/pgalloc/pgalloc.go b/pkg/sentry/pgalloc/pgalloc.go
-index 6c2eae32a..1328575eb 100644
+index 6c2eae32a..67ef29967 100644
 --- a/pkg/sentry/pgalloc/pgalloc.go
 +++ b/pkg/sentry/pgalloc/pgalloc.go
 @@ -170,10 +170,14 @@ type MemoryFile struct {
@@ -5300,7 +5379,23 @@ index 6c2eae32a..1328575eb 100644
  	switch opts.DelayedEviction {
  	case DelayedEvictionDefault:
  		opts.DelayedEviction = DelayedEvictionEnabled
-@@ -669,6 +684,14 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange,
+@@ -537,10 +552,11 @@ func (f *MemoryFile) releaserDestroyLocked() {
+ 	}
+ 
+ 	if f.opts.DecommitOnDestroy {
+-		if chunks := f.chunksLoad(); len(chunks) != 0 {
+-			if err := f.decommitFile(memmap.FileRange{0, uint64(len(chunks)) * chunkSize}); err != nil {
+-				panic(fmt.Sprintf("failed to decommit entire memory file during destruction: %v", err))
+-			}
++		// No allocations remain and this private backing file is being
++		// destroyed. Truncating releases all storage without requiring
++		// hole punching, which some host filesystems do not implement.
++		if err := unix.Ftruncate(int(f.file.Fd()), 0); err != nil {
++			panic(fmt.Sprintf("failed to truncate memory file during destruction: %v", err))
+ 		}
+ 	}
+ 
+@@ -669,6 +685,14 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange,
  
  	var dsts safemem.BlockSeq
  	if alloc.willCommit {
@@ -5315,7 +5410,7 @@ index 6c2eae32a..1328575eb 100644
  		needHugeTouch := false
  		if alloc.recycled {
  			// We will need writable page table entries in our address space to
-@@ -842,6 +865,26 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
+@@ -842,6 +866,26 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
  		}
  	}
  
@@ -5342,7 +5437,7 @@ index 6c2eae32a..1328575eb 100644
  	// No suitable waste pages or we can't use them.
  retryFree:
  	// Try to allocate free pages from existing chunks.
-@@ -886,6 +929,9 @@ retryFree:
+@@ -886,6 +930,9 @@ retryFree:
  		knownCommitted: false,
  		commitSeq:      f.commitSeq,
  	})
@@ -5352,7 +5447,7 @@ index 6c2eae32a..1328575eb 100644
  	return
  }
  
-@@ -1365,6 +1411,9 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
+@@ -1365,6 +1412,9 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
  					usage.MemoryAccounting.Dec(malen, ma.kind, ma.memCgID)
  				}
  			}
@@ -5568,7 +5663,7 @@ index 000000000..d729608d7
 +	return 0, int64(time.Hour)
 +}
 diff --git a/pkg/sentry/platform/systrap/subprocess.go b/pkg/sentry/platform/systrap/subprocess.go
-index 4de8f9a83..fba9eee68 100644
+index 4de8f9a83..c81b43fb4 100644
 --- a/pkg/sentry/platform/systrap/subprocess.go
 +++ b/pkg/sentry/platform/systrap/subprocess.go
 @@ -81,6 +81,10 @@ type thread struct {
@@ -5582,7 +5677,17 @@ index 4de8f9a83..fba9eee68 100644
  	// sysmsgStackID is a stack ID in subprocess.sysmsgStackPool.
  	sysmsgStackID uint64
  
-@@ -216,7 +220,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
+@@ -128,6 +132,9 @@ type subprocess struct {
+ 	platform.NoAddressSpaceIO
+ 	subprocessRefs
+ 
++	// unmapGeneration invalidates inferred fault access after mappings change.
++	unmapGeneration atomicbitops.Uint64
++
+ 	// requests is used to signal creation of new threads.
+ 	requests chan any
+ 
+@@ -216,7 +223,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
  	}
  
  	if err := t.init(seccompNotify); err != nil {
@@ -5591,7 +5696,7 @@ index 4de8f9a83..fba9eee68 100644
  	}
  	s.syscallThread = &t
  
-@@ -347,6 +351,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
+@@ -347,6 +354,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
  	if sp := globalPool.fetchAvailable(); sp != nil {
  		sp.subprocessRefs.InitRefs()
  		sp.usertrap = usertrap.New()
@@ -5599,7 +5704,7 @@ index 4de8f9a83..fba9eee68 100644
  		return sp, nil
  	}
  
-@@ -406,6 +411,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
+@@ -406,6 +414,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
  		sp.numSysmsgThreads++
  	}
  
@@ -5607,7 +5712,7 @@ index 4de8f9a83..fba9eee68 100644
  	return sp, nil
  }
  
-@@ -791,6 +797,9 @@ func (t *thread) NotifyInterrupt() {
+@@ -791,6 +800,9 @@ func (t *thread) NotifyInterrupt() {
  
  func (s *subprocess) incAwakeContexts() {
  	nr := atomic.AddUint32(&s.contextQueue.numAwakeContexts, 1)
@@ -5617,8 +5722,16 @@ index 4de8f9a83..fba9eee68 100644
  	if nr > uint32(maxSysmsgThreads) {
  		return
  	}
+@@ -1029,6 +1041,7 @@ func (s *subprocess) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRa
+ 
+ // Unmap implements platform.AddressSpace.Unmap.
+ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
++	s.unmapGeneration.Add(1)
+ 	_, err := s.syscall(
+ 		unix.SYS_MUNMAP,
+ 		arch.SyscallArgument{Value: uintptr(addr)},
 diff --git a/pkg/sentry/platform/systrap/subprocess_amd64.go b/pkg/sentry/platform/systrap/subprocess_amd64.go
-index 070d84d55..2fa568dc8 100644
+index 070d84d55..b2bde8666 100644
 --- a/pkg/sentry/platform/systrap/subprocess_amd64.go
 +++ b/pkg/sentry/platform/systrap/subprocess_amd64.go
 @@ -200,6 +200,8 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
@@ -5630,14 +5743,22 @@ index 070d84d55..2fa568dc8 100644
  				},
  			}),
  			Action: seccomp.Allow,
-@@ -216,6 +218,12 @@ func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
+@@ -211,11 +213,20 @@ func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+ }
+ 
+ func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
++	if disableSyscallPatching {
++		return
++	}
+ 	// Set gs_base; this is the only time we set it and we don't expect it to ever
+ 	// change for any thread.
  	regs.Gs_base = sysThread.msg.Self
  }
  
 +// SupportsGSBase reports whether guest GS is available instead of reserved by
 +// the binary syscall-patching fast path.
 +func (*Systrap) SupportsGSBase() bool {
-+	return disableSyscallPatching
++	return disableSyscallPatching && archState.SupportsGSBase()
 +}
 +
  func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
@@ -5673,7 +5794,7 @@ index bf14741d0..74dcc9cff 100644
  	}
  
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
-index 5d6b4cef8..b6cd5f6d7 100644
+index 5d6b4cef8..d71932b0e 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 +++ b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 @@ -161,6 +161,26 @@ static void set_fsbase(uint64_t fsbase) {
@@ -5703,24 +5824,38 @@ index 5d6b4cef8..b6cd5f6d7 100644
  // switch_context_amd64 is a wrapper of switch_context() which does checks
  // specific to amd64.
  struct thread_context *switch_context_amd64(
-@@ -241,7 +261,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
+@@ -198,6 +218,8 @@ struct thread_context *switch_context_amd64(
+ 
+ static void prep_fpstate_for_sigframe(void *buf, uint32_t user_size,
+                                       bool use_xsave);
++static void copy_fpstate_from_sigframe(void *dst, const void *src,
++                                      uint32_t capacity);
+ 
+ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
+   ucontext_t *ucontext = _ucontext;
+@@ -241,10 +263,15 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
    if (signo != SIGCHLD ||
        ucontext->uc_mcontext.gregs[REG_RIP] < __export_stub_start) {
      ctx->ptregs.fs_base = fs_base;
-+    if (__export_disable_syscall_patching) {
++    if (__export_disable_syscall_patching && __export_arch_state.gsbase) {
 +      ctx->ptregs.gs_base = get_gsbase();
 +    }
      ctx->err = 0;
 +    ctx->exception_error = ucontext->uc_mcontext.gregs[REG_ERR];
 +    ctx->exception_trapno = ucontext->uc_mcontext.gregs[REG_TRAPNO];
      gregs_to_ptregs(ucontext, &ctx->ptregs);
-     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
-            __export_arch_state.fp_len);
-@@ -348,6 +373,11 @@ init:
+-    memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
+-           __export_arch_state.fp_len);
++    copy_fpstate_from_sigframe(ctx->fpstate, ucontext->uc_mcontext.fpregs,
++                              __export_arch_state.fp_len);
+   }
+ 
+   switch (signo) {
+@@ -348,6 +375,11 @@ init:
      ucontext->uc_mcontext.fpregs = (void *)ctx->fpstate;
    }
    ptregs_to_gregs(ucontext, &ctx->ptregs);
-+  if (__export_disable_syscall_patching) {
++  if (__export_disable_syscall_patching && __export_arch_state.gsbase) {
 +    // GS is not included in the host signal frame. Restore it explicitly,
 +    // including when the next application context belongs to another thread.
 +    set_gsbase(ctx->ptregs.gs_base);
@@ -5728,6 +5863,32 @@ index 5d6b4cef8..b6cd5f6d7 100644
  }
  
  void __syshandler() {
+@@ -474,6 +506,25 @@ struct __fpstate {
+   struct __fpx_sw_bytes sw_reserved;
+ };
+ 
++// The host signal frame can contain fewer XSAVE components than CPUID's
++// maximum size describes, including when an outer kernel masks AMX. Reading
++// the maximum size can cross the end of the signal stack. Preserve only the
++// supplied frame and initialize the remainder of our larger context buffer.
++static void copy_fpstate_from_sigframe(void *dst, const void *src,
++                                      uint32_t capacity) {
++  const struct __fpstate *fpstate = src;
++  const struct __fpx_sw_bytes *sw_bytes = &fpstate->sw_reserved;
++  uint32_t size = sizeof(struct __fpstate);
++  if (sw_bytes->magic1 == FP_XSTATE_MAGIC1 &&
++      sw_bytes->xstate_size >= size &&
++      sw_bytes->xstate_size <= sw_bytes->extended_size) {
++    size = sw_bytes->xstate_size;
++  }
++  if (size > capacity) size = capacity;
++  memcpy(dst, (uint8_t *)src, size);
++  for (uint32_t i = size; i < capacity; i++) ((uint8_t *)dst)[i] = 0;
++}
++
+ // The kernel expects to see some additional info in an FPU state. More details
+ // can be found in arch/x86/kernel/fpu/signal.c:check_xstate_in_sigframe.
+ static void prep_fpstate_for_sigframe(void *buf, uint32_t user_size,
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sysmsg.go b/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
 index 5601d3831..6547e5eb6 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sysmsg.go
@@ -5745,10 +5906,18 @@ index 5601d3831..6547e5eb6 100644
  
  // StubError are values that represent known stub-thread failure modes.
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sysmsg.h b/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
-index 88170a14d..b6347ba12 100644
+index 88170a14d..3f349eeb4 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
 +++ b/pkg/sentry/platform/systrap/sysmsg/sysmsg.h
-@@ -100,6 +100,8 @@ struct thread_context {
+@@ -27,6 +27,7 @@ struct arch_state {
+   uint32_t xsave_mode;
+   uint32_t fp_len;
+   uint32_t fsgsbase;
++  uint32_t gsbase;
+ };
+ // LINT.ThenChange(sysmsg_amd64.go)
+ #else
+@@ -100,6 +101,8 @@ struct thread_context {
    uint64_t tls;
    uint64_t debug;
    uint64_t err;
@@ -5757,6 +5926,96 @@ index 88170a14d..b6347ba12 100644
  };
  
  enum stub_error {
+diff --git a/pkg/sentry/platform/systrap/sysmsg/sysmsg_amd64.go b/pkg/sentry/platform/systrap/sysmsg/sysmsg_amd64.go
+index 4732391ed..13d063bd4 100644
+--- a/pkg/sentry/platform/systrap/sysmsg/sysmsg_amd64.go
++++ b/pkg/sentry/platform/systrap/sysmsg/sysmsg_amd64.go
+@@ -21,8 +21,12 @@ import (
+ 	_ "embed"
+ 	"fmt"
+ 	"strings"
++	"unsafe"
+ 
++	"golang.org/x/sys/unix"
++	"gvisor.dev/gvisor/pkg/abi/linux"
+ 	"gvisor.dev/gvisor/pkg/cpuid"
++	"gvisor.dev/gvisor/pkg/hostsyscall"
+ )
+ 
+ // SighandlerBlob contains the compiled code of the sysmsg signal handler.
+@@ -36,6 +40,7 @@ type ArchState struct {
+ 	xsaveMode uint32
+ 	fpLen     uint32
+ 	fsgsbase  uint32
++	gsbase    uint32
+ }
+ 
+ // The linux kernel does not allow using xsavec from userspace, so we are limited
+@@ -54,6 +59,31 @@ func (s *ArchState) Init() {
+ 	fpLenUint, _ := fs.ExtendedStateSize()
+ 	// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+ 	s.fpLen = uint32(fpLenUint - fs.AMXExtendedStateSize())
++	if fs.UseXsave() {
++		// A virtualized CPUID can retain the host's maximum XSAVE size
++		// while hiding AMX. Bound the layout by the exposed components,
++		// rather than copying hidden state past the context buffer.
++		size := uint32(576) // FXSAVE area and XSAVE header.
++		mask := fs.ValidXCR0Mask()
++		for feature := uint32(2); feature < 64; feature++ {
++			if mask&(uint64(1)<<feature) == 0 {
++				continue
++			}
++			component := fs.Query(cpuid.In{Eax: 0xd, Ecx: feature})
++			if end := uint64(component.Ebx) + uint64(component.Eax); end > uint64(size) {
++				if end > uint64(MaxFPStateLen) {
++					panic(fmt.Sprintf("XSAVE component %d exceeds sysmsg capacity: %d", feature, end))
++				}
++				size = uint32(end)
++			}
++		}
++		if s.fpLen > size {
++			s.fpLen = size
++		}
++	}
++	if s.fpLen+4 > MaxFPStateLen {
++		panic(fmt.Sprintf("XSAVE state exceeds sysmsg capacity: %d", s.fpLen))
++	}
+ 	if fs.UseXsaveopt() {
+ 		s.xsaveMode = xsaveopt
+ 	} else if fs.UseXsave() {
+@@ -65,6 +95,24 @@ func (s *ArchState) Init() {
+ 	if fs.UseFSGSBASE() {
+ 		s.fsgsbase = 1
+ 	}
++	// Outer gVisor runtimes can reserve GS and reject ARCH_GET_GS. Do not
++	// claim application GS support on those hosts or call the unsupported
++	// operation from a signal handler.
++	var base uint64
++	errno := hostsyscall.RawSyscallErrno(unix.SYS_ARCH_PRCTL, linux.ARCH_GET_GS, uintptr(unsafe.Pointer(&base)), 0)
++	switch errno {
++	case 0:
++		s.gsbase = 1
++	case unix.EINVAL:
++		s.gsbase = s.fsgsbase
++	default:
++		panic(fmt.Sprintf("ARCH_GET_GS probe failed: %v", errno))
++	}
++}
++
++// SupportsGSBase reports whether the host supports application GS access.
++func (s *ArchState) SupportsGSBase() bool {
++	return s.gsbase != 0
+ }
+ 
+ // FpLen returns the FP state length for AMD64.
+@@ -77,6 +125,7 @@ func (s *ArchState) String() string {
+ 	fmt.Fprintf(&b, "sysmsg.ArchState{")
+ 	fmt.Fprintf(&b, " xsaveMode %d", s.xsaveMode)
+ 	fmt.Fprintf(&b, " fsgsbase %d", s.fsgsbase)
++	fmt.Fprintf(&b, " gsbase %d", s.gsbase)
+ 	fmt.Fprintf(&b, " fpLen %d", s.fpLen)
+ 	b.WriteString(" }")
+ 
 diff --git a/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go b/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
 index c140cac1f..8f3959187 100644
 --- a/pkg/sentry/platform/systrap/sysmsg_thread_amd64.go
@@ -5834,10 +6093,68 @@ index 000000000..04287b5ad
 +	}
 +}
 diff --git a/pkg/sentry/platform/systrap/systrap.go b/pkg/sentry/platform/systrap/systrap.go
-index 0b77e7118..a3fabb413 100644
+index 0b77e7118..4913b54c2 100644
 --- a/pkg/sentry/platform/systrap/systrap.go
 +++ b/pkg/sentry/platform/systrap/systrap.go
-@@ -332,6 +332,7 @@ func New(opts platform.Options) (*Systrap, error) {
+@@ -148,6 +148,14 @@ type platformContext struct {
+ 	// needToPullFullState indicates that the Sentry doesn't have a full
+ 	// state of the thread.
+ 	needToPullFullState bool
++
++	// Hosts that omit x86 fault error codes require the same read-then-write
++	// classification used by the ptrace platform. These fields are only used
++	// by the owning Task goroutine; Unmap invalidates them via a generation.
++	lastFaultSP         *subprocess
++	lastFaultAddr       hostarch.Addr
++	lastFaultIP         hostarch.Addr
++	lastFaultGeneration uint64
+ }
+ 
+ // PullFullState implements platform.Context.PullFullState.
+@@ -178,6 +186,7 @@ func (c *platformContext) Switch(ctx pkgcontext.Context, mm platform.MemoryManag
+ 	}
+ 
+ restart:
++	generation := s.unmapGeneration.Load()
+ 	isSyscall, needPatch, at, err := s.switchToApp(c, ac)
+ 	if err != nil {
+ 		return nil, hostarch.NoAccess, err
+@@ -197,6 +206,7 @@ restart:
+ 	}
+ 
+ 	if isSyscall {
++		c.lastFaultSP = nil
+ 		return nil, hostarch.NoAccess, nil
+ 	}
+ 
+@@ -204,9 +214,26 @@ restart:
+ 
+ 	// See if this can be handled as a CPUID exception.
+ 	if linux.Signal(si.Signo) == linux.SIGSEGV && platform.TryCPUIDEmulate(ctx, mm, ac) {
++		c.lastFaultSP = nil
+ 		goto restart
+ 	}
+ 
++	if linux.Signal(si.Signo) == linux.SIGSEGV && !at.Any() && (si.Code == 1 || si.Code == 2) {
++		// gVisor hosts omit REG_ERR/REG_TRAPNO from signal frames. As in
++		// ptrace, first resolve a read/execute fault, then classify an
++		// immediately repeated fault as a write (including copy-on-write).
++		// Guest VMA permissions remain enforced by HandleUserFault.
++		addr, ip := hostarch.Addr(si.Addr()), hostarch.Addr(ac.IP())
++		at = hostarch.Read
++		at.Execute = addr == ip
++		at.Write = c.lastFaultSP == s && c.lastFaultAddr == addr &&
++			c.lastFaultIP == ip && c.lastFaultGeneration == generation
++		c.lastFaultSP, c.lastFaultAddr, c.lastFaultIP = s, addr, ip
++		c.lastFaultGeneration = generation
++	} else {
++		c.lastFaultSP = nil
++	}
++
+ 	// Handle as a signal.
+ 	return &si, at, platform.ErrContextSignal
+ }
+@@ -332,6 +359,7 @@ func New(opts platform.Options) (*Systrap, error) {
  		mf.Destroy()
  		return nil, stubErr
  	}
@@ -11014,10 +11331,45 @@ index 6d4bddcf8..791673d34 100644
  	for _, tc := range []struct {
  		name             string
 diff --git a/runsc/cmd/gofer.go b/runsc/cmd/gofer.go
-index bde091eda..b42f9b7bd 100644
+index bde091eda..1611f23b7 100644
 --- a/runsc/cmd/gofer.go
 +++ b/runsc/cmd/gofer.go
-@@ -499,6 +499,15 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
+@@ -114,6 +114,9 @@ type Gofer struct {
+ 	uid int
+ 	gid int
+ 
++	// attached kills the gofer when its parent process terminates.
++	attached bool
++
+ 	specFD           int
+ 	mountsFD         int
+ 	goferToHostRPCFD int
+@@ -164,6 +167,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
+ 	f.IntVar(&g.sentryExitSyncFD, "sync-sentry-exit-fd", -1, "socket FD over which a pidfd of the sandbox process is received. Used by the gofer to wait for the sandbox to fully exit before exiting itself.")
+ 
+ 	// IDs to run gofer as.
++	f.BoolVar(&g.attached, "attached", false, "if true, kill the gofer when its parent process terminates")
+ 	f.IntVar(&g.uid, "uid", 0, "User ID")
+ 	f.IntVar(&g.gid, "gid", 0, "Group ID")
+ 
+@@ -192,6 +196,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
+ 
+ 	// Set traceback level
+ 	debug.SetTraceback(conf.Traceback)
++	g.setParentDeathSignal()
+ 
+ 	// Whether this process will re-execute itself to apply credential and
+ 	// capability changes, rather than applying capabilities in-process.
+@@ -216,6 +221,8 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
+ 
+ 	g.syncFDs.syncChroot()
+ 	g.syncFDs.syncUsernsForRootless(uint32(g.uid), uint32(g.gid))
++	// Credential changes clear the parent death signal.
++	g.setParentDeathSignal()
+ 
+ 	goferToHostRPCSock, err := unet.NewSocket(g.goferToHostRPCFD)
+ 	if err != nil {
+@@ -499,6 +506,15 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
  			if cfg.devGofer {
  				connConf = &devGoferConf
  			}
@@ -11033,6 +11385,41 @@ index bde091eda..b42f9b7bd 100644
  			connImpl = fsgofer.NewConnectionImpl(connConf)
  			connOpts = fsgofer.ConnectionOpts(cfg.readonly)
  		}
+@@ -640,3 +656,13 @@ func (g *goferSyncFDs) syncChroot() {
+ 	}
+ 	g.chrootFD = -1
+ }
++
++// setParentDeathSignal arms SIGKILL on parent exit for attached gofers.
++func (g *Gofer) setParentDeathSignal() {
++	if !g.attached {
++		return
++	}
++	if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0); err != nil {
++		util.Fatalf("error setting parent death signal: %v", err)
++	}
++}
+diff --git a/runsc/cmd/sandboxsetup/gofer_mount.go b/runsc/cmd/sandboxsetup/gofer_mount.go
+index e3091adee..20ec95a9f 100644
+--- a/runsc/cmd/sandboxsetup/gofer_mount.go
++++ b/runsc/cmd/sandboxsetup/gofer_mount.go
+@@ -141,7 +141,15 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
+ 			util.Fatalf("error mounting tmpfs: %v", err)
+ 		}
+ 		if err := unix.Mount("", "/proc/fs", "", unix.MS_UNBINDABLE, ""); err != nil {
+-			util.Fatalf("error setting MS_UNBINDABLE")
++			// gVisor hosts implement shared, private and slave propagation but
++			// reject unbindable mounts with EINVAL. A private tmpfs still
++			// propagates nothing; pivot_root(2) below replaces the tree.
++			if err != unix.EINVAL {
++				util.Fatalf("error setting MS_UNBINDABLE: %v", err)
++			}
++			if err := unix.Mount("", "/proc/fs", "", unix.MS_PRIVATE, ""); err != nil {
++				util.Fatalf("error setting MS_PRIVATE after MS_UNBINDABLE failed: %v", err)
++			}
+ 		}
+ 		// Prepare tree structure for pivot_root(2).
+ 		if err := os.Mkdir("/proc/fs/proc", 0755); err != nil {
 diff --git a/runsc/cmd/sandboxsetup/process.go b/runsc/cmd/sandboxsetup/process.go
 index 60404f196..8fe835e52 100644
 --- a/runsc/cmd/sandboxsetup/process.go
@@ -11623,7 +12010,7 @@ index 957b4c693..87163c832 100644
          "//pkg/pinring",
          "//pkg/sentry/control",
 diff --git a/runsc/container/container.go b/runsc/container/container.go
-index f60048504..1f7b18598 100644
+index f60048504..a45581e58 100644
 --- a/runsc/container/container.go
 +++ b/runsc/container/container.go
 @@ -34,6 +34,7 @@ import (
@@ -11649,7 +12036,22 @@ index f60048504..1f7b18598 100644
  }
  
  // SignalContainer sends the signal to the container. If all is true and signal
-@@ -1195,14 +1196,24 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
+@@ -1178,6 +1179,14 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
+ 			// Note that we want overlayMedium=self even if this is a read-only mount so that
+ 			// the shared mount is created correctly. Future containers may mount this writably.
+ 			overlayMedium = config.SelfOverlay
++			// A bind mount declared read-only by both the hint and the
++			// container cannot gain writable replicas. Its immutable
++			// contents need no self overlay or writable filestore.
++			if specutils.IsGoferMount(hint.Mount) &&
++				specutils.IsReadonlyMount(hint.Mount.Options) &&
++				specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
++				overlayMedium = config.NoOverlay
++			}
+ 			if !specutils.IsGoferMount(hint.Mount) {
+ 				mountType = hint.Mount.Type
+ 			}
+@@ -1195,14 +1204,24 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
  // createGoferFilestores creates the regular files that will back the
  // tmpfs/overlayfs mounts that will overlay some gofer mounts.
  //
@@ -11675,7 +12077,7 @@ index f60048504..1f7b18598 100644
  
  	// Handle rootfs first.
  	rootfsConf := c.GoferMountConfs[0]
-@@ -1235,6 +1246,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
+@@ -1235,6 +1254,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
  		// running with seccomp filters that do not allow this.
  		pgalloc.IMAWorkAroundForMemFile(filestore.Fd())
  	}
@@ -11683,7 +12085,7 @@ index f60048504..1f7b18598 100644
  	return goferFilestores, nil
  }
  
-@@ -1254,11 +1266,11 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
+@@ -1254,11 +1274,11 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
  
  func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
  	// Create the self filestore file.
@@ -11697,7 +12099,7 @@ index f60048504..1f7b18598 100644
  	}
  	dirPath := path.Join(goferRootfs, mountSrc)
  	fileName := boot.SelfFilestoreName(c.sandboxID())
-@@ -1269,11 +1281,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
+@@ -1269,11 +1289,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
  	}
  	defer unix.Close(dirFD)
  
@@ -11710,7 +12112,7 @@ index f60048504..1f7b18598 100644
  	if err != nil {
  		if err == unix.EEXIST {
  			// Note that if the same submount is mounted multiple times within the
-@@ -1500,8 +1508,12 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
+@@ -1500,8 +1516,12 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
  			}
  			cfgIdx++
  		}
@@ -11724,6 +12126,73 @@ index f60048504..1f7b18598 100644
  	}
  
  	// Ensure we don't leak FDs to the gofer process.
+@@ -1678,8 +1698,12 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
+ 
+ 	if attached {
+ 		// The gofer is attached to the lifetime of this process, so it
+-		// should synchronously die when this process dies.
+-		cmd.SysProcAttr.Pdeathsig = unix.SIGKILL
++		// should synchronously die when this process dies. The gofer sets
++		// PR_SET_PDEATHSIG itself: it is the init of a new PID namespace,
++		// where Go's SysProcAttr.Pdeathsig check reads getppid() == 0 and
++		// signals the child. Linux ignores that SIGKILL for a namespace init;
++		// gVisor hosts deliver it.
++		cmd.Args = append(cmd.Args, "--attached")
+ 	}
+ 
+ 	// Enter new namespaces to isolate from the rest of the system. Don't unshare
+diff --git a/runsc/container/container_test.go b/runsc/container/container_test.go
+index 809e945f2..3f3b23e9e 100644
+--- a/runsc/container/container_test.go
++++ b/runsc/container/container_test.go
+@@ -6359,6 +6359,47 @@ func TestIPv6DisableAllSysctl(t *testing.T) {
+ 	}
+ }
+ 
++func TestReadonlyBindHintDoesNotCreateFilestore(t *testing.T) {
++	for _, test := range []struct {
++		name        string
++		hintOptions string
++		mountOption string
++		want        specutils.GoferMountConfUpperType
++	}{
++		{"immutable", "ro", "ro", specutils.NoOverlay},
++		{"readonly_replica", "rw", "ro", specutils.SelfOverlay},
++		{"writable", "rw", "rw", specutils.SelfOverlay},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			source := t.TempDir()
++			spec := &specs.Spec{
++				Root: &specs.Root{Path: "/root"},
++				Mounts: []specs.Mount{{
++					Type: "bind", Source: source, Destination: "/opt/driver",
++					Options: []string{"bind", test.mountOption},
++				}},
++				Annotations: map[string]string{
++					"dev.gvisor.spec.mount.driver.source":  source,
++					"dev.gvisor.spec.mount.driver.type":    "bind",
++					"dev.gvisor.spec.mount.driver.share":   "container",
++					"dev.gvisor.spec.mount.driver.options": test.hintOptions,
++				},
++			}
++			hints, err := boot.NewPodMountHints(spec)
++			if err != nil {
++				t.Fatal(err)
++			}
++			c := &Container{Spec: spec}
++			if err := c.initGoferConfs(config.Overlay2{}, hints, nil); err != nil {
++				t.Fatal(err)
++			}
++			if got := c.GoferMountConfs[1].Upper; got != test.want {
++				t.Errorf("upper = %v, want %v", got, test.want)
++			}
++		})
++	}
++}
++
+ func TestReadFile(t *testing.T) {
+ 	conf := testutil.TestConfig(t)
+ 	spec, _ := sleepSpecConf(t)
 diff --git a/runsc/fsgofer/BUILD b/runsc/fsgofer/BUILD
 index c3b00f802..91948741a 100644
 --- a/runsc/fsgofer/BUILD
@@ -12949,7 +13418,7 @@ index 000000000..02a983df9
 +	}
 +}
 diff --git a/runsc/sandbox/sandbox.go b/runsc/sandbox/sandbox.go
-index bcc7287f6..26bed8f03 100644
+index bcc7287f6..3111144d0 100644
 --- a/runsc/sandbox/sandbox.go
 +++ b/runsc/sandbox/sandbox.go
 @@ -1023,6 +1023,31 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
@@ -12997,7 +13466,7 @@ index bcc7287f6..26bed8f03 100644
  		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
  			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
  			nss = append(nss, userns)
-@@ -1383,6 +1412,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
+@@ -1383,11 +1412,20 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
  			mem = memLimit
  		}
  	}
@@ -13010,7 +13479,17 @@ index bcc7287f6..26bed8f03 100644
  	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
  
  	if args.Attached {
-@@ -2570,18 +2605,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
+-		// Kill sandbox if parent process exits in attached mode.
+-		cmd.SysProcAttr.Pdeathsig = unix.SIGKILL
++		// Kill sandbox if parent process exits in attached mode. boot sets
++		// PR_SET_PDEATHSIG itself: the sandbox is the init of a new PID
++		// namespace, where Go's SysProcAttr.Pdeathsig check reads getppid() == 0
++		// and signals the child. Linux ignores that SIGKILL for a namespace
++		// init; gVisor hosts deliver it.
+ 		// Tells boot that any process it creates must have pdeathsig set.
+ 		cmd.Args = append(cmd.Args, "--attached")
+ 	}
+@@ -2570,18 +2608,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
  // TarRootfsUpperLayer serializes the rootfs upper layer of a given
  // container to a tar file. When the rootfs is not an overlayfs, it
  // returns an error. It writes the tar file to outFD.

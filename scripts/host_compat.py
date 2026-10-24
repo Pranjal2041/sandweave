@@ -1,7 +1,27 @@
 """Host capability handling shared by setup and the runtime launchers."""
+from functools import lru_cache
 import os
 from pathlib import Path
 import sys
+
+SYSLOG_ACTION_READ_ALL = 3
+
+
+@lru_cache(maxsize=1)
+def gvisor_host():
+    """Whether this worker itself runs under gVisor, as Modal's GPU sandboxes do.
+
+    gVisor's kernel log begins with its own boot banner and its reported kernel
+    release does not describe the host system calls it implements. Linux hosts
+    that restrict the kernel log to privileged callers are not gVisor.
+    """
+    import ctypes
+    buffer = ctypes.create_string_buffer(4096)
+    try:
+        size = ctypes.CDLL(None, use_errno=True).klogctl(SYSLOG_ACTION_READ_ALL, buffer, len(buffer))
+    except (AttributeError, OSError):
+        return False
+    return size > 0 and b'Starting gVisor' in buffer.raw[:size]
 
 
 def mount_privileged():
@@ -85,14 +105,15 @@ def _extract_host_image(image, destination, apptainer):
 
 
 def apptainer_image(image, *, directory=None, apptainer='apptainer'):
-    """Reuse an unpacked host image inside a privileged container namespace.
+    """Reuse an unpacked host image inside a privileged container namespace or under gVisor.
 
     Mount mediation in an outer container need not support nested FUSE image
-    mounts. Apptainer's ordinary directory-image path needs neither FUSE nor a
-    new user namespace. This affects the host tools image, not guest isolation.
+    mounts; under gVisor, squashfuse never becomes ready. Apptainer's ordinary
+    directory-image path needs neither FUSE nor a new user namespace. This
+    affects the host tools image, not guest isolation.
     """
     image = Path(image).resolve()
-    if not reuse_user_namespace() or not image.is_file():
+    if not (reuse_user_namespace() or gvisor_host()) or not image.is_file():
         return image
     import fcntl
     import hashlib

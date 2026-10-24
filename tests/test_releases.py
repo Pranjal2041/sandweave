@@ -249,3 +249,16 @@ def test_linux54_selects_compatible_prebuilt_engine(published_runtime):
     assert releases.select(manifest, host)[0] is None
     manifest['artifacts'][0]['minimum_kernel'] = '5.4'
     assert releases.select(manifest, host)[0] == manifest['artifacts'][0]
+
+
+@pytest.mark.parametrize('detected', [False, True])
+def test_gvisor_release_string_alone_does_not_bypass_kernel_floor(monkeypatch, detected):
+    monkeypatch.setattr(releases.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(releases.platform, 'machine', lambda: 'x86_64')
+    monkeypatch.setattr(releases.platform, 'release', lambda: '4.19.0-gvisor')
+    monkeypatch.setattr(releases.workspace.host_compat(), 'gvisor_host', lambda: detected)
+    if detected:
+        assert releases.check_platform()['kernel'] == releases.MINIMUM_KERNEL
+    else:
+        with pytest.raises(ValueError, match='Linux 5.4'):
+            releases.check_platform()

@@ -1,0 +1,75 @@
+diff --git a/pkg/sentry/platform/systrap/filters.go b/pkg/sentry/platform/systrap/filters.go
+index 0958e6c..aacfd38 100644
+--- a/pkg/sentry/platform/systrap/filters.go
++++ b/pkg/sentry/platform/systrap/filters.go
+@@ -48,6 +48,9 @@ func (systrapSeccomp) ConfigKey() string {
+ func (systrapSeccomp) SyscallFilters(vars precompiledseccomp.Values) seccomp.SyscallRules {
+ 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+ 		unix.SYS_PTRACE: seccomp.Or{
++			seccomp.PerArg{
++				seccomp.EqualTo(unix.PTRACE_SYSCALL),
++			},
+ 			seccomp.PerArg{
+ 				seccomp.EqualTo(unix.PTRACE_ATTACH),
+ 			},
+diff --git a/pkg/sentry/platform/systrap/subprocess.go b/pkg/sentry/platform/systrap/subprocess.go
+index fba9eee..c372bf7 100644
+--- a/pkg/sentry/platform/systrap/subprocess.go
++++ b/pkg/sentry/platform/systrap/subprocess.go
+@@ -1077,6 +1077,16 @@ func initSysmsgThreadPriority() {
+ // createSysmsgThread creates a new sysmsg thread.
+ // The thread starts processing any available context in the context queue.
+ func (s *subprocess) createSysmsgThread() error {
++	ready := make(chan error, 1)
++	go func() {
++		ready <- s.createTracedSysmsgThread(ready)
++	}()
++	return <-ready
++}
++
++// Diagnostic only. Keep the tracer on its own OS thread after creation so that
++// the caller can enqueue the first guest context.
++func (s *subprocess) createTracedSysmsgThread(ready chan<- error) error {
+ 	// Create a new seccomp process.
+ 	var r requestThread
+ 	r.thread = make(chan *thread)
+@@ -1207,6 +1217,39 @@ func (s *subprocess) createSysmsgThread() error {
+ 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
+ 		panic(fmt.Sprintf("tkill failed: %v", e))
+ 	}
++	s.sysmsgThreadsMu.Lock()
++	s.sysmsgThreads[threadID] = sysThread
++	s.sysmsgThreadsMu.Unlock()
++	ready <- nil
++	deliver := uintptr(0)
++	for step := 0; step < 120; step++ {
++		if e := hostsyscall.RawSyscallErrno6(unix.SYS_PTRACE, unix.PTRACE_SYSCALL, uintptr(p.tid), 0, deliver, 0, 0); e != 0 {
++			panic(fmt.Sprintf("diagnostic ptrace: %v", e))
++		}
++		var status unix.WaitStatus
++		_, err := unix.Wait4(int(p.tid), &status, unix.WALL, nil)
++		log.Warningf("NESTED_TRACE tid=%d step=%d status=%#x err=%v", p.tid, step, uint32(status), err)
++		if err != nil || !status.Stopped() {
++			panic("diagnostic tracee exited")
++		}
++		var regs arch.Registers
++		if err := p.getRegs(&regs); err == nil {
++			log.Warningf("NESTED_TRACE regs=%s", dumpRegs(&regs))
++		}
++		deliver = 0
++		sig := status.StopSignal()
++		if sig == unix.SIGTRAP && status.TrapCause() == unix.PTRACE_EVENT_EXIT {
++			message, err := p.getEventMessage()
++			panic(fmt.Sprintf("diagnostic tracee exiting: status=%#x err=%v", message, err))
++		}
++		if sig != unix.SIGTRAP && sig != unix.SIGTRAP|0x80 && sig != unix.SIGSTOP && sig != unix.SIGCONT {
++			var info linux.SignalInfo
++			if err := p.getSignalInfo(&info); err == nil {
++				log.Warningf("NESTED_TRACE signal=%+v", info)
++			}
++			deliver = uintptr(sig)
++		}
++	}
+ 	// Resume the BPF process.
+ 	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(p.tid), 0); errno != 0 {
+ 		panic(fmt.Sprintf("can't detach new clone: %v", errno))

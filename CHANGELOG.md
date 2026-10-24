@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.45
+
+- Add per-sandbox guest clocks. `clock_offset` adds seconds or a `timedelta` to
+  the worker's clock; `clock_start` sets the guest date when the sandbox starts.
+  System calls, the fast vDSO path and guest-written file times follow it;
+  monotonic time stays real. `Pool`, Weave and the CLI accept the same options.
+- Clock options apply to each start or restore and are never saved. A restored
+  memory or filesystem snapshot uses the clock chosen at restore, including for
+  processes saved in the snapshot.
+- With a clock setting, `pause()` freezes guest wall-clock and monotonic time,
+  timers included, until `resume()`. `clock_pause="continue"` keeps time running;
+  `clock_pause="freeze"` also works alone. CPU throttling never freezes time.
+- Upgrade prepared engines to runtime 2026.10.24.1 for new launches. Workers and
+  controllers advertise `guest_clock`; older ones reject clock options. Memory
+  snapshots captured on earlier engines keep them and cannot take clock options.
+
 ## 0.2.44
 
 - Fetch OSWorld integration resources anonymously from the official public

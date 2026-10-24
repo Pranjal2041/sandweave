@@ -199,3 +199,11 @@ entries and protected runtime audit. `--hidepid 0 --no-audit` explicitly disable
 template defaults. Export records through `Sandbox.connect(id).audit_log(path)`.
 See [process visibility and audit](process-audit.md) for privilege requirements,
 coverage, and snapshot support.
+
+## Guest clock
+
+Use `--clock-offset SECONDS` or `--clock-start 2025-03-01T00:00:00Z` with
+`create`, `run` or `pool create` to set the guest's wall clock. A clock setting
+freezes guest time during `sandweave pause`; add `--clock-pause continue` to
+keep it running. See [guest clock](clock.md).
+

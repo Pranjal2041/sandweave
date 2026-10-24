@@ -1,0 +1,141 @@
+{
+  "desktop_screenshot_clocks": {
+    "1-start-date": "Mar 1 09:00 (clock_start 2025-03-01T09:00:00Z)",
+    "3-memory-restore-new-offset": "Feb 2 01:04 (captured 19:34:06 UTC Oct 24 2026 + 100 days 5 h 30 min)"
+  },
+  "engine_commit": "7c3d390f9af982ae2d37d8825f9162cb08747f0e",
+  "host": "babel-u9-24",
+  "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+  "live_installed_release": {
+    "concurrent-freezes": {
+      "elapsed_seconds": 7.482844208367169,
+      "lags_seconds": [
+        0.024684667587280273,
+        0.011388540267944336,
+        0.030405044555664062,
+        0.006967782974243164,
+        -2.442695140838623,
+        -2.4955532550811768,
+        -2.4944722652435303,
+        -2.4897730350494385,
+        -6.4430928230285645,
+        -6.435694217681885,
+        -6.459719896316528,
+        -6.418941497802734
+      ],
+      "pause_seconds": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        3,
+        3,
+        3,
+        3
+      ],
+      "sandboxes": 12
+    },
+    "continue-default": {
+      "host": 4.70686936378479,
+      "monotonic": 4.792255595,
+      "realtime": 4.792226552963257,
+      "sleep_monotonic": 7.237456176,
+      "sleep_realtime": 7.2374267578125
+    },
+    "continue-offset": {
+      "host": 4.525341510772705,
+      "monotonic": 4.623818180000001,
+      "realtime": 4.623805046081543,
+      "sleep_monotonic": 7.227537916999999,
+      "sleep_realtime": 7.2275612354278564
+    },
+    "cpu-throttle": {
+      "guest_cpu_seconds": 0.15,
+      "guest_monotonic": 3.013004406,
+      "guest_realtime": 3.012970447540283,
+      "host_seconds": 3.3721415996551514
+    },
+    "desktop": {
+      "pause_guest_seconds": 1.0747218132019043,
+      "pause_host_seconds": 31.24652075767517,
+      "restore_offset_seconds": 8659800.0,
+      "start_elapsed_seconds": 6.790351152420044
+    },
+    "freeze": {
+      "host": 6.69408106803894,
+      "monotonic": 0.5388303269999999,
+      "pause_seconds": 6,
+      "peer_probe_max_seconds": 0.1231088638305664,
+      "peer_probe_median_seconds": 0.06812957627698779,
+      "peer_probes": 130,
+      "realtime": 0.5388219356536865,
+      "resume_offset_drift": -6.256294012069702,
+      "sleep_monotonic": 3.0012019519999997,
+      "sleep_realtime": 3.0012011528015137
+    },
+    "offset": {
+      "gettimeofday": -34559999.6850574,
+      "home_file": -34559999.68455005,
+      "python_time": -34559999.68499565,
+      "python_time_warm": -34559997.68216038,
+      "syscall_calls_per_second": 37707.49508354125,
+      "syscall_realtime": -34559999.684958935,
+      "syscall_realtime_coarse": -34559999.6849432,
+      "tmp_file": -34559999.684735775,
+      "vdso_calls_per_second": 10249955.412693813,
+      "vdso_first_calls_per_second": 33684.82159025406,
+      "vdso_realtime": -34559999.68503237,
+      "vdso_realtime_warm": -34559997.68216944
+    },
+    "pool": [
+      -10627199.91206026,
+      -10627199.88602662,
+      -10627199.895570278
+    ]
+  },
+  "patch_sha256": "b2bb4a2249e135d152662dbe417f6ed1687e3f5039d975597482b0e49be9edf8",
+  "release_qualification": {
+    "checks": [
+      "first-install",
+      "exact-engine-hashes",
+      "no-compiler",
+      "cpu-override",
+      "no-kvm",
+      "internet",
+      "files",
+      "pause-resume",
+      "filesystem-cache",
+      "process-memory-restore",
+      "offline-network",
+      "context-cleanup",
+      "global-location-preserved"
+    ],
+    "compiler_downloaded_or_run": false,
+    "distribution": "candidate-local-http",
+    "first_setup_seconds": 76.00669319182634,
+    "installation": "cli-setup",
+    "lifecycle_seconds": 12.782579018734396,
+    "ready_seconds": 1.4297097641974688,
+    "status": "passed"
+  },
+  "runtime_build": "tools/runtime-builds/c49104ca11e6421e8a5e624cb6ba567e35beb2285db98f81cae8b7d86fc892cc",
+  "runtime_release": "2026.10.24.1",
+  "runtime_sha256": {
+    "LICENSE": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+    "capabilities.json": "fe1aa66818dcf9682f9067e5c9a045c882378b0eeb0869ac3693e541e15ebaca",
+    "gvisor-bin/checkpointgofer": "727673c04c493ad63acfdd35bfc2f21e3a4626a52d9d1202ace7f05df606d2d1",
+    "gvisor-bin/gvisor-sentry-prewarmer": "3315d7ad7c2d3751d349e4976fa02da1da6fd7e41746c35622304e5fabe4fce0",
+    "gvisor-bin/gvisor_sentry": "05ee2b42f89915f375cef33b90b97f879607ea341e4ffed951dcd478b7a50aba",
+    "gvisor-bin/runsc-metric-server": "324f1d1fdc4fb5da2d448d9a0b077ccaf11c2742142e5dccd59f04a3a541ae12",
+    "gvisor-bin/sandweave-guest-tools": "fdff7df37bf7b1f026c06b97fd55b5dc6d428825a995c018cdb8d5097fe71afd",
+    "runsc": "8452dc897b2dc2a85b369efa8b2b4c0e923a07a854e20b443ca2c3339e456b7a"
+  },
+  "weave": {
+    "forwarded_direct_and_pool": "passed",
+    "outbound_relay_workers": "passed"
+  }
+}

@@ -23,7 +23,7 @@ SLACK = 1.0
 EVIDENCE = {}
 
 PROBE = r'''
-import ctypes, json, os, time
+import ctypes, json, os, sys, time
 libc = ctypes.CDLL(None, use_errno=True)
 class timespec(ctypes.Structure):
     _fields_ = [('s', ctypes.c_long), ('ns', ctypes.c_long)]
@@ -46,16 +46,28 @@ result = {
     'vdso_monotonic': libc_clock(1), 'syscall_monotonic': syscall_clock(1),
     'syscall_boottime': syscall_clock(7),
 }
-for name, path in (('tmp_file', '/tmp/clock-probe'), ('root_file', '/root/clock-probe')):
+for name, path in (('tmp_file', '/tmp/clock-probe'), ('home_file', os.path.expanduser('~/clock-probe'))):
     with open(path, 'w') as stream:
         stream.write('x')
     result[name] = os.stat(path).st_mtime
 result['uptime'] = float(open('/proc/uptime').read().split()[0])
 result['btime'] = int(next(line for line in open('/proc/stat') if line.startswith('btime')).split()[1])
-start = time.perf_counter()
-for _ in range(200000):
-    time.time()
-result['vdso_calls_per_second'] = 200000 / (time.perf_counter() - start)
+if sys.argv[1:] != ['rates']:
+    print(json.dumps(result))
+    raise SystemExit
+# After an idle period the runtime recalibrates its clocks, and the VDSO
+# defers to the syscall path meanwhile. Report the first and best windows.
+rates, deadline = [], time.monotonic() + 2
+while time.monotonic() < deadline:
+    start = time.perf_counter()
+    for _ in range(20000):
+        time.time()
+    rates.append(20000 / (time.perf_counter() - start))
+result['vdso_first_calls_per_second'] = rates[0]
+result['vdso_calls_per_second'] = max(rates)
+# Readings served by calibrated VDSO parameters, not the fallback.
+result['vdso_realtime_warm'] = libc_clock(0)
+result['python_time_warm'] = time.time()
 start = time.perf_counter()
 for _ in range(20000):
     syscall_clock(0)
@@ -63,7 +75,7 @@ result['syscall_calls_per_second'] = 20000 / (time.perf_counter() - start)
 print(json.dumps(result))
 '''
 REALTIME = ('vdso_realtime', 'python_time', 'gettimeofday', 'syscall_realtime', 'syscall_realtime_coarse',
-            'tmp_file', 'root_file')
+            'tmp_file', 'home_file')
 
 
 def record(name, value):
@@ -91,11 +103,11 @@ def stop_idle_worker():
         connection.close()
 
 
-def probe(env):
+def probe(env, *, rates=False):
     """Return guest clock readings with the host realtime interval around them."""
     env.files.write_text('/tmp/clock_probe.py', PROBE)
     before = time.time()
-    result = env.run('python3 /tmp/clock_probe.py', check=True)
+    result = env.run('python3 /tmp/clock_probe.py' + (' rates' if rates else ''), check=True)
     after = time.time()
     return {**json.loads(result.stdout), 'host_before': before, 'host_after': after}
 
@@ -111,21 +123,26 @@ def assert_offset(reading, offset):
     assert abs(reading['vdso_monotonic'] - reading['uptime']) < SLACK
     assert abs(reading['syscall_boottime'] - reading['syscall_monotonic']) < SLACK
     assert abs(reading['btime'] - (reading['syscall_realtime'] - reading['syscall_monotonic'])) <= 2
-    # The VDSO, not the syscall fallback, served Python's time.time().
-    assert reading['vdso_calls_per_second'] > 5 * reading['syscall_calls_per_second'], reading
+    if 'vdso_calls_per_second' in reading:
+        # The VDSO, not the syscall fallback, served Python's time.time().
+        assert reading['vdso_calls_per_second'] > 5 * reading['syscall_calls_per_second'], reading
+        for name in ('vdso_realtime_warm', 'python_time_warm'):
+            assert low <= reading[name] <= high, (name, reading[name] - reading['host_before'], offset)
 
 
 def test_offset_covers_syscalls_vdso_files_and_proc():
     offset = -400 * DAY + 0.25
     with Sandbox(clock_offset=offset, memory=MEMORY) as env:
-        reading = probe(env)
+        reading = probe(env, rates=True)
         assert_offset(reading, offset)
         # A fresh sandbox's monotonic clock starts near zero; offsets leave it alone.
         assert 0 < reading['vdso_monotonic'] < 120
         assert env.info['clock'] == {'offset_seconds': offset, 'pause': 'freeze'}
         date = env.run('date -u +%Y-%m-%d', check=True).stdout.strip()
         assert date == (datetime.now(timezone.utc) + timedelta(seconds=offset)).strftime('%Y-%m-%d')
-        record('offset', {key: reading[key] - reading['host_before'] for key in REALTIME} | {
+        record('offset', {key: reading[key] - reading['host_before']
+                          for key in (*REALTIME, 'vdso_realtime_warm', 'python_time_warm')} | {
+            'vdso_first_calls_per_second': reading['vdso_first_calls_per_second'],
             'vdso_calls_per_second': reading['vdso_calls_per_second'],
             'syscall_calls_per_second': reading['syscall_calls_per_second']})
 
@@ -209,8 +226,8 @@ def test_continue_pause_keeps_guest_time_running(options):
 
 def file_mtime(env, *, write=False):
     if write:
-        env.run('echo saved > /root/saved-before-capture', check=True)
-    return float(env.run('stat -c %.9Y /root/saved-before-capture', check=True).stdout)
+        env.run('echo saved > ~/saved-before-capture', check=True)
+    return float(env.run('stat -c %.9Y ~/saved-before-capture', check=True).stdout)
 
 
 def ticker(env):
@@ -316,3 +333,40 @@ def test_cpu_throttling_does_not_freeze_guest_time():
         assert abs(guest_realtime - guest_monotonic) < .1
         record('cpu-throttle', {'host_seconds': host, 'guest_monotonic': guest_monotonic,
                                 'guest_realtime': guest_realtime, 'guest_cpu_seconds': guest_cpu})
+
+
+def test_concurrent_freezes_keep_each_clock_independent():
+    offset, count = -10 * DAY, 12
+    pauses = [0, 0, 0, 0, 1, 1, 1, 1, 3, 3, 3, 3]
+    small = Memory('256MiB', '256MiB')
+    with ExitStack() as stack:
+        with ThreadPoolExecutor(count) as executor:
+            environments = list(executor.map(
+                lambda _: stack.enter_context(Sandbox(clock_offset=offset, memory=small)), range(count)))
+
+        def cycle(item):
+            env, pause = item
+            before = probe(env)['syscall_realtime'] - time.time()
+            for _ in range(2):
+                if pause:
+                    env.pause()
+                    time.sleep(pause)
+                    env.resume()
+                else:
+                    time.sleep(1)
+                    assert_offset(probe(env), offset)
+            reading = probe(env)
+            return before, reading['syscall_realtime'] - (reading['host_before'] + reading['host_after']) / 2
+
+        started = time.monotonic()
+        with ThreadPoolExecutor(count) as executor:
+            results = list(executor.map(cycle, zip(environments, pauses)))
+        elapsed = time.monotonic() - started
+    lags = []
+    for (before, after), pause in zip(results, pauses):
+        # Each clock lags its configured offset by exactly its own paused time.
+        lag = after - offset
+        assert -2 * pause - 2 * SLACK < lag < -2 * pause + SLACK, (pause, before - offset, lag)
+        lags.append(lag)
+    record('concurrent-freezes', {'sandboxes': count, 'pause_seconds': pauses, 'lags_seconds': lags,
+                                  'elapsed_seconds': elapsed})

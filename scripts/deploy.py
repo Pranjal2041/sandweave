@@ -193,6 +193,9 @@ def validate(directory, release, tests=None):
         shutil.copyfile(source / 'sources/fifo-signal-test.c', live / 'fifo-signal-test.c')
         run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
             live / 'test_fifo_restart_live.py', cwd=live, env=env)
+        shutil.copyfile(source / 'tests/integration/test_guest_clock_live.py', live / 'test_guest_clock_live.py')
+        run(python, '-m', 'pytest', '-q', '--confcutdir=' + str(live),
+            live / 'test_guest_clock_live.py', cwd=live, env=env)
         if sys.version_info >= (3, 12):
             for relative in ('tests/test_harbor.py', 'tests/integration/test_harbor_live.py',
                              'tests/test_harbor_contract.py', 'tests/integration/test_harbor_contract_live.py',

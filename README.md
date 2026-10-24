@@ -824,6 +824,27 @@ cannot be restored.
 See [saved state and ownership](https://github.com/Pranjal2041/sandweave/blob/main/notes/sdk-usage.md#saved-state-and-ownership) for
 snapshot storage, verification and external mounts.
 
+## Set the guest clock
+
+```python
+from datetime import timedelta
+from sandweave import Sandbox
+
+with Sandbox(clock_offset=timedelta(days=-30)) as env:
+    print(env.run("date -u").stdout)
+```
+
+The guest's wall clock reads the worker's time plus the offset, through system
+calls and the fast vDSO path; files written in the guest follow it. Monotonic
+time stays real. `clock_start=datetime(...)` sets the date when the sandbox
+starts instead. Sandboxes with the same offset agree on the time.
+
+Clock options apply to each start or restore and are never saved:
+`Sandbox(snapshot=checkpoint, clock_offset=...)` chooses the restored
+checkpoint's clock. With a clock setting, `pause()` freezes guest time until
+`resume()`; pass `clock_pause="continue"` to keep it running. See
+[guest clock](https://pranjala2041.github.io/sandweave/clock/) for pools, the CLI and limits.
+
 ## Use the CLI
 
 ```bash

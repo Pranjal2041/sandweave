@@ -99,6 +99,7 @@ nav:
       - Networking: networking.md
       - Process visibility and audit: process-audit.md
       - Lifetime and cleanup: lifecycle.md
+      - Guest clock: clock.md
       - Caches and snapshots: snapshots.md
       - Async Python: async.md
   - Workloads:

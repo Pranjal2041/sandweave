@@ -4,6 +4,11 @@ Sandweave 0.1.1 selects a pinned engine from GitHub Releases before building
 one locally. The Python API and `sandweave setup` share this installation path.
 Existing configured installations keep their recorded runtime files.
 
+SDK 0.2.45 upgrades engines for new launches to runtime 2026.10.24.1, which
+adds per-sandbox guest clock offsets, start dates and frozen pauses. Existing
+memory snapshots retain their pinned engine and cannot take clock options. See
+[guest clocks](guest-clock.md) for the engine change and acceptance.
+
 SDK 0.2.36 upgrades engines for new launches to runtime 2026.09.26.5, which
 batches filesystem archive writes and reuses copy buffers. Existing memory
 snapshots retain their pinned engine. See [filesystem export performance](filesystem-export-performance.md)

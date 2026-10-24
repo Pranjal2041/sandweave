@@ -46,6 +46,9 @@ env = Sandbox(template="coding", cpu=2, memory="4GiB", network="offline")
 | `hidepid` | Experimental `/proc` visibility: `0`, `1`, or `2`. See [process visibility](process-audit.md). | Template/snapshot value, normally `0` |
 | `audit` | Experimental protected runtime event log. Export with `env.audit_log(path)` or its `.aio` form. See [coverage and limits](process-audit.md). | Template/snapshot value, normally `False` |
 | `profiling` | Enable runtime heap capture for diagnosis; gVisor only. | Template/snapshot value, normally `False` |
+| `clock_offset` | Seconds or `timedelta` added to the worker's clock for guest wall-clock time; chosen at each start or restore. See [guest clock](clock.md). | None |
+| `clock_start` | Guest wall-clock time at start or restore: aware `datetime` or ISO 8601 string. Excludes `clock_offset`. | None |
+| `clock_pause` | `"freeze"` or `"continue"`: guest time during `pause()`. | `"freeze"` with a clock setting, otherwise `"continue"` |
 | `recording` | Record an Xvnc desktop; accepts `True` or `Recording(fps=15, cursor=True)`. | `False` |
 | `startup_timeout` | Total creation deadline, including snapshot staging, unpacking and service readiness. See [restore timeout](snapshots.md#restore-startup-timeout). | `300` |
 | `keep_on_error` | Retain a failed sandbox for diagnosis, subject to its lifetime. | `False` |

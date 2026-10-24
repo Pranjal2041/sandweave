@@ -2,14 +2,14 @@
   "gvisor": {
     "path": "sources/gvisor",
     "upstream": "https://github.com/google/gvisor.git",
-    "branch": "fix/cpu-pause-deadlock",
+    "branch": "feat/guest-clock",
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
-    "commit": "6bf5da1bb2e26a145952e64bd406f4a257711b23",
+    "commit": "7c3d390f9af982ae2d37d8825f9162cb08747f0e",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/109097ed0df62585a30116d495cadac6b1c8659b88e1d4bcb05336e16f59cfe2",
+    "runtime_build": "tools/runtime-builds/c49104ca11e6421e8a5e624cb6ba567e35beb2285db98f81cae8b7d86fc892cc",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
-    "runtime_commit": "6bf5da1bb2e26a145952e64bd406f4a257711b23",
+    "runtime_commit": "7c3d390f9af982ae2d37d8825f9162cb08747f0e",
     "candidate_runtime_build": "tools/runtime-builds/d7c9c0e88768628740fb5c19f1e44a5e90c3bbb72fc56ee9d20a7ad0d42acdf7",
     "candidate_status": "build and nvproxy tests pass; RTX PRO 6000 and L40S Open Saber paired-eye gameplay accepted; Alyx stereo menus accepted but level loading fails with host mapping-pressure evidence; host driver-wait recovery untested",
     "disk_memory_runtime_build": "tools/runtime-builds/4ceb6e371f04b63f769d20d1202ee29015dba656680ce0be588040d22d205ea0",
@@ -30,7 +30,9 @@
     "proc_audit_runtime_release": "2026.10.14.1",
     "proc_audit_release_runtime_build": "tools/runtime-builds/e48cdf54e189d4039070acfdc61cf89df99f7e39aca27d5e24609c8f3ee1c389",
     "cpu_pause_runtime_release": "2026.10.18.1",
-    "cpu_pause_release_runtime_build": "tools/runtime-builds/1436f7c2cb026adf47b3c64f39390a0eb4c0af70cdb549cf26318936d430937c"
+    "cpu_pause_release_runtime_build": "tools/runtime-builds/1436f7c2cb026adf47b3c64f39390a0eb4c0af70cdb549cf26318936d430937c",
+    "guest_clock_runtime_release": "2026.10.24.1",
+    "guest_clock_release_runtime_build": "tools/runtime-builds/c49104ca11e6421e8a5e624cb6ba567e35beb2285db98f81cae8b7d86fc892cc"
   },
   "passt": {
     "upstream": "https://passt.top/passt",

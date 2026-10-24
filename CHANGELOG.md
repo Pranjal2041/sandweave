@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.46
+
+- Fix intermittent "connection reset", "broken pipe" and "Remote end closed
+  connection" failures for calls spaced about 60 s apart. The synchronous client
+  reused idle connections that the Weave controller was closing at its 60 s
+  keep-alive timeout. It now retires connections idle for 30 s, as the async
+  client already did.
+- Add worker-encoded desktop screenshots for slow connections.
+  `desktop.capture_image(format="jpeg", quality=85)` returns a full-resolution
+  JPEG of about 120 KB instead of 6.2 MB of raw pixels; `format="png"` and
+  `desktop.capture_png()` are lossless. `desktop.step(action, format="jpeg")`
+  returns the encoded next frame in the same request.
+- Desktop files prepared by 0.2.46 or newer add `cursor=True` pointer
+  compositing and guest capture timestamps. Earlier desktop files keep JPEG and
+  PNG capture and reject `cursor=True`.
+
 ## 0.2.45
 
 - Add per-sandbox guest clocks. `clock_offset` adds seconds or a `timedelta` to

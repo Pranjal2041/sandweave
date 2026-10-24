@@ -15,6 +15,9 @@ from ...sandbox.timings import measure
 class DesktopObservation:
     image: object
     metadata: dict
+    # Encoded bytes as transferred, when step() requested a format.
+    data: bytes = None
+    mime_type: str = None
 
 
 @dataclass(frozen=True)
@@ -86,7 +89,30 @@ except (OSError, IndexError, UnicodeError, subprocess.SubprocessError):
 
 def decode_image(value):
     from PIL import Image
+    if 'data' in value:
+        with Image.open(BytesIO(value['data'])) as image:
+            return image.convert('RGB')
     return Image.frombytes('RGB', tuple(value['size']), value['rgb'])
+
+
+def encoding(parameters, default=None):
+    """Validate an observation encoding: None for raw RGB, 'jpeg' or 'png'."""
+    image_format = parameters.pop('format', default)
+    quality = parameters.pop('quality', 85)
+    if image_format not in (None, 'jpeg', 'png'):
+        raise ValueError('format must be jpeg or png')
+    if type(quality) is not int or not 1 <= quality <= 95:
+        raise ValueError('quality must be an integer from 1 to 95')
+    return image_format, quality
+
+
+def encode(image, metadata, image_format, quality):
+    started = time.perf_counter_ns()
+    data = encode_jpeg(image, quality) if image_format == 'jpeg' else encode_png(image)
+    return {'size': list(image.size), 'data': data, 'mime_type': 'image/' + image_format,
+            'metadata': {**metadata, 'image_encode_ns': time.perf_counter_ns() - started,
+                         'image_format': image_format,
+                         'image_quality': quality if image_format == 'jpeg' else None}}
 
 
 class Mouse:
@@ -163,18 +189,23 @@ class Desktop:
         return decode_image(self._call('screenshot', fresh=fresh))
 
     @dualmethod
-    def capture_png(self, *, cursor=True):
-        """Return a fresh lossless PNG and its guest capture timestamps in one call.
+    def capture_png(self, *, cursor=False):
+        """Return a fresh lossless PNG and its capture metadata in one call.
 
-        No application repaint fence is implied. The wall-clock interval brackets
-        the X server capture, including cursor acquisition when requested.
+        Desktop files prepared by Sandweave 0.2.46 or newer add the guest's
+        capture interval and, with cursor=True, composite the pointer. No
+        application repaint fence is implied.
         """
         value = self._call('capture_png', cursor=cursor)
         return DesktopCapture(value['png'], tuple(value['size']), value['metadata'])
 
     @dualmethod
-    def capture_image(self, *, format='jpeg', quality=85, cursor=True):
-        """Return a full-resolution encoded image and matching capture metadata."""
+    def capture_image(self, *, format='jpeg', quality=85, cursor=False):
+        """Return a full-resolution image encoded on the worker, with capture metadata.
+
+        JPEG transfers a small fraction of a raw frame for slow connections;
+        format='png' is lossless. Forward data without re-encoding.
+        """
         value = self._call('capture_image', format=format, quality=quality, cursor=cursor)
         return DesktopImage(value['data'], value['mime_type'], tuple(value['size']), value['metadata'])
 
@@ -183,9 +214,18 @@ class Desktop:
         return self._call('action', action=action)
 
     @dualmethod
-    def step(self, action):
-        value = self._call('step', action=action)
-        return DesktopObservation(decode_image(value), value['metadata'])
+    def step(self, action, *, format=None, quality=85):
+        """Apply an action and return the next observation in one request.
+
+        format='jpeg' or 'png' encodes the image on the worker; the observation
+        then also carries those bytes as data and mime_type.
+        """
+        parameters = {'action': action}
+        if format is not None:
+            parameters.update(format=format, quality=quality)
+        value = self._call('step', **parameters)
+        return DesktopObservation(decode_image(value), value['metadata'],
+                                  value.get('data'), value.get('mime_type'))
 
 
 class AttachedDesktop:
@@ -294,47 +334,46 @@ class AttachedDesktop:
     def call(self, method, parameters):
         if method == 'action':
             return self.client.action(**parameters)
+        parameters = dict(parameters)
+        image_format, quality = None, 85
+        if method in ('capture_png', 'capture_image', 'step'):
+            default = {'capture_png': 'png', 'capture_image': 'jpeg'}.get(method)
+            if method == 'capture_png' and set(parameters) & {'format', 'quality'}:
+                raise ValueError('capture_png only accepts cursor')
+            image_format, quality = encoding(parameters, default)
+        if method in ('capture_png', 'capture_image'):
+            if set(parameters) - {'cursor'}:
+                raise ValueError(method + ' only accepts cursor, format and quality')
+            if type(parameters.setdefault('cursor', False)) is not bool:
+                raise ValueError('cursor must be a boolean')
+        elif method == 'step' and set(parameters) != {'action'}:
+            raise ValueError('step accepts an action, format and quality')
         # Pair pixels and metadata under one lock; encoding does not hold this
         # lock and input-only requests never acquire it.
         with self.capture_lock:
             if method in ('screenshot', 'capture_png', 'capture_image'):
-                if method == 'capture_image':
-                    if set(parameters) - {'cursor', 'format', 'quality'}:
-                        raise ValueError('capture_image only accepts cursor, format and quality')
-                    image_format = parameters.get('format', 'jpeg')
-                    quality = parameters.get('quality', 85)
-                    if image_format not in ('jpeg', 'png'):
-                        raise ValueError('format must be jpeg or png')
-                    if type(quality) is not int or not 1 <= quality <= 95:
-                        raise ValueError('quality must be an integer from 1 to 95')
-                    parameters = {'cursor': parameters.get('cursor', True)}
-                    if type(parameters['cursor']) is not bool:
-                        raise ValueError('cursor must be a boolean')
-                elif method == 'capture_png':
-                    if set(parameters) - {'cursor'}:
-                        raise ValueError('capture_png only accepts cursor')
-                    parameters = {'cursor': True, **parameters}
-                    if type(parameters['cursor']) is not bool:
-                        raise ValueError('cursor must be a boolean')
-                image = self.client.screenshot(**parameters)
+                try:
+                    image = self.client.screenshot(**parameters)
+                except (ValueError, RuntimeError) as error:
+                    # The fast I/O service reports an older helper before
+                    # sending it the request, so the channel stays usable.
+                    if parameters.get('cursor') and 'cursor capture requires rebuilt' in str(error):
+                        raise UnsupportedFeature('cursor capture needs desktop files prepared by Sandweave 0.2.46 '
+                                                 'or newer; capture with cursor=False or prepare the desktop '
+                                                 'template in new storage') from error
+                    raise
                 metadata = dict(self.client.last_metadata)
             elif method == 'step':
                 image, metadata = self.client.step(**parameters)
             else:
                 raise UnsupportedFeature('unknown desktop operation: ' + method)
-        if method in ('capture_png', 'capture_image'):
-            if not metadata.get('capture_completed_wall_ns'):
-                raise UnsupportedFeature('capture_png requires the timestamped fast I/O helper; rebuild the desktop assets')
+        if method == 'capture_png':
             started = time.perf_counter_ns()
-            if method == 'capture_image':
-                data = encode_jpeg(image, quality) if image_format == 'jpeg' else encode_png(image)
-                return {'size': list(image.size), 'data': data, 'mime_type': 'image/' + image_format,
-                        'metadata': {**metadata, 'image_encode_ns': time.perf_counter_ns() - started,
-                                     'image_format': image_format,
-                                     'image_quality': quality if image_format == 'jpeg' else None}}
             png = encode_png(image)
             return {'size': list(image.size), 'png': png,
                     'metadata': {**metadata, 'png_encode_ns': time.perf_counter_ns() - started}}
+        if image_format is not None:
+            return encode(image, metadata, image_format, quality)
         return {'size': list(image.size), 'rgb': image.tobytes(), 'metadata': metadata}
 
     def detach(self, reason):

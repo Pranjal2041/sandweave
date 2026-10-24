@@ -1,5 +1,12 @@
 # Local JPEG capture and complete HTTP timing
 
+> Released in Sandweave 0.2.46 (October 24, 2026) with these changes: `cursor`
+> defaults to `False`; JPEG and PNG capture also work with older desktop helpers,
+> which reject only `cursor=True`; and `step(action, format=...)` returns an
+> encoded observation. See [encoded screenshots](../docs/desktop.md#encoded-screenshots)
+> and [encoded capture release](encoded-capture-release.md). The record below
+> describes the original local branch.
+
 September 22, 2026. This is a local-branch extension. It has not been published
 or installed into active evaluation workers.
 

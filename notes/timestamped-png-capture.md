@@ -1,5 +1,12 @@
 # Local timestamped PNG capture, 2026-09-20
 
+> Released in Sandweave 0.2.46 (October 24, 2026) with these changes: `cursor`
+> defaults to `False`; JPEG and PNG capture also work with older desktop helpers,
+> which reject only `cursor=True`; and `step(action, format=...)` returns an
+> encoded observation. See [encoded screenshots](../docs/desktop.md#encoded-screenshots)
+> and [encoded capture release](encoded-capture-release.md). The record below
+> describes the original local branch.
+
 This branch adds `desktop.capture_png(cursor=True)` without changing the
 existing screenshot return type or input API. It requires rebuilt desktop
 assets as well as the candidate SDK/worker. It is local-only, not published.

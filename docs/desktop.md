@@ -20,47 +20,61 @@ For a GPU game example, see [Stunt Rally 3](https://github.com/Pranjal2041/sandw
 It starts the standalone Linux game at 1920×1080, accepts keyboard controls,
 and can record the desktop.
 
-## Timestamped screenshots (local branch)
+## Encoded screenshots
 
-This extension requires the local SDK, worker code, and rebuilt Xvnc helper.
-It is not part of the official 0.2.16 installation.
+`screenshot()` and `step()` return raw RGB pixels: 6.2 MB for each 1920×1080
+frame. On a slow or remote connection, have the worker encode the image instead:
 
 ```python
 from pathlib import Path
 
-frame = env.desktop.capture_png(cursor=True)
-Path("desktop.png").write_bytes(frame.png)
+frame = env.desktop.capture_image(format="jpeg", quality=85)
+Path("desktop.jpg").write_bytes(frame.data)
+print(frame.mime_type, frame.size, len(frame.data))
+```
+
+A GNOME desktop at quality 85 is about 120 KB. Over a 20 Mbit/s link it arrived
+in 56 ms, compared with 2.5 s for the raw screenshot. Encoding takes about
+13 ms on the worker and preserves the full resolution, with 4:2:0 chroma
+subsampling. `quality` accepts integers from 1 to 95. `format="png"` is
+lossless but larger. Forward `frame.data` directly instead of decoding and
+re-encoding it.
+
+`step` can return the encoded next frame in the same request:
+
+```python
+observation = env.desktop.step({"mouse": {"left_click": [400, 300]}}, format="jpeg")
+Path("next.jpg").write_bytes(observation.data)
+image = observation.image  # decoded RGB copy of the same frame
+```
+
+Without `format`, `step` keeps returning raw RGB, and `observation.data` is
+`None`. `capture_png()` returns lossless PNG bytes as `frame.png`.
+
+### Cursor and capture timestamps
+
+Desktop files prepared by Sandweave 0.2.46 or newer include an updated capture
+helper:
+
+```python
+frame = env.desktop.capture_image(format="jpeg", cursor=True)
 captured_at_ns = frame.metadata["capture_completed_wall_ns"]
 ```
 
-Each call takes a fresh, full-resolution capture through the persistent
-shared-memory helper. The worker encodes lossless RGB PNG once. There is no
-FFmpeg process, guest screenshot file, separate file download, or client-side
-image encoding. `cursor=False` excludes the cursor explicitly. The existing
-`screenshot()` and `step()` return types and action behavior are unchanged.
-
-`capture_started_wall_ns` and `capture_completed_wall_ns` use the guest's Unix
-clock and bracket screen/cursor acquisition. The corresponding
+`cursor=True` composites the pointer into the image; the default excludes it,
+as `screenshot()` does. `capture_started_wall_ns` and
+`capture_completed_wall_ns` use the guest's wall clock, including any
+[guest clock](clock.md) offset, and bracket the screen and cursor capture.
 `capture_started_ns` and `capture_completed_ns` use the guest's monotonic clock.
-These are capture timestamps, not application-render or client-receipt times.
-`generation`, `frame_sequence`, and `frame_input_sequence` identify the frame;
-`png_encode_ns` measures worker encoding. Encoding happens after the pixels and
-metadata have been copied and does not hold the desktop capture lock.
+These are capture times, not application-render or client-receipt times.
+`frame_sequence` and `frame_input_sequence` identify the frame, and
+`image_encode_ns` measures worker encoding. Encoding happens after the pixels
+are copied and does not delay other desktop requests.
 
-The local branch also supports encoded JPEG for lower response latency:
-
-```python
-frame = env.desktop.capture_image(format="jpeg", quality=85, cursor=True)
-Path("desktop.jpg").write_bytes(frame.data)
-assert frame.mime_type == "image/jpeg"
-```
-
-This preserves the original resolution and capture timestamps. JPEG is encoded
-once on the worker with 4:2:0 chroma subsampling, without progressive or optimized
-encoding passes. Quality accepts integers from 1 to 95. `format="png"` provides
-lossless encoding through the same method. Clients should return the encoded
-bytes directly. This extension is available in the local SDK/worker branch;
-the official installation and active evaluation workers are unchanged.
+Desktop files prepared by earlier versions still provide JPEG and PNG capture
+without the cursor or timestamps. They reject `cursor=True` with
+`UnsupportedFeature`. Prepare the `gnome` template in new storage to get the
+updated helper.
 
 ## Install an application
 

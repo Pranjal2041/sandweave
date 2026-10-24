@@ -214,10 +214,19 @@ env.desktop.mouse.click(400, 300)
 env.desktop.keyboard.type("hello")
 ```
 
-The local timestamped-capture branch also provides `env.desktop.capture_png()`.
-It returns a lossless `.png`, `.size`, and `.metadata` in one request, with the
-cursor included by default. Write the bytes directly instead of re-encoding
-them on the client. See [timestamped screenshots](docs/desktop.md#timestamped-screenshots-local-branch).
+On slow connections, have the worker encode screenshots:
+
+```python
+frame = env.desktop.capture_image(format="jpeg", quality=85)
+observation = env.desktop.step({"mouse": {"move": [400, 300]}}, format="jpeg")
+```
+
+`frame.data` holds the JPEG bytes, with `.mime_type`, `.size` and `.metadata`;
+a 1920×1080 desktop is about 120 KB instead of 6.2 MB of raw pixels. `step`
+returns the encoded next frame in the same request, as `observation.data` and
+`observation.image`. Forward `.data` without re-encoding it. See
+[encoded screenshots](https://pranjal2041.github.io/sandweave/desktop/#encoded-screenshots)
+for PNG, cursor capture and timestamps.
 
 Keyboard input goes to the focused window; mouse clicks use desktop coordinates.
 For an agent loop, `env.desktop.step(action)` applies a mouse/keyboard action and returns an

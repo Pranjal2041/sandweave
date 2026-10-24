@@ -383,11 +383,13 @@ Convenience calls compile to that schema. `step(action)` returns a
 metadata. Its guarantee is a capture after the input server fence, not that the
 application has repainted. `screenshot()` returns the owned RGB image directly.
 
-Local extension, 2026-09-20: `desktop.capture_png(cursor=True)` returns a fresh
-`DesktopCapture` containing lossless PNG bytes, size, and frame metadata with
-guest wall-clock capture timestamps. It is additive; existing screenshot and
-action calls keep their contracts. It requires the rebuilt helper and has not
-been published. See [timestamped screenshots](../docs/desktop.md#timestamped-screenshots-local-branch).
+Addition in 0.2.46: `desktop.capture_image(format="jpeg"|"png", quality=85,
+cursor=False)` and `desktop.capture_png(cursor=False)` return worker-encoded
+images with frame metadata, and `desktop.step(action, format=...)` returns an
+encoded observation in one request. They are additive; screenshot and step keep
+their raw-RGB contracts by default. Cursor capture and guest capture timestamps
+require desktop files prepared by 0.2.46 or newer. See
+[encoded screenshots](../docs/desktop.md#encoded-screenshots).
 
 VR supplies `observe`, `action`, `step`, `record`, `action_spec` and
 `observation_spec`. A `StereoObservation` always has `.left` and `.right`, owned

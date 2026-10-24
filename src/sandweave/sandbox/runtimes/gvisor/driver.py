@@ -289,11 +289,14 @@ class Runtime:
             from ...clock import features as clock_features
             features += clock_features(spec.get('clock'))
             if features:
-                from .engine import feature_runtime
+                from .engine import feature_runtime, launch_runtime
                 selected_runtime = feature_runtime(self.root, features, snapshot)
                 options += selected_runtime
-                if 'private-volumes' in features and selected_runtime:
-                    guest_tools = self.root / selected_runtime[1] / 'gvisor-bin/sandweave-guest-tools'
+                if 'private-volumes' in features:
+                    # The default runtime may already provide private volumes;
+                    # its helper must reach the guest just like an override's.
+                    guest_tools = (self.root / launch_runtime(self.root, selected_runtime, snapshot) /
+                                   'gvisor-bin/sandweave-guest-tools')
             if snapshot:
                 manifest = json.loads((Path(snapshot) / 'snapshot-manifest.json').read_text())
                 self.manager.load(snapshot, identity, command=command if manifest['kind'] == 'filesystem' else (),

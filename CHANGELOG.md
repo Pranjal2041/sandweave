@@ -15,6 +15,9 @@
 - Upgrade prepared engines to runtime 2026.10.24.1 for new launches. Workers and
   controllers advertise `guest_clock`; older ones reject clock options. Memory
   snapshots captured on earlier engines keep them and cannot take clock options.
+- Fix Harbor service tasks failing with a missing `/.sandweave-runtime/tools/guest-tools`
+  when the default engine already provides private volumes. The guest helper now
+  comes from whichever engine the launch uses.
 
 ## 0.2.44
 

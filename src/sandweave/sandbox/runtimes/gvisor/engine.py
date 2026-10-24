@@ -50,6 +50,16 @@ def feature_runtime(root, features, snapshot=None):
         return ['--runtime-build', descriptor['path']]
 
 
+def launch_runtime(root, selected, snapshot=None):
+    """Return the runtime directory a launch uses, as run-gvisor.py selects it."""
+    if selected:
+        return selected[1]
+    settings = Path(snapshot) / 'launch-settings.json' if snapshot else None
+    if settings is not None and settings.is_file():
+        return json.loads(settings.read_text())['runtime']['path']
+    return json.loads((Path(root) / 'tools/gvisor-socket/runtime.json').read_text())['path']
+
+
 def build_features(directory):
     """Share one source build across workers using the same installation."""
     from ....bootstrap import Builder, BUILDER, GVISOR_BASE, build_input

@@ -98,6 +98,30 @@
     ]
   },
   "patch_sha256": "b2bb4a2249e135d152662dbe417f6ed1687e3f5039d975597482b0e49be9edf8",
+  "published_qualification": {
+    "checks": [
+      "first-install",
+      "exact-engine-hashes",
+      "no-compiler",
+      "cpu-override",
+      "no-kvm",
+      "internet",
+      "files",
+      "pause-resume",
+      "filesystem-cache",
+      "process-memory-restore",
+      "offline-network",
+      "context-cleanup",
+      "global-location-preserved"
+    ],
+    "compiler_downloaded_or_run": false,
+    "distribution": "published-github",
+    "first_setup_seconds": 82.28793849237263,
+    "installation": "automatic-first-use",
+    "lifecycle_seconds": 12.581046098843217,
+    "ready_seconds": 1.2194759352132678,
+    "status": "passed"
+  },
   "release_qualification": {
     "checks": [
       "first-install",

@@ -82,6 +82,9 @@ storage. The candidate runtime came from `scripts/build-runtime-release.py`
 installed it from a local HTTP manifest and passed all checks: first CLI setup
 took 76.0 s, a sandbox was ready in 1.43 s, and no compiler was downloaded or run.
 Detailed results are in [guest-clock-acceptance.json](guest-clock-acceptance.json).
+After publication, a fresh wheel with the new pin passed the same qualification
+through automatic first use, with anonymous GitHub downloads: 82.3 s to the
+first command and a 1.22 s ready sandbox.
 
 | Check | Result |
 | --- | --- |

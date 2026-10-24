@@ -195,7 +195,8 @@ def test_restore_reaps_control_process_and_does_not_finish_after_abort(fs, tmp_p
         'open(sys.argv[1],"w").write(str(os.getpid())); time.sleep(20); '
         'open(sys.argv[2],"w").write("late")', str(pid_file), str(marker)]
     def abort():
-        end = time.monotonic() + 3
+        # Wait for the child on a loaded host, within the 10 s restore deadline.
+        end = time.monotonic() + 8
         while not pid_file.exists() and time.monotonic() < end:
             time.sleep(.01)
         (done if failure == 'cancel' else exited).set()

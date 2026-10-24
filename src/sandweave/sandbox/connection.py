@@ -5,10 +5,17 @@ import socket
 import selectors
 import threading
 import ssl
+import time
 
 from . import errors
 from .wire import decode, encode, MAX_BODY
 from .. import _unix_sockets
+
+# Servers close idle keep-alive connections; the Weave controller does so after
+# 60 s. A request sent while that close is in flight fails without showing
+# whether it was delivered, so retire idle connections well before any server
+# would, as the async client also does after 30 s.
+IDLE_REUSE_SECONDS = 30
 
 
 class UnixHTTPConnection(http.client.HTTPConnection):
@@ -80,14 +87,16 @@ class Connection:
             # A peer may close an idle keep-alive socket between calls. Detect
             # EOF before sending any bytes; reconnecting here cannot duplicate
             # a mutation. Failures after sending still have uncertain outcomes.
+            stale = time.monotonic() - connection.sandweave_idle_since >= IDLE_REUSE_SECONDS
             try:
-                with selectors.DefaultSelector() as watcher:
-                    watcher.register(connection.sock, selectors.EVENT_READ)
-                    readable = watcher.select(0)
-                # SSL sockets cannot use MSG_PEEK. With no outstanding request,
-                # readable TLS data may be close_notify or a session ticket;
-                # replacing the idle connection is safe in either case.
-                stale = bool(readable) and (self.tls or connection.sock.recv(1, socket.MSG_PEEK) == b'')
+                if not stale:
+                    with selectors.DefaultSelector() as watcher:
+                        watcher.register(connection.sock, selectors.EVENT_READ)
+                        readable = watcher.select(0)
+                    # SSL sockets cannot use MSG_PEEK. With no outstanding request,
+                    # readable TLS data may be close_notify or a session ticket;
+                    # replacing the idle connection is safe in either case.
+                    stale = bool(readable) and (self.tls or connection.sock.recv(1, socket.MSG_PEEK) == b'')
             except OSError:
                 stale = True
             if stale:
@@ -125,6 +134,7 @@ class Connection:
         finally:
             with self.lock:
                 if reusable and generation == self.generation and len(self.idle) < 8:
+                    connection.sandweave_idle_since = time.monotonic()
                     self.idle.append(connection)
                 else:
                     self.connections.discard(connection)

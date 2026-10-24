@@ -154,3 +154,28 @@ acceptance. `nested-opensaber-check.py` records both eyes and collects Monado
 application-submission metrics if the actual SDK game launch succeeds.
 
 The experimental branch is **not ready for a public runtime/SDK release**.
+
+## Saved handoff
+
+Draft PR: https://github.com/Pranjal2041/sandweave/pull/2.
+The `games` branch has also been created. The engine checkout is clean at
+`300909a0815a2f76af6b091f711c2c0e810a4db3`.
+
+The following copies are retained locally under the checkout's existing
+artifact ignore rules, independently of the expiring workers:
+
+- `runs/nested-modal-20261024/gpu-evidence5.tgz`: CUDA stdout, engine logs,
+  SDK installation logs, network verification and the stalled-task stack dump.
+  SHA-256 `ff981ec926bc2e5e7aff5d7eeeac201000267fa4584c0467417e13d8ebeb0da5`.
+- `runs/nested-modal-20261024/cpu-evidence5.tgz`: build receipts and native
+  test/build logs. SHA-256
+  `1c53ca027da38318c54533449f74a5c0c0767de05aae0a009829daa8f2c3953a`.
+- `checkpoints/nested-modal-20261024/gvisor.bundle`: verified complete engine
+  Git history, including the experimental commit.
+- `checkpoints/nested-modal-20261024/sandweave-runtime-2026.10.24.93-linux-x86_64.tar.gz`:
+  the 64,617,804-byte candidate archive, verified against the SHA-256 above.
+
+Worker identities for the retained remote paths: CPU
+`sb-9PWYVJijEbtrCh8q2MBmqr`; L40S `sb-cUFlXNgm3uqY9YzA3t0zOZ`.
+The large VR asset copies remain separate from the verified local evidence;
+their completion does not establish that Open Saber ran.

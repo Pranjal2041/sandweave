@@ -103,6 +103,8 @@ class ManagedPool(LocalPool):
                     raise UnsupportedFeature('pool proxy policies require Sandweave 0.2.10 or newer on the controller')
                 from ..sandbox.audit import check_worker
                 check_worker(request['spec'], self.connection)
+                from ..sandbox.clock import check_worker as check_clock
+                check_clock(request['spec'], self.connection)
                 if request['spec'].get('storage', {}).get('mode') == 'disk' and not self.connection.call('ping').get('disk_storage'):
                     raise UnsupportedFeature('disk-backed storage requires Sandweave 0.2.32 or newer on the controller')
                 owner = None if self.options.get('detached') else client_owner(self.connection)

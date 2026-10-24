@@ -64,6 +64,11 @@ def creation_options(parser):
     parser.add_argument('--record', action='store_true', help='Record the desktop on the worker until termination')
     parser.add_argument('--hidepid', type=int, choices=(0, 1, 2), default=None)
     parser.add_argument('--audit', action=argparse.BooleanOptionalAction, default=None)
+    clock = parser.add_mutually_exclusive_group()
+    clock.add_argument('--clock-offset', type=float, help='seconds added to the worker clock for guest wall-clock time')
+    clock.add_argument('--clock-start', help='guest wall-clock time when the sandbox starts, such as 2025-03-01T00:00:00Z')
+    parser.add_argument('--clock-pause', choices=('freeze', 'continue'),
+                        help='guest time during pauses; freeze is the default with a clock setting')
     parser.add_argument('--profiling', action='store_true', default=None, help='Enable runtime heap profiling for this diagnostic sandbox')
     parser.add_argument('--experimental-gpu-live', action='store_true')
 
@@ -83,7 +88,8 @@ def command_options(parser):
 def creation(args):
     keys = ('template', 'image', 'setup', 'cache', 'snapshot', 'cache_key', 'refresh', 'runtime',
             'target', 'connection', 'cpu', 'memory', 'gpu', 'network', 'name', 'ttl', 'startup_timeout',
-            'keep_on_error', 'experimental_gpu_live', 'profiling', 'hidepid', 'audit')
+            'keep_on_error', 'experimental_gpu_live', 'profiling', 'hidepid', 'audit',
+            'clock_offset', 'clock_start', 'clock_pause')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
     if getattr(args, 'storage', None) is not None or getattr(args, 'storage_path', None) is not None:
         from . import Storage

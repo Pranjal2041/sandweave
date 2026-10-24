@@ -120,6 +120,8 @@ class Runtime:
         runtime = spec['template'].get('runtime_options', {})
         from ...audit import configure
         configure(spec['template'], 'gvisor')
+        from ...clock import runtime_options as clock_options
+        options += clock_options(spec.get('clock'))
         options += ['--hidepid', str(runtime.get('hidepid', 0))]
         options.append('--audit' if runtime.get('audit') else '--no-audit')
         if 'audit_max_bytes' in runtime:
@@ -284,6 +286,8 @@ class Runtime:
                 features.append('proc-hidepid')
             if spec['template'].get('runtime_options', {}).get('audit'):
                 features.append('audit-log')
+            from ...clock import features as clock_features
+            features += clock_features(spec.get('clock'))
             if features:
                 from .engine import feature_runtime
                 selected_runtime = feature_runtime(self.root, features, snapshot)

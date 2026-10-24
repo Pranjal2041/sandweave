@@ -2343,7 +2343,7 @@ index 69c94a61f..2e9c75133 100644
  	uid, gid := i.getOwner(mode)
  	return vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid)
 diff --git a/pkg/sentry/fsimpl/proc/task_files.go b/pkg/sentry/fsimpl/proc/task_files.go
-index 460227787..fe68b64b5 100644
+index 460227787..297b5fe5f 100644
 --- a/pkg/sentry/fsimpl/proc/task_files.go
 +++ b/pkg/sentry/fsimpl/proc/task_files.go
 @@ -488,7 +488,7 @@ func (fs *filesystem) newMemInode(ctx context.Context, task *kernel.Task, ino ui
@@ -2355,7 +2355,20 @@ index 460227787..fe68b64b5 100644
  }
  
  func (f *memInode) init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, perm linux.FileMode) {
-@@ -944,7 +944,7 @@ func (fs *filesystem) newStatusInode(ctx context.Context, task *kernel.Task, pid
+@@ -842,8 +842,10 @@ func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+ 	// maintained, and is hard coded as 0.
+ 	fmt.Fprintf(buf, "0 ")
+ 
+-	// Start time is relative to boot time, expressed in clock ticks.
+-	fmt.Fprintf(buf, "%d ", linux.ClockTFromDuration(s.task.StartTime().Sub(s.task.Kernel().Timekeeper().BootTime())))
++	// Start time is relative to boot time, expressed in clock ticks. A
++	// realtime offset chosen at restore can place an earlier start before
++	// the derived boot time; report those tasks as starting at boot.
++	fmt.Fprintf(buf, "%d ", linux.ClockTFromDuration(max(0, s.task.StartTime().Sub(s.task.Kernel().Timekeeper().BootTime()))))
+ 
+ 	var vss, rss uint64
+ 	if mm := getMM(s.task); mm != nil {
+@@ -944,7 +946,7 @@ func (fs *filesystem) newStatusInode(ctx context.Context, task *kernel.Task, pid
  		pidns: pidns,
  	}
  	inode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeRegular|perm)
@@ -2364,7 +2377,7 @@ index 460227787..fe68b64b5 100644
  }
  
  // Open implements kernfs.Inode.Open.
-@@ -1041,6 +1041,15 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
+@@ -1041,6 +1043,15 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
  	fmt.Fprintf(buf, "VmData:\t%d kB\n", data>>10)
  
  	fmt.Fprintf(buf, "Threads:\t%d\n", s.task.ThreadGroup().Count())
@@ -2380,7 +2393,7 @@ index 460227787..fe68b64b5 100644
  	fmt.Fprintf(buf, "CapInh:\t%016x\n", creds.InheritableCaps)
  	fmt.Fprintf(buf, "CapPrm:\t%016x\n", creds.PermittedCaps)
  	fmt.Fprintf(buf, "CapEff:\t%016x\n", creds.EffectiveCaps)
-@@ -1439,7 +1448,7 @@ func (fs *filesystem) newNamespaceSymlink(ctx context.Context, task *kernel.Task
+@@ -1439,7 +1450,7 @@ func (fs *filesystem) newNamespaceSymlink(ctx context.Context, task *kernel.Task
  	// Note: credentials are overridden by taskOwnedInode.
  	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, "")
  
@@ -2389,7 +2402,7 @@ index 460227787..fe68b64b5 100644
  	return taskInode
  }
  
-@@ -1453,7 +1462,7 @@ func (fs *filesystem) newFakeNamespaceSymlink(ctx context.Context, task *kernel.
+@@ -1453,7 +1464,7 @@ func (fs *filesystem) newFakeNamespaceSymlink(ctx context.Context, task *kernel.
  	// Note: credentials are overridden by taskOwnedInode.
  	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
  
@@ -2398,7 +2411,7 @@ index 460227787..fe68b64b5 100644
  	return taskInode
  }
  
-@@ -1476,9 +1485,6 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
+@@ -1476,9 +1487,6 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
  		}
  		return nil
  	case linux.CLONE_NEWCGROUP:
@@ -2408,7 +2421,7 @@ index 460227787..fe68b64b5 100644
  		if cgroupns := t.GetCgroupNamespace(); cgroupns != nil {
  			return cgroupns.GetInode()
  		}
-@@ -1646,14 +1652,14 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error
+@@ -1646,14 +1654,14 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error
  		return linuxerr.ESRCH
  	}
  
@@ -4141,7 +4154,7 @@ index 9fe1c6cec..472b77d4e 100644
  	for _, private := range []bool{false, true} {
  		t.Run(futexKind(private), func(t *testing.T) {
 diff --git a/pkg/sentry/kernel/kernel.go b/pkg/sentry/kernel/kernel.go
-index 32afe64a6..73c3d1a5f 100644
+index 32afe64a6..7ba5c4fc8 100644
 --- a/pkg/sentry/kernel/kernel.go
 +++ b/pkg/sentry/kernel/kernel.go
 @@ -147,6 +147,13 @@ type SaveRestoreExecConfig struct {
@@ -4158,7 +4171,19 @@ index 32afe64a6..73c3d1a5f 100644
  	// extMu serializes external changes to the Kernel with calls to
  	// Kernel.SaveTo. (Kernel.SaveTo requires that the state of the Kernel
  	// remains frozen for the duration of the call; it requires that the Kernel
-@@ -527,6 +534,9 @@ func (k *Kernel) Init(args InitKernelArgs) error {
+@@ -161,6 +168,11 @@ type Kernel struct {
+ 	// all Kernel fields become immutable once started becomes true.
+ 	started bool `state:"nosave"`
+ 
++	// clockFreezes counts unreleased FreezeClocks calls. While it is nonzero,
++	// guest time, timers and Timekeeper updates are stopped. It is protected
++	// by extMu.
++	clockFreezes int `state:"nosave"`
++
+ 	// All of the following fields are immutable unless otherwise specified.
+ 
+ 	// Platform is the platform that is used to execute tasks in the created
+@@ -527,6 +539,9 @@ func (k *Kernel) Init(args InitKernelArgs) error {
  	k.featureSet = args.FeatureSet
  	k.timekeeper = args.Timekeeper
  	k.tasks = newTaskSet(args.RootPIDNamespace)
@@ -4168,7 +4193,23 @@ index 32afe64a6..73c3d1a5f 100644
  	k.rootUserNamespace = args.RootUserNamespace
  	k.rootUTSNamespace = args.RootUTSNamespace
  	k.rootIPCNamespace = args.RootIPCNamespace
-@@ -783,15 +793,13 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
+@@ -674,9 +689,13 @@ func (k *Kernel) quiescePausedAnd(ctx context.Context, f func() error) error {
+ 	fdnotifier.Pause()
+ 	defer fdnotifier.Resume()
+ 
+-	// Stop time.
++	// Stop time. Frozen time stays stopped after the save, until thawed.
+ 	k.pauseTimeLocked(ctx)
+-	defer k.resumeTimeLocked(ctx)
++	defer func() {
++		if k.clockFreezes == 0 {
++			k.resumeTimeLocked(ctx)
++		}
++	}()
+ 
+ 	// Evict all evictable MemoryFile allocations.
+ 	k.mf.StartEvictions()
+@@ -783,15 +802,13 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
  
  		// Save the timekeeper's state.
  
@@ -4191,15 +4232,33 @@ index 32afe64a6..73c3d1a5f 100644
  		}
  
  		// Save the kernel state.
-@@ -1015,9 +1023,20 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
+@@ -935,7 +952,7 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
+ }
+ 
+ // LoadFrom returns a new Kernel loaded from args.
+-func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, networkArgs inet.NetworkArgs, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
++func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, networkArgs inet.NetworkArgs, clocks sentrytime.Clocks, clockConfig ClockConfig, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
+ 	defer timeline.End()
+ 	if hostarch.PageSize != 4096 {
+ 		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
+@@ -1000,7 +1017,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
+ 		timeline.Reached("Main MemoryFile loading started")
+ 	}
+ 
+-	k.Timekeeper().SetClocks(clocks, k.vdsoParams)
++	k.Timekeeper().SetClocksWithConfig(clocks, k.vdsoParams, clockConfig)
+ 
+ 	if timeReady != nil {
+ 		close(timeReady)
+@@ -1015,10 +1032,21 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
  		if err := networkArgs.ConfigureNetwork(s); err != nil {
  			return fmt.Errorf("configuring network: %w", err)
  		}
 -		s.Restore()
 -		timeline.Reached("Network stack restored")
 +		timeline.Reached("Root network transport reconnected")
-+	}
-+
+ 	}
+ 
 +	// Restore namespaces concurrently: TCP endpoint restoration has global
 +	// ordering barriers across listeners and connected endpoints.
 +	var netRestore sync.WaitGroup
@@ -4209,12 +4268,13 @@ index 32afe64a6..73c3d1a5f 100644
 +		}
 +		netRestore.Add(1)
 +		go func(ns *inet.Namespace) { defer netRestore.Done(); ns.Stack().Restore() }(ns)
- 	}
++	}
 +	netRestore.Wait()
- 
++
  	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
  		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
-@@ -1745,11 +1764,20 @@ func (k *Kernel) Kill(ws linux.WaitStatus) {
+ 	}
+@@ -1745,11 +1773,20 @@ func (k *Kernel) Kill(ws linux.WaitStatus) {
  // calls to Pause nest and require an equal number of calls to Unpause to
  // resume execution.
  func (k *Kernel) Pause() {
@@ -4237,6 +4297,42 @@ index 32afe64a6..73c3d1a5f 100644
  }
  
  // IsPaused returns true if the kernel is currently paused.
+@@ -1774,6 +1811,35 @@ func (k *Kernel) Unpause() {
+ 	k.tasks.EndExternalStop()
+ }
+ 
++// FreezeClocks stops guest realtime and monotonic time, together with timers
++// and Timekeeper updates, until a matching ThawClocks. Calls nest.
++//
++// Preconditions: The kernel must be paused.
++func (k *Kernel) FreezeClocks() {
++	k.extMu.Lock()
++	defer k.extMu.Unlock()
++	k.clockFreezes++
++	if k.clockFreezes == 1 && k.timekeeper.freeze() {
++		k.pauseTimeLocked(k.SupervisorContext())
++	}
++}
++
++// ThawClocks ends the effect of a previous FreezeClocks. Guest time continues
++// from its frozen value once every freeze is released.
++//
++// Preconditions: The kernel must be paused.
++func (k *Kernel) ThawClocks() {
++	k.extMu.Lock()
++	defer k.extMu.Unlock()
++	if k.clockFreezes == 0 {
++		return
++	}
++	k.clockFreezes--
++	if k.clockFreezes == 0 && k.timekeeper.thaw() {
++		k.resumeTimeLocked(k.SupervisorContext())
++	}
++}
++
+ // SendExternalSignal injects a signal into the kernel.
+ //
+ // context is used only for debugging to describe how the signal was received.
 diff --git a/pkg/sentry/kernel/ptrace.go b/pkg/sentry/kernel/ptrace.go
 index 8701a3c1a..09bc0db23 100644
 --- a/pkg/sentry/kernel/ptrace.go
@@ -4562,6 +4658,466 @@ index 1364d473a..451a538a8 100644
  	ts.zeroLiveTasksCond.L = &ts.mu
  	pidns.owner = ts
  	return ts
+diff --git a/pkg/sentry/kernel/timekeeper.go b/pkg/sentry/kernel/timekeeper.go
+index 2764538a2..3b14c6147 100644
+--- a/pkg/sentry/kernel/timekeeper.go
++++ b/pkg/sentry/kernel/timekeeper.go
+@@ -67,14 +67,28 @@ type Timekeeper struct {
+ 	monotonicRawClock *timekeeperClock `state:"nosave"`
+ 
+ 	// bootTime is the realtime when the system "booted". i.e., when
+-	// SetClocks was called in the initial (not restored) run.
++	// SetClocks was called in the initial (not restored) run. BootTime
++	// derives the guest-visible value from the current clocks instead; this
++	// field remains part of the saved state.
+ 	bootTime ktime.Time
+ 
+ 	// monotonicOffset is the offset to apply to the monotonic clock output
+ 	// from clocks.
+ 	//
+-	// It is set only once, by SetClocks.
+-	monotonicOffset int64 `state:"nosave"`
++	// It is set by SetClocks and advanced by thaw.
++	monotonicOffset atomicbitops.Int64 `state:"nosave"`
++
++	// realtimeOffset is the offset to apply to the realtime clock output
++	// from clocks. It is derived from the ClockConfig supplied to each
++	// SetClocks, never from the saved state, and is advanced by thaw.
++	realtimeOffset atomicbitops.Int64 `state:"nosave"`
++
++	// frozen indicates that guest realtime and monotonic time are stopped at
++	// frozenRealtime and frozenMonotonic. It is written only by freeze and
++	// thaw, with mu held.
++	frozen          atomicbitops.Bool  `state:"nosave"`
++	frozenRealtime  atomicbitops.Int64 `state:"nosave"`
++	frozenMonotonic atomicbitops.Int64 `state:"nosave"`
+ 
+ 	// monotonicLowerBound is the lowerBound for monotonic time.
+ 	monotonicLowerBound atomicbitops.Int64 `state:"nosave"`
+@@ -92,7 +106,8 @@ type Timekeeper struct {
+ 	// monotonicOffset.
+ 	saveMonotonic int64
+ 
+-	// saveRealtime is the value of the realtime clock at the time of save.
++	// saveRealtime is the value of the host realtime clock, without
++	// realtimeOffset, at the time of save.
+ 	//
+ 	// It is only valid if restored is non-nil.
+ 	//
+@@ -179,6 +194,25 @@ func NewTimekeeper() *Timekeeper {
+ //
+ // It must also be called after Load.
+ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
++	t.SetClocksWithConfig(c, params, ClockConfig{})
++}
++
++// ClockConfig selects the guest realtime clock. It is applied by every
++// SetClocksWithConfig, at boot and at each restore, and is not saved.
++type ClockConfig struct {
++	// RealtimeOffset is added to the host realtime clock, in nanoseconds,
++	// unless HasRealtimeStart is set.
++	RealtimeOffset int64
++
++	// RealtimeStart is the guest realtime, in nanoseconds since the Unix
++	// epoch, at the moment the clocks are initialized. It is used only if
++	// HasRealtimeStart is set.
++	RealtimeStart    int64
++	HasRealtimeStart bool
++}
++
++// SetClocksWithConfig is SetClocks with a guest clock configuration.
++func (t *Timekeeper) SetClocksWithConfig(c sentrytime.Clocks, params *VDSOParamPage, config ClockConfig) {
+ 	// Update the params, marking them "not ready", as we may need to
+ 	// restart calibration on this new machine.
+ 	if t.restored != nil {
+@@ -241,7 +275,15 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
+ 		}
+ 	}
+ 
+-	t.monotonicOffset = wantMonotonic - nowMonotonic
++	t.monotonicOffset.Store(wantMonotonic - nowMonotonic)
++
++	// The guest realtime clock follows the configuration of this boot or
++	// restore, independently of the realtime saved in a checkpoint.
++	if config.HasRealtimeStart {
++		t.realtimeOffset.Store(config.RealtimeStart - nowRealtime)
++	} else {
++		t.realtimeOffset.Store(config.RealtimeOffset)
++	}
+ 
+ 	if t.restored == nil {
+ 		// Hold on to the initial "boot" time.
+@@ -277,16 +319,21 @@ func (t *Timekeeper) update(parked bool) {
+ 		res := t.clocks.Update(parked)
+ 
+ 		var p vdsoParams
++		if t.frozen.Load() {
++			// Not-ready parameters send VDSO readers to the syscall
++			// path, which reports the frozen time.
++			return p
++		}
+ 		if res.MonotonicOk {
+ 			p.monotonicReady = 1
+ 			p.monotonicBaseCycles = int64(res.Monotonic.BaseCycles)
+-			p.monotonicBaseRef = int64(res.Monotonic.BaseRef) + t.monotonicOffset
++			p.monotonicBaseRef = int64(res.Monotonic.BaseRef) + t.monotonicOffset.Load()
+ 			p.monotonicFrequency = res.Monotonic.Frequency
+ 		}
+ 		if res.RealtimeOk {
+ 			p.realtimeReady = 1
+ 			p.realtimeBaseCycles = int64(res.Realtime.BaseCycles)
+-			p.realtimeBaseRef = int64(res.Realtime.BaseRef)
++			p.realtimeBaseRef = int64(res.Realtime.BaseRef) + t.realtimeOffset.Load()
+ 			p.realtimeFrequency = res.Realtime.Frequency
+ 		}
+ 		if t.monotonicRawClock == nil {
+@@ -484,6 +531,16 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
+ 	if c == sentrytime.MonotonicRaw && t.monotonicRawClock == nil {
+ 		c = sentrytime.Monotonic
+ 	}
++	if t.frozen.Load() {
++		switch c {
++		case sentrytime.Realtime:
++			return t.frozenRealtime.Load(), nil
++		case sentrytime.Monotonic:
++			// A reader racing with freeze may have advanced the lower
++			// bound past the frozen value; never report less.
++			return max(t.frozenMonotonic.Load(), t.monotonicLowerBound.Load()), nil
++		}
++	}
+ 
+ 	// update the calibration if needed and keep the timekeeper calibrated
+ 	// during the read
+@@ -491,8 +548,11 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
+ 	defer t.release()
+ 
+ 	now, err := t.clocks.GetTime(c)
++	if err == nil && c == sentrytime.Realtime {
++		now += t.realtimeOffset.Load()
++	}
+ 	if err == nil && c == sentrytime.Monotonic {
+-		now += t.monotonicOffset
++		now += t.monotonicOffset.Load()
+ 		for {
+ 			// It's possible that the clock is shaky. This may be due to
+ 			// platform issues, e.g. the KVM platform relies on the guest
+@@ -513,8 +573,82 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
+ }
+ 
+ // BootTime returns the system boot real time.
++//
++// It is the guest realtime less the guest monotonic time, as on Linux, so it
++// stays consistent with both clocks across realtime offsets, freezes and
++// restores. Without those, this equals the realtime of the initial boot.
+ func (t *Timekeeper) BootTime() ktime.Time {
+-	return t.bootTime
++	realtime, err := t.GetTime(sentrytime.Realtime)
++	if err != nil {
++		panic("timekeeper.GetTime(sentrytime.Realtime): " + err.Error())
++	}
++	monotonic, err := t.GetTime(sentrytime.Monotonic)
++	if err != nil {
++		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
++	}
++	return ktime.FromNanoseconds(realtime - monotonic)
++}
++
++// freeze stops guest realtime and monotonic time at their current values.
++// It returns false if time was already frozen.
++//
++// Preconditions: The Timekeeper's updates must not be paused.
++func (t *Timekeeper) freeze() bool {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	if t.frozen.Load() {
++		return false
++	}
++	realtime, err := t.GetTime(sentrytime.Realtime)
++	if err != nil {
++		panic("timekeeper.GetTime(sentrytime.Realtime): " + err.Error())
++	}
++	monotonic, err := t.GetTime(sentrytime.Monotonic)
++	if err != nil {
++		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
++	}
++	t.frozenRealtime.Store(realtime)
++	t.frozenMonotonic.Store(monotonic)
++	t.frozen.Store(true)
++	t.publishLocked(false)
++	return true
++}
++
++// thaw continues guest realtime and monotonic time from their frozen values.
++// It returns false if time was not frozen.
++func (t *Timekeeper) thaw() bool {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	if !t.frozen.Load() {
++		return false
++	}
++	realtime, err := t.clocks.GetTime(sentrytime.Realtime)
++	if err != nil {
++		panic("Unable to get current realtime: " + err.Error())
++	}
++	monotonic, err := t.clocks.GetTime(sentrytime.Monotonic)
++	if err != nil {
++		panic("Unable to get current monotonic time: " + err.Error())
++	}
++	frozenMonotonic := max(t.frozenMonotonic.Load(), t.monotonicLowerBound.Load())
++	t.realtimeOffset.Store(t.frozenRealtime.Load() - realtime)
++	t.monotonicOffset.Store(frozenMonotonic - monotonic)
++	t.frozen.Store(false)
++	t.publishLocked(true)
++	return true
++}
++
++// publishLocked rewrites the VDSO parameters for the current offsets and
++// frozen state, if the updater is running.
++//
++// Preconditions: t.mu must be locked.
++func (t *Timekeeper) publishLocked(parked bool) {
++	if t.params == nil {
++		return
++	}
++	t.updateMu.Lock()
++	t.update(parked)
++	t.updateMu.Unlock()
+ }
+ 
+ // timekeeperClock is a ktime.SampledClock that reads time from a
+diff --git a/pkg/sentry/kernel/timekeeper_state.go b/pkg/sentry/kernel/timekeeper_state.go
+index b2e0bf690..2d90d4f54 100644
+--- a/pkg/sentry/kernel/timekeeper_state.go
++++ b/pkg/sentry/kernel/timekeeper_state.go
+@@ -38,7 +38,9 @@ func (t *Timekeeper) beforeSave() {
+ 		panic("unable to get current monotonic time: " + err.Error())
+ 	}
+ 
+-	if t.saveRealtime, err = t.GetTime(time.Realtime); err != nil {
++	// N.B. we want the *host* realtime: restore measures elapsed time
++	// against the host clock, and the guest offset is chosen anew there.
++	if t.saveRealtime, err = t.clocks.GetTime(time.Realtime); err != nil {
+ 		panic("unable to get current realtime: " + err.Error())
+ 	}
+ }
+diff --git a/pkg/sentry/kernel/timekeeper_test.go b/pkg/sentry/kernel/timekeeper_test.go
+index 1f22bc75d..d19c5917e 100644
+--- a/pkg/sentry/kernel/timekeeper_test.go
++++ b/pkg/sentry/kernel/timekeeper_test.go
+@@ -687,3 +687,213 @@ func TestTimekeeperPauseWaitsForInFlightAfterFunc(t *testing.T) {
+ 		t.Fatal("Pause() returned while AfterFunc was still running")
+ 	}
+ }
++
++// advance moves the mock host clocks forward by d nanoseconds.
++func (c *mockClocks) advance(d int64) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	c.monotonic += d
++	c.realtime += d
++}
++
++func mustGetTime(t *testing.T, tk *Timekeeper, c sentrytime.ClockID) int64 {
++	t.Helper()
++	now, err := tk.GetTime(c)
++	if err != nil {
++		t.Fatalf("GetTime(%v) err got %v want nil", c, err)
++	}
++	return now
++}
++
++// TestTimekeeperRealtimeOffset tests that a realtime offset shifts only
++// realtime, and that boot time follows the guest realtime.
++func TestTimekeeperRealtimeOffset(t *testing.T) {
++	c := &mockClocks{monotonic: 100000, realtime: 1000000}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.SetClocksWithConfig(c, params, ClockConfig{RealtimeOffset: -400000})
++	defer tk.Destroy()
++
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != 600000 {
++		t.Errorf("Realtime got %d want 600000", now)
++	}
++	if now := mustGetTime(t, tk, sentrytime.Monotonic); now != 0 {
++		t.Errorf("Monotonic got %d want 0", now)
++	}
++	c.advance(10)
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != 600010 {
++		t.Errorf("Realtime got %d want 600010", now)
++	}
++	if now := mustGetTime(t, tk, sentrytime.Monotonic); now != 10 {
++		t.Errorf("Monotonic got %d want 10", now)
++	}
++	if boot := tk.BootTime().Nanoseconds(); boot != 600000 {
++		t.Errorf("BootTime got %d want 600000", boot)
++	}
++}
++
++// TestTimekeeperRealtimeStart tests that a start time sets the guest realtime
++// when the clocks are initialized.
++func TestTimekeeperRealtimeStart(t *testing.T) {
++	c := &mockClocks{monotonic: 100000, realtime: 1000000}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.SetClocksWithConfig(c, params, ClockConfig{RealtimeStart: 9000000, HasRealtimeStart: true})
++	defer tk.Destroy()
++
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != 9000000 {
++		t.Errorf("Realtime got %d want 9000000", now)
++	}
++	c.advance(25)
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != 9000025 {
++		t.Errorf("Realtime got %d want 9000025", now)
++	}
++}
++
++// TestTimekeeperSaveRecordsHostRealtime tests that a save records host
++// realtime, so that a restore advances monotonic time by the host time elapsed
++// regardless of the saved and restored offsets.
++func TestTimekeeperSaveRecordsHostRealtime(t *testing.T) {
++	c := &mockClocks{monotonic: 100000, realtime: 1000000}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.SetClocksWithConfig(c, params, ClockConfig{RealtimeOffset: 500000})
++	c.advance(300)
++	tk.Pause()
++	tk.beforeSave()
++	tk.Destroy()
++	if tk.saveRealtime != 1000300 {
++		t.Errorf("saveRealtime got %d want host realtime 1000300", tk.saveRealtime)
++	}
++	if tk.saveMonotonic != 300 {
++		t.Errorf("saveMonotonic got %d want 300", tk.saveMonotonic)
++	}
++
++	// Restore 2000 ns later with a different offset.
++	restoredClocks := &mockClocks{monotonic: 50, realtime: 1002300}
++	restored, params := stateTestClocklessTimekeeper(t)
++	restored.restored = make(chan struct{})
++	restored.saveMonotonic = tk.saveMonotonic
++	restored.saveRealtime = tk.saveRealtime
++	restored.SetClocksWithConfig(restoredClocks, params, ClockConfig{RealtimeOffset: -2300})
++	defer restored.Destroy()
++	if now := mustGetTime(t, restored, sentrytime.Monotonic); now != 2300 {
++		t.Errorf("restored Monotonic got %d want 2300", now)
++	}
++	if now := mustGetTime(t, restored, sentrytime.Realtime); now != 1000000 {
++		t.Errorf("restored Realtime got %d want 1000000", now)
++	}
++}
++
++// TestTimekeeperRestoreWithoutOffset tests that a checkpoint saved with an
++// offset restores at host realtime when no offset is configured.
++func TestTimekeeperRestoreWithoutOffset(t *testing.T) {
++	c := &mockClocks{monotonic: 900000, realtime: 600000}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.restored = make(chan struct{})
++	tk.saveMonotonic = 100000
++	tk.saveRealtime = 400000
++	tk.SetClocks(c, params)
++	defer tk.Destroy()
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != 600000 {
++		t.Errorf("Realtime got %d want 600000", now)
++	}
++}
++
++// TestTimekeeperFreezeThaw tests that frozen time does not advance and then
++// continues from its frozen value.
++func TestTimekeeperFreezeThaw(t *testing.T) {
++	c := &mockClocks{monotonic: 100000, realtime: 1000000}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.SetClocksWithConfig(c, params, ClockConfig{RealtimeOffset: 7000})
++	defer tk.Destroy()
++
++	c.advance(50)
++	realtime := mustGetTime(t, tk, sentrytime.Realtime)
++	boot := tk.BootTime()
++	if !tk.freeze() {
++		t.Fatal("freeze got false want true")
++	}
++	if tk.freeze() {
++		t.Error("second freeze got true want false")
++	}
++	c.advance(1000000)
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != realtime {
++		t.Errorf("frozen Realtime got %d want %d", now, realtime)
++	}
++	if now := mustGetTime(t, tk, sentrytime.Monotonic); now != 50 {
++		t.Errorf("frozen Monotonic got %d want 50", now)
++	}
++	if !tk.thaw() {
++		t.Fatal("thaw got false want true")
++	}
++	if tk.thaw() {
++		t.Error("second thaw got true want false")
++	}
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != realtime {
++		t.Errorf("thawed Realtime got %d want %d", now, realtime)
++	}
++	c.advance(20)
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != realtime+20 {
++		t.Errorf("Realtime after thaw got %d want %d", now, realtime+20)
++	}
++	if now := mustGetTime(t, tk, sentrytime.Monotonic); now != 70 {
++		t.Errorf("Monotonic after thaw got %d want 70", now)
++	}
++	if got := tk.BootTime(); got != boot {
++		t.Errorf("BootTime after freeze got %v want %v", got, boot)
++	}
++}
++
++// TestTimekeeperFrozenMonotonicLowerBound tests that frozen and thawed
++// monotonic time never falls below a value already reported.
++func TestTimekeeperFrozenMonotonicLowerBound(t *testing.T) {
++	c := &mockClocks{monotonic: 100000, realtime: 1000000}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.SetClocks(c, params)
++	defer tk.Destroy()
++
++	tk.freeze()
++	// Emulate a reader that raced with freeze and reported a later time.
++	tk.monotonicLowerBound.Store(500)
++	if now := mustGetTime(t, tk, sentrytime.Monotonic); now != 500 {
++		t.Errorf("frozen Monotonic got %d want 500", now)
++	}
++	tk.thaw()
++	if now := mustGetTime(t, tk, sentrytime.Monotonic); now != 500 {
++		t.Errorf("thawed Monotonic got %d want 500", now)
++	}
++}
++
++// TestTimekeeperFrozenAfterFunc tests the kernel freeze sequence: AfterFunc
++// callbacks do not fire while frozen and their remaining delay is preserved.
++func TestTimekeeperFrozenAfterFunc(t *testing.T) {
++	c := &mockClocks{}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.SetClocks(c, params)
++	defer tk.Destroy()
++
++	fired := make(chan struct{}, 1)
++	timer := tk.AfterFunc(100*time.Millisecond, func() { fired <- struct{}{} })
++	defer timer.Stop()
++
++	c.advance((60 * time.Millisecond).Nanoseconds())
++	tk.freeze()
++	tk.Pause()
++	c.advance((time.Second).Nanoseconds())
++	select {
++	case <-fired:
++		t.Fatal("AfterFunc fired while frozen")
++	case <-time.After(50 * time.Millisecond):
++	}
++	tk.thaw()
++	tk.Resume(params)
++	select {
++	case <-fired:
++		t.Fatal("AfterFunc fired before its remaining delay elapsed")
++	case <-time.After(50 * time.Millisecond):
++	}
++	c.advance((50 * time.Millisecond).Nanoseconds())
++	select {
++	case <-fired:
++	case <-time.After(2 * time.Second):
++		t.Fatal("AfterFunc did not fire after its remaining delay")
++	}
++}
 diff --git a/pkg/sentry/pgalloc/BUILD b/pkg/sentry/pgalloc/BUILD
 index feb4941a4..4fbbc076d 100644
 --- a/pkg/sentry/pgalloc/BUILD
@@ -9716,7 +10272,7 @@ index 479bfc064..5e24985b2 100644
 +    library = ":boot",
 +)
 diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
-index ae644c4f5..e68d2e01c 100644
+index ae644c4f5..f87fedccc 100644
 --- a/runsc/boot/controller.go
 +++ b/runsc/boot/controller.go
 @@ -276,6 +276,7 @@ func (c *controller) stop() {
@@ -9737,7 +10293,7 @@ index ae644c4f5..e68d2e01c 100644
  	if err != nil {
  		return fmt.Errorf("creating memory file: %v", err)
  	}
-@@ -898,6 +900,48 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
+@@ -898,14 +900,63 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
  	return nil
  }
  
@@ -9786,6 +10342,21 @@ index ae644c4f5..e68d2e01c 100644
  // Pause pauses all tasks, blocking until they are stopped.
  func (cm *containerManager) Pause(_, _ *struct{}) error {
  	cm.l.k.Pause()
++	if cm.l.root.conf.ClockPause == config.ClockPauseFreeze {
++		cm.l.k.FreezeClocks()
++	}
+ 	return nil
+ }
+ 
+ // Resume resumes all tasks.
+ func (cm *containerManager) Resume(_, _ *struct{}) error {
++	if cm.l.root.conf.ClockPause == config.ClockPauseFreeze {
++		// Continue guest time before any task observes it.
++		cm.l.k.ThawClocks()
++	}
+ 	cm.l.k.Unpause()
+ 	return control.PostResume(cm.l.k, nil)
+ }
 diff --git a/runsc/boot/cpu_control.go b/runsc/boot/cpu_control.go
 new file mode 100644
 index 000000000..6407a2931
@@ -10000,7 +10571,7 @@ index 000000000..7811fb72b
 +	}
 +}
 diff --git a/runsc/boot/loader.go b/runsc/boot/loader.go
-index d78a9606c..ef3a3ebba 100644
+index d78a9606c..3b6dc7adb 100644
 --- a/runsc/boot/loader.go
 +++ b/runsc/boot/loader.go
 @@ -359,6 +359,9 @@ type Loader struct {
@@ -10023,7 +10594,23 @@ index d78a9606c..ef3a3ebba 100644
  	// ControllerFD is the FD to the URPC controller. The Loader takes ownership
  	// of this FD and may close it at any time.
  	ControllerFD int
-@@ -576,8 +582,10 @@ func shouldEnableClockMonotonicRaw(spec *specs.Spec, conf *config.Config) bool {
+@@ -556,6 +562,15 @@ func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.User
+ 	return creds
+ }
+ 
++// guestClockConfig returns the guest realtime selection for the Timekeeper.
++func guestClockConfig(conf *config.Config) (kernel.ClockConfig, error) {
++	clock, err := conf.GuestClock()
++	if err != nil {
++		return kernel.ClockConfig{}, err
++	}
++	return kernel.ClockConfig{RealtimeOffset: clock.Offset, RealtimeStart: clock.Start, HasRealtimeStart: clock.HasStart}, nil
++}
++
+ // shouldEnableClockMonotonicRaw reports whether CLOCK_MONOTONIC_RAW should be
+ // exposed as a distinct clock tracking the host's CLOCK_MONOTONIC_RAW, rather
+ // than aliasing CLOCK_MONOTONIC as it does by default.
+@@ -576,8 +591,10 @@ func shouldEnableClockMonotonicRaw(spec *specs.Spec, conf *config.Config) bool {
  // New initializes a new kernel loader configured by spec.
  // New also handles setting up a kernel for restoring a container.
  func New(args Args) (*Loader, error) {
@@ -10034,7 +10621,7 @@ index d78a9606c..ef3a3ebba 100644
  		stopProfilingRuntime()
  		metric.StopProfilingMetrics()
  	}
-@@ -622,6 +630,7 @@ func New(args Args) (*Loader, error) {
+@@ -622,6 +639,7 @@ func New(args Args) (*Loader, error) {
  
  	eid := execID{cid: args.ID}
  	l := &Loader{
@@ -10042,7 +10629,7 @@ index d78a9606c..ef3a3ebba 100644
  		sandboxID:             args.ID,
  		processes:             map[execID]*execProcess{eid: {}},
  		sharedMounts:          make(map[string]*vfs.Mount),
-@@ -738,14 +747,16 @@ func New(args Args) (*Loader, error) {
+@@ -738,14 +756,16 @@ func New(args Args) (*Loader, error) {
  		}
  	}
  	l.k = &kernel.Kernel{
@@ -10064,7 +10651,20 @@ index d78a9606c..ef3a3ebba 100644
  	if err != nil {
  		return nil, fmt.Errorf("creating memory file: %w", err)
  	}
-@@ -897,7 +908,10 @@ func New(args Args) (*Loader, error) {
+@@ -764,7 +784,11 @@ func New(args Args) (*Loader, error) {
+ 	// Create timekeeper.
+ 	tk := kernel.NewTimekeeper()
+ 	params := kernel.NewVDSOParamPage(l.k.MemoryFile(), vdso.ParamPage.FileRange())
+-	tk.SetClocks(time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(args.Spec, args.Conf)), params)
++	clockConfig, err := guestClockConfig(args.Conf)
++	if err != nil {
++		return nil, err
++	}
++	tk.SetClocksWithConfig(time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(args.Spec, args.Conf)), params, clockConfig)
+ 	args.StartupTimer.Reached("timekeeper configured")
+ 
+ 	if err := enableStrace(args.Conf); err != nil {
+@@ -897,7 +921,10 @@ func New(args Args) (*Loader, error) {
  	args.StartupTimer.Reached("host FS mount created")
  
  	if args.PodInitConfigFD >= 0 {
@@ -10076,7 +10676,7 @@ index d78a9606c..ef3a3ebba 100644
  			log.Warningf("unable to configure event session: %v", err)
  		}
  	}
-@@ -1026,6 +1040,10 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
+@@ -1026,6 +1053,10 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
  // been closed. For that reason, this should NOT be called in a defer, because
  // a panic in a control server rpc would then hang forever.
  func (l *Loader) Destroy() {
@@ -10087,7 +10687,7 @@ index d78a9606c..ef3a3ebba 100644
  	if l.stopSignalForwarding != nil {
  		l.stopSignalForwarding()
  	}
-@@ -1103,19 +1121,36 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
+@@ -1103,19 +1134,36 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
  	})
  }
  
@@ -10201,6 +10801,23 @@ index 000000000..a9deb9619
 +		runtimeDebug.SetMemoryLimit(previous)
 +	}
 +}
+diff --git a/runsc/boot/restore.go b/runsc/boot/restore.go
+index e07dab98f..d4d568195 100644
+--- a/runsc/boot/restore.go
++++ b/runsc/boot/restore.go
+@@ -488,7 +488,11 @@ func (r *restorer) restore(l *Loader) error {
+ 		r.timer.Reached("rootfs upper layer extracted")
+ 		return nil
+ 	}
+-	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, clocks, &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
++	clockConfig, err := guestClockConfig(l.root.conf)
++	if err != nil {
++		return err
++	}
++	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, clocks, clockConfig, &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
+ 		return fmt.Errorf("failed to load kernel: %w", err)
+ 	}
+ 	r.timer.Reached("kernel loaded")
 diff --git a/runsc/boot/seccheck.go b/runsc/boot/seccheck.go
 index b765a9d45..40a89a69f 100644
 --- a/runsc/boot/seccheck.go
@@ -10648,7 +11265,7 @@ index 4cd72bc84..d6f69d005 100644
  	for _, session := range sessions {
  		fmt.Printf("%q\n", session.Name)
 diff --git a/runsc/config/config.go b/runsc/config/config.go
-index 0fbf02739..d9dd7f4d3 100644
+index 0fbf02739..29d37e055 100644
 --- a/runsc/config/config.go
 +++ b/runsc/config/config.go
 @@ -50,6 +50,13 @@ import (
@@ -10676,7 +11293,7 @@ index 0fbf02739..d9dd7f4d3 100644
  	// GoferNetworkNamespace controls the network namespace used by gofer
  	// processes. The default is the shared empty "null" network namespace.
  	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
-@@ -321,6 +332,27 @@ type Config struct {
+@@ -321,6 +332,40 @@ type Config struct {
  	// Don't configure cgroups.
  	IgnoreCgroups bool `flag:"ignore-cgroups"`
  
@@ -10701,10 +11318,23 @@ index 0fbf02739..d9dd7f4d3 100644
 +	// of the eligible host CPU pool. Zero uses automatic detection.
 +	ApplicationCPUs int `flag:"application-cpus"`
 +
++	// ClockOffset is added to the host realtime clock to form the guest
++	// CLOCK_REALTIME, in nanoseconds. It applies at boot and at each restore
++	// and is never taken from a checkpoint. It excludes ClockStart.
++	ClockOffset int64 `flag:"clock-offset"`
++
++	// ClockStart, if not empty, is the guest CLOCK_REALTIME in nanoseconds
++	// since the Unix epoch when the clocks are initialized at boot or restore.
++	ClockStart string `flag:"clock-start"`
++
++	// ClockPause selects whether explicit pauses stop guest realtime and
++	// monotonic time ("freeze") or leave them running ("continue").
++	ClockPause string `flag:"clock-pause"`
++
  	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
  	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
  
-@@ -381,6 +413,10 @@ type Config struct {
+@@ -381,6 +426,10 @@ type Config struct {
  	// unsupported driver version.
  	NVProxyAllowUnsupportedDriver bool `flag:"nvproxy-allow-unsupported-driver"`
  
@@ -10715,7 +11345,7 @@ index 0fbf02739..d9dd7f4d3 100644
  	// TPUProxy enables support for TPUs.
  	TPUProxy bool `flag:"tpuproxy"`
  
-@@ -493,6 +529,36 @@ type Config struct {
+@@ -493,6 +542,42 @@ type Config struct {
  // Config.Override does not validate, so callers must call Validate once they
  // are done overriding.
  func (c *Config) Validate() error {
@@ -10737,6 +11367,12 @@ index 0fbf02739..d9dd7f4d3 100644
 +	if c.ApplicationCPUs < 0 {
 +		return fmt.Errorf("application-cpus must be nonnegative")
 +	}
++	if _, err := c.GuestClock(); err != nil {
++		return err
++	}
++	if c.ClockPause != "" && c.ClockPause != ClockPauseContinue && c.ClockPause != ClockPauseFreeze {
++		return fmt.Errorf("clock-pause must be continue or freeze")
++	}
 +	if c.NetlinkAddressEvents != "" && c.NetlinkAddressEvents != "disabled" && c.NetlinkAddressEvents != "enabled" {
 +		return fmt.Errorf("netlink-address-events must be disabled or enabled")
 +	}
@@ -10752,7 +11388,7 @@ index 0fbf02739..d9dd7f4d3 100644
  	if c.Overlay && c.Overlay2.Enabled() {
  		// Deprecated flag was used together with flag that replaced it.
  		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
-@@ -539,6 +605,9 @@ func (c *Config) Validate() error {
+@@ -539,6 +624,9 @@ func (c *Config) Validate() error {
  	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
  		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
  	}
@@ -10762,7 +11398,7 @@ index 0fbf02739..d9dd7f4d3 100644
  	allowedCaps, _, err := nvconf.DriverCapsFromString(c.NVProxyAllowedDriverCapabilities)
  	if err != nil {
  		return fmt.Errorf("--nvproxy-allowed-driver-capabilities=%q: %w", c.NVProxyAllowedDriverCapabilities, err)
-@@ -1649,3 +1718,28 @@ func (xd *XDP) Set(input string) error {
+@@ -1649,3 +1737,66 @@ func (xd *XDP) Set(input string) error {
  	}
  	return nil
  }
@@ -10791,11 +11427,92 @@ index 0fbf02739..d9dd7f4d3 100644
 +	}
 +	return result, nil
 +}
++
++const (
++	// ClockPauseContinue leaves guest time running while paused.
++	ClockPauseContinue = "continue"
++	// ClockPauseFreeze stops guest time while paused.
++	ClockPauseFreeze = "freeze"
++
++	// maxClockNanoseconds bounds clock offsets and start times (about 146
++	// years) so that guest realtime arithmetic cannot overflow.
++	maxClockNanoseconds = 1 << 62
++)
++
++// GuestClock is the validated guest realtime selection.
++type GuestClock struct {
++	// Offset is added to the host realtime clock unless HasStart is set.
++	Offset int64
++	// Start is the initial guest realtime when HasStart is set.
++	Start    int64
++	HasStart bool
++}
++
++// GuestClock parses the guest realtime flags.
++func (c *Config) GuestClock() (GuestClock, error) {
++	if c.ClockOffset < -maxClockNanoseconds || c.ClockOffset > maxClockNanoseconds {
++		return GuestClock{}, fmt.Errorf("clock-offset must be within ±%d nanoseconds", int64(maxClockNanoseconds))
++	}
++	if c.ClockStart == "" {
++		return GuestClock{Offset: c.ClockOffset}, nil
++	}
++	start, err := strconv.ParseInt(c.ClockStart, 10, 64)
++	if err != nil || start < 0 || start > maxClockNanoseconds {
++		return GuestClock{}, fmt.Errorf("clock-start must be nanoseconds since the Unix epoch between 0 and %d", int64(maxClockNanoseconds))
++	}
++	if c.ClockOffset != 0 {
++		return GuestClock{}, fmt.Errorf("clock-start and clock-offset are mutually exclusive")
++	}
++	return GuestClock{Start: start, HasStart: true}, nil
++}
 diff --git a/runsc/config/config_test.go b/runsc/config/config_test.go
-index 710cb075d..3e73af327 100644
+index 710cb075d..ab488c02e 100644
 --- a/runsc/config/config_test.go
 +++ b/runsc/config/config_test.go
-@@ -966,3 +966,25 @@ func TestParseSerializeOverlay2(t *testing.T) {
+@@ -291,6 +291,42 @@ func TestValidationFail(t *testing.T) {
+ 			},
+ 			error: "num_network_channels must be > 0",
+ 		},
++		{
++			name: "clock-offset-range",
++			flags: map[string]string{
++				"clock-offset": "4611686018427387905",
++			},
++			error: "clock-offset must be within",
++		},
++		{
++			name: "clock-start-negative",
++			flags: map[string]string{
++				"clock-start": "-1",
++			},
++			error: "clock-start must be nanoseconds",
++		},
++		{
++			name: "clock-start-syntax",
++			flags: map[string]string{
++				"clock-start": "2025-01-01",
++			},
++			error: "clock-start must be nanoseconds",
++		},
++		{
++			name: "clock-start-and-offset",
++			flags: map[string]string{
++				"clock-start":  "1",
++				"clock-offset": "1",
++			},
++			error: "mutually exclusive",
++		},
++		{
++			name: "clock-pause",
++			flags: map[string]string{
++				"clock-pause": "stop",
++			},
++			error: "clock-pause must be continue or freeze",
++		},
+ 		{
+ 			name: "qdisc-tbf-burst-overflow",
+ 			flags: map[string]string{
+@@ -966,3 +1002,50 @@ func TestParseSerializeOverlay2(t *testing.T) {
  		}
  	})
  }
@@ -10821,8 +11538,33 @@ index 710cb075d..3e73af327 100644
 +		})
 +	}
 +}
++
++func TestGuestClock(t *testing.T) {
++	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
++	RegisterFlags(testFlags)
++	c, err := NewFromFlags(testFlags)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if clock, err := c.GuestClock(); err != nil || clock != (GuestClock{}) {
++		t.Errorf("default GuestClock got (%+v, %v) want zero", clock, err)
++	}
++	c.ClockOffset = -3600000000000
++	if clock, err := c.GuestClock(); err != nil || clock != (GuestClock{Offset: -3600000000000}) {
++		t.Errorf("offset GuestClock got (%+v, %v)", clock, err)
++	}
++	c.ClockOffset = 0
++	c.ClockStart = "1735689600000000000"
++	if clock, err := c.GuestClock(); err != nil || clock != (GuestClock{Start: 1735689600000000000, HasStart: true}) {
++		t.Errorf("start GuestClock got (%+v, %v)", clock, err)
++	}
++	c.ClockPause = ClockPauseFreeze
++	if err := c.Validate(); err != nil {
++		t.Errorf("Validate got %v want nil", err)
++	}
++}
 diff --git a/runsc/config/flags.go b/runsc/config/flags.go
-index f4852a70b..5cf1e296b 100644
+index f4852a70b..197fdcb3a 100644
 --- a/runsc/config/flags.go
 +++ b/runsc/config/flags.go
 @@ -58,6 +58,9 @@ const (
@@ -10835,7 +11577,7 @@ index f4852a70b..5cf1e296b 100644
  	// Although these flags are not part of the OCI spec, they are used by
  	// Docker, and thus should not be changed.
  	flagSet.String("root", "", fmt.Sprintf("root directory for storage of container state, defaults are $%s/runsc, %s.", xdgRuntimeDirEnvVar, defaultRootDir))
-@@ -148,6 +151,13 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -148,6 +151,16 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
  
  	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
@@ -10846,10 +11588,13 @@ index f4852a70b..5cf1e296b 100644
 +	flagSet.Uint64("app-memory-limit", 0, "Maximum bytes in the sandbox page allocator, excluding runtime heap and host file cache; zero disables.")
 +	flagSet.String("app-memory-directory", "", "Directory for private disk-backed guest memory; requires an independently enforced resident-memory limit.")
 +	flagSet.Int("application-cpus", 0, "Application execution parallelism, independent of CPU affinity; zero autodetects.")
++	flagSet.Int64("clock-offset", 0, "Nanoseconds added to the host realtime clock for the guest CLOCK_REALTIME, applied at boot and each restore.")
++	flagSet.String("clock-start", "", "Guest CLOCK_REALTIME in nanoseconds since the Unix epoch when clocks are initialized at boot or restore; excludes --clock-offset.")
++	flagSet.String("clock-pause", ClockPauseContinue, "Guest time during explicit pauses: continue (default) or freeze.")
  	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
  	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
  	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
-@@ -156,6 +166,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -156,6 +169,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("TESTONLY-nftables", false, "TEST ONLY; Enables nftables support in the sentry.")
  
  	// Flags that control sandbox runtime behavior: network related.
@@ -10857,7 +11602,7 @@ index f4852a70b..5cf1e296b 100644
  	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
  	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
  	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-@@ -184,6 +195,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
+@@ -184,6 +198,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
  	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
  	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
  	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")

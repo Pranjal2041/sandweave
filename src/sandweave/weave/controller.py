@@ -516,6 +516,8 @@ class Controller:
             from ..sandbox.audit import enabled
             if enabled(request['spec']) and not (yield rpc(connection, 'ping')).get('proc_audit'):
                 raise UnsupportedFeature('hidepid and audit require an updated worker')
+            if request['spec'].get('clock') and not (yield rpc(connection, 'ping')).get('guest_clock'):
+                raise UnsupportedFeature('clock settings require Sandweave 0.2.45 or newer on the worker')
             if request['spec'].get('storage', {}).get('mode') == 'disk' and not (yield rpc(connection, 'ping')).get('disk_storage'):
                 raise UnsupportedFeature('disk-backed storage requires Sandweave 0.2.32 or newer on the worker')
             if request['spec'].get('discard_workspace') and not (yield rpc(connection, 'ping')).get('pool_retention'):
@@ -784,7 +786,7 @@ class Controller:
                     'pool_options': ['shared_cache', 'affinity', 'retain_baseline'], 'proxy_policy': 1,
                     'memory_reservations': 1, 'runtime_memory_reservations': 1, 'disk_storage': 1,
                     'relay_batch': 1, 'relay_results': 1, 'worker_lookup': 1, 'desktop_recording': 1,
-                    'native_services': 1, 'service_networks': 1, 'proc_audit': 1}
+                    'native_services': 1, 'service_networks': 1, 'proc_audit': 1, 'guest_clock': 1}
         if operation.startswith('service_network_'):
             from .networks import dispatch
             return dispatch(self, operation, **parameters)

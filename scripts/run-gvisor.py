@@ -96,6 +96,13 @@ parser.add_argument('--hidepid', type=int, choices=(0, 1, 2), default=0)
 parser.add_argument('--audit-max-bytes', type=int, default=1024**3)
 parser.add_argument('--audit', action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument('--profile', action='store_true', help='enable runtime profiling RPCs for a diagnostic guest')
+clock_choice = parser.add_mutually_exclusive_group()
+clock_choice.add_argument('--clock-offset-ns', type=int,
+                          help='guest realtime offset from host realtime for this launch or restore; never saved')
+clock_choice.add_argument('--clock-start-ns', type=int,
+                          help='guest realtime in nanoseconds since the Unix epoch when clocks start; never saved')
+parser.add_argument('--clock-pause', choices=['continue', 'freeze'], default='continue',
+                    help='whether explicit pauses stop guest realtime and monotonic time')
 parser.add_argument('--forward', type=int, action='append', default=[],
                     help='additional guest TCP port to forward on a fresh host loopback port')
 parser.add_argument('name')
@@ -157,6 +164,10 @@ if args.restore and not args.detach and not filesystem_restore:
         parser.error('audit requires a fresh launch or filesystem restore; live audit continuity is unsupported')
     if args.hidepid != (saved_settings or {}).get('settings', {}).get('hidepid', 0):
         parser.error('changing hidepid requires a filesystem restore')
+if args.clock_offset_ns is not None and not -(1 << 62) <= args.clock_offset_ns <= 1 << 62:
+    parser.error('--clock-offset-ns must be within +/-2**62')
+if args.clock_start_ns is not None and not 0 <= args.clock_start_ns <= 1 << 62:
+    parser.error('--clock-start-ns must be between 0 and 2**62')
 if args.clear_proxy:
     args.proxy_endpoints = args.proxy_index = None
 if args.network_policy == 'proxy':
@@ -529,6 +540,13 @@ try:
         command.append('--pod-init-config=/lab/' + str(configuration.relative_to(lab)))
     if args.profile:
         command.append('--profile')
+    # The guest clock belongs to this launch: restores choose it anew.
+    if args.clock_offset_ns:
+        command.append(f'--clock-offset={args.clock_offset_ns}')
+    if args.clock_start_ns is not None:
+        command.append(f'--clock-start={args.clock_start_ns}')
+    if args.clock_pause != 'continue':
+        command.append('--clock-pause=' + args.clock_pause)
     if args.guest_gs:
         command.append('--systrap-disable-syscall-patching')
     if args.gpu is not None:

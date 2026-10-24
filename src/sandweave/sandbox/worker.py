@@ -864,7 +864,7 @@ class Worker:
                     'memory_reservations': 1, 'runtime_memory_reservations': 1, 'disk_storage': 1,
                     'desktop_recording': 1, 'oci_image_import': 1, 'native_services': 1,
                     'dynamic_network_policy': 1, 'service_networks': 1, 'sandbox_deletion': 1,
-                    'local_oci_import': 1, 'proc_audit': 1}
+                    'local_oci_import': 1, 'proc_audit': 1, 'guest_clock': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')

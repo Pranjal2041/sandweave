@@ -20,7 +20,8 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
                cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
                keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False,
-               service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None):
+               service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None,
+               clock_offset=None, clock_start=None, clock_pause=None):
     """Resolve a complete portable definition without starting an environment."""
     if sum(x is not None for x in (cache, snapshot)) > 1:
         raise ValueError('cache and snapshot are alternative sources')
@@ -104,6 +105,12 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
             'experimental_gpu_live': experimental_gpu_live}
     if recording is not None:
         spec['recording'] = recording
+    from .clock import configure as clock_settings
+    # The clock applies to this launch only; a saved source never supplies it.
+    clock = clock_settings(clock_offset=clock_offset, clock_start=clock_start, clock_pause=clock_pause,
+                           runtime=runtime)
+    if clock is not None:
+        spec['clock'] = clock
     if service_network is not None:
         from .networks import membership
         if runtime != 'gvisor':
@@ -126,7 +133,8 @@ class Sandbox:
                  cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False, recording=False,
-                 service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None, connection='cluster'):
+                 service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None,
+                 clock_offset=None, clock_start=None, clock_pause=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
         self._connection = None
         try:
@@ -140,7 +148,8 @@ class Sandbox:
                     cpu=None, memory=None, gpu=None, network=None, storage=None, target=None, runtime='gvisor',
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False, recording=False,
-                    service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None, connection='cluster'):
+                    service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None,
+                    clock_offset=None, clock_start=None, clock_pause=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
         from .targets import connection_mode
         connection_mode(options.pop('connection'))
@@ -191,6 +200,8 @@ class Sandbox:
             raise UnsupportedFeature('disk-backed storage requires Sandweave 0.2.32 or newer on the worker and controller')
         from .audit import check_worker
         check_worker(spec, self._connection)
+        from .clock import check_worker as check_clock
+        check_clock(spec, self._connection)
         from .ownership import client_owner
         owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,

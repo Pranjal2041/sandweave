@@ -136,10 +136,15 @@ def run(sandbox, step):
     observations, capabilities = {}, sandbox.capabilities
     for name in step.observe:
         if name == 'stereo' or (name == 'frame' and 'desktop' not in capabilities):
-            observations[name] = sandbox.vr.observe()
+            value = sandbox.vr.observe()
+            game_ns = value.metadata.get('capture_begin_ns')
         elif name == 'frame':
-            observations[name] = sandbox.desktop.capture_image()
+            value = sandbox.desktop.capture_image()
+            game_ns = value.metadata.get('capture_completed_ns')
         else:
             raise UnsupportedFeature(f'the {name!r} observation is not provided by this sandbox yet')
+        # Game time is the guest's capture clock; it reflects every action of this step.
+        observations[name] = {'value': value, 'game_time_ns': game_ns, 'step_id': step.id,
+                              'last_action_index': len(step.actions) - 1 if step.actions else None}
     return {'id': step.id, 'acknowledgements': acknowledgements, 'observations': observations,
             'actions_applied': len(step.actions), 'started_ns': started, 'finished_ns': time.monotonic_ns()}

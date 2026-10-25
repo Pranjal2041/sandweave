@@ -32,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=120)
-    parser.add_argument('--gpu', default='L40S')
+    parser.add_argument('--gpu', default='L40S', help='GPU model, or comma-separated models in preference order')
     parser.add_argument('--startup-timeout', type=float, default=3600)
     args = parser.parse_args()
     if not 0 < args.seconds <= 300:
@@ -41,10 +41,12 @@ def main():
     from sandweave import GPU
     try:
         started = time.monotonic()
-        with Sandbox(template='vr/opensaber', runtime='modal', gpu=GPU(model=args.gpu),
+        models = tuple(args.gpu.split(','))
+        with Sandbox(template='vr/opensaber', runtime='modal', gpu=GPU(model=models[0] if len(models) == 1 else models),
                      startup_timeout=args.startup_timeout) as sandbox:
             ready = {'event': 'ready', 'seconds': time.monotonic() - started, 'id': sandbox.id,
-                     'timings': sandbox._info.get('timings')}
+                     'timings': sandbox._info.get('timings'),
+                     'gpu': sandbox.run('nvidia-smi --query-gpu=name,driver_version --format=csv,noheader').stdout.strip()}
             (args.output / 'ready.json').write_text(json.dumps(ready, indent=2) + '\n')
             print(json.dumps(ready), flush=True)
             observation = sandbox.vr.observe(timeout=60)

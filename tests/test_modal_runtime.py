@@ -43,8 +43,10 @@ def test_resources_map_to_modal_reservations(monkeypatch):
     assert options['gpu'] == 'L40S' and options['cpu'] == 6.0 and not options['block_network']
     assert options['memory'] == (16 + 2) * 1024
     from sandweave import GPU
-    options = modal_driver.Runtime.resources(spec_for('vr/opensaber', gpu=GPU(model=('A10', 'L4')), network='offline'))
-    assert options['gpu'] == ['A10', 'L4'] and options['block_network']
+    options = modal_driver.Runtime.resources(spec_for('vr/opensaber', gpu=GPU(model='A10'), network='offline'))
+    assert options['gpu'] == 'A10' and options['block_network']
+    with pytest.raises(UnsupportedFeature):
+        modal_driver.Runtime.resources(spec_for('vr/opensaber', gpu=GPU(model=('A10', 'L4'))))
     spec = spec_for('vr/opensaber')
     spec['mounts'] = [{'source': '/tmp', 'destination': '/data', 'read_only': True}]
     with pytest.raises(UnsupportedFeature):

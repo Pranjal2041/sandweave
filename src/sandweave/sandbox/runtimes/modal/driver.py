@@ -61,7 +61,11 @@ class Runtime:
             if resources['gpu'].get('sm_chunks') is not None:
                 raise UnsupportedFeature('runtime="modal" allocates whole GPUs')
             model = resources['gpu'].get('model') or os.environ.get('SANDWEAVE_MODAL_GPU', 'L40S')
-            gpu = list(model) if isinstance(model, (list, tuple)) else model
+            if isinstance(model, (list, tuple)):
+                if len(model) != 1:
+                    raise UnsupportedFeature('Modal sandboxes take a single GPU model, e.g. GPU(model="L40S")')
+                model = model[0]
+            gpu = model
         memory = resources['memory']
         total = memory_bytes(memory['guest']) + memory_bytes(memory['runtime'])
         return {'cpu': float(resources['cpu']['vcpus']), 'memory': (total + 1024**2 - 1) // 1024**2,

@@ -101,6 +101,79 @@ def test_steps_return_audio_and_haptics_with_game_time():
         run(types.SimpleNamespace(capabilities={'desktop': {}}), {'observe': ['haptics']})
 
 
+# Records in each game's real telemetry format (from the frontier games' eval runs).
+TELEMETRY = {
+    'speed-dreams': ('journal.jsonl', [
+        {'ev': 'session', 'mono': 24.7, 'sid': 1, 't': -2.0, 'mult': 1, 'state': 8, 'session': 'Qualifying',
+         'type': 'qualifications', 'laps': 0, 'duration': 600.0, 'raceman': 'GT Corkscrew Challenge',
+         'track': {'name': 'Corkscrew', 'length': 3608.4}, 'cars': [{'idx': 0, 'name': 'Player'},
+                                                                    {'idx': 1, 'name': 'USR Vulture'}]},
+        {'ev': 'f', 'mono': 152.6, 'sid': 1, 't': 1.0, 'mult': 1, 'state': 1,
+         'cars': [[0, 0, 2, 3598.45, 446.68, 51.33, 0.0, 0, 0, 31.754], [1, 0, 1, 3591.45, 439.68, 47.33, 0.0, 0, 0, 29.1]]},
+        {'ev': 'lap', 'mono': 261.7, 'sid': 1, 't': 107.1, 'mult': 1, 'state': 1, 'idx': 1, 'lap': 1, 'time': 103.988,
+         'valid': 1, 'best': 103.988, 'pos': 1, 'splits': [38.0, 65.2]},
+        {'ev': 'timemult', 'mono': 1643.7, 'sid': 2, 't': 613.4, 'mult': 4, 'state': 1}]),
+    'open-saber': ('journal-02.jsonl', [
+        {'type': 'map_start', 'attempt': 1, 'difficulty': 'Easy', 'bpm': 127, 'seq': 9, 'settings': {}},
+        {'type': 'note_cut', 'attempt': 1, 'combo': 1, 'multiplier': 1, 'score': 115, 'song_t': 3.0},
+        {'type': 'note_miss', 'attempt': 1, 'score': 115, 'song_t': 4.0},
+        {'type': 'map_end', 'attempt': 1, 'score': 115, 'percent': .5, 'max_combo': 1, 'right_notes': 1,
+         'wrong_notes': 1, 'full_combo': False}]),
+    'openttd': ('game.log', [
+        'dbg: [script:2] [18] [P] GACR {"seq":1,"tok":"6adb","date":"1950-01-01","k":"start","settings":{}}',
+        'dbg: [script:2] [18] [P] GACR {"seq":3,"date":"1950-02-01","co":[{"id":0,"name":"Bartown","bank":21286,'
+        '"veh":3}],"paused":false,"k":"m","tok":"6adb"}',
+        'dbg: [script:2] [18] [P] GACR {"seq":4,"date":"1950-02-02","k":"pause","paused":true,"tok":"6adb"}']),
+    'wesnoth': ('game.log', [
+        '[ga-audit] plugin started', '[ga-audit] context time=1792865508 name=Game',
+        '[ga-audit] event seq=11 time=1792870232 turn=11 result=VICTORY scenario=The Elves Besieged',
+        '[ga-audit] event seq=12 time=1792870300 turn=1 result=NONE scenario=Blackwater Port']),
+}
+
+
+def test_state_exporters_read_each_games_telemetry_incrementally(tmp_path):
+    exporter = ROOT / 'src/sandweave/games/state_export.py'
+    states = {}
+    for game, (name, records) in TELEMETRY.items():
+        source = tmp_path / game / name
+        source.parent.mkdir()
+        data = ''.join((r if isinstance(r, str) else json.dumps(r)) + '\n' for r in records).encode()
+        cut = len(data) // 2  # mid-line: the partial line waits for the next read
+        reads = []
+        for chunk in (data[:cut], data[cut:]):
+            with open(source, 'ab') as output:
+                output.write(chunk)
+            argv = [sys.executable, str(exporter), game, '--cache', str(tmp_path / 'cache'),
+                    '--source', str(source.parent if game == 'open-saber' else source)]
+            reads.append(json.loads(subprocess.run(argv, capture_output=True, text=True, check=True).stdout))
+        assert sum(read['new_bytes'] for read in reads) == len(data)
+        states[game] = reads[-1]['state']
+    racing = states['speed-dreams']
+    assert racing['session']['track']['name'] == 'Corkscrew' and racing['sim']['mult'] == 4
+    assert [car['name'] for car in racing['standings']] == ['USR Vulture', 'Player'] and racing['laps']['1']['best'] == 103.988
+    saber = states['open-saber']
+    assert saber['counts'] == {'note_cut': 1, 'note_miss': 1} and saber['score'] == 115 and not saber['active']
+    assert saber['results'][0]['percent'] == .5 and saber['map']['difficulty'] == 'Easy'
+    assert states['openttd']['companies'][0]['bank'] == 21286 and states['openttd']['paused'] is True
+    wesnoth = states['wesnoth']
+    assert wesnoth['scenario'] == 'Blackwater Port' and wesnoth['turn'] == 1 and wesnoth['context'] == 'Game'
+    assert wesnoth['scenarios']['The Elves Besieged']['results'][0]['result'] == 'VICTORY'
+
+
+def test_steps_observe_state_through_the_games_exporter():
+    exporter = types.SimpleNamespace(observe=lambda sandbox: {'state': {'turn': 3}, 'guest_ns': 70})
+    sandbox = types.SimpleNamespace(capabilities={})
+    result = run(sandbox, {'id': 's3', 'observe': ['state']}, state=exporter)
+    assert result['observations']['state']['game_time_ns'] == 70
+    assert result['observations']['state']['value']['state'] == {'turn': 3}
+    with pytest.raises(UnsupportedFeature):
+        run(sandbox, {'observe': ['state']})
+    from sandweave.games.state import GameState
+    with pytest.raises(ValueError):
+        GameState('open-saber')
+    assert GameState('openttd').command()[-1] == 'openttd'
+
+
 @pytest.mark.skipif(sys.platform == 'win32', reason='the writer uses POSIX select on stdin')
 def test_gamepad_writer_reports_rumble_and_keeps_state(tmp_path):
     writer = load(ROOT / 'scripts/gamepad-input.py', 'gamepad_input_test')

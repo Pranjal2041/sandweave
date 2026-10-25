@@ -146,11 +146,14 @@ on OCI:
 | 6, 7 | `region=us-east`, `cloud=oci`: OCI `us-east` | 0.42 ms | 29.96 FPS | 118–120/s, RTT median 1.1 ms |
 
 The relay itself answers in 0.09 ms over the guest's loopback, with or without
-audio capture. `SANDWEAVE_MODAL_REGION` (comma-separated) and `SANDWEAVE_MODAL_CLOUD`
-on the worker pin placement. Unpinned is still the default. Modal charges 1.15×
-for a broad region (`us`) and 1.75× for a narrow one (`us-east`); a cloud pin also
-narrows GPU capacity. The boot record and acceptance `ready.json` record the
-sandbox's region and cloud.
+audio capture. Decision (2026-10-25): sandboxes are placed in the worker's own
+Modal region and cloud by default (`MODAL_REGION`, `MODAL_CLOUD_PROVIDER` of the
+worker). `SANDWEAVE_MODAL_REGION` (comma-separated) and `SANDWEAVE_MODAL_CLOUD`
+override them, and `any` leaves that choice to Modal. A worker outside Modal has
+no region to match, so its sandboxes stay unpinned unless these are set. Modal
+charges 1.15× for a broad region (`us`) and 1.75× for a narrow one (`us-east`);
+a cloud pin also narrows GPU capacity. The boot record and acceptance
+`ready.json` record the sandbox's region and cloud.
 
 Attempt 6 also showed that a fast start can click Play during the splash screen:
 the game stayed in the menu, so there was no music and no haptics. The acceptance

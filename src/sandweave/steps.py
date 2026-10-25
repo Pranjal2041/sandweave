@@ -7,8 +7,9 @@ a timed press sets and then releases it. Until a runtime provides speed
 control, waits and holds elapse in wall time, which equals game time.
 
 Observations carry game_time_ns on the guest monotonic clock: a frame's capture
-time, the end of the returned audio, or the time the haptics records were read.
-Audio and haptics return everything since the previous observation of that kind.
+time, the end of the returned audio, or the time the haptics records or the
+game's telemetry (state) were read. Audio and haptics return everything since the
+previous observation of that kind; state is the game's current aggregate.
 """
 import time
 
@@ -104,8 +105,11 @@ def _gamepad(sandbox, action):
     return sandbox.gamepad.state(axes={action.axis: action.value})
 
 
-def run(sandbox, step):
-    """Apply a step's actions in order, then collect its observations."""
+def run(sandbox, step, *, state=None):
+    """Apply a step's actions in order, then collect its observations.
+
+    `state` is the game's state exporter (sandweave.games.state.GameState), needed to observe 'state'.
+    """
     step = step if isinstance(step, Step) else Step.from_dict(step)
     acknowledgements, group, vr_acks, started = [], [], [], time.monotonic_ns()
 
@@ -160,6 +164,11 @@ def run(sandbox, step):
                 raise UnsupportedFeature('this sandbox has no haptic outputs')
             # Complete up to the earliest read.
             game_ns = min(reply['guest_ns'] for reply in value.values())
+        elif name == 'state':
+            if state is None:
+                raise UnsupportedFeature("observing 'state' needs the game's exporter: run(..., state=GameState(game))")
+            value = state.observe(sandbox)
+            game_ns = value['guest_ns']
         else:
             raise UnsupportedFeature(f'the {name!r} observation is not provided by this sandbox yet')
         # Game time is the guest's capture clock; it reflects every action of this step.

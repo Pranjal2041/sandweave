@@ -44,13 +44,43 @@ Game time is the guest's `CLOCK_MONOTONIC`, shared by every source:
 | `frame` / `stereo` | fast I/O frame / Monado paired-eye ring; after XR actions, the first frame captured after the last input acknowledgement | capture time |
 | `audio` | `sandbox.audio`: PulseAudio null-sink monitor, s16le 48 kHz stereo, every frame since the previous read (`dropped_frames` if a reader falls more than 60 s behind) | receipt of the last returned frame |
 | `haptics` | `sandbox.vr.haptics()`: vibration commands Monado's virtual controllers receive; `sandbox.gamepad.haptics()`: `SDL_JoystickRumble`/`RumbleTriggers` through the SDL proxy | time the records were read |
-| `state` | not implemented: needs a per-game export | — |
+| `state` | `sandweave.games.state.GameState(game)`: the game's live state from the telemetry its environment already writes (below) | time the telemetry was read |
 
 Audio and VR haptics are provided by `runtime="modal"` (its guest boot runs the
 sound server; its Monado records haptics). Elsewhere they raise
 `UnsupportedFeature`. Zero-amplitude VR commands are recorded only when they end a
 vibration: Open Saber refreshes its command every frame, about 90% of them at
 amplitude 0. A read returns at most 8,192 events (`complete: false` when more remain).
+
+### Game state
+
+Each frontier game environment already writes trusted, root-only telemetry for its
+verifier. `src/sandweave/games/state_export.py` runs as root in the guest (installed
+by `GameState` through the public SDK, so any runtime works), reads only what was
+written since the previous call (cursor and aggregate cached in `/run/sandweave-state`)
+and returns the game's current aggregate:
+
+| Game | Telemetry (environment's own path) | State |
+| --- | --- | --- |
+| Speed Dreams | race journal `/var/lib/sdracer/eval/journal.jsonl` (`sd-2.4.2-eval-journal.patch`) | session and track, simulation time and multiplier history, the human car (lap, position, speed, gear, fuel, damage), standings, laps, session results |
+| Open Saber | gameplay journal `<session>/private/journal-NN.jsonl` (`open_saber_journal.patch`) | current map and attempt, score, combo, multiplier, cut/miss/bomb/wall counts, poses, every attempt's result |
+| OpenTTD | `GACR` records in `/var/lib/ottd_task/run/game.log` (game script) | date, pause, every company (value, bank, loan, vehicles, income, expenses, cargo), last 24 quarters, events, setting changes, end |
+| Wesnoth | audit plugin lines in `/var/lib/wesnoth-audit/game.log` | context, scenario, turn, level result, each scenario's results, game restarts, debug mode |
+| OpenRA | newest replay under `/var/lib/openra/support/Replays`, read with the environment's `openra_replay.py` | game time, players and bots, orders by kind and by client |
+
+`scripts/game-state-check.py` replays each game's recorded telemetry into a real
+Linux guest (gVisor `coding` sandbox on the Modal worker) in six chunks cut
+mid-line and observes through the SDK after each. On 2026-10-25, all five passed:
+every byte was consumed once, the last incremental state equalled a fresh full
+read, and guest time increased. Sources were the Speed Dreams eval journal (13 MB),
+Open Saber eval journal 02 (50 MB), an OpenTTD audit 3-hour game log, the Wesnoth
+eval-02 audit log and the OpenRA eval replay. The states match the runs: Wesnoth
+won The Elves Besieged on turn 11 and Blackwater Port on turn 10 and was on turn
+10 of The Isle of Alduin; the Speed Dreams player was 10th of 10 after 82
+simulation-speed changes; OpenTTD's period ended on 1965-05-29 with four companies;
+OpenRA had 4 players (3 bots) and 384.7 s of game time. Not yet observed during
+live play of a running game. OpenRA's replay holds orders, not unit or cash
+state.
 
 ## Portfolio
 
@@ -69,7 +99,8 @@ actions merge into one VR state update, and gamepad actions set the persistent
 leased writer's state (a timed press sets, then releases). Rejected with
 `UnsupportedFeature` rather than approximated: `wait` in ticks and holds in
 slowed time (no runtime speed control yet), gamepad trigger axes (`lt`/`rt`,
-calibration unresolved), pads other than 0, and the `state` observation.
+calibration unresolved) and pads other than 0. Observing `state` needs the game's
+exporter: `steps.run(sandbox, step, state=GameState(game))`.
 Tests: `tests/test_steps.py`, `tests/test_game_observations.py`.
 
 On `runtime="modal"`, frames, input, audio and haptics travel through the guest
@@ -91,5 +122,4 @@ template (GunSpinning) runs on gVisor and has not been run with this writer.
 ## Not implemented
 
 - Runtime speed control (pause, slow, tick stepping) on Modal.
-- The `state` observation (per-game export).
 - cua-auto-harness probes and checks for gamepad and XR actions.

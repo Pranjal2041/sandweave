@@ -38,7 +38,8 @@ def test_other_templates_are_rejected(template):
 
 
 def test_resources_map_to_modal_reservations(monkeypatch):
-    for name in ('SANDWEAVE_MODAL_GPU', 'SANDWEAVE_MODAL_REGION', 'SANDWEAVE_MODAL_CLOUD'):
+    for name in ('SANDWEAVE_MODAL_GPU', 'SANDWEAVE_MODAL_REGION', 'SANDWEAVE_MODAL_CLOUD', 'MODAL_REGION',
+                 'MODAL_CLOUD_PROVIDER'):
         monkeypatch.delenv(name, raising=False)
     options = modal_driver.Runtime.resources(spec_for('vr/opensaber'))
     assert options['gpu'] == 'L40S' and options['cpu'] == 6.0 and not options['block_network']
@@ -47,10 +48,15 @@ def test_resources_map_to_modal_reservations(monkeypatch):
     options = modal_driver.Runtime.resources(spec_for('vr/opensaber', gpu=GPU(model='A10'), network='offline'))
     assert options['gpu'] == 'A10' and options['block_network']
     assert 'region' not in options and 'cloud' not in options
-    monkeypatch.setenv('SANDWEAVE_MODAL_REGION', 'us-east')
-    monkeypatch.setenv('SANDWEAVE_MODAL_CLOUD', 'oci')
+    # A worker on Modal places sandboxes beside itself by default.
+    monkeypatch.setenv('MODAL_REGION', 'us-east')
+    monkeypatch.setenv('MODAL_CLOUD_PROVIDER', 'CLOUD_PROVIDER_OCI')
     options = modal_driver.Runtime.resources(spec_for('vr/opensaber'))
     assert options['region'] == ['us-east'] and options['cloud'] == 'oci'
+    monkeypatch.setenv('SANDWEAVE_MODAL_REGION', 'us-east,us-central')
+    monkeypatch.setenv('SANDWEAVE_MODAL_CLOUD', 'any')
+    options = modal_driver.Runtime.resources(spec_for('vr/opensaber'))
+    assert options['region'] == ['us-east', 'us-central'] and 'cloud' not in options
     with pytest.raises(UnsupportedFeature):
         modal_driver.Runtime.resources(spec_for('vr/opensaber', gpu=GPU(model=('A10', 'L4'))))
     spec = spec_for('vr/opensaber')

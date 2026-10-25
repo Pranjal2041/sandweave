@@ -26,6 +26,21 @@ def app_name():
     return os.environ.get('SANDWEAVE_MODAL_APP', 'sandweave')
 
 
+def placement():
+    """Place sandboxes in the worker's own Modal region and cloud.
+
+    Every frame fetch and acknowledged input costs one worker-to-guest round trip,
+    so distance bounds their rates (notes/modal-runtime.md). SANDWEAVE_MODAL_REGION
+    (comma-separated) and SANDWEAVE_MODAL_CLOUD override the worker's own; "any"
+    leaves that choice to Modal. Modal charges a multiplier for a pinned region.
+    """
+    worker_cloud = os.environ.get('MODAL_CLOUD_PROVIDER', '').removeprefix('CLOUD_PROVIDER_').lower()
+    region = os.environ.get('SANDWEAVE_MODAL_REGION', os.environ.get('MODAL_REGION'))
+    cloud = os.environ.get('SANDWEAVE_MODAL_CLOUD', worker_cloud)
+    return {**({'region': region.split(',')} if region and region != 'any' else {}),
+            **({'cloud': cloud} if cloud and cloud != 'any' else {})}
+
+
 class Runtime:
     name = 'modal'
 
@@ -68,12 +83,8 @@ class Runtime:
             gpu = model
         memory = resources['memory']
         total = memory_bytes(memory['guest']) + memory_bytes(memory['runtime'])
-        # Frames and input cross the network once per round trip, so placement bounds their rates;
-        # Modal charges a multiplier for a pinned region (see notes/modal-runtime.md).
-        region, cloud = os.environ.get('SANDWEAVE_MODAL_REGION'), os.environ.get('SANDWEAVE_MODAL_CLOUD')
         return {'cpu': float(resources['cpu']['vcpus']), 'memory': (total + 1024**2 - 1) // 1024**2,
-                'gpu': gpu, 'block_network': resources['network']['mode'] == 'offline',
-                **({'region': region.split(',')} if region else {}), **({'cloud': cloud} if cloud else {})}
+                'gpu': gpu, 'block_network': resources['network']['mode'] == 'offline', **placement()}
 
     def create(self, identity, spec, *, snapshot=None, token=None):
         import modal

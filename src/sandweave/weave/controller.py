@@ -1,10 +1,12 @@
 """Durable desired state reconciled against independently running workers."""
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
+import collections
 import copy
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -18,13 +20,58 @@ from ..sandbox.resources import positive, memory_bytes
 from ..sandbox.wire import encode
 
 LOG = logging.getLogger(__name__)
+# A worker is reachable while it answers ping (milliseconds even when busy). Its inventory lists every sandbox on it
+# and took 32 to 88 s on a worker with ~180 desktops (a full process scan, then a status per sandbox), so it only
+# refreshes the worker's record, waiting up to INVENTORY_TIMEOUT. A ready worker is declared unreachable after
+# UNREACHABLE_AFTER seconds without a ping answer.
+PING_TIMEOUT = 5
+INVENTORY_TIMEOUT = 120
+UNREACHABLE_AFTER = 60
+# Seconds between inventories of one worker. The probe pings it every tick for liveness; the inventory only refreshes
+# its record, and with hundreds of guests one inventory kept the worker sampling every host process back to back
+# (2026-10-23, aws-3: 39 of its request threads waiting on the sampler while machine starts queued).
+INVENTORY_EVERY = 30
+# Seconds between observations of one settled sandbox (ready, leased or paused). Every observation is a describe on
+# its worker, and a worker is one Python process: observing ~250 sandboxes every 2 s kept ~70 of its threads in
+# describe and slowed its sandbox creations from about 3 to over 10 minutes (2026-10-22, aws-3). Any other state, such
+# as an unknown launch outcome after a lost reply, is still observed on every probe.
+OBSERVE_EVERY = 30
+SETTLED = ('ready', 'leased', 'paused')
+# Ended sandboxes the status reply lists, most recent first. Each entry is about 6 KB, so these and about 640 live
+# sandboxes across the cluster stay under the wire's 4 MiB metadata limit.
+STATUS_ENDED = 50
 ALLOCATION_FIELDS = ('id', 'state', 'parent', 'worker', 'created', 'updated',
                      'reason', 'error', 'released', 'info', 'deadline', 'delete_requested', 'deleted')
 ROUTE_FIELDS = ('id', 'state', 'endpoint', 'token', 'owner', 'info')
+# The fields the controller loop reads from each live allocation, every 0.1 s.
+TICK_FIELDS = ('id', 'state', 'desired', 'released', 'owner', 'parent', 'ack', 'deadline', 'worker', 'endpoint',
+               'generation')
+# Sandboxes one worker starts at once: one per worker CPU and at least 16, or SANDWEAVE_MAX_STARTING for every
+# worker. The rest wait reserved, oldest first. A restore's boot is CPU-bound: 424 at once on 192 cores starved each
+# one past its desktop's 120 s readiness deadline and the failed ones started again (2026-10-23, aws-3: 33 failed, 64
+# of 424 ready after 9 minutes).
+MIN_STARTING = 16
+
+
+def configured_starting():
+    value = os.environ.get('SANDWEAVE_MAX_STARTING')
+    if not value:
+        return None
+    try:
+        return positive(int(value), 'SANDWEAVE_MAX_STARTING', integer=True)
+    except ValueError:
+        raise ValueError('SANDWEAVE_MAX_STARTING must be a positive integer') from None
+
+
+def starting_limit(worker, configured=None):
+    if configured is not None:
+        return configured
+    return max(MIN_STARTING, (worker or {}).get('capacity', {}).get('cpus') or 0)
 
 
 class Controller:
     def __init__(self, directory, *, connector=None, workers=16, interval=.1):
+        self.max_starting = configured_starting()
         self.state = State(directory)
         settings = self.state.get('settings', 'cluster', required=False)
         if settings is None:
@@ -53,6 +100,8 @@ class Controller:
         self.stopping, self.interval = threading.Event(), interval
         self.thread = None
         self.next_probe = 0
+        self.observed = {}  # allocation id -> when it was last observed
+        self.inventoried = {}  # worker id -> when its inventory was last taken
         self.last_tick, self.last_error = None, None
 
     def start(self):
@@ -276,7 +325,19 @@ class Controller:
         connection = None
         try:
             try:
-                connection = self.connection(record['endpoint'], timeout=5)
+                alive = self.connection(record['endpoint'], timeout=PING_TIMEOUT)
+                try:
+                    yield rpc(alive, 'ping')
+                finally:
+                    alive.close()
+                with self.state.transaction(deferred=True):
+                    current = self.state.get('worker', identity)
+                    if current['state'] == 'ready':
+                        self.state.put('worker', {**current, 'seen': time.time()})
+                if current['state'] == 'ready' and time.time() - self.inventoried.get(identity, 0) < INVENTORY_EVERY:
+                    return
+                self.inventoried[identity] = time.time()
+                connection = self.connection(record['endpoint'], timeout=INVENTORY_TIMEOUT)
                 info = yield rpc(connection, 'inventory')
             except Exception:
                 if connection:
@@ -326,6 +387,13 @@ class Controller:
         except Exception as error:
             with self.state.transaction():
                 record = self.state.get('worker', identity)
+                # A worker that answered ping recently stays ready when its inventory is slow or a reply is lost, and
+                # so does a relayed worker that keeps delivering replies: under load its ping reply waits behind the
+                # screenshots and files of every sandbox on it (seconds to minutes with ~200 desktops booting).
+                channel = (record.get('endpoint') or {}).get('relay')
+                if record['state'] == 'ready' and (time.time() - record.get('seen', 0) < UNREACHABLE_AFTER or (
+                        channel and self.relay.answered_within(channel, UNREACHABLE_AFTER))):
+                    return
                 if record['state'] != 'removed':
                     self.state.put('worker', {**record, 'state': 'unreachable', 'error': str(error)},
                                    event={'message': 'worker unreachable', 'error': str(error)} if record['state'] != 'unreachable' else None)
@@ -395,8 +463,11 @@ class Controller:
             artifact = self.state.get('artifact', reference, required=False) if reference else None
             if artifact and (artifact.get('retiring') or artifact.get('released')):
                 raise ResourceUnavailable('snapshot is being released')
-            if spec.get('name') and any(a['spec'].get('name') == spec['name'] and not a.get('released')
-                                       for a in self.state.list('allocation')):
+            # Only unreleased allocations can hold a name, and only their names are needed: listing every allocation
+            # ever made and deep-copying each, under the state lock, took the controller's whole core on every create
+            # (2026-10-23, aws-3: 87% of its CPU with 3,758 allocations, so 8 worlds' 424 creates trickled in).
+            if spec.get('name') and any(a['spec.name'] == spec['name'] for a in
+                                       self.state.list('allocation', released=False, fields=('spec.name',))):
                 raise FileExistsError('sandbox name is already in use')
             from .networks import placement
             network_placement = placement(self, spec)
@@ -493,9 +564,18 @@ class Controller:
                 route = {**worker['endpoint'], **{k: prepared['information'][k]
                          for k in ('hostname', 'port', 'workspace')}, 'token': prepared['token']}
                 connection = self.connection(route)
-                information = yield rpc(connection, 'inventory')
-                ping = yield rpc(connection, 'ping')
-                route = self._accept_worker(worker['id'], connection, information, promote=True, ping=ping)
+                # A launch on the instance this worker already accepted and promoted needs no inventory: the probe
+                # keeps it current. Each inventory samples every host process and the worker record it rewrites
+                # lists every live guest, so with hundreds of guests starting, launches queued one at a time behind
+                # the worker's sampler while the host sat idle (2026-10-23, aws-3: 188 of 296 reserved at 289 s).
+                known = worker.get('instances', {}).get(route['workspace'], {}).get('endpoint')
+                if known and worker.get('endpoint') == known and all(
+                        known.get(k) == route[k] for k in ('hostname', 'port', 'workspace', 'token')):
+                    route = known
+                else:
+                    information = yield rpc(connection, 'inventory')
+                    ping = yield rpc(connection, 'ping')
+                    route = self._accept_worker(worker['id'], connection, information, promote=True, ping=ping)
             else:
                 connection = self.connection(route)
             with self.state.transaction():
@@ -698,7 +778,30 @@ class Controller:
         self._reconcile_pools()
         self._reconcile_jobs()
         observations = []
-        active = self.state.list('allocation', released=False)
+        # This pass runs every 0.1 s. It copies only the fields it reads and asks about each owner once: copying every
+        # live allocation whole and checking its owner's process once per allocation took the controller's whole core
+        # with ~480 live sandboxes, nearly all owned by one client (2026-10-23, aws-3).
+        active = self.state.list('allocation', released=False, fields=TICK_FIELDS)
+        reasons = {}
+        def launching(identity):
+            future = self.pending.get(('allocation', identity))
+            return future is not None and not future.done()
+        # Only launches in progress count toward a worker's limit. One waiting for its image has returned its thread
+        # and boots nothing; when the image is ready its launch is resubmitted under the same limit.
+        starting = collections.Counter(r['worker'] for r in active
+                                       if r['state'] in ('reserved', 'starting') and launching(r['id']))
+        limits = {}
+        def admitted(record):
+            if launching(record['id']):
+                return True
+            worker = record['worker']
+            if worker not in limits:
+                limits[worker] = starting_limit(self.state.get('worker', worker, required=False,
+                                                               fields=('capacity',)), self.max_starting)
+            if starting[worker] >= limits[worker]:
+                return False
+            starting[worker] += 1
+            return True
         # File deletion retains its durable intent without retaining a stopped
         # sandbox's CPU/memory/slot reservation or scanning allocation history.
         for record in self.state.list('allocation', released=True, deletion_pending=True, fields=('id',)):
@@ -707,7 +810,10 @@ class Controller:
         for record in active:
             if record.get('released'):
                 continue
-            if self.owners.reason(record.get('owner')) or (
+            owner = record.get('owner')
+            if owner not in reasons:
+                reasons[owner] = self.owners.reason(owner)
+            if reasons[owner] or (
                     not record.get('parent') and not record['ack'] and now >= record['deadline']):
                 self.allocation_cancel(record['id'])
                 record = self.state.get('allocation', record['id'])
@@ -716,14 +822,19 @@ class Controller:
             elif self.preparation.waiting(record):
                 continue
             elif record['state'] == 'reserved':
-                self._submit(('allocation', record['id']), self._launch, record['id'])
+                if admitted(record):
+                    self._submit(('allocation', record['id']), self._launch, record['id'])
             elif probe and record.get('endpoint') and record['state'] not in ('starting', 'pending'):
-                observations.append(record['id'])
-            elif record['state'] == 'starting':
+                if record['state'] not in SETTLED or now - self.observed.get(record['id'], 0) >= OBSERVE_EVERY:
+                    self.observed[record['id']] = now
+                    observations.append(record['id'])
+            elif record['state'] == 'starting' and admitted(record):
                 # On restart there is no in-process launch future. Resubmit the
                 # identical operation to recover its result, never a new ID.
                 self._submit(('allocation', record['id']), self._launch, record['id'])
         if probe:
+            live = {r['id'] for r in active}
+            self.observed = {k: v for k, v in self.observed.items() if k in live}
             # Polling already-ready members must not repeatedly fill the queue
             # before a later pending launch or termination can be submitted.
             for worker in self.state.list('worker'):
@@ -767,8 +878,16 @@ class Controller:
         reconcile(self)
 
     def status(self):
+        # Every sandbox still running, and only the STATUS_ENDED most recently ended ones: listing every sandbox the
+        # cluster ever ran grew without bound and passed the wire's 4 MiB metadata limit after a day of 53-machine
+        # worlds (about 700 sandboxes). Ended sandboxes stay in the state and its events.
+        ended = sorted(self.state.list('allocation', released=True, fields=('id', 'updated')),
+                       key=lambda a: a['updated'], reverse=True)
+        shown = [*self.state.list('allocation', released=False),
+                 *(self.state.get('allocation', a['id']) for a in ended[:STATUS_ENDED])]
         return {'id': self.id, 'protocol': PROTOCOL, 'workers': self.worker_list(),
-                'sandboxes': [self._public_allocation(a) for a in self.state.list('allocation')],
+                'sandboxes': [self._public_allocation(a) for a in shown],
+                'sandboxes_omitted': max(0, len(ended) - STATUS_ENDED),
                 'pools': [self.pool_status(p['id']) for p in self.state.list('pool')],
                 'jobs': [self.job_status(j['id']) for j in self.state.list('job')]}
 

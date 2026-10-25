@@ -173,6 +173,20 @@ with Cluster.connect("lab") as cluster:
     print(cluster.info)
 ```
 
+`cluster.info` lists every sandbox that has not ended and the 50 most recently
+ended ones; `sandboxes_omitted` counts the older ended sandboxes. The controller
+keeps their records and events.
+
+A worker counts as reachable while it answers `ping`. Its full inventory, which
+refreshes telemetry and external usage, runs at most every 30 seconds. A ready
+worker becomes `unreachable` after 60 seconds without a ping answer. A worker on
+an outbound relay stays reachable while any of its replies keep arriving.
+
+Each worker starts at most one sandbox per worker CPU at a time, and at least 16.
+Other reserved sandboxes wait in creation order; the wait counts toward their
+`startup_timeout`. Set `SANDWEAVE_MAX_STARTING` in the controller's environment
+to use one fixed limit for every worker.
+
 To stop assigning new work to one worker:
 
 ```python

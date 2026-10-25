@@ -142,6 +142,33 @@ def test_relay_correlates_binary_results_and_duplicate_acknowledgements():
     broker.close()
 
 
+
+def test_relay_delivers_health_checks_first_and_records_answers():
+    broker = Broker()
+    endpoint = dict(relay='d'*32, token='test')
+    with ThreadPoolExecutor() as threads:
+        futures = [threads.submit(RelayConnection(broker, endpoint, timeout=5).call, operation)
+                   for operation in ('screenshot', 'describe')]
+        while len(broker.pending) < 2:
+            time.sleep(.001)
+        ping = threads.submit(RelayConnection(broker, endpoint, timeout=5).call, 'ping')
+        while len(broker.pending) < 3:
+            time.sleep(.001)
+        requests = [broker.poll(endpoint['relay']) for _ in range(3)]
+        assert requests[0]['method'] == 'ping'
+        assert not broker.answered_within(endpoint['relay'], 60)
+        for request in requests:
+            if request['method'] == 'describe':
+                broker.result(endpoint['relay'], request['id'], {'error': {'kind': 'ValueError', 'message': 'no'}})
+        assert not broker.answered_within(endpoint['relay'], 60)
+        for request in requests:
+            if request['method'] != 'describe':
+                broker.result(endpoint['relay'], request['id'], {'result': request['method']})
+        assert ping.result() == 'ping' and futures[0].result() == 'screenshot'
+        assert broker.answered_within(endpoint['relay'], 60)
+        assert not broker.answered_within('e'*32, 60)
+    broker.close()
+
 def test_tls_authentication_and_certificate_verification(tmp_path, monkeypatch):
     monkeypatch.setenv('SANDWEAVE_HOME', str(tmp_path / 'client'))
     cert, key = tmp_path / 'cert.pem', tmp_path / 'key.pem'

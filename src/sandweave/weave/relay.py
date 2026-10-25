@@ -12,6 +12,10 @@ from ..sandbox.wire import encode
 from .connections import worker_key
 
 
+# Small control calls the controller uses to judge a worker's health.
+PRIORITY = frozenset({'inventory', 'ping'})
+
+
 def wake(future, value=None):
     if not future.done():
         future.set_result(value)
@@ -25,6 +29,9 @@ class Broker:
         self.bytes = 0
         self.closed = False
         self.lost = set()
+        # When each channel last delivered a successful worker reply: a worker that keeps answering is alive even
+        # while its ping reply waits behind megabytes of other replies.
+        self.answered = {}
 
     @staticmethod
     def validate(channel):
@@ -47,7 +54,11 @@ class Broker:
                 raise ResourceUnavailable('controller forwarding capacity is in use')
             self.pending[identity] = item
             self.bytes += size
-            self.queues.setdefault(channel, OrderedDict())[identity] = item
+            queue = self.queues.setdefault(channel, OrderedDict())
+            queue[identity] = item
+            if operation in PRIORITY:
+                # Health checks go ahead of queued sandbox traffic, so a busy worker is not declared lost.
+                queue.move_to_end(identity, last=False)
             waiters = self.async_pollers.get(channel)
             while waiters:
                 loop, future = waiters.popleft()
@@ -196,6 +207,8 @@ class Broker:
         with self.condition:
             item = self.pending.get(identity)
             if item is not None and item['request']['endpoint']['relay'] == channel and not item['done'].is_set():
+                if isinstance(response, dict) and 'result' in response:
+                    self.answered[channel] = time.monotonic()
                 item['response'] = response
                 item['done'].set()
                 if item['async']:
@@ -211,6 +224,12 @@ class Broker:
             raise ValueError('invalid worker response batch')
         for response in responses:
             self.result(channel, **response)
+
+    def answered_within(self, channel, seconds):
+        """Whether the channel delivered a successful worker reply in the last seconds."""
+        with self.condition:
+            last = self.answered.get(channel)
+        return last is not None and time.monotonic() - last < seconds
 
     def close(self):
         with self.condition:

@@ -636,3 +636,143 @@ def test_artifact_transfer_preserves_files_symlinks_and_rejects_corruption(tmp_p
     malicious['files']['snapshot/upper/link/escape'] = {'kind': 'file', 'size': 0, 'sha256': hashlib.sha256(b'').hexdigest()}
     with pytest.raises(ValueError, match='non-directory parent'):
         receiver.begin(malicious)
+
+
+def settle(controller):
+    """Finish every submitted lifecycle, probe and observation future."""
+    for future in list(controller.pending.values()):
+        future.result(5)
+
+
+def probe_round(controller):
+    controller.next_probe = 0
+    controller.tick()
+    settle(controller)
+
+
+def test_settled_sandboxes_are_observed_less_often_than_uncertain_ones(lab):
+    identity = request(lab.controller)
+    until(lab, lambda: lab.controller.allocation_get(identity)['state'] == 'ready')
+    settle(lab.controller)
+    executor = lab.executors[lab.controller.state.get('allocation', identity)['endpoint']['port']]
+    observed, call = [], executor.call
+    def counted(operation, **params):
+        if operation == 'describe':
+            observed.append(params['identity'])
+        return call(operation, **params)
+    executor.call = counted
+    for _ in range(5):
+        probe_round(lab.controller)
+    assert len(observed) <= 1
+    count = len(observed)
+    # An unknown outcome is recovered on the next probe, not after the settled interval.
+    with lab.controller.state.transaction():
+        record = lab.controller.state.get('allocation', identity)
+        lab.controller.state.put('allocation', {**record, 'state': 'unknown'})
+    probe_round(lab.controller)
+    assert len(observed) == count + 1
+    assert lab.controller.allocation_get(identity)['state'] == 'ready'
+
+
+def test_status_lists_live_and_the_most_recently_ended_sandboxes(lab):
+    from sandweave.weave.controller import STATUS_ENDED
+    live = request(lab.controller)
+    for index in range(STATUS_ENDED + 5):
+        lab.controller.state.put('allocation', dict(id=f'sw-ended-{index:03}', state='terminated', desired='terminated',
+                                                    released=True, spec={}, request={}, generation=1))
+    status = lab.controller.status()
+    ended = [s['id'] for s in status['sandboxes'] if s['released']]
+    assert [s['id'] for s in status['sandboxes'] if not s['released']] == [live]
+    assert ended == [f'sw-ended-{index:03}' for index in range(STATUS_ENDED + 4, 4, -1)]
+    assert status['sandboxes_omitted'] == 5
+
+
+def test_starting_limit_scales_with_worker_cpus_and_can_be_fixed(tmp_path, monkeypatch):
+    from sandweave.weave.controller import starting_limit
+    assert starting_limit({'capacity': {'cpus': 192}}) == 192
+    assert starting_limit({'capacity': {'cpus': 4}}) == 16
+    assert starting_limit(None) == 16
+    assert starting_limit({'capacity': {'cpus': 192}}, 3) == 3
+    monkeypatch.setenv('SANDWEAVE_MAX_STARTING', 'many')
+    with pytest.raises(ValueError, match='SANDWEAVE_MAX_STARTING'):
+        Controller(tmp_path / 'control')
+    assert not (tmp_path / 'control').exists()
+
+
+def test_worker_starts_at_most_its_limit_and_queues_the_rest(tmp_path, monkeypatch):
+    executor = Executor(tmp_path / '1', 1)
+    gate, lock = threading.Event(), threading.Lock()
+    running, peak = [0], [0]
+    create = executor.create
+    def blocking(spec, identity, **options):
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        try:
+            assert gate.wait(10)
+            return create(spec, identity, **options)
+        finally:
+            with lock:
+                running[0] -= 1
+    executor.create = blocking
+    monkeypatch.setattr(providers, 'direct', lambda endpoint, **kw: Link(executor))
+    monkeypatch.setattr(artifacts, 'ensure', lambda *a: None)
+    monkeypatch.setenv('SANDWEAVE_MAX_STARTING', '2')
+    controller = Controller(tmp_path / 'control', connector=lambda target, **kw: Link(executor))
+    try:
+        controller.worker_add('1', slots=5, memory='16GiB')
+        ids = [request(controller) for _ in range(5)]
+        deadline = time.monotonic() + 5
+        while running[0] < 2 and time.monotonic() < deadline:
+            controller.tick(); time.sleep(.01)
+        for _ in range(30):
+            controller.tick(); time.sleep(.01)
+        states = [controller.allocation_get(i)['state'] for i in ids]
+        assert peak[0] == running[0] == 2
+        assert states.count('reserved') == 3
+        gate.set()
+        deadline = time.monotonic() + 10
+        while not all(controller.allocation_get(i)['state'] == 'ready' for i in ids):
+            assert time.monotonic() < deadline, [controller.allocation_get(i)['state'] for i in ids]
+            controller.tick(); time.sleep(.01)
+        assert peak[0] == 2 and executor.starts == 5
+    finally:
+        gate.set()
+        controller.close()
+
+
+def test_probe_pings_for_liveness_and_inventories_at_most_every_interval(lab, monkeypatch):
+    executor, worker = lab.executors[1], lab.workers[0]['id']
+    calls, call = [], executor.call
+    executor.call = lambda operation, **params: calls.append(operation) or call(operation, **params)
+    for _ in range(5):
+        probe_round(lab.controller)
+    assert calls.count('ping') >= 5 and calls.count('inventory') == 1
+    def unavailable(*args, **kwargs):
+        raise OperationUnknown('network partition')
+    executor.call = unavailable
+    lab.controller.connector = unavailable
+    probe_round(lab.controller)
+    # A ping answered within the last minute keeps a ready worker ready.
+    assert lab.controller.worker_get(worker)['state'] == 'ready'
+    with lab.controller.state.transaction():
+        record = lab.controller.state.get('worker', worker)
+        lab.controller.state.put('worker', {**record, 'seen': time.time() - 120})
+    probe_round(lab.controller)
+    assert lab.controller.worker_get(worker)['state'] == 'unreachable'
+
+
+def test_launch_on_an_accepted_worker_skips_its_inventory(lab):
+    calls = []
+    for executor in lab.executors.values():
+        def counted(operation, call=executor.call, **params):
+            calls.append(operation)
+            return call(operation, **params)
+        executor.call = counted
+    ids = [request(lab.controller) for _ in range(2)]
+    deadline = time.monotonic() + 5
+    while not all(lab.controller.allocation_get(i)['state'] == 'ready' for i in ids):
+        assert time.monotonic() < deadline
+        lab.controller.next_probe = time.time() + 3600
+        lab.controller.tick(); time.sleep(.005)
+    assert 'managed_prepare' in calls and 'inventory' not in calls

@@ -1,17 +1,12 @@
 """Guest-side VR stream for Modal sandboxes: Monado, its paired-eye ring and the input bridge.
 
 Under gVisor the worker owns the frame ring and donates it to the guest. A Modal
-sandbox is remote, so this server owns the same ring v2 memory (layout defined by
-scripts/vr_stream.py FrameRing and Monado's lab patch), starts Monado and the
-stdio input bridge (vr_stream_guest.py) exactly as VRStream does, and serves
-frames and input over an authenticated HTTP endpoint using Sandweave's wire format.
-Run as guest root: python3 guest_vr.py PORT TOKEN_FILE [--width ...].
+sandbox is remote, so guest_io.py owns the same ring v2 memory here (layout
+defined by scripts/vr_stream.py FrameRing and Monado's lab patch), and starts
+Monado and the stdio input bridge (vr_stream_guest.py) exactly as VRStream does.
 """
-import argparse
 import ctypes
 import fcntl
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import hmac
 import json
 import mmap
 import os
@@ -20,12 +15,9 @@ import select
 import signal
 import struct
 import subprocess
-import sys
 import threading
 import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandweave_wire import MAX_BODY, decode, encode  # noqa: E402
 
 HEADER_BYTES = 256
 SLOT_HEADER = struct.Struct('<8Q')
@@ -135,79 +127,3 @@ class Stream:
             except subprocess.TimeoutExpired:
                 os.killpg(self.monado.pid, signal.SIGKILL)
                 self.monado.wait()
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('port', type=int)
-    parser.add_argument('token_file')
-    parser.add_argument('--width', type=int, default=960)
-    parser.add_argument('--height', type=int, default=1080)
-    parser.add_argument('--fps', type=int, default=90)
-    parser.add_argument('--hz', type=int, default=90)
-    parser.add_argument('--slots', type=int, default=8)
-    parser.add_argument('--user', default='ga')
-    options = parser.parse_args()
-    token = Path(options.token_file).read_text().strip()
-    import zstandard
-    stream = Stream(options)
-    local = threading.local()
-
-    def call(op, parameters):
-        if op == 'ping':
-            return {'guest_ns': time.monotonic_ns()}
-        if op == 'latest':
-            timeout = parameters.get('timeout', 5)
-            if not 0 < timeout <= 120:
-                raise ValueError('timeout must be in 0..120 seconds')
-            frame, pixels = stream.ring.latest(parameters.get('after', 0), timeout)
-            if not hasattr(local, 'compressor'):
-                local.compressor = zstandard.ZstdCompressor(level=1)
-            return {**frame, 'rgba': local.compressor.compress(pixels), 'codec': 'zstd'}
-        if op == 'input':
-            reply = stream.request(parameters['request'])
-            return {**reply, 'guest_reply_ns': time.monotonic_ns()}
-        if op == 'status':
-            return {'monado': stream.monado.poll(), 'bridge': stream.bridge.poll()}
-        if op == 'close':
-            stream.close()
-            threading.Thread(target=server.shutdown, daemon=True).start()
-            return {}
-        raise ValueError('unknown VR operation')
-
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = 'HTTP/1.1'
-
-        def log_message(self, *args):
-            pass
-
-        def do_POST(self):
-            if not hmac.compare_digest(self.headers.get('X-Sandweave-Token', ''), token):
-                self.send_error(403)
-                return
-            try:
-                length = int(self.headers.get('Content-Length', '-1'))
-                if not 0 <= length <= MAX_BODY:
-                    raise ValueError('invalid request size')
-                request = decode(self.rfile.read(length))
-                result = {'result': call(request['op'], request.get('params', {}))}
-            except Exception as error:
-                result = {'error': {'kind': type(error).__name__, 'message': str(error)}}
-            payload = encode(result)
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/vnd.sandweave.frame')
-            self.send_header('Content-Length', str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-
-    server = ThreadingHTTPServer(('0.0.0.0', options.port), Handler)
-    server.daemon_threads = True
-    signal.signal(signal.SIGTERM, lambda *args: threading.Thread(target=server.shutdown, daemon=True).start())
-    try:
-        server.serve_forever(poll_interval=.1)
-    finally:
-        stream.close()
-
-
-if __name__ == '__main__':
-    main()

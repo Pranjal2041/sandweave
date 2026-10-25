@@ -100,7 +100,7 @@ class FakeSandbox:
         return FakeProcess()
 
     def tunnels(self, timeout=50):
-        return {port: types.SimpleNamespace(host=f'{port}.modal.test', port=443) for port in (23799, 23800)}
+        return {port: types.SimpleNamespace(host=f'{port}.modal.test', port=443) for port in (23799, 23801)}
 
     def terminate(self):
         self.terminated = True
@@ -132,11 +132,11 @@ def test_create_boots_the_guest_and_connects_to_its_agent(monkeypatch, tmp_path)
     metadata = runtime.create('vr-sw-1', spec)
     sandbox = FakeSandbox.created[-1]
     assert sandbox.args == ('python3', '-u', '/opt/sandweave/guest_boot.py')
-    assert sandbox.options['encrypted_ports'] == [23799, 23800] and sandbox.options['gpu'] == 'L40S'
+    assert sandbox.options['encrypted_ports'] == [23799, 23801] and sandbox.options['gpu'] == 'L40S'
     assert sandbox.options['timeout'] == 24 * 3600 and sandbox.options['image'] == 'image'
     assert sandbox.files['/run/sandweave/agent.token'].decode().strip() == metadata['token']
     assert b'open(sys.argv[2])' in sandbox.files['/run/sandweave/agent.py']
-    assert metadata['host'] == '23799.modal.test' and metadata['vr'] == {'host': '23800.modal.test', 'port': 443}
+    assert metadata['host'] == '23799.modal.test' and metadata['io'] == {'host': '23801.modal.test', 'port': 443}
     assert all(options['tls'] for *_, options in calls)
     assert runtime.status('vr-sw-1')['status'] == 'running'
     runtime.terminate('vr-sw-1')

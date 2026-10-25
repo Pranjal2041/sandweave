@@ -17,7 +17,7 @@ from ...resources import memory_bytes
 from ...workspace import atomic_json
 
 AGENT_PORT = 23799
-VR_PORT = 23800
+IO_PORT = 23801
 STATE = '/run/sandweave'
 MAXIMUM_LIFETIME = 24 * 3600
 
@@ -83,7 +83,7 @@ class Runtime:
         lifetime = min(MAXIMUM_LIFETIME, int(spec['ttl'])) if spec.get('ttl') else MAXIMUM_LIFETIME
         options = self.resources(spec)
         sandbox = modal.Sandbox.create('python3', '-u', '/opt/sandweave/guest_boot.py', app=app, image=image,
-                                       timeout=lifetime, encrypted_ports=[AGENT_PORT, VR_PORT],
+                                       timeout=lifetime, encrypted_ports=[AGENT_PORT, IO_PORT],
                                        env={'SANDWEAVE_GUEST_USER': spec['template'].get('user', 'ga')},
                                        **options)
         atomic_json(self._record_path(identity), {'sandbox_id': sandbox.object_id, 'app': app_name(),
@@ -92,9 +92,9 @@ class Runtime:
             self._wait_boot(sandbox, deadline)
             self._start_agent(sandbox, token)
             tunnels = sandbox.tunnels(timeout=max(1, int(deadline - time.monotonic())))
-            agent, vr = tunnels[AGENT_PORT], tunnels[VR_PORT]
+            agent, relay = tunnels[AGENT_PORT], tunnels[IO_PORT]
             metadata = {'sandbox_id': sandbox.object_id, 'host': agent.host, 'port': agent.port, 'token': token,
-                        'vr': {'host': vr.host, 'port': vr.port}}
+                        'io': {'host': relay.host, 'port': relay.port}}
             client = Connection(agent.host, agent.port, token, tls=True, timeout=10)
             while True:
                 try:
@@ -141,7 +141,9 @@ class Runtime:
         sandbox.filesystem.write_bytes((token + '\n').encode(), STATE + '/agent.token')
         command = (f'chmod 600 {STATE}/agent.token {STATE}/agent.py && '
                    f'setsid python3 -I -S -u {STATE}/agent.py {AGENT_PORT} {STATE}/agent.token '
-                   f'> {STATE}/logs/agent.log 2>&1 < /dev/null &')
+                   f'> {STATE}/logs/agent.log 2>&1 < /dev/null & '
+                   f'setsid python3 -u /opt/sandweave/guest_io.py {IO_PORT} {STATE}/agent.token '
+                   f'> {STATE}/logs/guest-io.log 2>&1 < /dev/null &')
         process = sandbox.exec('sh', '-c', command, timeout=60)
         if process.wait():
             raise RuntimeError('guest agent did not start: ' + process.stderr.read())
@@ -153,13 +155,14 @@ class Runtime:
                                                     tls=True, timeout=30)
         return self.connections[identity]
 
-    def vr_connection(self, identity, *, timeout=30):
+    def io_connection(self, identity, *, timeout=30):
+        """A persistent stream to guest_io.py for frames and input."""
+        from .io_client import IOConnection
         metadata = self.metadata.get(identity)
         if metadata is None:
             from ...wire import decode
             metadata = decode((self.root / 'sandboxes' / (identity + '.bin')).read_bytes())['agent']
-        return Connection(metadata['vr']['host'], metadata['vr']['port'], metadata['token'], tls=True,
-                          timeout=timeout, rpc_path='/vr')
+        return IOConnection(metadata['io']['host'], metadata['io']['port'], metadata['token'], timeout=timeout)
 
     def vr_stream(self, context, **options):
         from .vr import RemoteVRStream

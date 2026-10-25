@@ -22,7 +22,7 @@ class RemoteVRStream:
         self.runtime, self.context = runtime, context
         self.options = dict(width=width, height=height, fps=fps, hz=hz, slots=slots)
         self.codec, self.quality = codec, quality
-        self.connection = None
+        self.connection = self.input_connection = None
         self.sequence, self.input_mutex = 0, threading.Lock()
         self.broken = self.closed = False
         self.clock_rtt_ns = self.guest_to_host_ns = None
@@ -40,6 +40,8 @@ class RemoteVRStream:
                 if time.monotonic() >= deadline:
                     raise TimeoutError('guest I/O relay did not become reachable')
                 time.sleep(.5)
+        # Input has its own connection, so it never waits behind a frame transfer.
+        self.input_connection = self.runtime.io_connection(self.context.id, timeout=30)
         self._call('vr_start', **self.options)
         self._synchronize(20)
         return self
@@ -61,7 +63,8 @@ class RemoteVRStream:
             self.sequence += 1
             sent = time.monotonic_ns()
             try:
-                reply = self._call('vr_input', request={'op': 'input', 'id': self.sequence, 'state': state})
+                reply = self.input_connection.call('vr_input', request={'op': 'input', 'id': self.sequence,
+                                                                        'state': state})
             except (OSError, OperationUnknown, TimeoutError, ConnectionError):
                 self.broken = True
                 raise
@@ -111,8 +114,9 @@ class RemoteVRStream:
         except Exception:
             pass
         finally:
-            if self.connection is not None:
-                self.connection.close()
+            for connection in (self.connection, self.input_connection):
+                if connection is not None:
+                    connection.close()
 
     def __exit__(self, *args):
         self.close()

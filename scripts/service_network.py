@@ -6,6 +6,7 @@ The worker registers membership before launching guests; guests cannot join
 another group or choose their source identity.
 """
 import ipaddress
+import os
 from pathlib import Path
 import socket
 import struct
@@ -128,6 +129,14 @@ class Hub:
                 self.address.close()
             raise
         self.socket.settimeout(.2)
+        # Sends go through a non-blocking handle to the same bound socket. On a socket with a timeout, CPython
+        # retries a send that finds the receiver full until the timeout, so MSG_DONTWAIT did not drop the frame: one
+        # full receiver held this thread 0.2 s per frame, every sender's queue filled and frames were lost across
+        # all groups (2026-10-23, aws-3: 99% of a relay's sends to the router failed with EAGAIN, 8 worlds).
+        # Frames queued at a member still count against this socket's one send buffer, so a member that stops
+        # reading makes sends to every group fail until it reads again (37 frames of 1.2 KB with a 208 KiB buffer).
+        self.sender = socket.socket(fileno=os.dup(self.socket.fileno()))
+        self.sender.setblocking(False)
         self.members, self.groups = {}, {}
         self.names, self.aliases = {}, {}
         self.origins = {}
@@ -239,7 +248,7 @@ class Hub:
                         # An unknown public name goes back through this peer's
                         # ordinary egress policy, never through the hub's host.
                         endpoint = self.groups[group][address][2]
-                        self.socket.sendto(reply if reply is not None else frame,
+                        self.sender.sendto(reply if reply is not None else frame,
                                            socket.MSG_DONTWAIT, endpoint.path)
                         continue
                     target = self.groups[group].get(frame[30:34])
@@ -249,7 +258,7 @@ class Hub:
                     if translated is not None:
                         # Keep the endpoint descriptor alive through sendto;
                         # unregister cannot close/reuse it in another thread.
-                        self.socket.sendto(translated, socket.MSG_DONTWAIT, target[2].path)
+                        self.sender.sendto(translated, socket.MSG_DONTWAIT, target[2].path)
             except socket.timeout:
                 continue
             except OSError:
@@ -261,6 +270,7 @@ class Hub:
             return
         self.stopping.set()
         self.thread.join()
+        self.sender.close()
         self.socket.close()
         self.address.close()
         for identity in list(self.groups):
@@ -289,6 +299,12 @@ class Peer:
                 self.hub.close()
             raise
         self.socket.settimeout(.2)
+        # Sends go through a non-blocking handle to the same bound socket. On a socket with a timeout, CPython
+        # retries a send that finds the receiver full until the timeout, so MSG_DONTWAIT did not drop the frame: one
+        # full receiver held the sending thread 0.2 s per frame, every sender's queue filled and frames were lost across
+        # all groups (2026-10-23, aws-3: 99% of a relay's sends to the router failed with EAGAIN, 8 worlds).
+        self.sender = socket.socket(fileno=os.dup(self.socket.fileno()))
+        self.sender.setblocking(False)
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self.run, name='sandweave-service-peer', daemon=True)
         self.thread.start()
@@ -298,7 +314,7 @@ class Peer:
                 and frame[14] == 0x45 and frame[23] == 17 and frame[26:30] == GUEST
                 and frame[30:34] == DNS and frame[36:38] == b'\0\x35'):
             try:
-                self.socket.sendto(DNS_FORWARD + frame, socket.MSG_DONTWAIT, self.hub.path)
+                self.sender.sendto(DNS_FORWARD + frame, socket.MSG_DONTWAIT, self.hub.path)
             except OSError:
                 pass
             return True
@@ -312,7 +328,7 @@ class Peer:
         if len(frame) < 34 or frame[12:14] != b'\x08\x00' or frame[30:32] != PRIVATE_PREFIX:
             return False
         try:
-            self.socket.sendto(frame, socket.MSG_DONTWAIT, self.hub.path)
+            self.sender.sendto(frame, socket.MSG_DONTWAIT, self.hub.path)
         except OSError:
             # A worker restart may briefly remove the router. Do not take down
             # the guest's public network while the service router reconnects.
@@ -341,6 +357,7 @@ class Peer:
     def close(self):
         self.stopping.set()
         self.thread.join()
+        self.sender.close()
         self.socket.close()
         self.address.close()
         self.hub.close()

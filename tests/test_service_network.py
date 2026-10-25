@@ -1,4 +1,5 @@
 """Service routing preserves transport checksums and isolates concurrent groups."""
+import contextlib
 import importlib.util
 import ipaddress
 from pathlib import Path
@@ -6,6 +7,7 @@ import socket
 import struct
 import sys
 import tempfile
+import time
 
 import pytest
 
@@ -74,6 +76,47 @@ def test_concurrent_groups_with_identical_private_ips_do_not_cross(nested):
                 channel.close()
             hub.close()
 
+
+
+def test_a_full_receiver_drops_frames_without_stalling_the_router():
+    """MSG_DONTWAIT on a socket with a timeout still waited 0.2 s per frame; sends use a non-blocking handle."""
+    with tempfile.TemporaryDirectory(prefix='sw-net-') as temporary:
+        root = Path(temporary)
+        hub = Hub(root)
+        peers, channels = {}, []
+        try:
+            for group in ('busy', 'idle'):
+                members = [{'address': '10.231.0.' + str(index + 2), 'socket': str(root / f'{group}-{index}.sock'),
+                            'networks': ['default']} for index in range(2)]
+                hub.register(group, members)
+                for index, member in enumerate(members):
+                    guest, packet = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+                    guest.settimeout(1)
+                    channels += [guest, packet]
+                    peers[group, index] = (Peer({**member, 'hub': str(hub.path), 'peers': {}}, packet), guest)
+            receiver = peers['busy', 1][0]
+            receiver.stopping.set()
+            receiver.thread.join()  # Nothing reads this member's socket until it is drained below.
+            started = time.monotonic()
+            for _ in range(200):
+                assert peers['busy', 0][0].send(frame('10.231.0.3', b'x' * 1200))
+            # The previous code took 25.8 s here: 0.2 s for each frame the full member could not take.
+            assert time.monotonic() - started < 1
+            # Queued datagrams count against the router's one send buffer, so a member that stops reading
+            # blocks every group until it reads again. Once it does, other groups recover immediately.
+            receiver.socket.settimeout(.1)
+            with contextlib.suppress(socket.timeout):
+                while True:  # Until the router has nothing left for it.
+                    receiver.socket.recv(9100)
+            assert peers['idle', 0][0].send(frame('10.231.0.3', b'idle group'))
+            assert peers['idle', 1][1].recv(9014).endswith(b'idle group')
+            assert time.monotonic() - started < 2
+        finally:
+            for peer, _ in peers.values():
+                peer.close()
+            for channel in channels:
+                channel.close()
+            hub.close()
 
 def test_service_dns_is_answered_without_public_dns():
     query = b'\x12\x34\x01\0\0\1\0\0\0\0\0\0\x05redis\0\0\1\0\1'

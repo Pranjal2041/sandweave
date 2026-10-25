@@ -33,6 +33,8 @@ class Worker:
         # records; every committed lifecycle write maintains this index.
         self.active = {path.stem for path in self.records.glob('*.bin')
                        if self.is_active(self.read(path.stem))}
+        # Active records whose runtime admission has seen gone; see admission.admit.
+        self.admission_gone = set()
         self.stopping = False
         self.pools = {}
         self.services = None

@@ -121,7 +121,8 @@ def test_four_sixteen_gib_guests_on_thirty_two_gib_worker():
     Memory('4GiB', '16GiB', runtime_reservation='512MiB', experimental=True)])
 def test_worker_concurrent_admission_keeps_reservations_bounded(tmp_path, memory):
     records = {}
-    worker = SimpleNamespace(records=tmp_path, memory_budget=18 * GiB, read=records.__getitem__)
+    worker = SimpleNamespace(records=tmp_path, memory_budget=18 * GiB, read=records.__getitem__,
+                             active=set(), admission_gone=set())
     guard = threading.Lock()
     spec = definition(memory=memory)['spec']
     def launch(index):
@@ -133,6 +134,7 @@ def test_worker_concurrent_admission_keeps_reservations_bounded(tmp_path, memory
             identity = str(index)
             records[identity] = {'id': identity, 'state': 'creating', 'spec': spec, 'admission': allocation}
             (tmp_path / (identity + '.bin')).touch()
+            worker.active.add(identity)
             return True
     with ThreadPoolExecutor(32) as threads:
         assert sum(threads.map(launch, range(128))) == 4

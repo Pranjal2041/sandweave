@@ -26,11 +26,17 @@ def process_table(proc=Path('/proc')):
     return result
 
 
-def members(table, roots):
-    """Require a matching PID and birth time before attributing any descendants."""
+def children_of(table):
     children = {}
     for pid, info in table.items():
         children.setdefault(info['ppid'], []).append(pid)
+    return children
+
+
+def members(table, roots, children=None):
+    """Require a matching PID and birth time before attributing any descendants."""
+    if children is None:
+        children = children_of(table)
     pending = [r['pid'] for r in roots if r and r.get('pid') in table and
                str(table[r['pid']]['start']) == str(r.get('start'))]
     found = set()
@@ -86,6 +92,9 @@ class Sampler:
     def _sample(self, records, devices):
         now, clock = time.time(), time.monotonic()
         table = process_table()
+        # One parent-to-children map per sample, not one per sandbox: with hundreds of sandboxes and tens of
+        # thousands of processes, rebuilding it for each sandbox made one sample take seconds (2026-10-23, aws-3).
+        children = children_of(table)
         previous = self.previous
         elapsed = clock - previous['clock'] if previous else None
         ticks = os.sysconf('SC_CLK_TCK')
@@ -101,7 +110,7 @@ class Sampler:
                     roots.append(json.loads((Path(runtime['logs']) / 'native.json').read_text()))
                 except (OSError, KeyError, ValueError):
                     pass
-            pids = members(table, roots)
+            pids = members(table, roots, children)
             attributed.update(pids)
             cpu = None
             if previous and pids:

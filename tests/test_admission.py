@@ -20,6 +20,43 @@ def test_pending_image_import_does_not_break_unrelated_admission(tmp_path, cache
     assert not admission.live(worker, record, records=records)
 
 
+
+def test_admission_reads_only_active_records_and_asks_each_gone_runtime_once(tmp_path):
+    from types import SimpleNamespace
+    from sandweave.sandbox.sandbox import definition
+    spec = definition()['spec']
+    records = {
+        'ready': {'id': 'ready', 'state': 'ready', 'spec': spec},
+        'failed': {'id': 'failed', 'state': 'failed', 'spec': spec},
+        'kept': {'id': 'kept', 'state': 'failed', 'spec': spec},
+        **{f'old-{i}': {'id': f'old-{i}', 'state': 'terminated', 'spec': spec} for i in range(100)}}
+    reads, statuses = [], []
+    def status(identity):
+        statuses.append(identity)
+        return {'status': 'running' if identity == 'kept' else 'stopped'}
+    def read(identity):
+        reads.append(identity)
+        return records[identity]
+    worker = SimpleNamespace(records=tmp_path, read=read, path=lambda identity: tmp_path / identity,
+                             runtime=SimpleNamespace(status=status), active={'ready', 'failed', 'kept'},
+                             admission_gone=set(), memory_budget=2**50)
+    one = admission.reservation(spec)
+    assert admission.admit(worker, spec)['memory_reserved'] == one
+    first = list(statuses)
+    # A ready record holds its reservation without a runtime query; a runtime seen gone is not asked again.
+    assert sorted(first) == ['failed', 'kept'] and set(reads) == {'ready', 'failed', 'kept'}
+    admission.admit(worker, spec)
+    assert statuses[len(first):] == ['kept']
+    worker.active.discard('failed')
+    admission.admit(worker, spec)
+    assert worker.admission_gone == set()
+    budget = 3 * one
+    worker.memory_budget = budget  # ready and kept are charged; failed is not.
+    admission.admit(worker, spec)
+    worker.memory_budget = budget - 1
+    with pytest.raises(admission.ResourceUnavailable):
+        admission.admit(worker, spec)
+
 @pytest.mark.parametrize('version', [1, 2])
 def test_narrower_ancestor_limits_an_unlimited_child(tmp_path, version):
     proc = tmp_path / 'proc'

@@ -245,6 +245,8 @@ def test_pid_reuse_descendants_and_bounded_log_tail(tmp_path):
     table={10:dict(ppid=1,start=99),11:dict(ppid=10,start=100),12:dict(ppid=11,start=101)}
     assert members(table,[{'pid':10,'start':98}])==set()
     assert members(table,[{'pid':10,'start':99}])=={10,11,12}
+    from sandweave.sandbox.telemetry import children_of
+    assert members(table,[{'pid':11,'start':100}],children_of(table))=={11,12}
     path=tmp_path/'runtime.log';path.write_bytes(b'a'*100000+b'last line\n')
     assert tail(path,100)['text'].endswith('last line\n') and tail(path,100)['truncated']
     with pytest.raises(ValueError):

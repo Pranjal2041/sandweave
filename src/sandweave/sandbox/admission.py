@@ -127,13 +127,27 @@ def live(worker, record, *, records=None):
 def admit(worker, spec):
     """Caller holds the worker guard until the new record has been published."""
     reserved = 0
-    for path in worker.records.glob('*.bin'):
-        record = worker.read(path.stem)
+    # Only active records can hold a reservation: terminated, stopped and cleaned-up ones are skipped below anyway.
+    # The worker keeps that set current on every record write, so admission no longer reads every historical record
+    # under the worker guard (2026-10-23, aws-3: 17,457 records, 1.2 s per admission, so 424 machine starts queued
+    # for over 8 minutes).
+    # A sandbox that is creating, preparing, ready or paused holds its reservation; asking its runtime for every one
+    # of them on every admission, under the worker guard, took seconds with ~500 sandboxes and queued every other
+    # worker call behind it (2026-10-23, aws-3). A ready sandbox whose runtime died keeps its reservation until a
+    # describe records it as failed. Any other record is asked once more until its runtime is seen gone, which is
+    # final: a sandbox ID is never launched again.
+    gone = worker.admission_gone
+    gone.intersection_update(worker.active)
+    for identity in tuple(worker.active):
+        if identity in gone:
+            continue
+        record = worker.read(identity)
         if record.get('service_parent'):
             continue  # The parent reserved the entire group before launch.
         if record['state'] in ('terminated', 'stopped'):
             continue
-        if not live(worker, record):
+        if record['state'] not in ('creating', 'preparing', 'ready', 'paused') and not live(worker, record):
+            gone.add(identity)
             continue
         if spec.get('name') and record.get('name') == spec['name']:
             raise FileExistsError('a live sandbox already has this name: ' + spec['name'])

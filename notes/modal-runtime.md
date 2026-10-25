@@ -40,6 +40,30 @@ which systemd cannot use as its own.
 Consequence: templates whose `init` is `systemd` (GNOME, VR) cannot boot their
 normal init on Modal. Command templates do not use systemd.
 
+## Runtime implementation (in progress)
+
+Decision (2026-10-25): on Modal, VR templates run an X server, Monado and the
+game directly, without GNOME. Desktop-only templates are rejected.
+
+- `src/sandweave/sandbox/runtimes/modal/`: `configure` (client-side template
+  adaptation), `image.py` (Modal image from `install-sandbox-base.sh` and the
+  pinned VR inputs on Ubuntu 22.04), `driver.py` (one Modal sandbox per
+  Sandweave sandbox; guest agent over a TLS tunnel), `guest_boot.py`
+  (entrypoint: driver paths, session bus, Xtigervnc on `:1`), `guest_vr.py`
+  (guest-owned ring v2, Monado and input bridge over HTTP) and `vr.py`
+  (worker-side stream used by `AttachedVR`).
+- The worker must run on Linux with a Sandweave installation and Modal
+  credentials. `scripts/modal-runtime-worker.py` creates such a worker on
+  Modal's VM runtime with the `sandweave-modal-credentials` Secret.
+- Unit tests: `tests/test_modal_runtime.py`.
+
+Live status: two image builds failed and were fixed (the export stub must be
+Python; `python3-zstandard` is not packaged for 22.04). The third attempt was
+refused by Modal with `Exceeded limit of 3000 for unscheduled Sandboxes`. At
+that point new CPU and GPU sandboxes were refused workspace-wide, while this
+environment listed only about 70 sandboxes. The guest boot, agent, VR stream
+and Open Saber run on `runtime="modal"` are not yet verified.
+
 ## Reference: direct VR stack on Modal
 
 The frontier-games A10 environment (`devin-datagen-lawrence-games/.devin/vr-a10`)

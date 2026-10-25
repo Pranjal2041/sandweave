@@ -86,6 +86,8 @@ def cgroup_limit(proc=Path('/proc')):
 
 
 def reservation(spec):
+    if spec.get('runtime') == 'modal':
+        return 0  # Modal reserves the sandbox's memory on its own host, not the worker's.
     memory = spec['resources']['memory']
     services = sum(reservation(service['request']['spec']) for service in spec.get('services', {}).values())
     extra = spec.get('_image_import_memory', 0)

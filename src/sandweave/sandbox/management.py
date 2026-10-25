@@ -12,6 +12,13 @@ from .errors import OperationUnknown, UnsupportedFeature
 from .wire import decode, encode
 
 
+def modal_available():
+    """Whether this worker can run runtime="modal": the client and credentials are present."""
+    import importlib.util
+    return importlib.util.find_spec('modal') is not None and bool(
+        os.environ.get('MODAL_TOKEN_ID') or (Path.home() / '.modal.toml').is_file())
+
+
 class Management:
     def __init__(self, worker):
         self.worker = worker
@@ -197,7 +204,8 @@ class Management:
         return {'protocol': 1, 'hostname': socket.gethostname(), 'pid': os.getpid(),
                 'scope': process_scope(), 'workspace': str(self.worker.root),
                 'cpus': sorted(os.sched_getaffinity(0)), 'memory': self.worker.memory_budget,
-                'gpus': gpus, 'runtimes': ['gvisor', 'apptainer'], 'kvm': kvm_available(), 'live': live,
+                'gpus': gpus, 'runtimes': ['gvisor', 'apptainer'] + (['modal'] if modal_available() else []),
+                'kvm': kvm_available(), 'live': live,
                 'telemetry': self.sampler.sample(records, gpus)}
 
     def logs(self, identity, stream='launcher', size=65536):

@@ -59,6 +59,9 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
     else:
         recipe = Template(template if template is not None else ({} if image else 'coding')).resolve()
         defaults = recipe['resources']
+    if runtime == 'modal':
+        from .runtimes.modal import configure as modal_template
+        modal_template(recipe)
     if profiling is not None:
         if type(profiling) is not bool:
             raise ValueError('profiling must be a bool')
@@ -186,7 +189,9 @@ class Sandbox:
             self._connection.close()
         # Select the worker after installing the recipe's dependencies. A
         # saved recipe needs the same check when restored on another worker.
-        self._connection = connect(target, template=recipe, connection=connection)
+        # A Modal sandbox's image is built by Modal, not installed on the worker.
+        self._connection = connect(target, template=None if spec['runtime'] == 'modal' else recipe,
+                                   connection=connection)
         initial = self._connection
         self._connection = initial.clone(timeout=startup_timeout + 60)
         initial.close()

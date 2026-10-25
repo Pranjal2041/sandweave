@@ -21,13 +21,15 @@ from .... import _unix_sockets
 AGENT_PORT = 23799
 
 
-def agent_source(*, image=False):
+def agent_source(*, image=False, token_file=False):
+    """Guest agent program; token_file reads the token from the file named by argv[2]."""
     from ... import wire, guest_agent
     wire_source = Path(wire.__file__).read_text()
     source = Path(guest_agent.__file__).read_text()
+    token = 'open(sys.argv[2]).read().strip()' if token_file else 'sys.argv[2]'
     return ("import sys, types\nm=types.ModuleType('sandweave_wire')\n"
             f"exec({wire_source!r}, m.__dict__)\nsys.modules['sandweave_wire']=m\n" + source +
-            f"\nmain(sys.argv[1], sys.argv[2], image={image!r})\n")
+            f"\nmain(sys.argv[1], {token}, image={image!r})\n")
 
 
 

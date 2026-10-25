@@ -127,12 +127,16 @@ class Recording:
 
 class AttachedVR:
     def __init__(self, context, config, cold):
-        from vr_stream import VRStream
         import zstandard
         self.compressor = zstandard.ZstdCompressor(level=1)
         self.context = context
-        self.stream = VRStream(context.id, manager=context.runtime.manager, start_game=False,
-                               **{k: config[k] for k in ('width', 'height', 'fps', 'hz', 'mirror', 'slots') if k in config})
+        options = {k: config[k] for k in ('width', 'height', 'fps', 'hz', 'mirror', 'slots') if k in config}
+        if hasattr(context.runtime, 'vr_stream'):
+            # A remote runtime owns Monado and the frame ring inside its sandbox.
+            self.stream = context.runtime.vr_stream(context, **options)
+        else:
+            from vr_stream import VRStream
+            self.stream = VRStream(context.id, manager=context.runtime.manager, start_game=False, **options)
         try:
             self.stream.__enter__()
             command = config['game_command']

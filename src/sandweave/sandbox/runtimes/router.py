@@ -16,6 +16,9 @@ class Runtime:
         if name == 'apptainer' and name not in self.adapters:
             from .apptainer.driver import Runtime as Apptainer
             self.adapters[name] = Apptainer(self.root, self.adapters['gvisor'])
+        if name == 'modal' and name not in self.adapters:
+            from .modal.driver import Runtime as Modal
+            self.adapters[name] = Modal(self.root)
         if name not in self.adapters:
             entries = list(metadata.entry_points(group='sandweave.runtimes.v1', name=name))
             if len(entries) != 1:

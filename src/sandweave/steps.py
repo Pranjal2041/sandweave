@@ -90,11 +90,15 @@ def xr_state(actions):
 
 
 def _gamepad(sandbox, action):
+    if action.pad != 0:
+        raise UnsupportedFeature('the gamepad writer drives pad 0')
     if action.kind == 'pad_button':
-        if action.state != 'press' or action.pad != 0:
-            raise UnsupportedFeature('the gamepad writer supports timed presses on pad 0; down/up state is unavailable')
-        return sandbox.gamepad.action(buttons=[action.button], hold=(action.hold_ms or 200) / 1000)
-    raise UnsupportedFeature('the gamepad writer releases axes after each hold; persistent pad_axis state is unavailable')
+        if action.state == 'press':
+            return sandbox.gamepad.action(buttons=[action.button], hold=(action.hold_ms or 200) / 1000)
+        return sandbox.gamepad.state(**{'buttons_' + action.state: [action.button]})
+    if action.axis in ('lt', 'rt'):
+        raise UnsupportedFeature('trigger axes are not calibrated for the gamepad writer')
+    return sandbox.gamepad.state(axes={action.axis: action.value})
 
 
 def run(sandbox, step):

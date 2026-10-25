@@ -1,0 +1,52 @@
+{
+  "0.2.46": {
+    "admission_seconds": 0.6839903243817389,
+    "controller_tick_seconds": 0.0702514722943306,
+    "full_allocation_scan_seconds": 0.4821942327544093,
+    "historical_records": 17457,
+    "live_sandboxes": 500,
+    "projected_name_scan_seconds": 0.0009546913206577301,
+    "released_allocations": 3758,
+    "status_error": "wire metadata exceeds its limit",
+    "status_sandboxes": 4258,
+    "status_seconds": 0.39972234051674604
+  },
+  "0.2.47": {
+    "admission_seconds": 0.024148861411958933,
+    "controller_tick_seconds": 0.004796283785253763,
+    "full_allocation_scan_seconds": 0.4835753897204995,
+    "historical_records": 17457,
+    "live_sandboxes": 500,
+    "projected_name_scan_seconds": 0.00093035027384758,
+    "released_allocations": 3758,
+    "status_bytes": 3341902,
+    "status_sandboxes": 550,
+    "status_seconds": 0.050316765904426575
+  },
+  "description": "scripts/profile-weave-scale.py on babel-u9-24; runtime status stubbed (admission is a lower bound for 0.2.46)",
+  "live_weave": {
+    "burst_seconds": 99.75434432644397,
+    "crash_detected_seconds": 24.722740431316197,
+    "host": "babel-u9-24",
+    "memory": "256MiB guest + 256MiB runtime",
+    "peak_starting_per_worker": 3,
+    "samples": 486,
+    "simultaneous_starts": 14,
+    "start_limit": 3,
+    "template": "coding",
+    "test": "tests/integration/test_weave_scale_live.py",
+    "unrelated_exec_baseline_median_seconds": 0.02420140616595745,
+    "unrelated_exec_calls_during_burst": 3331,
+    "unrelated_exec_during_burst_max_seconds": 0.08387131337076426,
+    "unrelated_exec_during_burst_median_seconds": 0.02714044228196144,
+    "worker_cpus": 2,
+    "workers": 2
+  },
+  "service_network_router": {
+    "0.2.46_seconds": 25.8,
+    "0.2.47_seconds": 0.0068,
+    "frame_bytes": 1242,
+    "frames_held_by_the_stopped_member": 37,
+    "frames_to_a_member_that_stopped_reading": 200
+  }
+}

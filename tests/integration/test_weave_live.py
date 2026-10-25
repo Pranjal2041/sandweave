@@ -109,6 +109,22 @@ def cluster(tmp_path_factory, request):
                         connection.call('terminate', identity=record['id'])
                 connection.call('_shutdown_if_idle')
                 connection.close()
+            # A worker preparing a template may start a worker instance of its own. It belongs to this
+            # fixture too; a stopped instance removes its metadata.
+            for marker in root.glob('worker-*/connections/*/worker.json'):
+                try:
+                    info = json.loads(marker.read_text())
+                    os.kill(info['pid'], 0)
+                except (OSError, ValueError, KeyError):
+                    continue
+                instance = Connection('127.0.0.1', info['port'], info['token'])
+                try:
+                    for record in instance.call('list'):
+                        if record['state'] not in ('terminated', 'stopped'):
+                            instance.call('terminate', identity=record['id'])
+                    instance.call('_shutdown_if_idle')
+                finally:
+                    instance.close()
             for index, child in enumerate(processes):
                 # A preparation failure can occur before the worker publishes
                 # an endpoint. It has not received any sandbox requests, but it

@@ -1,0 +1,71 @@
+diff --git a/pkg/sentry/platform/systrap/syscall_thread.go b/pkg/sentry/platform/systrap/syscall_thread.go
+index 74dcc9c..71d7041 100644
+--- a/pkg/sentry/platform/systrap/syscall_thread.go
++++ b/pkg/sentry/platform/systrap/syscall_thread.go
+@@ -18,6 +18,7 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"os"
++	"runtime"
+ 	"sync/atomic"
+ 
+ 	"golang.org/x/sys/unix"
+@@ -238,7 +239,7 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
+ 		//
+ 		// futex waits for sentryMsg.state that isn't changed, so it will
+ 		// returns only only when the other side will call FUTEX_WAKE.
+-		futexWaitWake(&sentryMsg.state, atomic.LoadUint32(&sentryMsg.state))
++		t.futexWaitWake(&sentryMsg.state, atomic.LoadUint32(&sentryMsg.state))
+ 	}
+ 
+ 	errno := -uintptr(stubMsg.ret)
+@@ -249,6 +250,24 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
+ 	return uintptr(stubMsg.ret), nil
+ }
+ 
++// dumpStalledSyscall is temporary instrumentation for the nested-host lab.
++func (t *syscallThread) dumpStalledSyscall() {
++	t.thread.Warningf("NESTED_SYSCALL_STALL sysno=%d args=%#v state=%d ret=%#x sentry=%#x stub=%#x stubStart=%#x",
++		t.sentryMessage.sysno, t.sentryMessage.args, atomic.LoadUint32(&t.sentryMessage.state),
++		t.stubMessage.ret, t.sentryAddr, t.stubAddr, stubStart)
++	runtime.LockOSThread()
++	defer runtime.UnlockOSThread()
++	if err := t.thread.attach(); err != nil {
++		t.thread.Warningf("NESTED_SYSCALL_STALL attach: %v", err)
++		return
++	}
++	t.thread.dumpRegs("NESTED_SYSCALL_STALL registers")
++	t.thread.detach()
++	if errno := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(t.thread.tgid), uintptr(t.thread.tid), uintptr(unix.SIGCONT)); errno != 0 {
++		panic(fmt.Sprintf("diagnostic detach failed: %v", errno))
++	}
++}
++
+ func (t *syscallThread) notifySeccompThread() error {
+ 	for {
+ 		errno := t.kickSeccompNotify()
+diff --git a/pkg/sentry/platform/systrap/syscall_thread_unsafe.go b/pkg/sentry/platform/systrap/syscall_thread_unsafe.go
+index 7cd9fab..bdf9840 100644
+--- a/pkg/sentry/platform/systrap/syscall_thread_unsafe.go
++++ b/pkg/sentry/platform/systrap/syscall_thread_unsafe.go
+@@ -77,9 +77,18 @@ func futexWaitForUint32(addr *uint32, targetValue uint32) error {
+ 
+ // futexWaitWake waits when other side will call FUTEX_WAKE. A value of the
+ // futex word has to be equal to futexValue and it must not be changed.
+-func futexWaitWake(futexAddr *uint32, futexValue uint32) error {
++func (t *syscallThread) futexWaitWake(futexAddr *uint32, futexValue uint32) error {
++	diagnosed := false
+ 	for {
+-		_, _, e := unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(futexAddr)), linux.FUTEX_WAIT, uintptr(futexValue), 0, 0, 0)
++		timeout := unix.Timespec{Sec: 2}
++		_, _, e := unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(futexAddr)), linux.FUTEX_WAIT, uintptr(futexValue), uintptr(unsafe.Pointer(&timeout)), 0, 0)
++		if e == unix.ETIMEDOUT {
++			if !diagnosed {
++				t.dumpStalledSyscall()
++				diagnosed = true
++			}
++			continue
++		}
+ 		if e == 0 {
+ 			break
+ 		}

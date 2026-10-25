@@ -24,7 +24,8 @@ import modal
 APP = 'sandweave-gpu-lab'
 HOME = '/home/sw'
 ENV = {'HOME': HOME, 'SANDWEAVE_HOME': HOME + '/sandweave', 'PATH': '/opt/venv/bin:/usr/local/bin:/usr/bin:/bin'}
-AS_SW = ['setpriv', '--reuid=sw', '--regid=sw', '--init-groups', 'env', *(f'{k}={v}' for k, v in ENV.items())]
+AS_SW = ['setpriv', '--reuid=sw', '--regid=sw', '--init-groups', 'env', '-u', 'PYTHONPATH',
+         *(f'{k}={v}' for k, v in ENV.items())]
 PACKAGES = ('python3 python3-pip python3-venv git curl ca-certificates libglib2.0-0 libgomp1 file uidmap squashfuse '
             'squashfs-tools fuse3 fuse2fs fuse-overlayfs iproute2 procps kmod util-linux strace')
 
@@ -43,7 +44,7 @@ def put(sandbox, local, remote):
 
 
 def run(sandbox, argv, root=False):
-    process = sandbox.exec(*([] if root else AS_SW), *argv, timeout=24 * 3600)
+    process = sandbox.exec(*([] if root else AS_SW), *argv, timeout=24 * 3600, workdir=HOME)
     for line in process.stdout:
         sys.stdout.write(line)
     sys.stdout.flush()

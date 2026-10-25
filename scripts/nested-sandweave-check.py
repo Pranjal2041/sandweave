@@ -21,9 +21,9 @@ def main():
             commands.append('nvidia-smi -L')
         for command in commands:
             result = sandbox.run(command)
-            print(json.dumps({'command': command, 'exit_code': result.exit_code,
+            print(json.dumps({'command': command, 'returncode': result.returncode,
                               'stdout': result.stdout, 'stderr': result.stderr}), flush=True)
-            if result.exit_code:
+            if result.returncode:
                 raise RuntimeError('Guest command failed: ' + command)
     print(json.dumps({'event': 'closed', 'seconds': time.monotonic() - started}), flush=True)
 

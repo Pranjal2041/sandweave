@@ -9,6 +9,8 @@ import sys
 import time
 import traceback
 
+from PIL import Image
+
 from sandweave import Sandbox
 
 
@@ -30,17 +32,27 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=120)
+    parser.add_argument('--name')
+    parser.add_argument('--runtime-build', required=True,
+                        help='expected immutable runtime path, checked before recording')
     args = parser.parse_args()
     if not 0 < args.seconds <= 300:
         parser.error('seconds must be in 0..300')
     args.output.mkdir(parents=True, exist_ok=False)
     try:
         started = time.monotonic()
-        with Sandbox(template='vr/opensaber') as sandbox:
+        with Sandbox(template='vr/opensaber', name=args.name) as sandbox:
+            workspace = Path(sandbox._info['workspace'])
+            local = Path((workspace / 'runs/local-path.txt').read_text().strip())
+            launch = json.loads((local / 'gvisor/bundles' / sandbox.id / 'launch-settings.json').read_text())
+            runtime = launch['runtime']
+            if runtime['path'] != args.runtime_build:
+                raise RuntimeError('Unexpected engine: ' + runtime['path'])
+            (args.output / 'runtime.json').write_text(json.dumps(runtime, indent=2) + '\n')
             print(json.dumps({'event': 'ready', 'seconds': time.monotonic() - started}), flush=True)
             observation = sandbox.vr.observe(timeout=60)
-            observation.left.save(args.output / 'menu-left.png')
-            observation.right.save(args.output / 'menu-right.png')
+            Image.fromarray(observation.left).save(args.output / 'menu-left.png')
+            Image.fromarray(observation.right).save(args.output / 'menu-right.png')
             sandbox.vr.action({'right': {'position': [.2, 1.3, -.5],
                                         'orientation': [-.4815723002, .0920430496, .0381254815, .8707253337]}})
             time.sleep(.2)
@@ -65,13 +77,20 @@ def main():
                 'nested_vr_metrics', Path(__file__).with_name('vr-metrics.py'))
             metrics = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(metrics)
-            result = {'recording': recording.metadata,
-                      'monado': metrics.summarize(args.output / 'monado-metrics.pb', args.seconds)}
+            window = {'start_ns': recording.timeline[0]['capture_begin_ns'],
+                      'end_ns': recording.timeline[-1]['capture_begin_ns']}
+            result = {'recording': recording.metadata, 'capture_window': window,
+                      'monado': metrics.summarize(args.output / 'monado-metrics.pb',
+                                                  args.seconds, **window)}
             (args.output / 'summary.json').write_text(json.dumps(result, indent=2) + '\n')
             print(json.dumps(result, indent=2), flush=True)
     except BaseException as error:
         (args.output / 'failure.json').write_text(json.dumps({
-            'error': str(error), 'traceback': traceback.format_exc()}, indent=2) + '\n')
+            'error': str(error), 'type': type(error).__name__,
+            'sandbox_id': getattr(error, 'sandbox_id', None),
+            'phase': getattr(error, 'phase', None),
+            'operation_id': getattr(error, 'operation_id', None),
+            'traceback': traceback.format_exc()}, indent=2) + '\n')
         raise
 
 

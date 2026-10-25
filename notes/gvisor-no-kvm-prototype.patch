@@ -5662,6 +5662,106 @@ index 000000000..d729608d7
 +	}
 +	return 0, int64(time.Hour)
 +}
+diff --git a/pkg/sentry/platform/systrap/stub_amd64.s b/pkg/sentry/platform/systrap/stub_amd64.s
+index fe78ca15a..6d7ee1d28 100644
+--- a/pkg/sentry/platform/systrap/stub_amd64.s
++++ b/pkg/sentry/platform/systrap/stub_amd64.s
+@@ -47,6 +47,7 @@
+ // syscallStubMessage offsets.
+ #define STUB_MESSAGE_OFFSET 4096 // +checkconst . syscallStubMessageOffset
+ #define STUB_MESSAGE_RET    0    // +checkoffset . syscallStubMessage.ret
++#define STUB_MESSAGE_STATE  8    // +checkoffset . syscallStubMessage.state
+ 
+ // initStubProcess bootstraps the child and sends itself SIGSTOP to wait for attach.
+ //
+@@ -177,26 +178,17 @@ execute_syscall:
+ 	// stubMessage->ret = ret
+ 	MOVQ AX, (STUB_MESSAGE_OFFSET + STUB_MESSAGE_RET)(R12)
+ 
+-	// for {
+-	//   if futex(sentryMessage->state, FUTEX_WAKE, 1) == 1 {
+-	//     break;
+-	//   }
+-	// }
+-	MOVQ R12, DI
++	// Publish completion after ret (release ordering on x86), then wake
++	// the Sentry. It observes the sequence even if it has not waited yet.
++	MOVL R13, (STUB_MESSAGE_OFFSET + STUB_MESSAGE_STATE)(R12)
++	LEAQ (STUB_MESSAGE_OFFSET + STUB_MESSAGE_STATE)(R12), DI
+ 	MOVQ $FUTEX_WAKE, SI
+ 	MOVQ $1, DX
+ 	MOVQ $0, R10
+ 	MOVQ $0, R8
+ 	MOVQ $0, R9
+-wake_up_sentry:
+ 	MOVQ $SYS_FUTEX, AX
+ 	SYSCALL
+-	// futex returns the number of waiters that were woken up.  If futex
+-	// returns 0 here, it means that the Sentry has not called futex_wait
+-	// yet and we need to try again. The value of sentryMessage->state
+-	// isn't changed, so futex_wake is the only way to wake up the Sentry.
+-	CMPQ AX, $1
+-	JNE wake_up_sentry
+ 
+ 	INCL R13
+ 	JMP syscall_loop
+diff --git a/pkg/sentry/platform/systrap/stub_arm64.s b/pkg/sentry/platform/systrap/stub_arm64.s
+index c37ca3372..fbc3475bc 100644
+--- a/pkg/sentry/platform/systrap/stub_arm64.s
++++ b/pkg/sentry/platform/systrap/stub_arm64.s
+@@ -46,6 +46,7 @@
+ 
+ 
+ #define STUB_MESSAGE_RET    0    // +checkoffset . syscallStubMessage.ret
++#define STUB_MESSAGE_STATE  8    // +checkoffset . syscallStubMessage.state
+ 
+ // initStubProcess bootstraps the child and sends itself SIGSTOP to wait for attach.
+ //
+@@ -147,10 +148,11 @@ syscall_loop:
+ 	MOVD $0, R5
+ wait_for_syscall:
+ 	// Move the sentry message state to R2.
+-	MOVW SENTRY_MESSAGE_STATE(R12), R2
++	LDARW (R12), R2
+ 	CMPW R2, R13
+ 	BEQ execute_syscall
+ 
++	MOVD R12, R0
+ 	MOVD $SYS_FUTEX, R8
+ 	SVC
+ 	JMP wait_for_syscall
+@@ -168,28 +170,17 @@ execute_syscall:
+ 	// stubMessage->ret = ret
+ 	MOVD R0, (STUB_MESSAGE_RET)(R19)
+ 
+-	// for {
+-	//   if futex(sentryMessage->state, FUTEX_WAKE, 1) == 1 {
+-	//     break;
+-	//   }
+-	// }
++	// Publish ret before the completion sequence and wake the Sentry.
++	ADD $STUB_MESSAGE_STATE, R19, R0
++	STLRW R13, (R0)
+ 	MOVD $FUTEX_WAKE, R1
+ 	MOVD $1, R2
+ 	MOVD $0, R3
+ 	MOVD $0, R4
+ 	MOVD $0, R5
+ 	MOVD $SYS_FUTEX, R8
+-wake_up_sentry:
+-	MOVD R12, R0
+ 	SVC
+ 
+-	// futex returns the number of waiters that were woken up.  If futex
+-	// returns 0 here, it means that the Sentry has not called futex_wait
+-	// yet and we need to try again. The value of sentryMessage->state
+-	// isn't changed, so futex_wake is the only way to wake up the Sentry.
+-	CMP $1, R0
+-	BNE wake_up_sentry
+-
+ 	ADDW $1, R13, R13
+ 	JMP syscall_loop
+ seccomp_loop:
 diff --git a/pkg/sentry/platform/systrap/subprocess.go b/pkg/sentry/platform/systrap/subprocess.go
 index 4de8f9a83..c81b43fb4 100644
 --- a/pkg/sentry/platform/systrap/subprocess.go
@@ -5765,7 +5865,7 @@ index 070d84d55..b2bde8666 100644
  }
  
 diff --git a/pkg/sentry/platform/systrap/syscall_thread.go b/pkg/sentry/platform/systrap/syscall_thread.go
-index bf14741d0..74dcc9cff 100644
+index bf14741d0..20bfd339e 100644
 --- a/pkg/sentry/platform/systrap/syscall_thread.go
 +++ b/pkg/sentry/platform/systrap/syscall_thread.go
 @@ -15,6 +15,7 @@
@@ -5793,6 +5893,78 @@ index bf14741d0..74dcc9cff 100644
  		}
  	}
  
+@@ -224,14 +231,18 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
+ 		}
+ 	} else {
+ 		// Notify the syscall thread about a new syscall request.
+-		atomic.AddUint32(&sentryMsg.state, 1)
+-		futexWakeUint32(&sentryMsg.state)
++		sequence := atomic.AddUint32(&sentryMsg.state, 1)
++		if err := futexWakeUint32(&sentryMsg.state); err != nil {
++			return 0, err
++		}
+ 
+-		// Wait for reply.
+-		//
+-		// futex waits for sentryMsg.state that isn't changed, so it will
+-		// returns only only when the other side will call FUTEX_WAKE.
+-		futexWaitWake(&sentryMsg.state, atomic.LoadUint32(&sentryMsg.state))
++		// Completion must be represented in shared state. A wake alone can
++		// be lost if the host interrupts the wait concurrently with the wake,
++		// and it cannot distinguish an unrelated wake from a finished syscall.
++		// The acquire load also orders reading ret after its publication.
++		if err := futexWaitForUint32(&stubMsg.state, sequence); err != nil {
++			return 0, err
++		}
+ 	}
+ 
+ 	errno := -uintptr(stubMsg.ret)
+diff --git a/pkg/sentry/platform/systrap/syscall_thread_defs.go b/pkg/sentry/platform/systrap/syscall_thread_defs.go
+index 96fc5438c..dbb8bcd19 100644
+--- a/pkg/sentry/platform/systrap/syscall_thread_defs.go
++++ b/pkg/sentry/platform/systrap/syscall_thread_defs.go
+@@ -36,4 +36,6 @@ type syscallSentryMessage struct {
+ // Attention: It can be compromised by user threads.
+ type syscallStubMessage struct {
+ 	ret uint64
++	// state is the request sequence whose result has been published in ret.
++	state uint32
+ }
+diff --git a/pkg/sentry/platform/systrap/syscall_thread_unsafe.go b/pkg/sentry/platform/systrap/syscall_thread_unsafe.go
+index 7cd9fabb7..c4989cff6 100644
+--- a/pkg/sentry/platform/systrap/syscall_thread_unsafe.go
++++ b/pkg/sentry/platform/systrap/syscall_thread_unsafe.go
+@@ -29,6 +29,7 @@ func (t *syscallThread) initRequestReplyAddresses(sentryStackAddr uintptr) {
+ 	sentryMessage := (*syscallSentryMessage)(unsafe.Pointer(sentryStackAddr))
+ 	stubMessage := (*syscallStubMessage)(unsafe.Pointer(sentryStackAddr + syscallStubMessageOffset))
+ 	atomic.StoreUint32(&sentryMessage.state, 0)
++	atomic.StoreUint32(&stubMessage.state, 0)
+ 
+ 	t.sentryMessage = sentryMessage
+ 	t.stubMessage = stubMessage
+@@ -75,22 +76,6 @@ func futexWaitForUint32(addr *uint32, targetValue uint32) error {
+ 	return nil
+ }
+ 
+-// futexWaitWake waits when other side will call FUTEX_WAKE. A value of the
+-// futex word has to be equal to futexValue and it must not be changed.
+-func futexWaitWake(futexAddr *uint32, futexValue uint32) error {
+-	for {
+-		_, _, e := unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(futexAddr)), linux.FUTEX_WAIT, uintptr(futexValue), 0, 0, 0)
+-		if e == 0 {
+-			break
+-		}
+-		if e != unix.EAGAIN && e != unix.EINTR {
+-			return fmt.Errorf("failed to FUTEX_WAIT: %v", e)
+-		}
+-	}
+-
+-	return nil
+-}
+-
+ func (t *syscallThread) kickSeccompNotify() unix.Errno {
+ 	errno := hostsyscall.RawSyscallErrno(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
+ 		uintptr(linux.SECCOMP_IOCTL_NOTIF_SEND),
 diff --git a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c b/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
 index 5d6b4cef8..d71932b0e 100644
 --- a/pkg/sentry/platform/systrap/sysmsg/sighandler_amd64.c
@@ -6190,10 +6362,21 @@ index 7cb8c235c..d6c8d572c 100644
  	return uintptr(r.Rsp)
  }
 diff --git a/pkg/sentry/platform/systrap/systrap_test.go b/pkg/sentry/platform/systrap/systrap_test.go
-index 7d09752f8..bec31c0f5 100644
+index 7d09752f8..d26f21fb5 100644
 --- a/pkg/sentry/platform/systrap/systrap_test.go
 +++ b/pkg/sentry/platform/systrap/systrap_test.go
-@@ -39,6 +39,25 @@ func TestMain(m *testing.M) {
+@@ -16,8 +16,10 @@ package systrap
+ 
+ import (
+ 	"os"
++	"runtime"
+ 	"sync/atomic"
+ 	"testing"
++	"time"
+ 
+ 	"golang.org/x/sys/unix"
+ 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+@@ -39,6 +41,63 @@ func TestMain(m *testing.M) {
  	os.Exit(m.Run())
  }
  
@@ -6213,6 +6396,44 @@ index 7d09752f8..bec31c0f5 100644
 +	}
 +	if ns < before.Nano() || ns > after.Nano() {
 +		t.Fatalf("dynamic CPU clock %d outside process clock interval [%d,%d]", ns, before.Nano(), after.Nano())
++	}
++}
++
++// Completion can precede the wait, and a wake is not itself a completion
++// record. Exercise the actual stub's futex protocol even on hosts that support
++// the seccomp-notify optimization.
++func TestSyscallReplyBeforeWait(t *testing.T) {
++	s, err := New(platform.Options{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	sp, err := newSubprocess(globalPool.source.createStub, s.memoryFile, false)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(sp.Release)
++	sp.syscallThreadMu.Lock()
++	defer sp.syscallThreadMu.Unlock()
++	thread := sp.syscallThread
++	for i := 0; i < 1000; i++ {
++		thread.sentryMessage.sysno = unix.SYS_GETPID
++		sequence := atomic.AddUint32(&thread.sentryMessage.state, 1)
++		if err := futexWakeUint32(&thread.sentryMessage.state); err != nil {
++			t.Fatal(err)
++		}
++		deadline := time.Now().Add(5 * time.Second)
++		for atomic.LoadUint32(&thread.stubMessage.state) != sequence {
++			if time.Now().After(deadline) {
++				t.Fatal("syscall worker did not publish completion")
++			}
++			runtime.Gosched()
++		}
++		if err := futexWaitForUint32(&thread.stubMessage.state, sequence); err != nil {
++			t.Fatal(err)
++		}
++		if got, want := thread.stubMessage.ret, uint64(thread.thread.tgid); got != want {
++			t.Fatalf("getpid returned %d, want %d", got, want)
++		}
 +	}
 +}
 +

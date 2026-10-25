@@ -4,7 +4,67 @@ This is an experimental compatibility branch, not a qualified runtime release.
 Modal GPU workers expose a gVisor Linux ABI, currently reporting
 `4.19.0-gvisor`; that version is not the underlying Linux kernel.
 
-## Verified so far (2026-10-24)
+## SDK and Open Saber acceptance (2026-10-25)
+
+The syscall-worker completion fix is committed as
+`cc41508b33c307dc869ff0e2afc0e62551f291d4`. Full SDK coding startup now completes.
+The worker launcher also handles hosts that omit `Umask` from `/proc/self/status`,
+without temporarily changing the worker's mask during concurrent launches.
+Its 14 tests pass on both the native CPU VM and the outer Modal gVisor host;
+the release-selection tests pass on Linux (23 tests).
+
+Two complete `Sandbox(template="vr/opensaber")` runs on the L40S produced
+separate left/right videos and a synchronized stereo video. Run 13's decoded
+left, right, and stereo videos were inspected at 60 seconds: they show gameplay,
+both moving sabers, directional blocks, score 250, and the expected eye disparity.
+
+| Run | Engine candidate | Capture duration | Saved stereo pairs | Capture FPS | Application FPS |
+| --- | --- | --- | --- | --- | --- |
+| `nested-opensaber13` | 2026.10.25.94 | 119.989 s | 3,564 | 29.694 | 40.564 |
+| `nested-opensaber14` | 2026.10.25.95 | 120.001 s | 3,577 | 29.800 | 41.529 |
+
+Both recordings requested 30 FPS and dropped zero frames in the recorder.
+The application numbers come from Monado OpenXR submissions **during the
+recorded window**, including level-loading stalls. They are not video FPS.
+Median application frame intervals were 22.30 ms; the compositor targeted
+90 Hz and reused application frames approximately 52–54% of the time.
+Median compositor GPU work was 0.48 ms. These runs do not establish a
+same-machine speed ratio against a single gVisor layer.
+
+Candidate `.95` adds a `nested_gvisor` capability; its executable hashes are
+identical to `.94`. The SDK now requires that capability on a gVisor host.
+This matters for prepared images: the first VR trials retained their older
+bundled `.93` engine despite a newer release pin. Run 14 exercised the normal
+automatic upgrade from that prepared image. The acceptance script checks the
+actual launch descriptor before recording.
+
+**Remaining blocker:** startup is intermittent. A retained GNOME attempt
+failed with `EBADF` from guest Python's `_posixsubprocess.fork_exec`, and a
+concurrent guest-command investigation also observed a malformed control
+stream. A separate 1,000-command concurrent run completed while Open Saber
+continued running. Those results do not qualify this candidate for a stable
+release. The failed guests, trace patches, and logs are retained for diagnosis.
+
+Local evidence:
+
+- `runs/nested-modal-20261025/vr-evidence.tar` contains both runs' videos,
+  frame indexes, input acknowledgements, protobuf metrics, code, and reports.
+  SHA-256: `4d0df9950700044ce9aa09c2d9aea6ce6888d8128780be101c0113d02eeca37d`.
+  Lossless frame caches remain on the worker.
+- Run 13's original summary used a post-export metrics window. Its separate
+  `capture-window-summary.json` corrects that using the retained protobuf
+  records and frame timestamps. Run 14 computes that window directly.
+- `checkpoints/nested-modal-20261025/gvisor.bundle` contains verified complete
+  engine history through `cc41508b`.
+- Candidate `.95` archive SHA-256:
+  `713d5a971f0e283d10b70b6774a4ce832706994b1d168fe680ffef9a7292787f`.
+
+`notes/nested-sdk-startup-trace.patch` is diagnostic instrumentation for a
+separate SDK copy; it is not included in the candidate wheel or engine.
+The scripts `nested-gnome-check.py` and `nested-guest-command-check.py` retain
+startup and concurrent-command results without changing readiness criteria.
+
+## Initial engine acceptance (2026-10-24)
 
 - The patched systrap engine runs `/bin/sh` and `uname -r` under the outer
   gVisor on a Modal L40S worker. Attached execution returns zero, with
@@ -58,9 +118,10 @@ driver/device identity using the structured `nvidia-smi -q -x` report, retains
 visibility and device-permission checks, and passes the exact driver ABI to
 runsc. It does not assume that NVML ordinal equals device minor.
 
-Vulkan rendering, full SDK startup, snapshots, concurrency,
-A10 acceptance, Open Saber, and stereo recordings remain separate gates.
-No frame-rate or nested-overhead claim is established by these probes.
+At this initial stage, Vulkan rendering, full SDK startup, snapshots,
+concurrency, A10 acceptance, Open Saber, and stereo recordings were separate
+gates. The initial probes did not establish a frame-rate or overhead result;
+the subsequent SDK and VR results are reported above.
 
 ## Reproduction and evidence
 
@@ -129,7 +190,7 @@ Logs: `/home/sw/sdk-tests5.log` and `/home/sw/engine-tests2.log`.
 The same Python suites had first been attempted on macOS: 79 passed,
 20 failed, one skipped; most failures were the Linux x86-64 platform check.
 
-## Remaining blocker
+## First candidate's SDK blocker
 
 The unmodified SDK startup flow with candidate .93 downloads and installs
 packages successfully, then stalls in `/usr/bin/perl /usr/sbin/adduser`
@@ -137,8 +198,8 @@ during systemd package configuration. The guest task is 657. Its kernel
 goroutine is blocked in
 `MemoryManager.HandleUserFault -> mapASLocked -> subprocess.MapFile ->
 syscallThread.syscall -> futexWaitWake`, servicing host syscall 9 (mmap).
-The watchdog identifies the stuck task. This is an observed syscall-worker
-stall; the cause has not been established.
+The watchdog identifies the stuck task. The completion protocol was subsequently
+diagnosed and fixed as described below.
 
 The 600-second SDK check expired without a ready sandbox. Its retained
 workspace is `/home/sw/sandweave/assets/.build-udqcvfli`; guest name
@@ -154,6 +215,77 @@ acceptance. `nested-opensaber-check.py` records both eyes and collects Monado
 application-submission metrics if the actual SDK game launch succeeds.
 
 The experimental branch is **not ready for a public runtime/SDK release**.
+
+## Continuation: explicit syscall completion (2026-10-25)
+
+The user extended the investigation by two hours, starting at approximately
+00:01 UTC. A separate diagnostic engine attached to the blocked syscall worker
+and captured its registers. The parent was waiting for request 1244's reply;
+the worker had returned the requested mmap address and was waiting for request
+1245. Its completed reply had no persistent completion marker, and the parent
+had missed the wake.
+
+Engine commit `cc41508b33c307dc869ff0e2afc0e62551f291d4` publishes a reply sequence
+after the syscall return value and waits for that sequence, tolerating an early,
+interrupted or unrelated futex wake. Both amd64 and arm64 assembly implement the
+protocol; arm64 uses release/acquire ordering. Host futex errors propagate to
+the caller. No timeout or polling workaround is in the production engine.
+
+Validation so far:
+
+- Native pgalloc and systrap targets passed, including a new regression that
+  forces the actual stub to publish 1,000 replies before the parent waits.
+- The read-only mount-hint regression passed. Arm64 assembly also assembled
+  successfully; it has not been executed on an arm64 host.
+- The original nested Perl workload now completes 2,000 interpreter launches
+  with exit zero in 20.7935 seconds on the L40S. Receipt:
+  `/home/sw/probe-perl-fixed1/result.json`; stdout has exactly 2,000 lines.
+- The full coding-image package installation on the L40S now finishes in
+  71 seconds, including the formerly stuck systemd/adduser step.
+
+Candidate `2026.10.25.94` was rebuilt through the standard release builder,
+with engine patch SHA-256
+`8b76eac7166dd5a1fea93a0d1d862bbfb502f2fcd36eccd1e22ebcea6cf4a551`.
+Its archive SHA-256 is
+`ee20ca5f678429db81e097089e1912c6bfe4edef8cc8421dc44381e53cd5a78c`
+(64,618,891 bytes). It is served on the L40S at localhost:8780 to an isolated
+SDK environment `/home/sw/venv6`, using `/home/sw/sandweave6` as its home.
+Full SDK worker and VR acceptance are still in progress.
+
+The full SDK now boots successfully on the L40S. A separate launcher bug was
+`StopIteration` while reading `Umask:` from `/proc/self/status`; Modal omits that
+field. The private worker now samples its mask before starting threads and
+tracks Python mask changes under a lock. Launches inherit that state without
+temporarily changing the mask or reading the missing proc field. All 14 native
+launcher contract tests pass, including concurrent file creation and launches
+with a status file lacking `Umask`.
+
+The tested SDK code is an isolated copy at `/home/sw/sdk7/sandweave`, using
+`/home/sw/venv6/bin/python` for dependencies and `/home/sw/sandweave7` as its home
+(`SANDWEAVE_LOCAL_DIR=/tmp/sandweave-local7`). Existing workers retain their
+original code. `/home/sw/sdk-coding7b.log` records a ready sandbox in 1.3117 s,
+successful uname/id/Python commands, and clean closure in 1.9566 s. The earlier
+check script mistakenly used `exit_code` rather than `CommandResult.returncode`;
+that test-script error was corrected.
+
+The full Open Saber run is now active with candidate .94:
+`/home/sw/nested-opensaber8`, log `/home/sw/opensaber8.log`, code
+`/home/sw/payload7/nested-opensaber-check.py`. It requests 120 seconds of input
+and stereo capture, using the original CPU-prepared VR assets while the normal
+SDK importer upgrades their engine. Rendering/FPS are not yet verified.
+The active local tool shell is `59f88e`. Investigation extension ends around
+02:01 UTC on October 25.
+
+The lab launcher now uses an accessible working directory and removes Modal's
+inherited `/root` Python module path when switching to `sw`. A separate test
+environment initially lacked SDK dependencies because it was installed with
+`--no-deps`; that installation is being corrected with the normal SDK extras.
+
+`notes/nested-syscall-stall-trace.patch` is the diagnostic-only patch against
+engine commit `300909a`; it is not part of candidate .94. The original diagnostic
+run remains preserved at `/home/sw/probe-perl-stall1`. Native build/test logs
+are `/home/sw/futex-fix-build.log`; standard build receipt is
+`/home/sw/build-result6.json` on the CPU worker.
 
 ## Saved handoff
 

@@ -27,7 +27,7 @@ def distribution(values):
             'p99': values[int(.99 * (len(values)-1))], 'max': values[-1]}
 
 
-def summarize(path, tail_seconds=30):
+def summarize(path, tail_seconds=30, *, start_ns=None, end_ns=None):
     data = Path(path).read_bytes()
     groups = defaultdict(list)
     offset = 0
@@ -49,11 +49,13 @@ def summarize(path, tail_seconds=30):
     if not groups['version'] or groups['version'][0].major != 1:
         raise ValueError('unsupported or missing Monado metrics version')
     frames = [r for r in groups['session_frame'] if r.when_delivered_ns and not r.discarded]
+    if end_ns is not None:
+        frames = [r for r in frames if r.when_delivered_ns <= end_ns]
     if len(frames) < 2:
         raise ValueError('fewer than two rendered application frames')
     end = max(r.when_delivered_ns for r in frames)
     session = max(frames, key=lambda r:r.when_delivered_ns).session_id
-    start = end - tail_seconds * 1e9
+    start = start_ns if start_ns is not None else end - tail_seconds * 1e9
     frames = sorted((r for r in frames if r.session_id == session and r.when_delivered_ns >= start),
                     key=lambda r:r.when_delivered_ns)
     if len(frames) < 2:

@@ -1,0 +1,44 @@
+--- a/src/sandweave/sandbox/worker.py
++++ b/src/sandweave/sandbox/worker.py
+@@ -330,3 +330,16 @@
+                 return self.describe(identity)
+             except BaseException as error:
++                logging.getLogger(__name__).exception('NESTED_CREATION_FAILURE')
++                if record.get('agent'):
++                    try:
++                        from ..templates.controls import Context
++                        diagnostic = Context(self, identity).run(
++                            command='journalctl --boot --quiet --no-pager --output=cat -n 100 '
++                                    '_SYSTEMD_UNIT=sandweave-agent.service; '
++                                    'journalctl --boot --quiet --no-pager --output=cat -n 80 _COMM=gnome-shell',
++                            timeout=10, check=False)
++                        (self.records / (identity + '.diagnostic.txt')).write_bytes(
++                            diagnostic['stdout'] + diagnostic['stderr'])
++                    except Exception:
++                        logging.getLogger(__name__).exception('NESTED_DIAGNOSTIC_FAILURE')
+                 self.deadlines.pop(identity, None)
+@@ -930,5 +930,6 @@
+                 result = {'result': worker.dispatch(request['op'], request.get('params', {}))}
+             except Exception as error:
++                logging.getLogger(__name__).exception('NESTED_RPC_FAILURE')
+                 result = {'error': {'kind': type(error).__name__, 'message': str(error),
+                                     **{key: getattr(error, key, None) for key in
+                                        ('operation_id', 'sandbox_id', 'phase')}}}
+--- a/src/sandweave/sandbox/guest_agent.py
++++ b/src/sandweave/sandbox/guest_agent.py
+@@ -632,6 +632,8 @@
+                     raise ValueError('incomplete request')
+                 request = decode(data)
+                 result = {'result': agent.call(request['op'], request.get('params', {}))}
+             except Exception as error:
++                import traceback
++                traceback.print_exc()
+                 result = {'error': {'kind': type(error).__name__, 'message': str(error)}}
+             payload = encode(result)
+--- a/src/sandweave/sandbox/runtimes/gvisor/driver.py
++++ b/src/sandweave/sandbox/runtimes/gvisor/driver.py
+@@ -163,2 +163,4 @@
+                                 str(memory_bytes(resources['gpu']['client_memory'])//1024**2)]
++        options += ['--strace-syscalls',
++                    'pipe,pipe2,fcntl,dup,dup2,dup3,close,clone,clone3,fork,vfork,exit,exit_group']
+         return options

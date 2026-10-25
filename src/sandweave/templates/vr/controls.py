@@ -58,6 +58,16 @@ class VR:
     def action(self, action):
         return self.sandbox._call('control', name='vr', method='action', parameters={'action': action})
 
+    @dualmethod
+    def haptics(self, *, after=None):
+        """Vibration commands the game sent to the virtual controllers since the previous call.
+
+        Each event has device, guest_ns (guest monotonic receipt time), amplitude (0..1),
+        frequency_hz (0: unspecified), duration_ns (-1: the runtime's minimum pulse) and stop
+        (amplitude 0, recorded only when it ends a vibration). `after` re-reads from a record index.
+        """
+        return self.sandbox._call('control', name='vr', method='haptics', parameters={'after': after})
+
     def record(self, directory, *, fps=30):
         return Recording(self, directory, fps=fps)
 
@@ -139,6 +149,7 @@ class AttachedVR:
         import zstandard
         self.compressor = zstandard.ZstdCompressor(level=1)
         self.context = context
+        self.haptics_cursor, self.haptics_lock = 0, threading.Lock()
         options = {k: config[k] for k in ('width', 'height', 'fps', 'hz', 'mirror', 'slots') if k in config}
         if hasattr(context.runtime, 'vr_stream'):
             # A remote runtime owns Monado and the frame ring inside its sandbox.
@@ -178,6 +189,15 @@ class AttachedVR:
     def call(self, method, parameters):
         if method == 'action':
             return self.stream.input(parameters['action'])
+        if method == 'haptics':
+            if not hasattr(self.stream, 'haptics'):
+                raise UnsupportedFeature('VR haptics are recorded by runtime="modal"')
+            after = parameters.get('after')
+            with self.haptics_lock:
+                value = self.stream.haptics(self.haptics_cursor if after is None else after)
+                if after is None:
+                    self.haptics_cursor = value['next']
+            return value
         ack = None
         timeout = parameters.get('timeout', 5)
         if not 0 < timeout <= 120:

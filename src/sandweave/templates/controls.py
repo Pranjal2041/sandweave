@@ -17,7 +17,8 @@ from ..sandbox.errors import OperationUnknown, UnsupportedFeature, SetupError
 BUILTINS = {'desktop': 'sandweave.templates.gnome.controls:DesktopProvider',
             'xorg': 'sandweave.templates.osworld.controls:XorgProvider',
             'vr': 'sandweave.templates.vr.controls:VRProvider',
-            'gamepad': 'sandweave.templates.gamepad.controls:GamepadProvider'}
+            'gamepad': 'sandweave.templates.gamepad.controls:GamepadProvider',
+            'audio': 'sandweave.templates.audio.controls:AudioProvider'}
 
 
 def provider(name):

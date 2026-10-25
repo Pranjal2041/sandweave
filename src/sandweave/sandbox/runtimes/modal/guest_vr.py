@@ -4,6 +4,8 @@ Under gVisor the worker owns the frame ring and donates it to the guest. A Modal
 sandbox is remote, so guest_io.py owns the same ring v2 memory here (layout
 defined by scripts/vr_stream.py FrameRing and Monado's lab patch), and starts
 Monado and the stdio input bridge (vr_stream_guest.py) exactly as VRStream does.
+Monado's remote controllers append each vibration command they receive to
+HAPTICS (r_lab_haptic_record in the lab patch); haptics() returns new records.
 """
 import ctypes
 import fcntl
@@ -11,6 +13,7 @@ import json
 import mmap
 import os
 from pathlib import Path
+import pwd
 import select
 import signal
 import struct
@@ -23,6 +26,27 @@ HEADER_BYTES = 256
 SLOT_HEADER = struct.Struct('<8Q')
 CONFIG = struct.Struct('<8s6I')
 LOGS = Path('/run/sandweave/logs')
+HAPTICS = Path('/run/sandweave/vr-haptics.bin')
+# magic, controller, monotonic_ns, duration_ns, frequency, amplitude, output_name, reserved
+HAPTIC = struct.Struct('<4sIQqffII')
+# Per read, within the wire format's 4 MiB metadata limit; 'complete' is false when more remain.
+MAX_HAPTIC_EVENTS = 8192
+
+
+def read_haptics(path, after):
+    """Records from index `after`; a partially visible trailing record waits for the next read."""
+    with open(path, 'rb') as source:
+        source.seek(after * HAPTIC.size)
+        data = source.read(MAX_HAPTIC_EVENTS * HAPTIC.size)
+    events = []
+    for offset in range(0, len(data) - len(data) % HAPTIC.size, HAPTIC.size):
+        magic, controller, guest_ns, duration_ns, frequency, amplitude, _, _ = HAPTIC.unpack_from(data, offset)
+        if magic != b'HAP1' or controller not in (0, 1):
+            raise ValueError(f'corrupt haptics record {after + len(events)}')
+        # Monado records zero amplitude only when it ends a vibration (see the lab patch).
+        events.append({'device': ('left', 'right')[controller], 'guest_ns': guest_ns, 'amplitude': amplitude,
+                       'frequency_hz': frequency, 'duration_ns': duration_ns, 'stop': amplitude == 0})
+    return events
 
 
 class Ring:
@@ -76,9 +100,14 @@ class Stream:
         self.buffer = bytearray()
         LOGS.mkdir(parents=True, exist_ok=True)
         Path('/run/user/1000/monado_comp_ipc').unlink(missing_ok=True)
+        account = pwd.getpwnam(options.user)
+        descriptor = os.open(HAPTICS, os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_CLOEXEC, 0o600)
+        os.fchown(descriptor, account.pw_uid, account.pw_gid)
+        os.close(descriptor)
         self.monado = subprocess.Popen(
             ['runuser', '-u', options.user, '--', '/usr/local/bin/engine-gpu', 'sh', '/opt/vr/vr-monado-guest.sh',
-             'monado'], env={**os.environ, 'XRT_LAB_STREAM_FD': str(self.ring.fd), 'VR_HZ': str(options.hz)},
+             'monado'], env={**os.environ, 'XRT_LAB_STREAM_FD': str(self.ring.fd), 'VR_HZ': str(options.hz),
+                             'XRT_LAB_HAPTICS_FILE': str(HAPTICS)},
             pass_fds=(self.ring.fd,), stdin=subprocess.DEVNULL, stdout=(LOGS / 'monado.log').open('ab'),
             stderr=subprocess.STDOUT, start_new_session=True)
         self.bridge = subprocess.Popen(['runuser', '-u', options.user, '--', 'python3', '-u', '/opt/vr/vr_stream_guest.py'],
@@ -104,6 +133,15 @@ class Stream:
         line, _, rest = self.buffer.partition(b'\n')
         self.buffer = bytearray(rest)
         return json.loads(line)
+
+    def haptics(self, after):
+        if type(after) is not int or after < 0:
+            raise ValueError('haptics cursor must be a non-negative record index')
+        guest_ns = time.monotonic_ns()
+        events = read_haptics(HAPTICS, after)
+        # Monado appends each record on receipt; every record written before guest_ns is included.
+        return {'events': events, 'first': after, 'next': after + len(events), 'guest_ns': guest_ns,
+                'complete': len(events) < MAX_HAPTIC_EVENTS}
 
     def request(self, message):
         payload = json.dumps(message, separators=(',', ':'), allow_nan=False).encode() + b'\n'

@@ -3,7 +3,8 @@
 Modal's gVisor cannot run systemd services (see notes/modal-runtime.md), so this
 process replaces the template init for the parts the VR controls use: the NVIDIA
 driver paths expected by engine-gpu, the guest user's runtime directory and session
-bus, and an X server on DISPLAY :1. It records readiness in /run/sandweave/boot.json
+bus, an X server on DISPLAY :1, and a PulseAudio server whose only (default) output
+is the null sink guest_audio.py captures. It records readiness in /run/sandweave/boot.json
 and exits when the X server exits. The guest agent is started separately.
 Standard library only: this file runs from the template image's Python.
 """
@@ -94,7 +95,23 @@ def main():
             time.sleep(.1)
         if bus.poll() is not None:
             raise RuntimeError('session bus exited during startup')
-        record(ready=True, display=display, gpu=gpu, driver_links=linked)
+        audio = subprocess.Popen(['pulseaudio', '--daemonize=no', '--exit-idle-time=-1', '--disallow-exit',
+                                  '--disallow-module-loading', '-n', '--log-target=stderr',
+                                  '--load=module-native-protocol-unix',
+                                  '--load=module-null-sink sink_name=sandweave rate=48000 channels=2 '
+                                  'sink_properties=device.description=Sandweave'],
+                                 env=environment, stdin=subprocess.DEVNULL, stdout=(logs / 'pulseaudio.log').open('ab'),
+                                 stderr=subprocess.STDOUT, start_new_session=True, **account)
+        deadline = time.monotonic() + 30
+        while (sink := subprocess.run(['pactl', 'get-default-sink'], env=environment, capture_output=True,
+                                      text=True, **account)).stdout.strip() != 'sandweave':
+            if audio.poll() is not None:
+                raise RuntimeError('PulseAudio exited during startup: ' + (logs / 'pulseaudio.log').read_text()[-2000:])
+            if time.monotonic() > deadline:
+                raise TimeoutError('PulseAudio did not provide its sink: ' + sink.stderr[-500:])
+            time.sleep(.1)
+        record(ready=True, display=display, gpu=gpu, driver_links=linked, audio_sink='sandweave',
+               region=os.environ.get('MODAL_REGION'), cloud=os.environ.get('MODAL_CLOUD_PROVIDER'))
     except Exception as error:
         record(ready=False, error=f'{type(error).__name__}: {error}')
         raise

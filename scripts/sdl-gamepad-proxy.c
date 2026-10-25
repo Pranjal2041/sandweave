@@ -2,6 +2,8 @@
  * Build with build-sdl-gamepad-proxy.py; opt in with SDL_DYNAMIC_API.
  * The player's own SDL implements every function except this joystick API.
  * No evdev/uinput device, game assembly patch, or host privilege is required.
+ * Rumble the game requests (SDL_JoystickRumble/RumbleTriggers) is appended as
+ * fixed records to LAB_GAMEPAD_HAPTICS for the gamepad writer to report.
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -13,6 +15,10 @@
 #include <time.h>
 #include <unistd.h>
 
+/* Slot numbers must match a Linux SDL build, which includes its __LINUX__-only procedures. */
+#if defined(__linux__) && !defined(__LINUX__)
+#define __LINUX__ 1
+#endif
 enum {
 #define SDL_DYNAPI_PROC(rc, fn, params, args, ret) SLOT_##fn,
 #include "SDL_dynapi_procs.h"
@@ -128,6 +134,28 @@ static uint16_t version(void *p) { return p == &handle ? 0x0114 : 0; }
 static int type_index(int i) { return i == 0 ? 1 : 0; }
 static int type_handle(void *p) { return p == &handle ? 1 : 0; }
 
+typedef struct __attribute__((packed)) {
+    char magic[4];          /* "RUM1" */
+    uint32_t output;        /* 0 motors (low, high frequency), 1 triggers (left, right) */
+    uint64_t monotonic_ns;  /* CLOCK_MONOTONIC when the game requested it */
+    uint16_t first, second; /* strengths 0..0xFFFF; both zero stops */
+    uint32_t duration_ms;
+} Rumble;
+_Static_assert(sizeof(Rumble) == 24, "gamepad haptics record ABI");
+static int rumble_fd = -1;
+static int record_rumble(uint32_t output, void *p, uint16_t first, uint16_t second, uint32_t duration_ms) {
+    if (p != &handle || rumble_fd < 0) return -1;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    Rumble record = {{'R', 'U', 'M', '1'}, output, (uint64_t)now.tv_sec * 1000000000 + now.tv_nsec,
+                     first, second, duration_ms};
+    /* One write on an O_APPEND file: records from concurrent callers never interleave. */
+    return write(rumble_fd, &record, sizeof(record)) == (ssize_t)sizeof(record) ? 0 : -1;
+}
+static int rumble(void *p, uint16_t low, uint16_t high, uint32_t ms) { return record_rumble(0, p, low, high, ms); }
+static int rumble_triggers(void *p, uint16_t left, uint16_t right, uint32_t ms) { return record_rumble(1, p, left, right, ms); }
+static int has_rumble(void *p) { return p == &handle && rumble_fd >= 0; }
+
 int32_t SDL_DYNAPI_entry(uint32_t version_number, void *table, uint32_t size) {
     /* dlopen(NULL) finds the original entry exported by Unity, not this
        RTLD_LOCAL plugin. Calling it initializes the original SDL jump table. */
@@ -144,6 +172,9 @@ int32_t SDL_DYNAPI_entry(uint32_t version_number, void *table, uint32_t size) {
     real_poll = slots[SLOT_SDL_PollEvent];
     real_push = slots[SLOT_SDL_PushEvent];
     real_was_init = slots[SLOT_SDL_WasInit];
+    const char *haptics = getenv("LAB_GAMEPAD_HAPTICS");
+    rumble_fd = open(haptics ? haptics : "/tmp/lab-gamepad-haptics.bin", O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0600);
+    if (rumble_fd < 0) perror("lab-gamepad: haptics record unavailable");
 #define HOOK(fn, replacement) do { if ((SLOT_##fn + 1) * sizeof(void *) <= size) slots[SLOT_##fn] = (void *)(replacement); } while (0)
     HOOK(SDL_PumpEvents, pump);
     HOOK(SDL_PollEvent, poll_event);
@@ -179,6 +210,10 @@ int32_t SDL_DYNAPI_entry(uint32_t version_number, void *table, uint32_t size) {
     HOOK(SDL_JoystickGetAxisInitialState, initial);
     HOOK(SDL_JoystickGetDeviceType, type_index);
     HOOK(SDL_JoystickGetType, type_handle);
+    HOOK(SDL_JoystickRumble, rumble);
+    HOOK(SDL_JoystickRumbleTriggers, rumble_triggers);
+    HOOK(SDL_JoystickHasRumble, has_rumble);
+    HOOK(SDL_JoystickHasRumbleTriggers, has_rumble);
 #undef HOOK
     fprintf(stderr, "lab-gamepad: SDL ABI %u, %u slots, virtual joystick enabled\n", version_number, (unsigned)(size / sizeof(void *)));
     return 0;

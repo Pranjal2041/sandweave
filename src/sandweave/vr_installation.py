@@ -77,7 +77,8 @@ def prepare_inputs(builder, root, profile):
     extract_source(source, payload / 'gunspinning-primus-source')
     for name in ('primus-vk-visible-rows.patch', 'sdl-gamepad-proxy.c', 'gamepad-input.py'):
         shutil.copy2(build_input(name), payload / name)
-    header = download('https://raw.githubusercontent.com/libsdl-org/SDL/release-2.0.8/src/dynapi/SDL_dynapi_procs.h',
-                      builder.downloads, 'SDL_dynapi_procs.h',
-                      sha256='dbcaad4598fd1977999c157eed098f9b916e5ebf07576e9d57e0d9723228d104')
-    shutil.copy2(header, payload / header.name)
+    # 2.30.9 adds rumble's slots; its Linux slot list keeps 2.0.8's as an exact prefix.
+    header = download('https://raw.githubusercontent.com/libsdl-org/SDL/release-2.30.9/src/dynapi/SDL_dynapi_procs.h',
+                      builder.downloads, 'SDL-2.30.9-dynapi_procs.h',
+                      sha256='b62e701d15d3f26760ce27015a2a8aaa3cf38424b9235b4a23b742063710893c')
+    shutil.copy2(header, payload / 'SDL_dynapi_procs.h')

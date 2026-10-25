@@ -17,7 +17,7 @@ from ...errors import UnsupportedFeature
 # Docker Hub index digest of ubuntu:22.04, the base Sandweave's installation expects.
 UBUNTU = 'ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956'
 GUEST = {'guest_boot.py': '/opt/sandweave/guest_boot.py', 'guest_vr.py': '/opt/sandweave/guest_vr.py',
-         'guest_io.py': '/opt/sandweave/guest_io.py'}
+         'guest_io.py': '/opt/sandweave/guest_io.py', 'guest_audio.py': '/opt/sandweave/guest_audio.py'}
 ENGINE_GUEST = {'gvisor-guest-gpu.sh': '/usr/local/bin/engine-gpu', 'gvisor-guest-gpu-gl.sh': '/usr/local/bin/engine-gpu-gl'}
 
 
@@ -64,7 +64,8 @@ def definition(recipe, root):
                  'mkdir -p /opt/engine-gpu && cp -a /sandweave-output/gpu/. /opt/engine-gpu/',
                  'mkdir -p /opt/engine-fast-io && cp -a /sandweave-output/fast-io/. /opt/engine-fast-io/',
                  'rm -rf /sandweave-input /sandweave-output /sandweave-build /usr/local/bin/engine-build-artifacts')
-             .apt_install('xauth', 'x11-utils', 'dbus')
+             # guest_boot.py's X authority, readiness probe, session bus and sound server.
+             .apt_install('xauth', 'x11-utils', 'dbus', 'pulseaudio', 'pulseaudio-utils')
              # Ubuntu 22.04 does not package python-zstandard; the guest stream compresses frames.
              .run_commands('python3 -m pip install --no-cache-dir zstandard==0.23.0 pillow==10.4.0'))
     for source, target in ENGINE_GUEST.items():

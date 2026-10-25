@@ -871,9 +871,10 @@ class Worker:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
         # VR observation and input are concurrent by design (lock-free ring reads, an input mutex);
-        # serializing them behind each other halves both rates. control() still requires a ready sandbox.
-        concurrent = (operation == 'control' and parameters.get('name') == 'vr'
-                      and parameters.get('method') in ('observe', 'action', 'step'))
+        # serializing them behind each other halves both rates. Haptics and audio reads hold their
+        # own cursor locks. control() still requires a ready sandbox.
+        concurrent = operation == 'control' and (parameters.get('name'), parameters.get('method')) in (
+            ('vr', 'observe'), ('vr', 'action'), ('vr', 'step'), ('vr', 'haptics'), ('audio', 'observe'))
         if identity and not concurrent and operation not in ('describe', 'process_wait', 'runtime_profile',
                                                              'runtime_audit', 'delete', 'delete_status'):
             with self.lock(identity):

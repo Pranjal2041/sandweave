@@ -3,6 +3,7 @@
 The writer runs persistently in the guest (gamepad-input.py --serve): buttons and
 axes stay set until changed, renewed under a short lease, so a lost controller
 leaves the pad neutral within one second. Timed presses set and release state.
+The same writer reports the rumble the game requests through the SDL proxy.
 """
 import json
 import math
@@ -33,6 +34,15 @@ class Gamepad:
                                  parameters={'buttons_down': list(buttons_down), 'buttons_up': list(buttons_up),
                                              'axes': axes or {}})
 
+    @dualmethod
+    def haptics(self, *, after=None):
+        """Rumble the game requested since the previous call (SDL_JoystickRumble/RumbleTriggers).
+
+        Each event has output ('motors' or 'triggers'), guest_ns, the two strengths in 0..1
+        and duration_ms; `after` re-reads from a record index instead.
+        """
+        return self.sandbox._call('control', name='gamepad', method='haptics', parameters={'after': after})
+
 
 class AttachedGamepad:
     def __init__(self, context, config):
@@ -41,6 +51,7 @@ class AttachedGamepad:
         context.file(op='write', path=self.script, data=(context.runtime.root / 'scripts/gamepad-input.py').read_bytes(),
                      truncate=True, mode=0o755)
         self.process_id, self.lock, self.buffer, self.offset = uuid.uuid4().hex, threading.Lock(), b'', 0
+        self.haptics_cursor = 0
         context.worker.command_start(context.id, self.process_id, argv=['python3', '-u', self.script, '--serve'],
                                      user='ga')
         if not self._reply(10).get('ready'):
@@ -76,6 +87,15 @@ class AttachedGamepad:
                     'acknowledgement': 'leased state written; no SDL consumption or game-tick guarantee'}
 
     def call(self, method, parameters):
+        if method == 'haptics':
+            after = parameters.get('after')
+            with self.lock:
+                self.context.worker.process_stdin(self.context.id, self.process_id, data=(json.dumps(
+                    {'haptics_after': self.haptics_cursor if after is None else after}) + '\n').encode())
+                value = self._reply()
+                if after is None:
+                    self.haptics_cursor = value['next']
+            return value
         if method == 'state':
             return self._update({key: parameters.get(key, default) for key, default in
                                  (('buttons_down', []), ('buttons_up', []), ('axes', {}))})
@@ -97,3 +117,21 @@ class AttachedGamepad:
         except Exception:
             pass
         return False
+
+
+class GamepadProvider:
+    api_version = 1
+
+    @staticmethod
+    def descriptor(config):
+        return {'version': 2, 'schema': 'sdl.leased-gamepad.v2', 'state': ['filesystem', 'memory'],
+                'persistent_state': 'buttons and axes hold until changed; neutral when detached or the writer stops',
+                'acknowledgement': 'leased state file; game consumption requires application evidence'}
+
+    @staticmethod
+    def bind(sandbox, config):
+        return Gamepad(sandbox, config)
+
+    @staticmethod
+    def attach(context, config, cold=False):
+        return AttachedGamepad(context, config)

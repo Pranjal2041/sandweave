@@ -24,22 +24,14 @@ class RemoteVRStream:
         self.codec, self.quality = codec, quality
         self.connection = self.input_connection = None
         self.sequence, self.input_mutex = 0, threading.Lock()
-        self.broken = self.closed = False
+        self.broken = self.closed = self.suspended = False
         self.clock_rtt_ns = self.guest_to_host_ns = None
 
     def _call(self, op, **parameters):
         return self.connection.call(op, **parameters)
 
     def __enter__(self):
-        deadline = time.monotonic() + self.context.remaining(60)
-        while True:
-            try:
-                self.connection = self.runtime.io_connection(self.context.id, timeout=30)
-                break
-            except (OSError, ConnectionError):
-                if time.monotonic() >= deadline:
-                    raise TimeoutError('guest I/O relay did not become reachable')
-                time.sleep(.5)
+        self.connection = self.runtime.io_connection(self.context.id, timeout=30, wait=self.context.remaining(60))
         # Input has its own connection, so it never waits behind a frame transfer.
         self.input_connection = self.runtime.io_connection(self.context.id, timeout=30)
         self._call('vr_start', **self.options)
@@ -76,6 +68,10 @@ class RemoteVRStream:
                 raise ConnectionError('input acknowledgement ID mismatch')
             return {**reply, 'host_sent_ns': sent, 'host_ack_ns': received, 'round_trip_ns': received - sent}
 
+    def haptics(self, after=0):
+        """Vibration commands Monado received for the virtual controllers, from record index `after`."""
+        return self._call('vr_haptics', after=after)
+
     def latest_encoded(self, after=0, timeout=5):
         """Frame metadata and its guest-encoded bytes, for forwarding without re-encoding."""
         value = self._call('vr_latest', after=after, timeout=timeout, format=self.codec, quality=self.quality)
@@ -96,10 +92,13 @@ class RemoteVRStream:
         return Frame(rgba=rgba, **value)
 
     def suspend_attachment(self):
-        pass
+        self.suspended = True
 
     def resume_attachment(self):
-        self._synchronize(5)
+        # The worker reattaches before every control call; resynchronize only after a suspension.
+        if self.suspended and not self.closed:
+            self._synchronize(5)
+            self.suspended = False
 
     def abort_attachment(self):
         self.close()

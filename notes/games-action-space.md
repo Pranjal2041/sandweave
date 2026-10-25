@@ -36,8 +36,21 @@ while `runtime="modal"` does not yet.
 ## Observations
 
 `observe` requests any of `frame`, `stereo`, `audio`, `haptics`, `state`.
-Each returned observation will carry game time and the ID of the last applied
-action, so an agent knows which inputs it reflects.
+Each returned observation is `{value, game_time_ns, step_id, last_action_index}`.
+Game time is the guest's `CLOCK_MONOTONIC`, shared by every source:
+
+| Observation | Source | `game_time_ns` |
+| --- | --- | --- |
+| `frame` / `stereo` | fast I/O frame / Monado paired-eye ring; after XR actions, the first frame captured after the last input acknowledgement | capture time |
+| `audio` | `sandbox.audio`: PulseAudio null-sink monitor, s16le 48 kHz stereo, every frame since the previous read (`dropped_frames` if a reader falls more than 60 s behind) | receipt of the last returned frame |
+| `haptics` | `sandbox.vr.haptics()`: vibration commands Monado's virtual controllers receive; `sandbox.gamepad.haptics()`: `SDL_JoystickRumble`/`RumbleTriggers` through the SDL proxy | time the records were read |
+| `state` | not implemented: needs a per-game export | — |
+
+Audio and VR haptics are provided by `runtime="modal"` (its guest boot runs the
+sound server; its Monado records haptics). Elsewhere they raise
+`UnsupportedFeature`. Zero-amplitude VR commands are recorded only when they end a
+vibration: Open Saber refreshes its command every frame, about 90% of them at
+amplitude 0. A read returns at most 8,192 events (`complete: false` when more remain).
 
 ## Portfolio
 
@@ -52,17 +65,31 @@ action, so an agent knows which inputs it reflects.
 
 `sandweave.steps.run(sandbox, step)` applies a step on the sandbox's controls:
 desktop actions become fast I/O batches (split only where a hold elapses), XR
-actions merge into one VR state update, and gamepad presses use the leased
-writer. Rejected with `UnsupportedFeature` rather than approximated: persistent
-gamepad state (the writer releases after each hold), `wait` in ticks and holds
-in slowed time (no runtime speed control yet), and `audio`, `haptics` and
-`state` observations. Tests: `tests/test_steps.py`.
+actions merge into one VR state update, and gamepad actions set the persistent
+leased writer's state (a timed press sets, then releases). Rejected with
+`UnsupportedFeature` rather than approximated: `wait` in ticks and holds in
+slowed time (no runtime speed control yet), gamepad trigger axes (`lt`/`rt`,
+calibration unresolved), pads other than 0, and the `state` observation.
+Tests: `tests/test_steps.py`, `tests/test_game_observations.py`.
 
-On `runtime="modal"`, frames and input travel through the guest relay; see
-[modal-runtime.md](modal-runtime.md) for its measured rates.
+On `runtime="modal"`, frames, input, audio and haptics travel through the guest
+relay; see [modal-runtime.md](modal-runtime.md) for measured rates and placement.
+
+## Gamepad
+
+`scripts/gamepad-input.py --serve` holds buttons and axes until changed under a
+1 s lease renewed every 0.25 s; end of input leaves the pad neutral. The SDL proxy
+(`scripts/sdl-gamepad-proxy.c`, dynapi header pinned at SDL 2.30.9, whose Linux
+slot list keeps 2.0.8's as an exact prefix) advertises rumble and records each
+request. `scripts/sdl-gamepad-proxy-check.py` drives both against a real SDL2
+library: on the Modal worker (Ubuntu `libsdl2-2.0-0` 2.30.0) a button and axis
+held 2.88 s past the lease, a release kept the axis, end of input returned the
+pad to neutral, and all three rumble requests (motors, triggers, stop) came back
+through the writer. This is a real SDL program, not a game: the only gamepad
+template (GunSpinning) runs on gVisor and has not been run with this writer.
 
 ## Not implemented
 
 - Runtime speed control (pause, slow, tick stepping) on Modal.
-- Game time and last action ID on each observation.
+- The `state` observation (per-game export).
 - cua-auto-harness probes and checks for gamepad and XR actions.

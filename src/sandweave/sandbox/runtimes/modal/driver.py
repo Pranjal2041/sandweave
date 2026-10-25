@@ -68,8 +68,12 @@ class Runtime:
             gpu = model
         memory = resources['memory']
         total = memory_bytes(memory['guest']) + memory_bytes(memory['runtime'])
+        # Frames and input cross the network once per round trip, so placement bounds their rates;
+        # Modal charges a multiplier for a pinned region (see notes/modal-runtime.md).
+        region, cloud = os.environ.get('SANDWEAVE_MODAL_REGION'), os.environ.get('SANDWEAVE_MODAL_CLOUD')
         return {'cpu': float(resources['cpu']['vcpus']), 'memory': (total + 1024**2 - 1) // 1024**2,
-                'gpu': gpu, 'block_network': resources['network']['mode'] == 'offline'}
+                'gpu': gpu, 'block_network': resources['network']['mode'] == 'offline',
+                **({'region': region.split(',')} if region else {}), **({'cloud': cloud} if cloud else {})}
 
     def create(self, identity, spec, *, snapshot=None, token=None):
         import modal
@@ -89,12 +93,14 @@ class Runtime:
         atomic_json(self._record_path(identity), {'sandbox_id': sandbox.object_id, 'app': app_name(),
                                                   'created_at': time.time()})
         try:
-            self._wait_boot(sandbox, deadline)
+            boot = self._wait_boot(sandbox, deadline)
             self._start_agent(sandbox, token)
             tunnels = sandbox.tunnels(timeout=max(1, int(deadline - time.monotonic())))
             agent, relay = tunnels[AGENT_PORT], tunnels[IO_PORT]
             metadata = {'sandbox_id': sandbox.object_id, 'host': agent.host, 'port': agent.port, 'token': token,
-                        'io': {'host': relay.host, 'port': relay.port}}
+                        'io': {'host': relay.host, 'port': relay.port},
+                        'placement': {'region': boot.get('region'), 'cloud': boot.get('cloud'),
+                                      'worker_region': os.environ.get('MODAL_REGION')}}
             client = Connection(agent.host, agent.port, token, tls=True, timeout=10)
             while True:
                 try:
@@ -155,18 +161,38 @@ class Runtime:
                                                     tls=True, timeout=30)
         return self.connections[identity]
 
-    def io_connection(self, identity, *, timeout=30):
-        """A persistent stream to guest_io.py for frames and input."""
+    def io_connection(self, identity, *, timeout=30, wait=0):
+        """A persistent stream to guest_io.py for frames, input, haptics and audio.
+
+        The relay starts with the agent; `wait` seconds allow for it to begin listening.
+        """
         from .io_client import IOConnection
         metadata = self.metadata.get(identity)
         if metadata is None:
             from ...wire import decode
             metadata = decode((self.root / 'sandboxes' / (identity + '.bin')).read_bytes())['agent']
-        return IOConnection(metadata['io']['host'], metadata['io']['port'], metadata['token'], timeout=timeout)
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                return IOConnection(metadata['io']['host'], metadata['io']['port'], metadata['token'], timeout=timeout)
+            except (OSError, ConnectionError):
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(.5)
 
     def vr_stream(self, context, **options):
         from .vr import RemoteVRStream
         return RemoteVRStream(self, context, **options)
+
+    def audio_stream(self, context, *, user='ga'):
+        """Start the guest's audio capture; returns the connection that reads it."""
+        connection = self.io_connection(context.id, timeout=30, wait=context.remaining(60))
+        try:
+            connection.call('audio_start', user=user)
+        except BaseException:
+            connection.close()
+            raise
+        return connection
 
     def detach(self, identity):
         connection = self.connections.pop(identity, None)

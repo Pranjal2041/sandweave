@@ -49,9 +49,10 @@ game directly, without GNOME. Desktop-only templates are rejected.
   adaptation), `image.py` (Modal image from `install-sandbox-base.sh` and the
   pinned VR inputs on Ubuntu 22.04), `driver.py` (one Modal sandbox per
   Sandweave sandbox; guest agent over a TLS tunnel), `guest_boot.py`
-  (entrypoint: driver paths, session bus, Xtigervnc on `:1`), `guest_vr.py`
-  (guest-owned ring v2, Monado and input bridge over HTTP) and `vr.py`
-  (worker-side stream used by `AttachedVR`).
+  (entrypoint: driver paths, session bus, Xtigervnc on `:1`, PulseAudio),
+  `guest_io.py` (relay; see below) with `guest_vr.py` (guest-owned ring v2,
+  Monado, input bridge, haptics record) and `guest_audio.py` (audio capture),
+  and `io_client.py`/`vr.py` (worker side, used by `AttachedVR` and `AttachedAudio`).
 - The worker must run on Linux with a Sandweave installation and Modal
   credentials. `scripts/modal-runtime-worker.py` creates such a worker on
   Modal's VM runtime with the `sandweave-modal-credentials` Secret.
@@ -117,6 +118,65 @@ show gameplay in both eyes. Transport frames are JPEG (quality 90), so the
 recording is lossy; `codec="zstd"` keeps them lossless at a higher byte rate.
 Evidence: `runs/modal-runtime-20261025/modal-opensaber-relay3.tar`, SHA-256
 `32ff4b1c59afab7518864ac2c89d4b57cb122c305d527b3d25695397f331fa7c`.
+
+### Audio, haptics, unified steps and placement (2026-10-25)
+
+- **Audio**: `guest_boot.py` starts PulseAudio with one null sink, `sandweave`, the
+  default output. `guest_audio.py` captures its monitor with `parec` (s16le, 48 kHz,
+  stereo, 10 ms latency requested) into a 60 s ring indexed by frame. On Modal, VR
+  templates gain an `audio` capability, attached before the VR game starts.
+- **Haptics**: the Monado lab patch appends each vibration command the remote
+  controllers receive to `XRT_LAB_HAPTICS_FILE` as 40-byte records. Zero amplitude
+  is recorded only when it ends a vibration. The relay serves `vr_haptics`.
+- **Worker**: `RemoteVRStream` used to resynchronize its clock (5 pings) on every
+  control call, because the worker reattaches controls before each call. It now
+  resynchronizes only after a suspension. At a 1 ms round trip this was hidden;
+  at 88 ms it made each call take about 0.5 s.
+
+Placement decides the transport rates. Every frame fetch and every acknowledged
+input costs one worker-to-guest round trip. Measured with
+`scripts/modal-io-latency.py` and the acceptance runs, from a worker in `us-east`
+on OCI:
+
+| Attempt | Sandbox placement | Min RTT | Capture (30 requested) | Input (120 Hz loop) |
+| --- | --- | --- | --- | --- |
+| 4 | unpinned, not recorded | ~88 ms (input RTT) | 0.54 FPS, with the per-call resync | 0.8/s |
+| latency 1 | unpinned: `ap-northeast` (OCI) | 191 ms | — | — |
+| 5 | `region=us-east`: AWS | 19.4 ms | 27.8 FPS | 47/s, RTT median 20.0 ms |
+| 6, 7 | `region=us-east`, `cloud=oci`: OCI `us-east` | 0.42 ms | 29.96 FPS | 118–120/s, RTT median 1.1 ms |
+
+The relay itself answers in 0.09 ms over the guest's loopback, with or without
+audio capture. `SANDWEAVE_MODAL_REGION` (comma-separated) and `SANDWEAVE_MODAL_CLOUD`
+on the worker pin placement. Unpinned is still the default. Modal charges 1.15×
+for a broad region (`us`) and 1.75× for a narrow one (`us-east`); a cloud pin also
+narrows GPU capacity. The boot record and acceptance `ready.json` record the
+sandbox's region and cloud.
+
+Attempt 6 also showed that a fast start can click Play during the splash screen:
+the game stayed in the menu, so there was no music and no haptics. The acceptance
+now clicks Play until the song is heard (above −40 dBFS), and in attempt 7 it
+needed two clicks.
+
+**Attempt 7** (L40S, OCI `us-east`, 120 s, through the public SDK; ready in 19.5 s
+with a cached image):
+
+| Measure | Result |
+| --- | --- |
+| Capture | **29.96 FPS**: 3,596 paired frames, 0 recorder drops; left, right and side-by-side videos each 3,596 frames |
+| Input | **118.4/s**: 14,208 acknowledged; RTT median 1.12 ms, p95 5.08 ms |
+| Application FPS (Monado, 120.0 s window) | **83.9**: interval median 11.13 ms, p99 16.7 ms, one 3.68 s stall (cause not identified); reused frames 8.3% |
+| Audio | 120.03 s in 238 reads, 0 gaps, 0 dropped; every second above −60 dBFS (RMS median −11.5 dBFS); offset from the video −20 ms; muxed AAC track is −10.9 dBFS at 60–70 s |
+| Haptics | 2,704 records (attempt 5, before zero de-duplication: 25,174); 2,458 pulses, 1,225 left and 1,233 right, at amplitudes 0.1, 0.5 and 0.75, 20 Hz, 11–100 ms |
+| 40 unified steps (`xr_pose` ×3, observe stereo, audio, haptics) | every stereo frame captured after its input acknowledgement; audio and haptics continue exactly from read to read; game time strictly increasing; median 46.6 ms per step |
+
+Decoded frames from `left-eye.mp4` and `right-eye.mp4` (30 s) and `gameplay.mp4`
+(90 s) show gameplay in both eyes with the expected disparity: blocks, both sabers,
+score 189. The recorded frames at the first pulses show the yellow saber inside a
+red wall. Exporting the videos took longer than the 60 s audio window, so the read
+before the steps reported 12,631,085 dropped frames, as designed. Evidence:
+`runs/modal-runtime-20261025/modal-opensaber-observations7.tar` (lossless frames
+excluded), SHA-256 `9f82cee6c886ecb04193e535f1fc14055f8485bb3a90cd78a313f20e1af11150`;
+`stereo-with-audio.mp4` SHA-256 `933bd4f0…71487cfc6`.
 
 ## Reference: direct VR stack on Modal
 

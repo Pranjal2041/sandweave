@@ -38,13 +38,19 @@ def test_other_templates_are_rejected(template):
 
 
 def test_resources_map_to_modal_reservations(monkeypatch):
-    monkeypatch.delenv('SANDWEAVE_MODAL_GPU', raising=False)
+    for name in ('SANDWEAVE_MODAL_GPU', 'SANDWEAVE_MODAL_REGION', 'SANDWEAVE_MODAL_CLOUD'):
+        monkeypatch.delenv(name, raising=False)
     options = modal_driver.Runtime.resources(spec_for('vr/opensaber'))
     assert options['gpu'] == 'L40S' and options['cpu'] == 6.0 and not options['block_network']
     assert options['memory'] == (16 + 2) * 1024
     from sandweave import GPU
     options = modal_driver.Runtime.resources(spec_for('vr/opensaber', gpu=GPU(model='A10'), network='offline'))
     assert options['gpu'] == 'A10' and options['block_network']
+    assert 'region' not in options and 'cloud' not in options
+    monkeypatch.setenv('SANDWEAVE_MODAL_REGION', 'us-east')
+    monkeypatch.setenv('SANDWEAVE_MODAL_CLOUD', 'oci')
+    options = modal_driver.Runtime.resources(spec_for('vr/opensaber'))
+    assert options['region'] == ['us-east'] and options['cloud'] == 'oci'
     with pytest.raises(UnsupportedFeature):
         modal_driver.Runtime.resources(spec_for('vr/opensaber', gpu=GPU(model=('A10', 'L4'))))
     spec = spec_for('vr/opensaber')

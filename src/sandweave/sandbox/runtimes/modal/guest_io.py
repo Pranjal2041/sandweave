@@ -1,9 +1,10 @@
 """Guest-side fast I/O relay for Modal sandboxes, run as guest root.
 
 Under gVisor the worker shares the fast I/O frame buffer and VR ring with the
-guest. A Modal sandbox is remote, so this relay owns both inside the guest:
-the qualified fast I/O bridge (desktop input, X frames) and the VR stream
-(Monado ring and input bridge, from guest_vr.py). It serves one persistent,
+guest. A Modal sandbox is remote, so this relay owns them inside the guest:
+the qualified fast I/O bridge (desktop input, X frames), the VR stream
+(Monado ring, input bridge and haptics record, from guest_vr.py) and audio
+capture (guest_audio.py). It serves one persistent,
 authenticated, length-prefixed connection per client, encoding frames in the
 guest (JPEG, PNG or zstd-compressed raw) so only compact bytes cross the tunnel.
 
@@ -170,6 +171,20 @@ def call(state, op, parameters):
         return {**frame, 'image': data, 'format': image_format}
     if op == 'vr_input':
         return {**state.vr.request(parameters['request']), 'guest_reply_ns': time.monotonic_ns()}
+    if op == 'vr_haptics':
+        if state.vr is None:
+            raise RuntimeError('the VR stream has not started')
+        return state.vr.haptics(parameters.get('after', 0))
+    if op == 'audio_start':
+        from guest_audio import Capture
+        with state.lock:
+            if state.audio is None:
+                state.audio = Capture(parameters.get('user', 'ga'))
+        return {'started': True, 'guest_ns': time.monotonic_ns()}
+    if op == 'audio_read':
+        if state.audio is None:
+            raise RuntimeError('audio capture has not started')
+        return state.audio.read(parameters.get('after', 0))
     if op == 'vr_close':
         with state.lock:
             if state.vr is not None:
@@ -181,7 +196,7 @@ def call(state, op, parameters):
 
 def main():
     port, token = int(sys.argv[1]), Path(sys.argv[2]).read_text().strip()
-    state = types.SimpleNamespace(lock=threading.Lock(), desktop=None, vr=None)
+    state = types.SimpleNamespace(lock=threading.Lock(), desktop=None, vr=None, audio=None)
     server = socket.create_server(('0.0.0.0', port), reuse_port=False)
     while True:
         connection, _ = server.accept()

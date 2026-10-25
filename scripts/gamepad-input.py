@@ -13,6 +13,32 @@ BUTTONS = dict(a=0, b=1, x=2, y=3, lb=4, rb=5, back=6, start=7, menu=8,
 # Trigger calibration remains unresolved; see notes/gunspinning-vr-experiment.md.
 AXES = {**{f'axis{i}': i for i in range(8)}, 'lx': 0, 'ly': 1, 'rx': 3, 'ry': 4}
 NEUTRAL = [0] * 8
+# Rumble records the SDL proxy (sdl-gamepad-proxy.c) appends: magic, output, monotonic_ns, first, second, ms.
+RUMBLE = struct.Struct('<4sIQHHI')
+# Per read, within the SDK wire format's 4 MiB metadata limit; 'complete' is false when more remain.
+MAX_RUMBLE_EVENTS = 8192
+
+
+def read_rumble(path, after):
+    """Records from index `after`; a partially visible trailing record waits for the next read."""
+    if type(after) is not int or after < 0:
+        raise ValueError('haptics cursor must be a non-negative record index')
+    try:
+        with open(path, 'rb') as source:
+            source.seek(after * RUMBLE.size)
+            data = source.read(MAX_RUMBLE_EVENTS * RUMBLE.size)
+    except FileNotFoundError:
+        data = b''
+    events = []
+    for offset in range(0, len(data) - len(data) % RUMBLE.size, RUMBLE.size):
+        magic, output, guest_ns, first, second, duration_ms = RUMBLE.unpack_from(data, offset)
+        if magic != b'RUM1' or output not in (0, 1):
+            raise ValueError(f'corrupt haptics record {after + len(events)}')
+        names = ('low_frequency', 'high_frequency') if output == 0 else ('left_trigger', 'right_trigger')
+        events.append({'output': ('motors', 'triggers')[output], 'guest_ns': guest_ns,
+                       names[0]: first / 0xFFFF, names[1]: second / 0xFFFF, 'duration_ms': duration_ms,
+                       'stop': first == second == 0})
+    return events
 
 
 def write_state(path, axes, buttons, duration):
@@ -29,12 +55,13 @@ def write_state(path, axes, buttons, duration):
             os.unlink(temporary)
 
 
-def serve(path, lease=1.0, renew=.25):
+def serve(path, haptics, lease=1.0, renew=.25):
     """Persistent state from JSON lines on stdin, renewed until changed; EOF restores neutral.
 
     Each line is {"buttons_down": [...], "buttons_up": [...], "axes": {name: value}}. The
     lease outlives a renewal interval, so a controller that disappears leaves the pad
     neutral within the lease. Every line is acknowledged after its state is written.
+    {"haptics_after": N} instead returns the rumble the game requested from record N.
     """
     import json
     import select
@@ -54,8 +81,17 @@ def serve(path, lease=1.0, renew=.25):
             if b'\n' in pending:
                 line, pending = pending.split(b'\n', 1)
                 try:
+                    update = json.loads(line)
+                    if 'haptics_after' in update:
+                        guest_ns, after = time.monotonic_ns(), update['haptics_after']
+                        events = read_rumble(haptics, after)
+                        # The proxy appends on request; every record written before guest_ns is included.
+                        print(json.dumps({'events': events, 'first': after, 'next': after + len(events),
+                                          'guest_ns': guest_ns, 'complete': len(events) < MAX_RUMBLE_EVENTS}),
+                              flush=True)
+                        continue
                     # Validate the whole update before applying any of it.
-                    update, new_mask, new_axes = json.loads(line), mask, axes.copy()
+                    new_mask, new_axes = mask, axes.copy()
                     for name in update.get('buttons_down', []):
                         new_mask |= 1 << BUTTONS[name]
                     for name in update.get('buttons_up', []):
@@ -64,7 +100,7 @@ def serve(path, lease=1.0, renew=.25):
                         if name not in AXES or not -1 <= float(value) <= 1:
                             raise ValueError('axes: ' + ', '.join(AXES) + '; values must be in [-1, 1]')
                         new_axes[AXES[name]] = round(float(value) * 32767)
-                except (KeyError, ValueError, TypeError) as error:
+                except (KeyError, ValueError, TypeError, AttributeError) as error:
                     print(json.dumps({'error': str(error)}), flush=True)
                     continue
                 mask, axes = new_mask, new_axes
@@ -83,13 +119,14 @@ def serve(path, lease=1.0, renew=.25):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--state', type=Path, default=Path('/tmp/lab-gamepad.bin'))
+    p.add_argument('--haptics', type=Path, default=Path('/tmp/lab-gamepad-haptics.bin'))
     p.add_argument('--button', action='append', choices=BUTTONS, default=[])
     p.add_argument('--axis', action='append', default=[], metavar='NAME=VALUE')
     p.add_argument('--hold', type=float, default=.2)
     p.add_argument('--serve', action='store_true', help='persistent state from JSON lines on stdin')
     args = p.parse_args()
     if args.serve:
-        return serve(args.state)
+        return serve(args.state, args.haptics)
     if not 0 < args.hold <= 10:
         p.error('--hold must be in (0, 10] seconds')
     axes = NEUTRAL.copy()

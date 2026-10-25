@@ -2,10 +2,13 @@
 
 Desktop actions become fast I/O batches (one fenced batch per run of desktop
 actions, split only where a hold must elapse). XR actions in a step merge into
-one VR state update. Gamepad actions use the qualified leased writer, which
-holds buttons and axes for a duration and then releases them; persistent
-gamepad state is rejected rather than approximated. Until a runtime provides
-speed control, waits and holds elapse in wall time, which equals game time.
+one VR state update. Gamepad actions set the persistent leased writer's state;
+a timed press sets and then releases it. Until a runtime provides speed
+control, waits and holds elapse in wall time, which equals game time.
+
+Observations carry game_time_ns on the guest monotonic clock: a frame's capture
+time, the end of the returned audio, or the time the haptics records were read.
+Audio and haptics return everything since the previous observation of that kind.
 """
 import time
 
@@ -104,14 +107,15 @@ def _gamepad(sandbox, action):
 def run(sandbox, step):
     """Apply a step's actions in order, then collect its observations."""
     step = step if isinstance(step, Step) else Step.from_dict(step)
-    acknowledgements, group, started = [], [], time.monotonic_ns()
+    acknowledgements, group, vr_acks, started = [], [], [], time.monotonic_ns()
 
     def flush():
         if not group:
             return
         kind = group[0].kind
         if kind.startswith('xr_'):
-            acknowledgements.append(sandbox.vr.action(xr_state(group)))
+            vr_acks.append(sandbox.vr.action(xr_state(group)))
+            acknowledgements.append(vr_acks[-1])
         else:
             for items, pause_ms in desktop_segments(group):
                 acknowledgements.append(sandbox.desktop.action(items))
@@ -134,13 +138,28 @@ def run(sandbox, step):
             raise UnsupportedFeature('wait in game ticks requires runtime speed control')
     flush()
     observations, capabilities = {}, sandbox.capabilities
+    vr_acknowledged = vr_acks[-1]['guest_ack_ns'] if vr_acks else None
     for name in step.observe:
         if name == 'stereo' or (name == 'frame' and 'desktop' not in capabilities):
             value = sandbox.vr.observe()
+            # The latest ring frame can predate this step's input; wait for one captured after it.
+            while vr_acknowledged is not None and value.metadata['capture_begin_ns'] < vr_acknowledged:
+                value = sandbox.vr.observe(after=value.metadata['sequence'])
             game_ns = value.metadata.get('capture_begin_ns')
         elif name == 'frame':
             value = sandbox.desktop.capture_image()
             game_ns = value.metadata.get('capture_completed_ns')
+        elif name == 'audio':
+            if 'audio' not in capabilities:
+                raise UnsupportedFeature('this sandbox does not capture audio')
+            value = sandbox.audio.observe()
+            game_ns = value['end_ns']
+        elif name == 'haptics':
+            value = {source: getattr(sandbox, source).haptics() for source in ('vr', 'gamepad') if source in capabilities}
+            if not value:
+                raise UnsupportedFeature('this sandbox has no haptic outputs')
+            # Complete up to the earliest read.
+            game_ns = min(reply['guest_ns'] for reply in value.values())
         else:
             raise UnsupportedFeature(f'the {name!r} observation is not provided by this sandbox yet')
         # Game time is the guest's capture clock; it reflects every action of this step.

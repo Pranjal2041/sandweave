@@ -38,9 +38,15 @@ def test_xr_actions_merge_into_one_state_update():
 
 
 def test_run_dispatches_in_order_and_observes():
-    calls = []
-    vr = types.SimpleNamespace(action=lambda state: calls.append(('vr', state)) or {'ack': 'vr'},
-                               observe=lambda: types.SimpleNamespace(metadata={'capture_begin_ns': 7}))
+    calls, frames = [], {0: 3, 1: 5, 2: 7}
+
+    def observe(after=0):
+        sequence = after + 1 if after else 1
+        calls.append(('observe', after))
+        return types.SimpleNamespace(metadata={'sequence': sequence, 'capture_begin_ns': frames[sequence - 1]})
+
+    vr = types.SimpleNamespace(action=lambda state: calls.append(('vr', state)) or {'guest_ack_ns': 6},
+                               observe=observe)
     gamepad = types.SimpleNamespace(action=lambda buttons, hold: calls.append(('pad', buttons, hold)) or {},
                                     state=lambda **update: calls.append(('pad_state', update)) or {})
     sandbox = types.SimpleNamespace(capabilities={'vr': {}}, vr=vr, gamepad=gamepad,
@@ -50,7 +56,9 @@ def test_run_dispatches_in_order_and_observes():
         {'kind': 'pad_button', 'button': 'a', 'hold_ms': 100},
         {'kind': 'xr_input', 'device': 'left', 'trigger_value': .5},
         {'kind': 'wait', 'ms': 1}]})
-    assert [call[0] for call in calls] == ['vr', 'pad', 'vr'] and calls[1] == ('pad', ['a'], .1)
+    # The latest frames (captured at 3 and 5) predate the input acknowledged at 6.
+    assert [call[0] for call in calls] == ['vr', 'pad', 'vr', 'observe', 'observe', 'observe']
+    assert calls[1] == ('pad', ['a'], .1) and [call[1] for call in calls[3:]] == [0, 1, 2]
     assert result['id'] == 's1' and result['observations']['stereo']['game_time_ns'] == 7
     assert result['observations']['stereo']['last_action_index'] == 3
     assert result['actions_applied'] == 4

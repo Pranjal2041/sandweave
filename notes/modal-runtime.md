@@ -153,7 +153,11 @@ override them, and `any` leaves that choice to Modal. A worker outside Modal has
 no region to match, so its sandboxes stay unpinned unless these are set. Modal
 charges 1.15× for a broad region (`us`) and 1.75× for a narrow one (`us-east`);
 a cloud pin also narrows GPU capacity. The boot record and acceptance
-`ready.json` record the sandbox's region and cloud.
+`ready.json` record the sandbox's region and cloud. Attempt 8 ran with no
+placement settings: it landed in OCI `us-east` beside the worker (0.43 ms minimum
+RTT) and passed with capture 29.96 FPS, input 119.6/s (RTT median 1.19 ms),
+application FPS 82.8, 120 s of audio without gaps, 2,454 haptic pulses and all
+40 step checks.
 
 Attempt 6 also showed that a fast start can click Play during the splash screen:
 the game stayed in the menu, so there was no music and no haptics. The acceptance

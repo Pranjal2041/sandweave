@@ -27,10 +27,16 @@ static int test_gs = 1;
 static int bound_fp_copy;
 static unsigned fp_size;
 static volatile unsigned signal_fp_size;
+static unsigned iterations = 1;
 
 static void handler(int signo, siginfo_t *info, void *context) {
-    (void)info;
     ucontext_t *uc = context;
+    if (signo == SIGSYS && uc->uc_mcontext.gregs[REG_RAX] != info->si_syscall) {
+        static const char message[] = "SIGSYS syscall number differs from RAX\n";
+        ssize_t written = write(STDERR_FILENO, message, sizeof(message) - 1);
+        (void)written;
+        _exit(15);
+    }
     uint32_t *software = (void *)((char *)uc->uc_mcontext.fpregs + 464);
     signal_fp_size = software[4];
     unsigned long gs;
@@ -72,8 +78,10 @@ static int child(void *unused) {
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) ||
         prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program))
         return 13;
-    if (syscall(SYS_getpid) != 12345 || caught != 2)
-        return 14;
+    for (unsigned i = 0; i < iterations; i++) {
+        if (syscall(SYS_getpid) != 12345 || caught != (sig_atomic_t)(i + 2))
+            return 14;
+    }
     return 0;
 }
 
@@ -81,6 +89,13 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--no-gs") == 0) test_gs = 0;
         else if (strcmp(argv[i], "--bound-fp-copy") == 0) bound_fp_copy = 1;
+        else if (strcmp(argv[i], "--iterations") == 0 && i + 1 < argc) {
+            char *end;
+            unsigned long value = strtoul(argv[++i], &end, 10);
+            if (*end || value == 0 || value > 1000000)
+                return 2;
+            iterations = (unsigned)value;
+        }
         else return 2;
     }
     altstack = mmap(NULL, ALTSTACK_SIZE + 4096, PROT_READ | PROT_WRITE,

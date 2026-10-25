@@ -63,6 +63,10 @@ Local evidence:
 separate SDK copy; it is not included in the candidate wheel or engine.
 The scripts `nested-gnome-check.py` and `nested-guest-command-check.py` retain
 startup and concurrent-command results without changing readiness criteria.
+The signal reproducer also checks SIGSYS's syscall number against saved RAX.
+All four modes passed 100,000 traps each on both the native CPU VM and Modal's
+gVisor host. This rules out a direct mismatch in that reproducer; it does not
+clear the observed subprocess and control-stream failures.
 
 ## Initial engine acceptance (2026-10-24)
 

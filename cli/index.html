@@ -682,6 +682,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../kvm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KVM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../snapshots/" class="md-nav__link">
         
   
@@ -1375,6 +1403,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#kvm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KVM
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1588,6 +1627,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#kvm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KVM
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1744,6 +1794,11 @@ coverage, and snapshot support.</p>
 <code>create</code>, <code>run</code> or <code>pool create</code> to set the guest's wall clock. A clock setting
 freezes guest time during <code>sandweave pause</code>; add <code>--clock-pause continue</code> to
 keep it running. See <a href="../clock/">guest clock</a>.</p>
+<h2 id="kvm">KVM<a class="headerlink" href="#kvm" title="Permanent link">&para;</a></h2>
+<p>Add <code>--kvm</code> to <code>create</code>, <code>run</code> or <code>pool create</code> to require gVisor's KVM platform
+on the worker, or <code>--kvm-auto</code> to use it where the worker provides <code>/dev/kvm</code>.
+A restore keeps its snapshot's platform; <code>--no-kvm</code> restores a KVM snapshot
+without KVM. See <a href="../kvm/">KVM</a>.</p>
 
 
 

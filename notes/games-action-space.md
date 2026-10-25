@@ -48,10 +48,21 @@ action, so an agent knows which inputs it reflects.
 | Speed Dreams | held keys or `pad_axis` steer/throttle/brake | frame, haptics |
 | Open Saber | `xr_pose` head and hands, `xr_input` triggers | stereo, haptics |
 
-## Next
+## Execution
 
-1. Map steps onto the existing controls (desktop fast I/O, gamepad writer,
-   VR stream), reusing fast I/O on Modal.
-2. Return game time and last action ID with each observation.
-3. Extend cua-auto-harness for games: gamepad and XR probes (virtual device
-   events; Monado's acknowledged state), checked against these kinds.
+`sandweave.steps.run(sandbox, step)` applies a step on the sandbox's controls:
+desktop actions become fast I/O batches (split only where a hold elapses), XR
+actions merge into one VR state update, and gamepad presses use the leased
+writer. Rejected with `UnsupportedFeature` rather than approximated: persistent
+gamepad state (the writer releases after each hold), `wait` in ticks and holds
+in slowed time (no runtime speed control yet), and `audio`, `haptics` and
+`state` observations. Tests: `tests/test_steps.py`.
+
+On `runtime="modal"`, frames and input travel through the guest relay; see
+[modal-runtime.md](modal-runtime.md) for its measured rates.
+
+## Not implemented
+
+- Runtime speed control (pause, slow, tick stepping) on Modal.
+- Game time and last action ID on each observation.
+- cua-auto-harness probes and checks for gamepad and XR actions.

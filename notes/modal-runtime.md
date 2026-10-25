@@ -94,6 +94,30 @@ Evidence: `runs/modal-runtime-20261025/modal-opensaber15.tar` (videos, inputs,
 metrics, summary, ready record and retry log; lossless frame files excluded),
 SHA-256 `c06a07b83e5d012888ddce95a0306912f268e7eb10716dff3cc7605b960c6b32`.
 
+### Relay transport (2026-10-25, worker `sb-sxEmHbbgxbW9p4Mbx43uNn`)
+
+The per-request VR HTTP server was replaced by `guest_io.py`, a guest relay that
+owns the fast I/O bridge and the VR ring and serves persistent, authenticated,
+length-prefixed connections on one encrypted port. Frames are JPEG-encoded in
+the guest and forwarded to the client unchanged. VR input uses its own
+connection: an SSL socket must not be read and written from two threads, and
+the worker no longer serializes VR observe and input behind its per-sandbox lock.
+
+Open Saber on an L40S, 120 s, through the public SDK (attempt 3):
+
+| Measure | Before (per-request) | Relay |
+| --- | --- | --- |
+| Capture cadence (requested 30 FPS) | 1.67 | **29.70** (3,571 paired frames, 0 dropped) |
+| Input actions (120 Hz loop) | 1.7/s | **108.2/s** (12,984; worker-to-guest RTT median 1.0 ms, p95 1.8 ms) |
+| Application FPS | 82.7 | 83.7 (reused frames 8.6%) |
+
+Readiness took 208 s, including 203 s for the runtime phase. Decoded frames from
+`left-eye.mp4`/`right-eye.mp4` (60 s) and `gameplay.mp4` (110 s), each 3,571 frames,
+show gameplay in both eyes. Transport frames are JPEG (quality 90), so the
+recording is lossy; `codec="zstd"` keeps them lossless at a higher byte rate.
+Evidence: `runs/modal-runtime-20261025/modal-opensaber-relay3.tar`, SHA-256
+`32ff4b1c59afab7518864ac2c89d4b57cb122c305d527b3d25695397f331fa7c`.
+
 ## Reference: direct VR stack on Modal
 
 The frontier-games A10 environment (`devin-datagen-lawrence-games/.devin/vr-a10`)

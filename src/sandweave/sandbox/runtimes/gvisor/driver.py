@@ -30,6 +30,29 @@ def agent_source(*, image=False):
             f"\nmain(sys.argv[1], sys.argv[2], image={image!r})\n")
 
 
+
+def select_runtime(root, features, snapshot, kvm, options):
+    """Choose an engine with these features; a KVM launch also needs one that keeps application GS.
+
+    Programs that set their own GS base, such as Firefox, crash on an older engine under KVM. A pinned
+    memory snapshot keeps its engine, so kvm="auto" then runs it without KVM and kvm=True fails.
+    """
+    from .engine import feature_runtime
+    platform = options.index('--platform') + 1
+    required = [*features, 'kvm-gs'] if options[platform] == 'kvm' else list(features)
+    try:
+        return feature_runtime(root, required, snapshot) if required else []
+    except UnsupportedFeature:
+        if 'kvm-gs' not in required:
+            raise
+        if kvm != 'auto':
+            if snapshot is None:
+                raise
+            raise UnsupportedFeature('this memory snapshot keeps an engine that predates KVM support; '
+                                     'restore it with kvm=False or kvm="auto"') from None
+    options[platform] = 'systrap'
+    return feature_runtime(root, features, snapshot) if features else []
+
 class Runtime:
     def __init__(self, workspace):
         self.root = Path(workspace)
@@ -122,6 +145,9 @@ class Runtime:
         configure(spec['template'], 'gvisor')
         from ...clock import runtime_options as clock_options
         options += clock_options(spec.get('clock'))
+        from ...kvm import platform
+        # Resolved on the worker, which is where /dev/kvm is or is not available.
+        options += ['--platform', platform(spec.get('kvm'), gpu=bool(resources['gpu']))]
         options += ['--hidepid', str(runtime.get('hidepid', 0))]
         options.append('--audit' if runtime.get('audit') else '--no-audit')
         if 'audit_max_bytes' in runtime:
@@ -288,9 +314,9 @@ class Runtime:
                 features.append('audit-log')
             from ...clock import features as clock_features
             features += clock_features(spec.get('clock'))
-            if features:
-                from .engine import feature_runtime, launch_runtime
-                selected_runtime = feature_runtime(self.root, features, snapshot)
+            if features or options[options.index('--platform') + 1] == 'kvm':
+                from .engine import launch_runtime
+                selected_runtime = select_runtime(self.root, features, snapshot, spec.get('kvm'), options)
                 options += selected_runtime
                 if 'private-volumes' in features:
                     # The default runtime may already provide private volumes;
@@ -413,7 +439,9 @@ class Runtime:
             mode = 'experimental-gpu-live'
         if mode is None:
             raise ValueError('snapshot state must be filesystem, memory or auto')
-        return self.manager.save(identity, label, mode=mode)
+        platform = self.manager._settings(identity).get('settings', {}).get('platform', 'systrap')
+        # The snapshot records the platform it ran on; restores keep it unless they choose.
+        return {**self.manager.save(identity, label, mode=mode), 'platform': platform}
 
     def terminate(self, identity):
         self.detach(identity)

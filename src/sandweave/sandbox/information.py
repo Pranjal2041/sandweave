@@ -35,6 +35,7 @@ def summarize(record):
         'storage': runtime.get('storage', spec.get('storage', {'mode': 'memory'})),
         'gpus': gpus,
         **({'clock': clock_summary(spec['clock'])} if spec.get('clock') else {}),
+        **({'kvm': runtime['platform'] == 'kvm'} if runtime.get('platform') else {}),
         **({'service_network': {**spec['service_network'],
                                 'address': spec.get('_service_network', {}).get('address')}}
            if spec.get('service_network', {}).get('id') else {}),

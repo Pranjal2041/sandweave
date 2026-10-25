@@ -109,6 +109,8 @@ class Store:
                     'location': str(path), 'workspace': str(self.runtime.root), 'source': source['id'],
                     'template': source['spec']['template']['name'], 'spec': copy.deepcopy(source['spec']),
                     'agent': source['agent'], 'created_at': time.time(), 'snapshot_id': manifest['snapshot_id']}
+        if saved.get('platform'):
+            metadata['spec']['kvm'] = saved['platform'] == 'kvm'
         if metadata['spec'].get('service_network', {}).get('id'):
             # An immutable filesystem is portable; its source member's hub
             # socket and address are not. A new member registers its own route.

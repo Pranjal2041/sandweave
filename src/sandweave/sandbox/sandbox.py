@@ -21,7 +21,7 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
                env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300,
                keep_on_error=False, refresh=False, experimental_gpu_live=False, recording=False,
                service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None,
-               clock_offset=None, clock_start=None, clock_pause=None):
+               clock_offset=None, clock_start=None, clock_pause=None, kvm=None):
     """Resolve a complete portable definition without starting an environment."""
     if sum(x is not None for x in (cache, snapshot)) > 1:
         raise ValueError('cache and snapshot are alternative sources')
@@ -111,6 +111,12 @@ def definition(*, template=None, image=None, setup=None, cache=None, snapshot=No
                            runtime=runtime)
     if clock is not None:
         spec['clock'] = clock
+    from .kvm import configure as kvm_settings
+    # Unlike the clock, a restore that does not choose keeps its snapshot's platform.
+    selected_kvm = kvm_settings(kvm, runtime=runtime, saved=saved['spec'] if saved else None,
+                                gpu=bool(resources['gpu']))
+    if selected_kvm is not None:
+        spec['kvm'] = selected_kvm
     if service_network is not None:
         from .networks import membership
         if runtime != 'gvisor':
@@ -134,7 +140,7 @@ class Sandbox:
                  env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                  refresh=False, experimental_gpu_live=False, recording=False,
                  service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None,
-                 clock_offset=None, clock_start=None, clock_pause=None, connection='cluster'):
+                 clock_offset=None, clock_start=None, clock_pause=None, kvm=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
         self._connection = None
         try:
@@ -149,7 +155,7 @@ class Sandbox:
                     env=None, mounts=None, name=None, ttl=None, detached=False, startup_timeout=300, keep_on_error=False,
                     refresh=False, experimental_gpu_live=False, recording=False,
                     service_network=None, aliases=None, networks=None, hidepid=None, audit=None, profiling=None,
-                    clock_offset=None, clock_start=None, clock_pause=None, connection='cluster'):
+                    clock_offset=None, clock_start=None, clock_pause=None, kvm=None, connection='cluster'):
         options = dict(locals()); options.pop('self')
         from .targets import connection_mode
         connection_mode(options.pop('connection'))
@@ -202,6 +208,8 @@ class Sandbox:
         check_worker(spec, self._connection)
         from .clock import check_worker as check_clock
         check_clock(spec, self._connection)
+        from .kvm import check_worker as check_kvm
+        check_kvm(spec, self._connection)
         from .ownership import client_owner
         owner = None if spec['detached'] else client_owner(self._connection)
         self._info = self._connection.call('create', identity=self.id, spec=spec, operation_id=operation_id,

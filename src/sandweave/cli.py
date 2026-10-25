@@ -69,6 +69,13 @@ def creation_options(parser):
     clock.add_argument('--clock-start', help='guest wall-clock time when the sandbox starts, such as 2025-03-01T00:00:00Z')
     parser.add_argument('--clock-pause', choices=('freeze', 'continue'),
                         help='guest time during pauses; freeze is the default with a clock setting')
+    kvm = parser.add_mutually_exclusive_group()
+    kvm.add_argument('--kvm', dest='kvm', action='store_const', const=True,
+                     help='use the gVisor KVM platform; the worker must provide /dev/kvm')
+    kvm.add_argument('--kvm-auto', dest='kvm', action='store_const', const='auto',
+                     help='use the KVM platform where the worker provides /dev/kvm')
+    kvm.add_argument('--no-kvm', dest='kvm', action='store_const', const=False,
+                     help='run without KVM, including a restore of a snapshot taken on KVM')
     parser.add_argument('--profiling', action='store_true', default=None, help='Enable runtime heap profiling for this diagnostic sandbox')
     parser.add_argument('--experimental-gpu-live', action='store_true')
 
@@ -91,6 +98,8 @@ def creation(args):
             'keep_on_error', 'experimental_gpu_live', 'profiling', 'hidepid', 'audit',
             'clock_offset', 'clock_start', 'clock_pause')
     options = {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
+    if getattr(args, 'kvm', None) is not None:
+        options['kvm'] = args.kvm
     if getattr(args, 'storage', None) is not None or getattr(args, 'storage_path', None) is not None:
         from . import Storage
         options['storage'] = Storage(getattr(args, 'storage', None) or 'disk', getattr(args, 'storage_path', None))

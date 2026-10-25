@@ -146,6 +146,9 @@ def plan(requests, workers, allocations, policies, *, now=None):
             if request['spec']['runtime'] not in worker.get('runtimes', ('gvisor', 'apptainer')):
                 reasons.add('runtime is unavailable')
                 continue
+            if request['spec'].get('kvm') is True and not worker.get('inventory', {}).get('kvm'):
+                reasons.add('KVM is unavailable')
+                continue
             if need['gpu']:
                 external = worker.get('external', {})
                 occupied = devices[identity] | set(external.get('gpu_uuids', []))

@@ -160,6 +160,7 @@ class Management:
 
     def inventory(self):
         from .admission import reservation, live as has_live_runtime
+        from .kvm import available as kvm_available
         from .ownership import process_scope
         import socket
         gpus = []
@@ -196,7 +197,7 @@ class Management:
         return {'protocol': 1, 'hostname': socket.gethostname(), 'pid': os.getpid(),
                 'scope': process_scope(), 'workspace': str(self.worker.root),
                 'cpus': sorted(os.sched_getaffinity(0)), 'memory': self.worker.memory_budget,
-                'gpus': gpus, 'runtimes': ['gvisor', 'apptainer'], 'live': live,
+                'gpus': gpus, 'runtimes': ['gvisor', 'apptainer'], 'kvm': kvm_available(), 'live': live,
                 'telemetry': self.sampler.sample(records, gpus)}
 
     def logs(self, identity, stream='launcher', size=65536):

@@ -5386,6 +5386,21 @@ index 070006067..f44532d69 100644
  	f.subreleased = make(map[uint64]uint64, len(pb.Subreleased))
  	for k, v := range pb.Subreleased {
  		f.subreleased[k] = v
+diff --git a/pkg/sentry/platform/kvm/kvm_amd64.go b/pkg/sentry/platform/kvm/kvm_amd64.go
+index 69e7fb39a..7435a2023 100644
+--- a/pkg/sentry/platform/kvm/kvm_amd64.go
++++ b/pkg/sentry/platform/kvm/kvm_amd64.go
+@@ -252,3 +252,10 @@ func updateGlobalOnce(fd int) error {
+ 	physicalInit()
+ 	return nil
+ }
++
++// SupportsGSBase reports that application GS is preserved: ring0 loads each
++// task's GS base whenever it switches to user mode, and KVM has no binary
++// syscall patches that reserve GS.
++func (*KVM) SupportsGSBase() bool {
++	return true
++}
 diff --git a/pkg/sentry/platform/platform.go b/pkg/sentry/platform/platform.go
 index 22c8dc1d8..0d0bad851 100644
 --- a/pkg/sentry/platform/platform.go

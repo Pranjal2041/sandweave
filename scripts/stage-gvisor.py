@@ -33,7 +33,7 @@ artifacts = [
 ]
 capabilities = {'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1,
                 'buffered_filesystem_export': 1, 'proc_hidepid': 1, 'audit_log': 1, 'cancellable_cpu_pause': 1,
-                'guest_clock': 1}
+                'guest_clock': 1, 'kvm_gs': 1}
 marker = lab / 'runs/runtime-capabilities.json'
 marker.write_text(json.dumps(capabilities, sort_keys=True) + '\n')
 descriptor = runtime_store.publish(lab, {**{destination: base / source for source, destination in artifacts},

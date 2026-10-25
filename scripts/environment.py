@@ -105,7 +105,8 @@ class EnvironmentManager:
                     result['stale_runtime_pid'] = pid
                 else:
                     result.update(status=state['status'], sentry={'pid': pid, 'start': info['start']},
-                                  gpu=bool(settings.get('gpu')))
+                                  gpu=bool(settings.get('gpu')),
+                                  platform=settings.get('settings', {}).get('platform', 'systrap'))
         if not bundle.exists() and launcher is None:
             result['status'] = 'missing'
         for filename, key in [('ports.json', 'ports'), ('stopped.json', 'last_stop'),

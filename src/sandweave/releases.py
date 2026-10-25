@@ -74,7 +74,8 @@ def runtime_current(root):
             and descriptor.get('bounded_network_rx', 0) >= 1
             and descriptor.get('buffered_filesystem_export', 0) >= 1
             and descriptor.get('cancellable_cpu_pause', 0) >= 1
-            and descriptor.get('guest_clock', 0) >= 1)
+            and descriptor.get('guest_clock', 0) >= 1
+            and descriptor.get('kvm_gs', 0) >= 1)
 
 
 SECCOMP_PROBE = '''import ctypes, os

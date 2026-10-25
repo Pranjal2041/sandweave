@@ -15,7 +15,7 @@ from sandweave.installation import record_installation
 HOST = {'architecture': 'x86_64', 'kernel': (5, 14, 0), 'cpu_flags': ['sse2']}
 
 
-def test_prepared_runtime_upgrades_for_cpu_pauses_and_guest_clocks(tmp_path, monkeypatch):
+def test_prepared_runtime_upgrades_for_cpu_pauses_guest_clocks_and_kvm_gs(tmp_path, monkeypatch):
     monkeypatch.setattr(releases, 'runtime_supported', lambda root: True)
     path = tmp_path / 'tools/gvisor-socket/runtime.json'
     path.parent.mkdir(parents=True)
@@ -27,6 +27,9 @@ def test_prepared_runtime_upgrades_for_cpu_pauses_and_guest_clocks(tmp_path, mon
     path.write_text(json.dumps(capabilities))
     assert not releases.runtime_current(tmp_path)
     capabilities['guest_clock'] = 1
+    path.write_text(json.dumps(capabilities))
+    assert not releases.runtime_current(tmp_path)
+    capabilities['kvm_gs'] = 1
     path.write_text(json.dumps(capabilities))
     assert releases.runtime_current(tmp_path)
 
@@ -49,7 +52,7 @@ def published_runtime(tmp_path, monkeypatch):
     pointer = root / 'tools/gvisor-socket/runtime.json'
     pointer.parent.mkdir()
     pointer.write_text(json.dumps({'path': 'tools/runtime-builds/test-build', 'sha256': hashes,
-                                   'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1, 'buffered_filesystem_export': 1, 'cancellable_cpu_pause': 1, 'guest_clock': 1}))
+                                   'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1, 'buffered_filesystem_export': 1, 'cancellable_cpu_pause': 1, 'guest_clock': 1, 'kvm_gs': 1}))
     record_installation(root)
     archive = web / 'runtime.tar.gz'
     with tarfile.open(archive, 'w:gz') as stream:

@@ -3,7 +3,15 @@ set -euo pipefail
 lab_root=$(cd "$(dirname "$0")/.." && pwd -P)
 lab_local=$(cat "$lab_root/runs/local-path.txt")
 gpu_binds=()
-while [[ "${1:-}" == --gpu || "${1:-}" == --mounts || "${1:-}" == --disk-memory || "${1:-}" == --storage ]]; do
+kvm=0
+while [[ "${1:-}" == --gpu || "${1:-}" == --mounts || "${1:-}" == --disk-memory || "${1:-}" == --storage || "${1:-}" == --kvm ]]; do
+  if [[ "$1" == --kvm ]]; then
+    # Only an explicit KVM launch sees the host device; every other launch asserts it is absent.
+    kvm=1
+    gpu_binds+=(--bind /dev/kvm:/dev/kvm)
+    shift
+    continue
+  fi
   if [[ "$1" == --storage ]]; then
     gpu_binds+=(--bind "$2:/sandbox-storage")
     shift 2
@@ -42,4 +50,4 @@ exec "${SANDWEAVE_PYTHON:-python3}" "$lab_root/scripts/host_compat.py" "$lab_roo
   --bind "$lab_root:/lab" --bind "$lab_local:/local" \
   --bind "$lab_local/gvisor-tmp:/tmp" --pwd /lab \
   -- \
-  sh -c 'set -eu; test ! -e /dev/kvm; export PATH=/lab/tools/gvisor-nightly-20260906:/lab/tools/erofs/usr/bin:$PATH; exec "$@"' sh "$@"
+  sh -c 'set -eu; if [ "$1" = 1 ]; then test -c /dev/kvm; else test ! -e /dev/kvm; fi; shift; export PATH=/lab/tools/gvisor-nightly-20260906:/lab/tools/erofs/usr/bin:$PATH; exec "$@"' sh "$kvm" "$@"

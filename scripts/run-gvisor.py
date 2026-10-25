@@ -71,6 +71,8 @@ parser.add_argument('--base-image', type=Path, help='guest EROFS image below thi
 parser.add_argument('--mounts', type=Path, help='validated external mount JSON; sources are worker paths')
 parser.add_argument('--build-output', type=Path, help='receive installer artifacts into a new host directory')
 parser.add_argument('--guest-gs', action='store_true', help='preserve application GS; disable binary syscall patching')
+parser.add_argument('--platform', choices=['systrap', 'kvm'], default='systrap',
+                    help='gVisor platform; kvm needs a readable and writable /dev/kvm on this host')
 parser.add_argument('--virtual-consoles', action='store_true', help='private headless consoles for guest display managers')
 parser.add_argument('--netlink-address-events', action='store_true', help='guest IPv4/IPv6 address notifications')
 parser.add_argument('--sysctl-reapply', action='store_true', help='use the Linux desktop PID range and reapply enforced sysctl values')
@@ -265,7 +267,7 @@ else:
     runtime = json.loads((lab / 'tools/gvisor-socket/runtime.json').read_text())
 runtime_root = runtime_store.validate(lab, runtime, verify=runtime_override is None and (not bool(args.restore) or args.filesystem_runtime_current))
 runtime_arg = '/lab/' + str(runtime_root.relative_to(lab)) + '/runsc'
-settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug')}
+settings = {key: getattr(args, key) for key in ('guest_cpus', 'memory_mib', 'runtime_memory_mib', 'nftables', 'guest_gs', 'cgroup', 'network_policy', 'allow_cidr', 'cpu_policy', 'cpu_weight', 'cpu_quota', 'host_nice', 'runtime_debug', 'platform')}
 settings['virtual_consoles'] = args.virtual_consoles
 settings['docker_data'] = args.docker_data
 settings['hidepid'] = args.hidepid
@@ -519,7 +521,7 @@ try:
     wait_socket(ethernet_socket, relay)
     mark('helpers_seconds')
     command = [str(lab / 'scripts/gvisor-host.sh'),
-               runtime_arg, '--platform=systrap', '--directfs=false',
+               runtime_arg, '--platform=' + args.platform, '--directfs=false',
                '--network=sandbox', f'--network-socket-config=/local/gvisor/bundles/{args.name}/network.json',
                '--ignore-cgroups', '--allow-suid', '--allow-rootfs-tar-annotation',
                f'--runtime-memory-limit={args.runtime_memory_mib * 1024**2}', f'--application-cpus={args.guest_cpus}', f'--app-memory-limit={args.memory_mib * 1024**2}',
@@ -547,8 +549,12 @@ try:
         command.append(f'--clock-start={args.clock_start_ns}')
     if args.clock_pause != 'continue':
         command.append('--clock-pause=' + args.clock_pause)
-    if args.guest_gs:
+    if args.guest_gs and args.platform == 'systrap':
         command.append('--systrap-disable-syscall-patching')
+    if args.platform == 'kvm':
+        if not os.access('/dev/kvm', os.R_OK | os.W_OK):
+            raise PermissionError('the kvm platform needs a readable and writable /dev/kvm on this host')
+        command[1:1] = ['--kvm']
     if args.gpu is not None:
         command[1:1] = ['--gpu', str(args.gpu)]
         command += ['--nvproxy', '--nvproxy-allow-unsupported-driver',

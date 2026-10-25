@@ -6,7 +6,7 @@
     "base_commit": "0a1316b0d180600212bd607aa0ccfe2a9b09a899",
     "commit": "d2cd4e3ede050b376a602891c159572e2935e7f7",
     "patch": "notes/gvisor-no-kvm-prototype.patch",
-    "runtime_build": "tools/runtime-builds/c49104ca11e6421e8a5e624cb6ba567e35beb2285db98f81cae8b7d86fc892cc",
+    "runtime_build": "tools/runtime-builds/a3923da8e2b608c5891c4f4d118163df23a41419851be4351a6b258d5cabe7ec",
     "recovery_bundle": "checkpoints/gpu-filesystem-59487a0/gvisor.bundle",
     "recovery_shallow_boundary": "checkpoints/gpu-filesystem-59487a0/gvisor.shallow",
     "runtime_commit": "d2cd4e3ede050b376a602891c159572e2935e7f7",
@@ -32,7 +32,9 @@
     "cpu_pause_runtime_release": "2026.10.18.1",
     "cpu_pause_release_runtime_build": "tools/runtime-builds/1436f7c2cb026adf47b3c64f39390a0eb4c0af70cdb549cf26318936d430937c",
     "guest_clock_runtime_release": "2026.10.24.1",
-    "guest_clock_release_runtime_build": "tools/runtime-builds/c49104ca11e6421e8a5e624cb6ba567e35beb2285db98f81cae8b7d86fc892cc"
+    "guest_clock_release_runtime_build": "tools/runtime-builds/c49104ca11e6421e8a5e624cb6ba567e35beb2285db98f81cae8b7d86fc892cc",
+    "kvm_gs_runtime_release": "2026.10.24.2",
+    "kvm_gs_release_runtime_build": "tools/runtime-builds/a3923da8e2b608c5891c4f4d118163df23a41419851be4351a6b258d5cabe7ec"
   },
   "passt": {
     "upstream": "https://passt.top/passt",

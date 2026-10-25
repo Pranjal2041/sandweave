@@ -207,3 +207,10 @@ Use `--clock-offset SECONDS` or `--clock-start 2025-03-01T00:00:00Z` with
 freezes guest time during `sandweave pause`; add `--clock-pause continue` to
 keep it running. See [guest clock](clock.md).
 
+## KVM
+
+Add `--kvm` to `create`, `run` or `pool create` to require gVisor's KVM platform
+on the worker, or `--kvm-auto` to use it where the worker provides `/dev/kvm`.
+A restore keeps its snapshot's platform; `--no-kvm` restores a KVM snapshot
+without KVM. See [KVM](kvm.md).
+

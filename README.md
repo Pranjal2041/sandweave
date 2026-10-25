@@ -857,7 +857,22 @@ Clock options apply to each start or restore and are never saved:
 `Sandbox(snapshot=checkpoint, clock_offset=...)` chooses the restored
 checkpoint's clock. With a clock setting, `pause()` freezes guest time until
 `resume()`; pass `clock_pause="continue"` to keep it running. See
-[guest clock](https://pranjala2041.github.io/sandweave/clock/) for pools, the CLI and limits.
+[guest clock](https://pranjal2041.github.io/sandweave/clock/) for pools, the CLI and limits.
+
+## Use KVM where the worker has it
+
+```python
+from sandweave import Sandbox
+
+with Sandbox(kvm="auto") as env:
+    print(env.info["kvm"])
+```
+
+Sandboxes use gVisor's systrap platform unless they ask for KVM. `kvm=True`
+requires a worker whose user can open `/dev/kvm`; `kvm="auto"` uses KVM where
+the worker can and systrap elsewhere. A snapshot restores on the platform it was
+taken on unless the restore sets `kvm`. See
+[KVM](https://pranjal2041.github.io/sandweave/kvm/) for measurements and limits.
 
 ## Use the CLI
 

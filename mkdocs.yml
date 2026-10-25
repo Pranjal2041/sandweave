@@ -100,6 +100,7 @@ nav:
       - Process visibility and audit: process-audit.md
       - Lifetime and cleanup: lifecycle.md
       - Guest clock: clock.md
+      - KVM: kvm.md
       - Caches and snapshots: snapshots.md
       - Async Python: async.md
   - Workloads:

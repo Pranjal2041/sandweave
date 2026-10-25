@@ -4,6 +4,11 @@ Sandweave 0.1.1 selects a pinned engine from GitHub Releases before building
 one locally. The Python API and `sandweave setup` share this installation path.
 Existing configured installations keep their recorded runtime files.
 
+SDK 0.2.48 upgrades engines for new launches to runtime 2026.10.24.2, which
+keeps application GS on gVisor's KVM platform for the new `kvm` option. Existing
+memory snapshots retain their pinned engine; KVM restores of them need
+`kvm="auto"` or `kvm=False`. See [KVM platform](kvm-platform.md).
+
 SDK 0.2.45 upgrades engines for new launches to runtime 2026.10.24.1, which
 adds per-sandbox guest clock offsets, start dates and frozen pauses. Existing
 memory snapshots retain their pinned engine and cannot take clock options. See

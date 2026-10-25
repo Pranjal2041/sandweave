@@ -1,0 +1,199 @@
+{
+  "cross_platform_memory_restore_runtime_2026_10_24_1": {
+    "kvm_to_systrap": {
+      "count_after_restore": 26,
+      "count_one_second_later": 36,
+      "seconds": 1.78
+    },
+    "systrap_to_kvm": {
+      "count_after_restore": 24,
+      "count_one_second_later": 34,
+      "seconds": 1.69
+    }
+  },
+  "desktop_test_with_firefox": {
+    "firefox": [
+      "systrap",
+      "kvm"
+    ],
+    "kvm": {
+      "idle_cpu_cores": 0.014999999999999977,
+      "ready_seconds": 9.3138904934749
+    },
+    "systrap": {
+      "idle_cpu_cores": 0.03566666666666667,
+      "ready_seconds": 12.942211645655334
+    }
+  },
+  "engine_commit": "d2cd4e3ede050b376a602891c159572e2935e7f7",
+  "env_run_true_ms_runtime_2026_10_24_1": {
+    "back_to_back": {
+      "kvm": [
+        [
+          10.3,
+          27.9,
+          81.5
+        ],
+        [
+          10.9,
+          27.9,
+          104.8
+        ]
+      ],
+      "systrap": [
+        [
+          16.8,
+          18.2,
+          20.9
+        ],
+        [
+          15.8,
+          17.3,
+          24.5
+        ]
+      ]
+    },
+    "back_to_back_without_cpu_broker": {
+      "kvm": [
+        [
+          10.7,
+          21.7,
+          51.1
+        ],
+        [
+          11.8,
+          16.3,
+          65.8
+        ]
+      ],
+      "systrap": [
+        [
+          16.2,
+          17.4,
+          20.3
+        ]
+      ]
+    },
+    "columns": [
+      "p10",
+      "median",
+      "p90"
+    ],
+    "with_50ms_gaps": {
+      "kvm": [
+        [
+          12.1,
+          33.5,
+          71.0
+        ],
+        [
+          13.5,
+          36.8,
+          76.1
+        ],
+        [
+          11.6,
+          28.1,
+          72.4
+        ]
+      ],
+      "systrap": [
+        [
+          18.9,
+          23.6,
+          41.8
+        ],
+        [
+          18.7,
+          20.3,
+          40.0
+        ],
+        [
+          18.2,
+          19.7,
+          38.5
+        ]
+      ]
+    }
+  },
+  "firefox_155_headless_screenshot": {
+    "kvm_runtime_2026_10_24_1": "exit 11 (SIGSEGV, crash-handler minidump)",
+    "kvm_runtime_2026_10_24_2": "exit 0, 5,763-byte PNG",
+    "systrap": "exit 0, 5,763-byte PNG"
+  },
+  "gs_probe": {
+    "kvm_runtime_2026_10_24_1": "arch_prctl(ARCH_SET_GS) failed (exit 2)",
+    "kvm_runtime_2026_10_24_2": "gs ok",
+    "systrap": "gs ok"
+  },
+  "guest_latency_runtime_2026_10_24_1": {
+    "kvm": {
+      "pipe_round_trip_us": 10.9,
+      "sleep_1ms_actual_ms": 1.16,
+      "spawn_true_ms": 1.32,
+      "tcp_loopback_round_trip_us": 41.9
+    },
+    "systrap": {
+      "pipe_round_trip_us": 60.2,
+      "sleep_1ms_actual_ms": 1.27,
+      "spawn_true_ms": 6.34,
+      "tcp_loopback_round_trip_us": 135.5
+    }
+  },
+  "host": {
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "cpus": 128,
+    "dev_kvm": "crw-rw-rw- root kvm",
+    "kernel": "5.14.0-687.25.1.el9_8.x86_64",
+    "name": "babel-u9-24"
+  },
+  "live_tests": {
+    "application_gs": "preserved across 1,000 system calls on both platforms",
+    "concurrent": {
+      "all_ready_seconds": 2.076718126423657,
+      "sandboxes": 12
+    },
+    "files": [
+      "tests/integration/test_kvm_live.py",
+      "tests/integration/test_kvm_desktop_live.py"
+    ],
+    "gnome": {
+      "kvm": {
+        "idle_cpu_cores": 0.033000000000000064,
+        "ready_seconds": 9.720059129409492
+      },
+      "systrap": {
+        "idle_cpu_cores": 0.049666666666666734,
+        "ready_seconds": 13.474023128859699
+      }
+    },
+    "platforms": {
+      "kvm": {
+        "command_round_trip_ms": 34.802903421223164,
+        "getppid_ns": 798.2471199999997,
+        "open_close_ns": 14068.522199999989,
+        "startup_seconds": 1.371564045548439,
+        "stat_ns": 2255.73295
+      },
+      "systrap": {
+        "command_round_trip_ms": 19.349005073308945,
+        "getppid_ns": 26107.875000000004,
+        "open_close_ns": 68538.41900000007,
+        "startup_seconds": 1.490316859446466,
+        "stat_ns": 45718.61925
+      }
+    },
+    "restores": {
+      "inherited": {
+        "kvm": true,
+        "restore_seconds": 1.1078938590362668
+      },
+      "without_kvm": {
+        "kvm": false,
+        "restore_seconds": 1.0949313510209322
+      }
+    },
+    "result": "5 passed"
+  },
+  "runtime": "2026.10.24.2"
+}

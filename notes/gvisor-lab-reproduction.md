@@ -8,8 +8,9 @@ binaries and actual Docker image/volume data. Sentry provides the Linux system
 interfaces; systrap executes application instructions natively. Guest root,
 guest UIDs and nested namespaces live inside Sentry. The host processes remain
 the cluster user's UID. Apptainer hides `/dev/kvm` and the launcher asserts its
-absence before selecting systrap. Internet and inbound TCP traverse an
-unprivileged Ethernet socket -> relay -> passt. No host sudo, KVM, TAP setup,
+absence before selecting systrap; only an explicit `kvm` launch (Sandweave
+0.2.48, [KVM platform](kvm-platform.md)) binds it. Internet and inbound TCP
+traverse an unprivileged Ethernet socket -> relay -> passt. No host sudo, KVM, TAP setup,
 host firewall edits, subordinate UID ranges, or admin changes are used.
 
 ## Build and start

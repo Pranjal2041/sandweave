@@ -40,5 +40,5 @@
 @@ -163,2 +163,4 @@
                                  str(memory_bytes(resources['gpu']['client_memory'])//1024**2)]
 +        options += ['--strace-syscalls',
-+                    'pipe,pipe2,fcntl,dup,dup2,dup3,close,clone,clone3,fork,vfork,exit,exit_group']
++                    'clone,clone3,fork,vfork']
          return options

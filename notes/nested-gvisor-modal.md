@@ -45,6 +45,32 @@ stream. A separate 1,000-command concurrent run completed while Open Saber
 continued running. Those results do not qualify this candidate for a stable
 release. The failed guests, trace patches, and logs are retained for diagnosis.
 
+Two later GNOME attempts timed out instead. In one retained guest, the X
+server had exited and the user's systemd instance never reaped its exited
+children: their zombies remained while systemd repeatedly sent SIGKILL.
+
+**Status (2026-10-25): investigation stopped at the user's request** in favor
+of a direct Modal runtime. The cause of the intermittent startup failures is
+not identified. These nested-guest stress probes passed, so they do not
+reproduce it:
+
+| Probe | Workload | Result |
+| --- | --- | --- |
+| `sources/nested-signal-test.c --check-avx` | 8 concurrent copies, 4 modes, 100,000 trapped and plain syscalls each, YMM0–15 checked | pass |
+| `sources/nested-fork-test.c` | 32,000 forks (8 processes × 4 threads), then 12,800 with 256 children alive at once; copy-on-write checked in both directions | pass |
+| `sources/nested-subprocess-stress.py` | 12,800 vfork and 12,800 fork Python launches (4 × 16 threads) | pass |
+| `scripts/nested-forward-stream-check.py` | 607 MB each way through the passt-forwarded port, 16 connections, byte-verified | pass |
+| `scripts/host-tcp-consume-check.py` | passt's `MSG_PEEK` discard-buffer and `MSG_TRUNC` consume semantics on Modal's outer gVisor | matches Linux |
+
+The AVX probe initially failed on native Linux because its relocated frame
+omitted the `FP_XSTATE_MAGIC2` trailer; it now copies `extended_size`.
+Vector registers beyond YMM15 (AVX-512 state) were not checked.
+
+Workers `sb-cUFlXNgm3uqY9YzA3t0zOZ` (L40S) and `sb-9PWYVJijEbtrCh8q2MBmqr`
+(CPU) retain the failed guests, logs, and lossless frame caches. Filesystem
+image `im-01M5RCG33V7Z0CS8WHYCZM4WXB` of the L40S worker predates the stress
+probes; its restore is untested.
+
 Local evidence:
 
 - `runs/nested-modal-20261025/vr-evidence.tar` contains both runs' videos,

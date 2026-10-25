@@ -92,6 +92,8 @@ parser.add_argument('--experimental-gpu-client-memory-mib', type=int,
                     help='optional MPS CUDA memory ceiling per client, including context overhead; not an environment VRAM cap')
 parser.add_argument('--runtime-debug', action=argparse.BooleanOptionalAction, default=True,
                     help='verbose engine logging; disable when measuring GPU throughput')
+parser.add_argument('--strace-syscalls', help='explicit comma-separated guest syscall trace for diagnostics')
+parser.add_argument('--network-trace', action='store_true', help='trace the network helper for diagnostics')
 parser.add_argument('--hidepid', type=int, choices=(0, 1, 2), default=0)
 parser.add_argument('--audit-max-bytes', type=int, default=1024**3)
 parser.add_argument('--audit', action=argparse.BooleanOptionalAction, default=False)
@@ -501,6 +503,7 @@ try:
     passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', passt_socket.name,
                    '-a', '10.0.2.15', '-n', '24', '-g', '10.0.2.2', '-m', '1500',
                    '--dns-forward', '10.0.2.3', '--tcp-port-report', 'ports.json',
+                   *(['--trace'] if args.network_trace else []),
                    *forwards, memory_limit=True, cwd=netdir),
                   logs / 'passt.log', cwd=netdir)
     wait_socket(passt_socket, passt)
@@ -549,9 +552,12 @@ try:
         command.append('--clock-pause=' + args.clock_pause)
     if args.guest_gs:
         command.append('--systrap-disable-syscall-patching')
+    if args.strace_syscalls is not None:
+        command += ['--strace', '--strace-syscalls=' + args.strace_syscalls]
     if args.gpu is not None:
         command[1:1] = ['--gpu', str(args.gpu)]
         command += ['--nvproxy', '--nvproxy-allow-unsupported-driver',
+                    '--nvproxy-driver-version=' + launch_settings['gpu']['driver_version'],
                     '--nvproxy-allowed-driver-capabilities=compute,utility,graphics,video' + (',profiling' if mps else '')]
         if mps:
             command += mps.flags()

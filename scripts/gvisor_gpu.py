@@ -7,6 +7,23 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
+
+
+def gpu_inventory():
+    """Read device minors and UUIDs through NVML, including hosts without procfs driver entries."""
+    report = ET.fromstring(subprocess.check_output(['nvidia-smi', '-q', '-x'], text=True))
+    version = report.findtext('kmd_version') or report.findtext('driver_version')
+    if not version or not re.fullmatch(r'\d+\.\d+\.\d+', version):
+        raise ValueError('cannot identify the loaded NVIDIA driver')
+    devices = []
+    for ordinal, gpu in enumerate(report.findall('gpu')):
+        minor, identifier = gpu.findtext('minor_number'), gpu.findtext('uuid')
+        if not minor or not minor.isdecimal() or not identifier or not identifier.startswith('GPU-'):
+            raise ValueError('NVIDIA inventory lacks a device minor or UUID')
+        devices.append({'device_minor': int(minor), 'uuid': identifier,
+                        'host_nvml_index': ordinal, 'pci_bus_id': gpu.attrib['id']})
+    return version, devices
 
 
 def eligible_devices():
@@ -39,10 +56,10 @@ def _eligible_devices():
         return list(map(int, explicit.split(',')))
     # Local/SSH workers respect the container's visibility filters and actual
     # device permissions. Numeric CUDA visibility uses NVML ordinals, not minors.
-    visible = subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid', '--format=csv,noheader'], text=True)
+    _, visible = gpu_inventory()
     selected = []
-    for line in visible.splitlines():
-        ordinal, identifier = (part.strip() for part in line.split(','))
+    for device in visible:
+        ordinal, identifier = str(device['host_nvml_index']), device['uuid']
         eligible = True
         for key in ('CUDA_VISIBLE_DEVICES', 'NVIDIA_VISIBLE_DEVICES'):
             value = os.environ.get(key)
@@ -53,17 +70,13 @@ def _eligible_devices():
                 eligible = False
         if not eligible:
             continue
-        for path in Path('/proc/driver/nvidia/gpus').glob('*/information'):
-            fields = {k.strip(): v.strip() for k, v in (line.split(':', 1) for line in path.read_text().splitlines() if ':' in line)}
-            if fields.get('GPU UUID') != identifier:
-                continue
-            minor = int(fields['Device Minor'])
-            try:
-                fd = os.open('/dev/nvidia' + str(minor), os.O_RDWR)
-            except OSError:
-                continue
-            os.close(fd)
-            selected.append(minor)
+        minor = device['device_minor']
+        try:
+            fd = os.open('/dev/nvidia' + str(minor), os.O_RDWR)
+        except OSError:
+            continue
+        os.close(fd)
+        selected.append(minor)
     return selected
 
 
@@ -84,26 +97,13 @@ def allocated_device(index):
 
 
 def driver_version():
-    match = re.search(r'Kernel Module[^\n]*?\s(\d+\.\d+\.\d+)\s', Path('/proc/driver/nvidia/version').read_text())
-    if not match:
-        raise ValueError('cannot identify the loaded NVIDIA driver')
-    return match.group(1)
+    return gpu_inventory()[0]
 
 
 def device_identity(index):
-    for info_path in Path('/proc/driver/nvidia/gpus').glob('*/information'):
-        fields = dict(line.split(':', 1) for line in info_path.read_text().splitlines() if ':' in line)
-        fields = {key.strip(): value.strip() for key, value in fields.items()}
-        if fields.get('Device Minor') != str(index):
-            continue
-        visible = subprocess.check_output([
-            'nvidia-smi', '--query-gpu=index,uuid', '--format=csv,noheader'], text=True)
-        for line in visible.splitlines():
-            nvml_index, uuid = (part.strip() for part in line.split(','))
-            if uuid == fields['GPU UUID']:
-                return {'device_minor': index, 'uuid': uuid,
-                        'host_nvml_index': int(nvml_index), 'pci_bus_id': fields['Bus Location']}
-        raise ValueError('selected device is not visible to host NVML in this allocation')
+    for device in gpu_inventory()[1]:
+        if device['device_minor'] == index:
+            return device
     raise ValueError(f'cannot identify /dev/nvidia{index}')
 
 
@@ -182,6 +182,13 @@ def configure(spec, index, resources, lab):
                                'NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,video']
     spec['process']['args'] = ['/usr/local/bin/engine-gpu-init', *spec['process']['args']]
     spec['annotations']['dev.gvisor.internal.nvproxy'] = 'true'
+    # The staged driver resources are immutable for this sandbox's lifetime.
+    spec['annotations'].update({
+        'dev.gvisor.spec.mount.gpu.source': '/lab/' + str(resources.resolve().relative_to(lab.resolve())),
+        'dev.gvisor.spec.mount.gpu.type': 'bind',
+        'dev.gvisor.spec.mount.gpu.share': 'container',
+        'dev.gvisor.spec.mount.gpu.options': 'ro',
+    })
     return {**identity, 'driver_version': driver['driver_version'],
             'resources': str(resources), 'devices': devices,
             'snapshot_support': 'persistent filesystem cold restore; experimental CUDA live restore; graphics live restore unsupported'}

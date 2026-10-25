@@ -206,6 +206,41 @@ def worker_code(code, *, timeout=30):
             child.wait(timeout=5)
     assert subprocess.run(['/bin/true'], check=True).returncode == 0
     """,
+    """
+    import builtins, io, os, subprocess, sys, tempfile
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+    original_open = builtins.open
+    def without_umask(path, *args, **kwargs):
+        if path == '/proc/self/status':
+            return io.StringIO('Name:\\tworker\\n')
+        return original_open(path, *args, **kwargs)
+    builtins.open = without_umask
+    previous = os.umask(0o027)
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            def launch(index):
+                result = subprocess.run([sys.executable, '-c',
+                    'import os; print(oct(os.umask(0)))'],
+                    capture_output=True, text=True, check=True)
+                assert result.stdout.strip() == '0o27'
+            with ThreadPoolExecutor(16) as executor:
+                futures = [executor.submit(launch, index) for index in range(64)]
+                for index in range(256):
+                    path = Path(directory) / str(index)
+                    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+                    os.close(fd)
+                    assert path.stat().st_mode & 0o777 == 0o640
+                for future in futures:
+                    future.result()
+        assert os.umask(0o077) == 0o027
+        result = subprocess.run([sys.executable, '-c', 'import os; print(oct(os.umask(0)))'],
+                                capture_output=True, text=True, check=True)
+        assert result.stdout.strip() == '0o77'
+    finally:
+        os.umask(previous)
+        builtins.open = original_open
+    """,
 ])
 def test_worker_subprocess_contract(code):
     worker_code(code)

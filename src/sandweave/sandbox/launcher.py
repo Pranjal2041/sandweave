@@ -284,11 +284,32 @@ import select
 import subprocess
 import threading
 import time
+import operator
 
 _Popen = subprocess.Popen
 _execute_signature = inspect.signature(_Popen._execute_child)
 _server = None
 _limits = sorted({getattr(resource, name) for name in dir(resource) if name.startswith('RLIMIT_')})
+_os_umask = os.umask
+_umask_lock = threading.Lock()
+_worker_umask = None
+
+
+def _set_umask(mask):
+    """Track mask changes in the private worker without probing mutable state."""
+    global _worker_umask
+    value = operator.index(mask)
+    with _umask_lock:
+        previous = _os_umask(value)
+        _worker_umask = value & 0o777
+        return previous
+
+
+def _get_umask():
+    with _umask_lock:
+        if _worker_umask is None:
+            raise RuntimeError('worker umask was not initialized')
+        return _worker_umask
 
 
 class Launcher:
@@ -347,8 +368,7 @@ class Popen(_Popen):
         if options['executable'] is not None:
             options['executable'] = os.fsencode(options['executable'])
         if options['umask'] < 0:
-            with open('/proc/self/status') as status:
-                options['umask'] = next(int(line.split()[1], 8) for line in status if line.startswith('Umask:'))
+            options['umask'] = _get_umask()
         message = {'options': options, 'fds': sorted(set([*handles, *values['pass_fds']])),
                    'affinity': sorted(os.sched_getaffinity(0)), 'parent_group': os.getpgrp(),
                    'limits': [(limit, resource.getrlimit(limit)) for limit in _limits],
@@ -418,8 +438,18 @@ class Popen(_Popen):
 
 def install():
     """Called by the worker entry point before storage work or request threads."""
-    global _server
+    global _server, _worker_umask
     if _server is None:
+        # Sample before any worker threads exist. Subsequent launches must not
+        # temporarily change the process-wide mask to read it: unrelated file
+        # creation could observe that temporary value. Some Linux ABI hosts
+        # also omit Umask from /proc, so the private worker tracks its changes.
+        previous = _os_umask(0o777)
+        try:
+            _worker_umask = previous
+        finally:
+            _os_umask(previous)
         _server = Launcher()
         atexit.register(_server.close)
+        os.umask = _set_umask
         subprocess.Popen = Popen

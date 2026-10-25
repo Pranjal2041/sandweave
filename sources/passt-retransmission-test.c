@@ -4,6 +4,29 @@
 #include "tcp.c"
 
 static unsigned forced_acks;
+static int peek_probe_case;
+int __real_setsockopt(int, int, int, const void *, socklen_t);
+int __real_getsockopt(int, int, int, void *, socklen_t *);
+
+int __wrap_setsockopt(int fd, int level, int option, const void *value, socklen_t size)
+{
+    if (!peek_probe_case)
+        return __real_setsockopt(fd, level, option, value, size);
+    assert(level == SOL_SOCKET && option == SO_PEEK_OFF);
+    if (peek_probe_case == 2) { errno = ENOPROTOOPT; return -1; }
+    return 0;
+}
+
+int __wrap_getsockopt(int fd, int level, int option, void *value, socklen_t *size)
+{
+    if (!peek_probe_case)
+        return __real_getsockopt(fd, level, option, value, size);
+    assert(level == SOL_SOCKET && option == SO_PEEK_OFF);
+    if (peek_probe_case == 1) { errno = ENOPROTOOPT; return -1; }
+    assert(*size == sizeof(int));
+    *(int *)value = peek_probe_case == 3 ? 0 : 7;
+    return 0;
+}
 int __wrap_tcp_buf_send_flag(const struct ctx *c, struct tcp_tap_conn *conn,
                              int flags)
 {
@@ -38,9 +61,13 @@ static void retransmit(uint32_t seq, size_t length)
 
 int main(void)
 {
+    for (peek_probe_case = 1; peek_probe_case <= 4; peek_probe_case++)
+        assert(tcp_probe_peek_offset_cap(AF_INET) == (peek_probe_case == 4));
+    peek_probe_case = 0;
     retransmit(2725883852U, 113);
     retransmit(UINT32_MAX - 20, 113);
     retransmit(1000, 0); /* Do not create ACK loops for empty segments. */
     puts("retransmitted payload is acknowledged even after a queued ACK was lost");
+    puts("peek-offset capability requires a successful matching readback");
     return 0;
 }

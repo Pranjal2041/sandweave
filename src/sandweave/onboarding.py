@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shlex
 import subprocess
 import sys
@@ -424,10 +425,32 @@ def install_apptainer():
         text = text.replace('$REALME "$@"', '"$REALME" "$@"')
         wrapper.write_text(text)
     executable = destination / 'runtime/bin/apptainer'
+    configure_apptainer(executable)
     ok, detail = run_probe([str(executable), '--version'])
     if not ok:
         raise ValueError('Installed Apptainer did not start: ' + detail)
     link_tool('apptainer', executable)
+
+
+def configure_apptainer(executable):
+    """Use Apptainer's underlay on gVisor workers, where unmounting its session overlay fails with EBUSY.
+
+    Only Sandweave's private installation is changed; a system Apptainer keeps its configuration.
+    """
+    if not workspace.host_compat().gvisor_host():
+        return
+    runtime = Path(executable).resolve().parents[1]
+    if workspace.home().resolve() / 'tools' not in runtime.parents:
+        return
+    config = runtime / 'x86_64/etc/apptainer/apptainer.conf'
+    text = config.read_text()
+    if not re.search(r'^enable underlay = (yes|preferred)$', text, re.M):
+        raise ValueError('Apptainer underlay is disabled in ' + str(config) + '; gVisor workers need it')
+    updated = re.sub(r'^enable overlay = .*$', 'enable overlay = no', text, flags=re.M)
+    if updated != text:
+        temporary = config.with_name('.' + config.name + '-' + uuid.uuid4().hex)
+        temporary.write_text(updated)
+        os.replace(temporary, config)
 
 
 def repair(name, template, *, yes=False, assets=None):

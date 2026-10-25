@@ -10,6 +10,28 @@ from sandweave.cli import main, parser
 from sandweave.templates.resolve import Template
 
 
+@pytest.mark.parametrize('gvisor,private', [(True, True), (False, True), (True, False)])
+def test_underlay_configuration_only_changes_private_gvisor_installation(tmp_path, monkeypatch, gvisor, private):
+    home = tmp_path / 'home'
+    runtime = (home / 'tools/apptainer/runtime') if private else (tmp_path / 'system/runtime')
+    executable = runtime / 'bin/apptainer'
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    config = runtime / 'x86_64/etc/apptainer/apptainer.conf'
+    config.parent.mkdir(parents=True)
+    original = 'enable underlay = yes\nenable overlay = try\n'
+    config.write_text(original)
+    monkeypatch.setattr(onboarding.workspace, 'home', lambda: home)
+    monkeypatch.setattr(onboarding.workspace.host_compat(), 'gvisor_host', lambda: gvisor)
+    onboarding.configure_apptainer(executable)
+    expected = original.replace('overlay = try', 'overlay = no') if private and gvisor else original
+    assert config.read_text() == expected
+    # Repeated setup leaves the already-correct configuration alone.
+    before = config.stat().st_mtime_ns
+    onboarding.configure_apptainer(executable)
+    assert config.stat().st_mtime_ns == before
+
+
 @pytest.fixture
 def runtime_files(tmp_path):
     root = tmp_path / 'assets'

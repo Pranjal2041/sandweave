@@ -15,8 +15,10 @@ from sandweave.installation import record_installation
 HOST = {'architecture': 'x86_64', 'kernel': (5, 14, 0), 'cpu_flags': ['sse2']}
 
 
-def test_prepared_runtime_upgrades_for_cpu_pauses_and_guest_clocks(tmp_path, monkeypatch):
+@pytest.mark.parametrize('gvisor_host', [False, True])
+def test_prepared_runtime_upgrades_for_host_and_clock_features(tmp_path, monkeypatch, gvisor_host):
     monkeypatch.setattr(releases, 'runtime_supported', lambda root: True)
+    monkeypatch.setattr(releases.workspace.host_compat(), 'gvisor_host', lambda: gvisor_host)
     path = tmp_path / 'tools/gvisor-socket/runtime.json'
     path.parent.mkdir(parents=True)
     capabilities = {name: 1 for name in ('cpu_accounting', 'bridge_local_delivery',
@@ -27,6 +29,9 @@ def test_prepared_runtime_upgrades_for_cpu_pauses_and_guest_clocks(tmp_path, mon
     path.write_text(json.dumps(capabilities))
     assert not releases.runtime_current(tmp_path)
     capabilities['guest_clock'] = 1
+    path.write_text(json.dumps(capabilities))
+    assert releases.runtime_current(tmp_path) == (not gvisor_host)
+    capabilities['nested_gvisor'] = 1
     path.write_text(json.dumps(capabilities))
     assert releases.runtime_current(tmp_path)
 
@@ -249,3 +254,16 @@ def test_linux54_selects_compatible_prebuilt_engine(published_runtime):
     assert releases.select(manifest, host)[0] is None
     manifest['artifacts'][0]['minimum_kernel'] = '5.4'
     assert releases.select(manifest, host)[0] == manifest['artifacts'][0]
+
+
+@pytest.mark.parametrize('detected', [False, True])
+def test_gvisor_release_string_alone_does_not_bypass_kernel_floor(monkeypatch, detected):
+    monkeypatch.setattr(releases.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(releases.platform, 'machine', lambda: 'x86_64')
+    monkeypatch.setattr(releases.platform, 'release', lambda: '4.19.0-gvisor')
+    monkeypatch.setattr(releases.workspace.host_compat(), 'gvisor_host', lambda: detected)
+    if detected:
+        assert releases.check_platform()['kernel'] == releases.MINIMUM_KERNEL
+    else:
+        with pytest.raises(ValueError, match='Linux 5.4'):
+            releases.check_platform()

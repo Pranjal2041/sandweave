@@ -6,6 +6,26 @@ import pytest
 from sandweave.sandbox import workspace
 
 
+@pytest.mark.parametrize('banner,result', [
+    (b'[0.000] Starting gVisor...\n', True),
+    (b'Linux version 4.19.0\n', False),
+    (None, False),
+])
+def test_gvisor_detection_uses_kernel_banner(monkeypatch, banner, result):
+    import ctypes
+    from types import SimpleNamespace
+
+    def klogctl(action, buffer, length):
+        assert action == 3
+        if banner is None:
+            return -1  # Unreadable kernel logs do not establish a gVisor host.
+        buffer.value = banner
+        return len(banner)
+
+    monkeypatch.setattr(ctypes, 'CDLL', lambda *a, **k: SimpleNamespace(klogctl=klogctl))
+    assert workspace.host_compat().gvisor_host.__wrapped__() is result
+
+
 @pytest.fixture
 def host(monkeypatch):
     module = workspace.host_compat()
@@ -80,12 +100,14 @@ def test_initial_host_root_does_not_share_user_namespace(host):
     assert spec['linux']['uidMappings'] == [{'containerID': 0, 'hostID': 0, 'size': 1}]
 
 
-def test_container_host_image_is_published_once_for_concurrent_callers(tmp_path, monkeypatch):
+@pytest.mark.parametrize('gvisor', [False, True])
+def test_container_host_image_is_published_once_for_concurrent_callers(tmp_path, monkeypatch, gvisor):
     from concurrent.futures import ThreadPoolExecutor
     import time
 
     module = workspace.host_compat()
-    monkeypatch.setattr(module, 'reuse_user_namespace', lambda: True)
+    monkeypatch.setattr(module, 'reuse_user_namespace', lambda: not gvisor)
+    monkeypatch.setattr(module, 'gvisor_host', lambda: gvisor)
     image = tmp_path / 'host.sif'
     image.write_bytes(b'immutable SIF')
     alias = tmp_path / 'worker-host.sif'

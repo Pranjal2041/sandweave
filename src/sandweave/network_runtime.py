@@ -12,14 +12,14 @@ SOURCE_COMMIT = '4c2bd5720373bf4a6d3e5fc3129cf5ad0dbf8c03'
 SOURCE_SHA256 = '0192a6aea35d62b2c262c791a68ac1cbb3ff89d28d64ab405c20c2956b40fbfb'
 SOURCE_URL = ('https://salsa.debian.org/sbrivio/passt/-/archive/' + SOURCE_COMMIT +
               '/passt-' + SOURCE_COMMIT + '.tar.gz')
+PATCHES = ('passt-backpressure.patch', 'passt-ephemeral-ports.patch', 'passt-gvisor-host.patch')
 
 
 @lru_cache(maxsize=1)
 def revision():
     from .bootstrap import build_input
     return hashlib.sha256((SOURCE_SHA256 + ''.join(workspace.file_digest(
-        build_input(name)) for name in ('passt-backpressure.patch',
-                                       'passt-ephemeral-ports.patch'))).encode()).hexdigest()
+        build_input(name)) for name in PATCHES)).encode()).hexdigest()
 
 
 def available(root):
@@ -54,6 +54,7 @@ def install(builder, root, *, engine=None, from_source=False):
     extract_source(archive, source)
     shutil.copy2(build_input('passt-backpressure.patch'), source / 'sandweave.patch')
     shutil.copy2(build_input('passt-ephemeral-ports.patch'), source / 'ephemeral-ports.patch')
+    shutil.copy2(build_input('passt-gvisor-host.patch'), source / 'gvisor-host.patch')
     shutil.copy2(build_input('passt-backpressure-test.c'), source / 'regression.c')
     shutil.copy2(build_input('passt-retransmission-test.c'), source / 'retransmission.c')
     image = builder.downloads / 'gvisor-builder.sif'
@@ -62,15 +63,16 @@ def install(builder, root, *, engine=None, from_source=False):
 cd /lab/build-tmp/passt-source
 git apply sandweave.patch
 git apply ephemeral-ports.patch
+git apply gvisor-host.patch
 cat >> Makefile <<'MAKE'
 regression: seccomp.h
 \t$(CC) $(FLAGS) -Dmain=passt_main -c passt.c -o passt-main.o
 \t$(CC) $(FLAGS) -I. regression.c $(filter-out passt.c tcp_buf.c,$(PASST_SRCS)) passt-main.o -Wl,--wrap=tap_send_frames,--wrap=tcp_set_peek_offset,--wrap=tcp_rst_do,--wrap=conn_flag_do,--wrap=recvmsg -o regression
 retransmission: seccomp.h
 \t$(CC) $(FLAGS) -Dmain=passt_main -c passt.c -o retransmission-main.o
-\t$(CC) $(FLAGS) -I. retransmission.c $(filter-out passt.c tcp.c,$(PASST_SRCS)) retransmission-main.o -Wl,--wrap=tcp_buf_send_flag -o retransmission
+\t$(CC) $(FLAGS) -I. retransmission.c $(filter-out passt.c tcp.c,$(PASST_SRCS)) retransmission-main.o -Wl,--wrap=tcp_buf_send_flag,--wrap=setsockopt,--wrap=getsockopt -o retransmission
 MAKE
-make -j4 VERSION=2025_12_10.d04c480-sandweave3 passt regression retransmission
+make -j4 VERSION=2025_12_10.d04c480-sandweave5 passt regression retransmission
 ./regression
 ./retransmission
 '''
@@ -80,7 +82,8 @@ make -j4 VERSION=2025_12_10.d04c480-sandweave3 passt regression retransmission
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
-    for name in ('passt', 'regression.c', 'retransmission.c', 'sandweave.patch', 'ephemeral-ports.patch'):
+    for name in ('passt', 'regression.c', 'retransmission.c', 'sandweave.patch', 'ephemeral-ports.patch',
+                 'gvisor-host.patch'):
         shutil.copy2(source / name, target / name)
     shutil.copytree(source / 'LICENSES', target / 'LICENSES')
     shutil.copy2(archive, target / 'upstream.tar.gz')

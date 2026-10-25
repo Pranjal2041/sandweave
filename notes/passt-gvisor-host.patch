@@ -1,0 +1,49 @@
+diff --git a/isolation.c b/isolation.c
+index b25f349..1e1eb0d 100644
+--- a/isolation.c
++++ b/isolation.c
+@@ -324,8 +324,16 @@ int isolate_prefork(const struct ctx *c)
+ 	}
+ 
+ 	if (mount("", "/", "", MS_UNBINDABLE | MS_REC, NULL)) {
+-		err_perror("Failed to remount /");
+-		return -errno;
++		/* gVisor implements shared, private and slave propagation
++		 * but rejects unbindable mounts with EINVAL. Private
++		 * propagation still keeps the mounts below out of the parent
++		 * namespace, and pivot_root() removes the original tree.
++		 */
++		if (errno != EINVAL ||
++		    mount("", "/", "", MS_PRIVATE | MS_REC, NULL)) {
++			err_perror("Failed to remount /");
++			return -errno;
++		}
+ 	}
+ 
+ 	if (mount("", TMPDIR, "tmpfs",
+diff --git a/tcp.c b/tcp.c
+--- a/tcp.c
++++ b/tcp.c
+@@ -2847,13 +2847,20 @@
+ static bool tcp_probe_peek_offset_cap(sa_family_t af)
+ {
+ 	bool ret = false;
+-	int s, optv = 0;
++	int s, optv = 7, readback = -1;
++	socklen_t optlen = sizeof(readback);
+ 
+ 	s = socket(af, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+ 	if (s < 0) {
+ 		warn_perror("Temporary TCP socket creation failed");
+ 	} else {
+-		if (!setsockopt(s, SOL_SOCKET, SO_PEEK_OFF, &optv, sizeof(int)))
++		/* Some virtual kernels accept options before connect() without
++		 * implementing them. Verify the stored value before enabling
++		 * offset-based peeking; otherwise TCP payloads get duplicated.
++		 */
++		if (!setsockopt(s, SOL_SOCKET, SO_PEEK_OFF, &optv, sizeof(int)) &&
++		    !getsockopt(s, SOL_SOCKET, SO_PEEK_OFF, &readback, &optlen) &&
++		    optlen == sizeof(readback) && readback == optv)
+ 			ret = true;
+ 		close(s);
+ 	}

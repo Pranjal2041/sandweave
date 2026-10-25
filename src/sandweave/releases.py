@@ -30,6 +30,11 @@ def check_platform():
         raise ValueError('Sandweave currently supports Linux x86-64 workers; this architecture needs a port, not a local rebuild')
     release = platform.release()
     kernel = kernel_version(release)
+    if kernel < MINIMUM_KERNEL and workspace.host_compat().gvisor_host():
+        # gVisor reports a fixed release (Modal GPU sandboxes: 4.19.0-gvisor) that does not describe the
+        # system calls it implements. Prepared engines must separately advertise
+        # nested-gVisor support in runtime_current().
+        kernel = MINIMUM_KERNEL
     if kernel < MINIMUM_KERNEL:
         raise ValueError('Sandweave\'s gVisor runtime requires Linux 5.4 or newer '
                          '(found ' + release + '). Use a worker with a supported kernel; '
@@ -74,7 +79,9 @@ def runtime_current(root):
             and descriptor.get('bounded_network_rx', 0) >= 1
             and descriptor.get('buffered_filesystem_export', 0) >= 1
             and descriptor.get('cancellable_cpu_pause', 0) >= 1
-            and descriptor.get('guest_clock', 0) >= 1)
+            and descriptor.get('guest_clock', 0) >= 1
+            and (not workspace.host_compat().gvisor_host()
+                 or descriptor.get('nested_gvisor', 0) >= 1))
 
 
 SECCOMP_PROBE = '''import ctypes, os
@@ -93,11 +100,12 @@ print('NAMESPACE_AND_SECCOMP_OK')
 
 def check_host(directory):
     """Probe Apptainer's actual permission path without downloading a rootfs."""
-    from .onboarding import run_probe
+    from .onboarding import configure_apptainer, run_probe
     info = host_info()
     apptainer = workspace.tool('apptainer')
     if not apptainer:
         raise ValueError('Apptainer is required before checking runtime compatibility')
+    configure_apptainer(apptainer)
     with Stage('Check runtime compatibility'), tempfile.TemporaryDirectory(
             prefix='.host-check-', dir=directory) as temporary:
         root = Path(temporary)

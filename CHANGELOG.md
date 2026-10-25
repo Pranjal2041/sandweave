@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.47
+
+- Speed up Weave and workers with hundreds of sandboxes, from a client's runs of
+  424 desktops on one 192-core worker. Worker admission reads only active
+  sandboxes and no longer queries every running sandbox's runtime. The
+  controller's loop and name checks copy only the fields they read. Launches on
+  an already accepted worker skip its inventory. Worker telemetry builds the
+  process tree once per sample.
+- Weave pings workers for liveness and takes their full inventory at most every
+  30 s. A ready worker becomes `unreachable` after 60 s without an answer; a
+  relayed worker stays reachable while its replies arrive. Pings go ahead of
+  queued sandbox traffic on the relay.
+- Each worker starts at most one sandbox per CPU at a time, and at least 16;
+  the rest wait reserved. `SANDWEAVE_MAX_STARTING` sets one limit for every
+  worker.
+- Settled sandboxes (ready, leased, paused) are checked every 30 s instead of
+  every 2 s. Other states, such as an unknown launch outcome, are still checked
+  on every 2 s probe.
+- `cluster.info` lists every sandbox that has not ended and the 50 most recently
+  ended ones, with `sandboxes_omitted` counting the rest. Previously the reply
+  grew with history until it exceeded the 4 MiB limit and failed.
+- GNOME desktops wait up to 600 s for readiness instead of 120 s, still within
+  `startup_timeout`.
+- Fix service-network routing stalling for 0.2 s per frame when one member's
+  receive queue was full, which dropped frames for every group.
+
 ## 0.2.46
 
 - Fix intermittent "connection reset", "broken pipe" and "Remote end closed

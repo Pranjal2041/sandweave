@@ -6,6 +6,7 @@ for lossless raw) and travel over one persistent TLS connection, with
 concurrent requests pipelined on it.
 """
 import io
+import threading
 import time
 
 from ...errors import OperationUnknown
@@ -22,7 +23,7 @@ class RemoteVRStream:
         self.options = dict(width=width, height=height, fps=fps, hz=hz, slots=slots)
         self.codec, self.quality = codec, quality
         self.connection = None
-        self.sequence = 0
+        self.sequence, self.input_mutex = 0, threading.Lock()
         self.broken = self.closed = False
         self.clock_rtt_ns = self.guest_to_host_ns = None
 
@@ -54,27 +55,32 @@ class RemoteVRStream:
         self.clock_rtt_ns, self.guest_to_host_ns = min(samples)
 
     def input(self, state):
-        if self.broken:
-            raise RuntimeError('input channel failed; actions cannot be replayed safely')
-        self.sequence += 1
-        sent = time.monotonic_ns()
-        try:
-            reply = self._call('vr_input', request={'op': 'input', 'id': self.sequence, 'state': state})
-        except (OSError, OperationUnknown, TimeoutError, ConnectionError):
-            self.broken = True
-            raise
-        received = time.monotonic_ns()
-        if 'error' in reply:
-            raise ValueError(reply['error'])
-        if reply.get('id') != self.sequence:
-            self.broken = True
-            raise ConnectionError('input acknowledgement ID mismatch')
-        return {**reply, 'host_sent_ns': sent, 'host_ack_ns': received, 'round_trip_ns': received - sent}
+        with self.input_mutex:
+            if self.broken:
+                raise RuntimeError('input channel failed; actions cannot be replayed safely')
+            self.sequence += 1
+            sent = time.monotonic_ns()
+            try:
+                reply = self._call('vr_input', request={'op': 'input', 'id': self.sequence, 'state': state})
+            except (OSError, OperationUnknown, TimeoutError, ConnectionError):
+                self.broken = True
+                raise
+            received = time.monotonic_ns()
+            if 'error' in reply:
+                raise ValueError(reply['error'])
+            if reply.get('id') != self.sequence:
+                self.broken = True
+                raise ConnectionError('input acknowledgement ID mismatch')
+            return {**reply, 'host_sent_ns': sent, 'host_ack_ns': received, 'round_trip_ns': received - sent}
+
+    def latest_encoded(self, after=0, timeout=5):
+        """Frame metadata and its guest-encoded bytes, for forwarding without re-encoding."""
+        value = self._call('vr_latest', after=after, timeout=timeout, format=self.codec, quality=self.quality)
+        return value, value.pop('image'), value.pop('format')
 
     def latest(self, after=0, timeout=5):
         from vr_frames import Frame
-        value = self._call('vr_latest', after=after, timeout=timeout, format=self.codec, quality=self.quality)
-        data, image_format = value.pop('image'), value.pop('format')
+        value, data, image_format = self.latest_encoded(after, timeout)
         expected = value['width'] * value['height'] * 4
         if image_format == 'zstd':
             import zstandard

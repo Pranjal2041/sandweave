@@ -23,9 +23,18 @@ class VR:
 
     def _frame(self, method='observe', **parameters):
         from .frames import Frame
+        # Modal sandboxes are remote: their guest encodes JPEG, forwarded unchanged.
+        default = 'jpeg' if self.sandbox._info.get('spec', {}).get('runtime') == 'modal' else 'zstd'
         value = self.sandbox._call('control', name='vr', method=method,
-                                  parameters={**parameters, 'codec': self.config.get('transport', 'zstd')})
-        if value.get('codec') == 'zstd':
+                                  parameters={**parameters, 'codec': self.config.get('transport', default)})
+        if value.get('codec') == 'jpeg':
+            import io
+            from PIL import Image
+            frame = value['frame']
+            frame['rgba'] = Image.open(io.BytesIO(frame['rgba'])).convert('RGBX').tobytes()
+            if len(frame['rgba']) != frame['width'] * frame['height'] * 4:
+                raise ValueError('invalid decoded VR frame length')
+        elif value.get('codec') == 'zstd':
             import zstandard
             expected = value['frame']['width'] * value['frame']['height'] * 4
             if not 0 < expected <= 2 * 4096 * 4096 * 4:
@@ -180,22 +189,39 @@ class AttachedVR:
             after = parameters.get('after', 0)
         else:
             raise UnsupportedFeature('unknown VR operation: ' + method)
+        codec = parameters.get('codec', 'raw')
+        if codec not in ('raw', 'zstd', 'jpeg'):
+            raise ValueError('VR transport must be raw, zstd or jpeg')
+        # A remote stream already holds guest-encoded JPEG: forward it without decoding.
+        passthrough = codec == 'jpeg' and hasattr(self.stream, 'latest_encoded')
         deadline = time.monotonic() + timeout
         while True:
-            frame = self.stream.latest(after=after, timeout=max(.001, deadline-time.monotonic()))
+            remaining = max(.001, deadline-time.monotonic())
+            if passthrough:
+                fields, payload, _ = self.stream.latest_encoded(after=after, timeout=remaining)
+                frame = None
+            else:
+                frame = self.stream.latest(after=after, timeout=remaining)
+                fields = {k: v for k, v in vars(frame).items() if k != 'rgba'}
             # Both timestamps come from CLOCK_MONOTONIC in the same guest.
-            if ack is None or frame.capture_begin_ns >= ack['guest_ack_ns']:
+            if ack is None or fields['capture_begin_ns'] >= ack['guest_ack_ns']:
                 break
-            after = frame.sequence
+            after = fields['sequence']
             if time.monotonic() >= deadline:
                 raise TimeoutError('no paired-eye capture after input acknowledgement')
-        codec = parameters.get('codec', 'raw')
-        if codec not in ('raw', 'zstd'):
-            raise ValueError('VR transport must be raw or zstd')
         started = time.monotonic_ns()
-        payload = self.compressor.compress(frame.rgba) if codec == 'zstd' else frame.rgba
-        return {'frame': {**vars(frame), 'rgba': payload}, 'codec': codec,
-                'metadata': {**frame.metadata(), 'input': ack,
+        if codec == 'zstd':
+            payload = self.compressor.compress(frame.rgba)
+        elif codec == 'raw':
+            payload = frame.rgba
+        elif not passthrough:
+            from PIL import Image
+            import io
+            output = io.BytesIO()
+            Image.frombytes('RGBX', (frame.width, frame.height), frame.rgba).convert('RGB').save(output, 'JPEG', quality=90)
+            payload = output.getvalue()
+        return {'frame': {**fields, 'rgba': payload}, 'codec': codec,
+                'metadata': {**fields, 'input': ack,
                 'transport': {'codec': codec, 'bytes': len(payload), 'encode_ns': time.monotonic_ns()-started},
                 'guest_to_host_ns': self.stream.guest_to_host_ns,
                 'minimum_ping_rtt_ns': self.stream.clock_rtt_ns,

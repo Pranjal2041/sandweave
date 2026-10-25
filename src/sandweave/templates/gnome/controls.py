@@ -235,7 +235,10 @@ class AttachedDesktop:
             raise UnsupportedFeature('desktop fast I/O currently supports xvnc; Wayland is an explicit lab option')
         self.client = context.runtime.manager.fast_io(context.id, backend=backend)
         self.capture_lock = threading.Lock()
-        deadline = time.monotonic() + context.remaining(config.get('ready_timeout', 120))
+        # Readiness waits up to 600 s by default, still within the sandbox's startup deadline. With a few hundred
+        # desktops restoring at once, GNOME on a busy host closed its overview after the old 120 s and the
+        # machine was failed and started again from scratch (2026-10-23, aws-3: 17 of 424 in one boot).
+        deadline = time.monotonic() + context.remaining(config.get('ready_timeout', 600))
         try:
             with measure('desktop_display_seconds'):
                 self._wait_for_display(context, deadline)

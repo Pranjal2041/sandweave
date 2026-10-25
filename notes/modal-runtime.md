@@ -57,12 +57,42 @@ game directly, without GNOME. Desktop-only templates are rejected.
   Modal's VM runtime with the `sandweave-modal-credentials` Secret.
 - Unit tests: `tests/test_modal_runtime.py`.
 
-Live status: two image builds failed and were fixed (the export stub must be
-Python; `python3-zstandard` is not packaged for 22.04). The third attempt was
-refused by Modal with `Exceeded limit of 3000 for unscheduled Sandboxes`. At
-that point new CPU and GPU sandboxes were refused workspace-wide, while this
-environment listed only about 70 sandboxes. The guest boot, agent, VR stream
-and Open Saber run on `runtime="modal"` are not yet verified.
+Build history: two image builds failed and were fixed (the export stub must be
+Python; `python3-zstandard` is not packaged for 22.04). Creation was then refused
+workspace-wide (`Exceeded limit of 3000 for unscheduled Sandboxes`, from other
+environments of the shared workspace; this environment held 7 unscheduled) until
+06:16 UTC. GPU requests then failed with `Insufficient capacity` after about
+22 minutes each, for L40S, A10 and L4 (attempts 6–14). Modal sandboxes accept a
+single GPU model, not a list.
+
+### Open Saber acceptance (attempt 15, 2026-10-25)
+
+`scripts/modal-opensaber-check.py` passed on an NVIDIA L40S (driver 610.57.04),
+through the public SDK with `runtime="modal"`: guest boot without systemd, agent
+over the TLS tunnel, Monado, the game, paired-eye observation, input, a 120-second
+recording and Monado metrics. Readiness took 1,203 s, of which 1,177 s was the
+runtime phase, mostly waiting for GPU scheduling.
+
+Decoded frames from the actual `left-eye.mp4`/`right-eye.mp4` (60 s) and
+`gameplay.mp4` (100 s) show gameplay: both sabers, a directional block, the score
+rising from 148 to 240 with combo 1, and the expected eye disparity.
+
+| Measure | Result |
+| --- | --- |
+| Application FPS (Monado, 120.1 s capture window) | **82.74** (9,938 frames); interval median 11.14 ms, p95 12.65 ms |
+| Compositor | 90 Hz target; GPU median 0.21 ms; reused application frames 10.0% |
+| Capture cadence (requested 30 FPS) | **1.67 FPS**: 202 paired frames, 0 recorder drops, 10,156 ring frames skipped |
+| Input actions (target 120 Hz) | 201 in 120 s, about 1.7 Hz |
+
+For comparison, the nested L40S runs measured 40.6 and 41.5 application FPS with
+29.7–29.8 FPS capture. Here the game renders at nearly the 90 Hz target, but the
+remote frame and input transport is far below target: each VR call through the
+Modal tunnel took about 0.6 s. Capture and input rates are therefore not yet
+usable for interactive agents or 30 FPS recordings.
+
+Evidence: `runs/modal-runtime-20261025/modal-opensaber15.tar` (videos, inputs,
+metrics, summary, ready record and retry log; lossless frame files excluded),
+SHA-256 `c06a07b83e5d012888ddce95a0306912f268e7eb10716dff3cc7605b960c6b32`.
 
 ## Reference: direct VR stack on Modal
 

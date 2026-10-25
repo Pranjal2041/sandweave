@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.48
+
+- Add an opt-in `kvm` option for gVisor sandboxes. `kvm=True` uses gVisor's KVM
+  platform and requires a worker whose user can open `/dev/kvm`; `kvm="auto"`
+  uses it where available. The default is unchanged. `env.info["kvm"]` reports
+  the platform. Pools, Weave and the CLI (`--kvm`, `--kvm-auto`, `--no-kvm`)
+  take the same option, and Weave places `kvm=True` only on workers with KVM.
+- Snapshots record the platform they ran on; a restore keeps it unless it sets
+  `kvm`. Memory snapshots move between platforms in both directions.
+- On one worker, system calls were 5–33× faster on KVM, GNOME was ready in 9.7 s
+  instead of 13.5 s and idled at two thirds of the CPU. Short `env.run` commands
+  were slower and more variable. See the KVM documentation for measurements.
+- Upgrade prepared engines for new launches to runtime 2026.10.24.2, which keeps
+  application GS on KVM. Firefox 155 crashed on KVM without it. Memory snapshots
+  pinned to older engines restore without KVM under `kvm="auto"`.
+- Fix the guest clock link in the README.
+
 ## 0.2.47
 
 - Speed up Weave and workers with hundreds of sandboxes, from a client's runs of

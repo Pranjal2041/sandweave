@@ -1,0 +1,28 @@
+schema_version = 1
+installation = "vr/opensaber-session"
+extends = "gnome@1"
+base_snapshot = "vr-base@1"
+
+# Open Saber run by a task environment's own VR session supervisor (for example the frontier
+# Expert+ task's vr_session.py, which owns Monado, the game and the evidence journals). The
+# environment starts it after boot as user ga under ~/open-saber-sessions/current; the VR and
+# audio controls attach to its agent socket and sound server on first use.
+
+[resources]
+cpu = 8
+memory = "16GiB"
+runtime_memory = "2GiB"
+gpu = true
+
+[capabilities.vr]
+session_agent = "/home/ga/open-saber-sessions/current/agent.sock"
+# Created by the environment before the session starts; its Monado gets XRT_LAB_HAPTICS_FILE.
+session_haptics = "/home/ga/open-saber-haptics.bin"
+width = 960
+height = 1080
+fps = 60
+hz = 90
+
+[capabilities.audio]
+pulse_server = "unix:/home/ga/open-saber-sessions/current/runtime/pulse/native"
+sink = "vr"

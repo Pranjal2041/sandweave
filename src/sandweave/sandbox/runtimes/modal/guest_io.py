@@ -155,17 +155,25 @@ def call(state, op, parameters):
         return {**state.desktop.request(parameters['op'], events, parameters.get('format'),
                                         parameters.get('quality', 85)), 'guest_ns': time.monotonic_ns()}
     if op == 'vr_start':
-        from guest_vr import Stream
+        from guest_vr import SessionStream, Stream
         with state.lock:
-            if state.vr is None:
+            if state.vr is None and parameters.get('session_agent'):
+                state.vr = SessionStream(types.SimpleNamespace(
+                    session_agent=parameters['session_agent'], session_haptics=parameters.get('session_haptics'),
+                    session_timeout=parameters.get('session_timeout', 20)))
+            elif state.vr is None:
                 state.vr = Stream(types.SimpleNamespace(
                     width=parameters.get('width', 960), height=parameters.get('height', 1080),
                     fps=parameters.get('fps', 90), hz=parameters.get('hz', 90), slots=parameters.get('slots', 8),
                     user=parameters.get('user', 'ga')))
         return {'started': True}
     if op == 'vr_latest':
-        frame, pixels = state.vr.ring.latest(parameters.get('after', 0), parameters.get('timeout', 5))
         image_format = parameters.get('format', 'jpeg')
+        if hasattr(state.vr, 'latest_encoded'):  # a VR session supervisor encodes its own frames
+            frame, data = state.vr.latest_encoded(parameters.get('after', 0), parameters.get('timeout', 5),
+                                                  image_format, parameters.get('quality', 90))
+            return {**frame, 'image': data, 'format': image_format}
+        frame, pixels = state.vr.ring.latest(parameters.get('after', 0), parameters.get('timeout', 5))
         data = encode_image('RGB', (frame['width'], frame['height']), pixels, 'RGBX', frame['width'] * 4,
                             image_format, parameters.get('quality', 90))
         return {**frame, 'image': data, 'format': image_format}
@@ -184,7 +192,8 @@ def call(state, op, parameters):
         from guest_audio import Capture
         with state.lock:
             if state.audio is None:
-                state.audio = Capture(parameters.get('user', 'ga'))
+                state.audio = Capture(parameters.get('user', 'ga'), server=parameters.get('server'),
+                                      sink=parameters.get('sink') or 'sandweave')
         return {'started': True, 'guest_ns': time.monotonic_ns()}
     if op == 'audio_read':
         if state.audio is None:

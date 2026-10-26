@@ -14,13 +14,16 @@ from ...errors import OperationUnknown
 
 class RemoteVRStream:
     def __init__(self, runtime, context, *, width=960, height=1080, fps=90, hz=90, mirror='none', slots=8,
-                 codec='jpeg', quality=90):
+                 codec='jpeg', quality=90, session_agent=None, session_haptics=None):
         if hz not in (60, 72, 90, 120, 144) or mirror not in ('none', 'pbo', 'sync'):
             raise ValueError('invalid compositor rate or mirror mode')
         if codec not in ('jpeg', 'zstd') or type(quality) is not int or not 1 <= quality <= 95:
             raise ValueError('VR transport codec must be jpeg (quality 1..95) or zstd')
         self.runtime, self.context = runtime, context
         self.options = dict(width=width, height=height, fps=fps, hz=hz, slots=slots)
+        if session_agent:
+            # The environment's own VR session supervisor owns Monado; the guest relays to its socket.
+            self.options.update(session_agent=session_agent, session_haptics=session_haptics)
         self.codec, self.quality = codec, quality
         self.connection = self.input_connection = self.time_connection = None
         self.sequence, self.input_mutex, self.time_mutex = 0, threading.Lock(), threading.Lock()

@@ -24,14 +24,17 @@ LOGS = Path('/run/sandweave/logs')
 
 
 class Capture:
-    def __init__(self, user='ga'):
+    def __init__(self, user='ga', *, server=None, sink=SINK):
+        """Capture `sink` of the guest's sound server, or of another PulseAudio server (`server`,
+        for example a VR session supervisor's own, unix:<runtime>/pulse/native)."""
         LOGS.mkdir(parents=True, exist_ok=True)
         account = pwd.getpwnam(user)
         # PulseAudio authenticates clients with the cookie under the user's HOME.
         self.process = subprocess.Popen(
             ['runuser', '-u', user, '--', 'env', 'HOME=' + account.pw_dir,
-             f'XDG_RUNTIME_DIR=/run/user/{account.pw_uid}', 'parec', '--raw',
-             '--device=' + SINK + '.monitor', '--format=s16le', f'--rate={RATE}', f'--channels={CHANNELS}',
+             f'XDG_RUNTIME_DIR=/run/user/{account.pw_uid}', *(['PULSE_SERVER=' + server] if server else []),
+             'parec', '--raw',
+             '--device=' + sink + '.monitor', '--format=s16le', f'--rate={RATE}', f'--channels={CHANNELS}',
              f'--latency-msec={LATENCY_MS}', f'--process-time-msec={LATENCY_MS}', '--client-name=sandweave-capture'],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=(LOGS / 'audio-capture.log').open('ab'),
             bufsize=0, start_new_session=True)

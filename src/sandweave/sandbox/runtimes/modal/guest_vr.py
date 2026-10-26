@@ -93,6 +93,88 @@ class Ring:
             time.sleep(.0005)
 
 
+class SessionStream:
+    """A VR session supervisor the environment runs itself (for example a task's vr_session.py,
+    which owns Monado, the frame ring and the only input connection, and journals evidence).
+
+    This relays to its agent socket, one connection per direction: observe returns its
+    guest-encoded paired-eye frames (same ring fields as Ring), input sends state changes
+    that its bridge forwards to Monado and acknowledges. Haptics come from the record
+    file its Monado appends to (XRT_LAB_HAPTICS_FILE in the session's environment).
+    """
+
+    def __init__(self, options):
+        self.path, self.haptics_path = Path(options.session_agent), options.session_haptics
+        deadline = time.monotonic() + options.session_timeout
+        while not self.path.is_socket():
+            if time.monotonic() > deadline:
+                raise TimeoutError(f'the VR session socket {self.path} did not appear')
+            time.sleep(.2)
+        self.frames, self.inputs = self._connect(), self._connect()
+        self.frame_lock, self.input_lock = threading.Lock(), threading.Lock()
+        reply, _ = self._request(self.frames, self.frame_lock, {'op': 'info'})
+        self.info = reply
+
+    def _connect(self):
+        import socket
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(str(self.path))
+        return sock, sock.makefile('rb')
+
+    def _request(self, connection, lock, request):
+        sock, reader = connection
+        with lock:
+            sock.sendall(json.dumps(request, separators=(',', ':')).encode() + b'\n')
+            line = reader.readline(1 << 20)
+            if not line:
+                raise ConnectionError('the VR session closed its agent socket')
+            reply = json.loads(line)
+            payload = reader.read(reply['bytes']) if reply.get('bytes') else b''
+        if 'error' in reply:
+            raise RuntimeError('VR session: ' + reply['error'])
+        return reply, payload
+
+    def latest_encoded(self, after, timeout, image_format, quality):
+        if image_format != 'jpeg':
+            raise ValueError('a VR session stream carries JPEG frames')
+        reply, payload = self._request(self.frames, self.frame_lock, {
+            'op': 'observe', 'encoding': 'jpeg', 'quality': quality, 'after': after,
+            'timeout': min(float(timeout), 30.0)})
+        names = ('sequence', 'compositor_frame', 'predicted_display_ns', 'capture_begin_ns', 'gpu_ready_ns',
+                 'published_ns', 'width', 'height')
+        return {**{name: reply[name] for name in names}, 'host_observed_ns': reply.get('observed_ns'),
+                'host_copy_ns': 0, 'eye_count': 2}, payload
+
+    def request(self, message):
+        if message.get('op') == 'ping':
+            return {'guest_ns': time.monotonic_ns()}
+        if message.get('op') != 'input':
+            return {'error': 'unknown operation'}
+        try:
+            reply, _ = self._request(self.inputs, self.input_lock, {'op': 'act', 'state': message['state']})
+        except RuntimeError as error:
+            return {'id': message.get('id'), 'error': str(error)}
+        return {'id': message.get('id'), **reply['ack']}
+
+    def haptics(self, after):
+        if not self.haptics_path:
+            raise RuntimeError('this VR session records no haptics')
+        if type(after) is not int or after < 0:
+            raise ValueError('haptics cursor must be a non-negative record index')
+        guest_ns = time.monotonic_ns()
+        events = read_haptics(self.haptics_path, after)
+        return {'events': events, 'first': after, 'next': after + len(events), 'guest_ns': guest_ns,
+                'complete': len(events) < MAX_HAPTIC_EVENTS}
+
+    def game_time(self, scale=None, advance_ticks=None, timeout=10):
+        raise RuntimeError('a VR session supervisor provides no game-time control')
+
+    def close(self):
+        for sock, reader in (self.frames, self.inputs):
+            reader.close()
+            sock.close()
+
+
 class Stream:
     def __init__(self, options):
         self.ring = Ring(options.width, options.height, options.slots, options.fps)

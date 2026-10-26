@@ -17,7 +17,20 @@ bash /opt/vr/vr-monado-build.sh
 dpkg-deb -x /sandweave-input/virtualgl_3.1.5_amd64.deb /sandweave-output/gpu/virtualgl
 cc -O2 -fPIC -shared /sandweave-input/gpu-visual-order.c -Wl,-z,defs -ldl -lX11 \
     -o /sandweave-output/gpu/compat/libvisualorder.so
-rm -rf /opt/vr/monado-source /opt/vr/monado-build
+if [ "$profile" = vr/opensaber-session ]; then
+    # Task environments build their own Monado (plus their journals) from the lab-patched source
+    # and run their own session supervisor: Xvfb, VirtualGL's vglrun, ffmpeg, numpy, and the
+    # VR stack's tools at the paths that supervisor expects.
+    rm -rf /opt/vr/monado-build
+    touch /opt/vr/monado-patch-applied
+    install -m755 /sandweave-input/vr-metrics.py /opt/vr/vr-metrics.py
+    apt-get install -y --no-install-recommends xvfb ffmpeg python3-numpy git cmake ninja-build
+    mkdir -p /opt/vr-native
+    ln -sfn /opt/engine-gpu/virtualgl /opt/vr-native/virtualgl
+    ln -sfn /opt/engine-gpu/compat/libvisualorder.so /opt/vr-native/libvisualorder.so
+else
+    rm -rf /opt/vr/monado-source /opt/vr/monado-build
+fi
 
 if [ -d /sandweave-input/open-saber-source ]; then
     # Journal (game state), game-time control, shader warm-up and XR probe pack for the official binary.

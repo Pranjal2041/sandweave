@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import sys
 import types
 
@@ -178,3 +179,63 @@ def test_guest_ring_matches_the_engine_ring_layout():
     frame, pixels = ring.latest(0, 1)
     assert frame['sequence'] == 1 and frame['compositor_frame'] == 7 and frame['published_ns'] == 11
     assert frame['width'] == 64 and frame['eye_count'] == 2 and pixels[:4] == b'\x01\x02\x03\x04'
+
+
+def test_session_stream_relays_frames_input_and_haptics_to_a_session_agent_socket(tmp_path):
+    """A task's own VR session supervisor (vr_session.py protocol): JSON line, then payload bytes."""
+    import socket
+    import struct
+    import threading
+    sys.path.insert(0, str(Path(modal_driver.__file__).parent))
+    import guest_vr
+    import tempfile
+    path, requests = Path(tempfile.mkdtemp(prefix='sw', dir='/tmp')) / 'a.sock', []  # AF_UNIX path limit
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(path))
+    server.listen()
+
+    def serve(connection):
+        reader = connection.makefile('rb')
+        for line in reader:
+            request = json.loads(line)
+            requests.append(request)
+            if request['op'] == 'info':
+                reply, payload = {'frame': {'width': 1920}}, b''
+            elif request['op'] == 'observe':
+                payload = b'\xff\xd8jpeg'
+                reply = {'sequence': 7, 'compositor_frame': 3, 'predicted_display_ns': 1, 'capture_begin_ns': 50,
+                         'gpu_ready_ns': 2, 'published_ns': 60, 'width': 1920, 'height': 1080, 'observed_ns': 70,
+                         'bytes': len(payload)}
+            elif request['state'] == 'bad':
+                reply, payload = {'error': 'ValueError: bad state'}, b''
+            else:
+                reply, payload = {'ack': {'guest_received_ns': 10, 'guest_ack_ns': 11, 'input_sequence': 1}}, b''
+            connection.sendall(json.dumps(reply).encode() + b'\n' + payload)
+
+    def accept():
+        while True:
+            connection, _ = server.accept()
+            threading.Thread(target=serve, args=(connection,), daemon=True).start()
+    threading.Thread(target=accept, daemon=True).start()
+    haptics = tmp_path / 'haptics.bin'
+    haptics.write_bytes(struct.pack('<4sIQqffII', b'HAP1', 1, 5, 100, 160.0, .5, 0, 0))
+    stream = guest_vr.SessionStream(types.SimpleNamespace(session_agent=str(path), session_haptics=str(haptics),
+                                                          session_timeout=5))
+    frame, payload = stream.latest_encoded(0, 5, 'jpeg', 90)
+    assert payload == b'\xff\xd8jpeg' and frame['sequence'] == 7 and frame['width'] == 1920 and frame['eye_count'] == 2
+    assert stream.request({'op': 'input', 'id': 4, 'state': {'right': {'trigger_value': 1.0}}}) == {
+        'id': 4, 'guest_received_ns': 10, 'guest_ack_ns': 11, 'input_sequence': 1}
+    assert requests[-1] == {'op': 'act', 'state': {'right': {'trigger_value': 1.0}}}
+    assert 'error' in stream.request({'op': 'input', 'id': 5, 'state': 'bad'})
+    assert stream.haptics(0)['events'][0]['device'] == 'right'
+    with pytest.raises(RuntimeError):
+        stream.game_time(scale=0)
+    with pytest.raises(ValueError):
+        stream.latest_encoded(0, 5, 'zstd', 90)
+    stream.close()
+
+
+def test_vr_session_template_keeps_its_audio_source():
+    recipe = configure(Template('vr/opensaber-session').resolve())
+    assert recipe['capabilities']['audio']['sink'] == 'vr'
+    assert recipe['capabilities']['vr']['session_agent'].endswith('/current/agent.sock')

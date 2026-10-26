@@ -165,6 +165,15 @@ class AttachedVR:
         self.context, self.time_control = context, config.get('time_control')
         self.haptics_cursor, self.haptics_lock = 0, threading.Lock()
         options = {k: config[k] for k in ('width', 'height', 'fps', 'hz', 'mirror', 'slots') if k in config}
+        self.stream, self.session = None, config.get('session_agent')
+        if self.session:
+            # The environment starts its own VR session supervisor after boot (it owns Monado and
+            # the game); the stream attaches to its agent socket on first use.
+            if not hasattr(context.runtime, 'vr_stream'):
+                raise UnsupportedFeature('VR session supervisors are relayed by runtime="modal"')
+            self.options = {**options, 'session_agent': self.session, 'session_haptics': config.get('session_haptics')}
+            self.stream_lock = threading.Lock()
+            return
         if hasattr(context.runtime, 'vr_stream'):
             # A remote runtime owns Monado and the frame ring inside its sandbox.
             self.stream = context.runtime.vr_stream(context, **options)
@@ -200,7 +209,17 @@ class AttachedVR:
             self.stream.abort_attachment()
             raise
 
+    def _session_stream(self):
+        with self.stream_lock:
+            if self.stream is None:
+                stream = self.context.runtime.vr_stream(self.context, **self.options)
+                stream.__enter__()
+                self.stream = stream
+        return self.stream
+
     def call(self, method, parameters):
+        if self.session:
+            self._session_stream()
         if method == 'action':
             return self.stream.input(parameters['action'])
         if method == 'time':
@@ -267,6 +286,8 @@ class AttachedVR:
                 'acknowledgement': 'runtime received state; no game-consumption or fixed-tick guarantee'}}
 
     def detach(self, reason):
+        if self.stream is None:
+            return reason in ('pause', 'snapshot')
         if reason in ('pause', 'snapshot'):
             self.stream.suspend_attachment()
             return True
@@ -274,7 +295,8 @@ class AttachedVR:
         return False
 
     def reattach(self):
-        self.stream.resume_attachment()
+        if self.stream is not None:
+            self.stream.resume_attachment()
 
 
 class VRProvider:
@@ -283,7 +305,7 @@ class VRProvider:
     @staticmethod
     def descriptor(config):
         return {'version': 1, 'schema': 'monado.head-and-controllers.v1', 'eye_count': 2,
-                'time_control': config.get('time_control'),
+                'time_control': config.get('time_control'), 'session': bool(config.get('session_agent')),
                 'state': ['filesystem'], 'unavailable': {'memory': 'live GPU graphics checkpoints are unsupported'},
                 'acknowledgement': 'runtime state received; not a simulation step'}
 

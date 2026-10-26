@@ -15,8 +15,8 @@ def configure(recipe):
     capabilities = recipe['capabilities']
     if 'vr' in capabilities:
         capabilities.pop('desktop', None)
-        recipe['capabilities'] = {'audio': {'provider': 'audio', 'user': recipe.get('user', 'ga')},
-                                  **{k: v for k, v in capabilities.items() if k != 'audio'}}
+        audio = {'provider': 'audio', 'user': recipe.get('user', 'ga'), **(capabilities.get('audio') or {})}
+        recipe['capabilities'] = {'audio': audio, **{k: v for k, v in capabilities.items() if k != 'audio'}}
         recipe['runtime_options'].pop('init', None)
         recipe['runtime_options'].pop('init_command', None)
         return recipe

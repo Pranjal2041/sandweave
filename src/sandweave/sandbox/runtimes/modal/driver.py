@@ -195,11 +195,12 @@ class Runtime:
         from .vr import RemoteVRStream
         return RemoteVRStream(self, context, **options)
 
-    def audio_stream(self, context, *, user='ga'):
-        """Start the guest's audio capture; returns the connection that reads it."""
+    def audio_stream(self, context, *, user='ga', server=None, sink=None):
+        """Start the guest's audio capture (of another PulseAudio server and sink when given);
+        returns the connection that reads it."""
         connection = self.io_connection(context.id, timeout=30, wait=context.remaining(60))
         try:
-            connection.call('audio_start', user=user)
+            connection.call('audio_start', user=user, server=server, sink=sink)
         except BaseException:
             connection.close()
             raise

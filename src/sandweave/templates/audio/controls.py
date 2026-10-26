@@ -27,21 +27,33 @@ class AttachedAudio:
     def __init__(self, context, config):
         if not hasattr(context.runtime, 'audio_stream'):
             raise UnsupportedFeature('audio capture is provided by runtime="modal"')
-        self.connection = context.runtime.audio_stream(context, user=config.get('user', 'ga'))
-        self.cursor, self.lock = 0, threading.Lock()
+        self.context, self.config = context, config
+        self.connection, self.cursor, self.lock = None, 0, threading.Lock()
+        # A sound server the environment starts later (pulse_server, e.g. a VR session
+        # supervisor's) is captured from the first observation; the guest's own from boot.
+        if not config.get('pulse_server'):
+            self._start()
+
+    def _start(self):
+        self.connection = self.context.runtime.audio_stream(
+            self.context, user=self.config.get('user', 'ga'), server=self.config.get('pulse_server'),
+            sink=self.config.get('sink'))
 
     def call(self, method, parameters):
         if method != 'observe':
             raise UnsupportedFeature('unknown audio operation: ' + method)
         after = parameters.get('after')
         with self.lock:
+            if self.connection is None:
+                self._start()
             value = self.connection.call('audio_read', after=self.cursor if after is None else after)
             if after is None:
                 self.cursor = value['next']
         return value
 
     def detach(self, reason):
-        self.connection.close()
+        if self.connection is not None:
+            self.connection.close()
         return False
 
 

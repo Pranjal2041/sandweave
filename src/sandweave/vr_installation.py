@@ -59,7 +59,7 @@ def prepare_inputs(builder, root, profile):
                          builder.downloads, 'virtualgl_3.1.5_amd64.deb',
                          sha256='df3f7788ce41b182a47c0d298e5cd6d2d63579522cb41825970b7726e825485e')
     shutil.copy2(virtualgl, payload / virtualgl.name)
-    if profile == 'vr/opensaber':
+    if profile in ('vr/opensaber', 'vr/opensaber-session'):
         # The official binary runs a pack exported from the same v0.5.0 source with the gameplay
         # journal (game state), Sandweave game-time control, a shader warm-up and an XR input probe
         # for cua-auto-harness; Godot 4.3 only exports the pack.
@@ -75,6 +75,10 @@ def prepare_inputs(builder, root, profile):
         for name in ('open-saber-journal.patch', 'open-saber-time-control.patch', 'open-saber-warmup.patch',
                      'open-saber-xr-probe.patch'):
             shutil.copy2(build_input(name), payload / name)
+    if profile == 'vr/opensaber-session':
+        # A task environment's own session supervisor (vr_session.py) and build script read the
+        # lab-patched Monado source and these tools from /opt/vr (install-sandbox-vr.sh).
+        shutil.copy2(build_input('vr-metrics.py'), payload / 'vr-metrics.py')
     if 'gunspinning' not in profile:
         return
     archive = builder.downloads / 'gunspinning-vr-linux.zip'

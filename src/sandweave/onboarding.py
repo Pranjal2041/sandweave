@@ -23,6 +23,7 @@ APPTAINER_INSTALLER = ('https://raw.githubusercontent.com/apptainer/apptainer/'
 APPTAINER_INSTALLER_SHA256 = 'a097956eafa6ab3dd843ee429d0b774ed029753bfadf013b8046556228fac6f2'
 PROFILES = {'coding': 'Code', 'gnome': 'Desktop', 'cuda': 'CUDA', 'docker': 'Docker',
             'vr/gunspinning': 'VR: GunSpinning', 'vr/opensaber': 'VR: Open Saber',
+            'vr/opensaber-session': 'VR: Open Saber (task session)',
             'games/gunspinning-gamepad': 'GunSpinning: gamepad'}
 
 

@@ -35,6 +35,8 @@ def placement():
     leaves that choice to Modal. Modal charges a multiplier for a pinned region.
     """
     worker_cloud = os.environ.get('MODAL_CLOUD_PROVIDER', '').removeprefix('CLOUD_PROVIDER_').lower()
+    if worker_cloud == 'unspecified':  # Modal did not say which cloud runs the worker: pin only the region
+        worker_cloud = ''
     region = os.environ.get('SANDWEAVE_MODAL_REGION', os.environ.get('MODAL_REGION'))
     cloud = os.environ.get('SANDWEAVE_MODAL_CLOUD', worker_cloud)
     return {**({'region': region.split(',')} if region and region != 'any' else {}),

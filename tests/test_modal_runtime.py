@@ -239,3 +239,13 @@ def test_vr_session_template_keeps_its_audio_source():
     recipe = configure(Template('vr/opensaber-session').resolve())
     assert recipe['capabilities']['audio']['sink'] == 'vr'
     assert recipe['capabilities']['vr']['session_agent'].endswith('/current/agent.sock')
+
+
+def test_placement_pins_only_what_the_worker_reports(monkeypatch):
+    monkeypatch.delenv('SANDWEAVE_MODAL_REGION', raising=False)
+    monkeypatch.delenv('SANDWEAVE_MODAL_CLOUD', raising=False)
+    monkeypatch.setenv('MODAL_REGION', 'us-central')
+    monkeypatch.setenv('MODAL_CLOUD_PROVIDER', 'CLOUD_PROVIDER_UNSPECIFIED')
+    assert modal_driver.placement() == {'region': ['us-central']}
+    monkeypatch.setenv('MODAL_CLOUD_PROVIDER', 'CLOUD_PROVIDER_OCI')
+    assert modal_driver.placement() == {'region': ['us-central'], 'cloud': 'oci'}

@@ -65,6 +65,7 @@ notes/monado-vr-lab.patch
 notes/open-saber-journal.patch
 notes/open-saber-time-control.patch
 notes/open-saber-warmup.patch
+notes/open-saber-xr-probe.patch
 notes/primus-vk-visible-rows.patch
 sources/gs-base-probe.c
 sources/xvnc-fast-io.c

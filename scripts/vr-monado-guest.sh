@@ -31,6 +31,8 @@ case "${1:-}" in
       head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$state/journal-$generation.key"
       export OPEN_SABER_JOURNAL=$state/journal-$generation.jsonl OPEN_SABER_JOURNAL_KEY=$state/journal-$generation.key
       export SANDWEAVE_TIME_CONTROL=$state/time-control.json
+      # XR input probe (cua-auto-harness); records only while $state/xr-probe.jsonl.enable exists.
+      export SANDWEAVE_XR_PROBE=$state/xr-probe.jsonl
       set -- --main-pack "$pack" "$@"
     fi
     exec /opt/vr/OpenSaber0.5.0.Linux.x86_64 --rendering-method gl_compatibility \

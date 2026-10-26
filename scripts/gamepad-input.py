@@ -73,6 +73,7 @@ def write_state(path, axes, buttons, duration):
     data = struct.pack('<8sQQ8hIB3x', b'LABPAD1\0', now,
                        now + int(duration * 1e9), *axes, buttons, 0)
     fd, temporary = tempfile.mkstemp(prefix='.lab-gamepad-', dir=path.parent)
+    os.fchmod(fd, 0o644)  # the game may run as another user than the writer
     try:
         with os.fdopen(fd, 'wb') as output:
             output.write(data)

@@ -10,7 +10,7 @@ Starts the task with gym_anything (the qualifying session loads paused on the gr
 then restarts the game exactly as the task launches it, plus the SDL gamepad proxy
 (SDL_DYNAMIC_API) and the player's throttle, brake and steering on the pad (right
 trigger, left trigger, left stick X; automatic gears). One gamepad-input.py --serve
-writer holds the pad state. The car's own commands and speed come back through
+writer (as root) holds the pad state. The car's own commands and speed come back through
 Sandweave's state exporter (race journal 'h' records: ac, br, st, v) through phases:
 neutral, throttle (rt=1), brake (lt=1), throttle with steering left (lx=-0.6), release.
 The force feedback the game sends to the pad (SDL_Haptic rumble at start-up and the
@@ -84,8 +84,10 @@ def main():
         env.runner.copy_to(str(output / 'preferences.xml'), PREFS)
         run(f'chown sdracer:sdracer {PREFS} && rm -f {STATE} {HAPTICS} && install -o sdracer -g sdracer -m 600 /dev/null {HAPTICS}'
             f' && : > {REQUESTS} && : > {REPLIES}')
-        # One persistent writer as the game's user; requests are lines appended to REQUESTS.
-        run(f"(setsid sh -c 'tail -n +1 -f {REQUESTS} | runuser -u sdracer -- python3 -u {GUEST}/gamepad-input.py --serve "
+        # One persistent writer; requests are lines appended to REQUESTS. It runs as root: the
+        # environment's lockdown denies the game user python3. The game appends to HAPTICS and
+        # reads the state file (0644).
+        run(f"(setsid sh -c 'tail -n +1 -f {REQUESTS} | python3 -u {GUEST}/gamepad-input.py --serve "
             f"--state {STATE} --haptics {HAPTICS} > {REPLIES} 2> {REPLIES}.stderr' > /dev/null 2>&1 < /dev/null &)")
         deadline = time.monotonic() + 20
         while '"ready"' not in run(f'cat {REPLIES}'):

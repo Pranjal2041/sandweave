@@ -61,8 +61,8 @@ def prepare_inputs(builder, root, profile):
     shutil.copy2(virtualgl, payload / virtualgl.name)
     if profile == 'vr/opensaber':
         # The official binary runs a pack exported from the same v0.5.0 source with the gameplay
-        # journal (game state), Sandweave game-time control and a shader warm-up; Godot 4.3 only
-        # exports the pack.
+        # journal (game state), Sandweave game-time control, a shader warm-up and an XR input probe
+        # for cua-auto-harness; Godot 4.3 only exports the pack.
         godot = download('https://github.com/godotengine/godot/releases/download/4.3-stable/'
                          'Godot_v4.3-stable_linux.x86_64.zip', builder.downloads, 'Godot_v4.3-stable_linux.x86_64.zip',
                          sha256='7de56444b130b10af84d19c7e0cf63cf9e9937ee4ba94364c3b7dd114253ca21')
@@ -72,7 +72,8 @@ def prepare_inputs(builder, root, profile):
                           'BeepSaber-' + commit + '.tar.gz',
                           sha256='fcca5b5a0f68576dec7008a197fd9693e40920dc97ee023be7b763b9fc5388a5')
         extract_source(source, payload / 'open-saber-source')
-        for name in ('open-saber-journal.patch', 'open-saber-time-control.patch', 'open-saber-warmup.patch'):
+        for name in ('open-saber-journal.patch', 'open-saber-time-control.patch', 'open-saber-warmup.patch',
+                     'open-saber-xr-probe.patch'):
             shutil.copy2(build_input(name), payload / name)
     if 'gunspinning' not in profile:
         return

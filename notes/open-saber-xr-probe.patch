@@ -1,0 +1,116 @@
+diff --git a/game/scripts/SandweaveXRProbe.gd b/game/scripts/SandweaveXRProbe.gd
+new file mode 100644
+index 0000000..71f6944
+--- /dev/null
++++ b/game/scripts/SandweaveXRProbe.gd
+@@ -0,0 +1,98 @@
++extends Node
++## XR input probe for cua-auto-harness: records what this OpenXR application receives.
++##
++## Enabled while "<SANDWEAVE_XR_PROBE>.enable" exists. Records are JSON lines appended to
++## SANDWEAVE_XR_PROBE in autoharness's probe schema: seq (never resets), epoch (the
++## integer in "<path>.reset"; a new value starts a new epoch and re-reports every
++## value), t_ms (Time.get_ticks_msec), kind. Kinds:
++##   probe_start, reset
++##   xr_pose   device (head, left, right), position [x, y, z] m, orientation [x, y, z, w],
++##             logged when it moves more than 0.5 mm or 0.0005 in a quaternion component
++##             (head: the "default" pose; hands: "grip")
++##   xr_input  device (left, right), name (the action map's input), value (bool, float or [x, y])
++## Poses are in the application's tracking space, so checks compare motion between poses.
++
++const POSES := {"head": [&"head", &"default"], "left": [&"left_hand", &"grip"], "right": [&"right_hand", &"grip"]}
++const HANDS := {"left": &"left_hand", "right": &"right_hand"}
++const INPUTS := [&"trigger", &"trigger_click", &"trigger_touch", &"grip", &"grip_click", &"primary",
++		&"primary_click", &"primary_touch", &"ax_button", &"ax_touch", &"by_button", &"by_touch", &"menu_button"]
++
++var _path := OS.get_environment("SANDWEAVE_XR_PROBE")
++var _file: FileAccess
++var _seq := 0
++var _epoch := -1
++var _last := {}
++var _frame := 0
++
++
++func _ready() -> void:
++	process_mode = Node.PROCESS_MODE_ALWAYS
++	set_process(_path != "")
++
++
++func _record(kind: String, fields := {}) -> void:
++	_seq += 1
++	var record := {"seq": _seq, "epoch": _epoch, "t_ms": Time.get_ticks_msec(), "kind": kind}
++	record.merge(fields)
++	_file.store_line(JSON.stringify(record))
++
++
++func _changed(key: String, value: Array, tolerance: float) -> bool:
++	if key in _last:
++		var previous: Array = _last[key]
++		var moved := false
++		for index in value.size():
++			if absf(float(value[index]) - float(previous[index])) > tolerance:
++				moved = true
++		if not moved:
++			return false
++	_last[key] = value
++	return true
++
++
++func _process(_delta: float) -> void:
++	_frame += 1
++	if _frame % 30 == 1:
++		var enabled := FileAccess.file_exists(_path + ".enable")
++		if enabled and _file == null:
++			_file = FileAccess.open(_path, FileAccess.READ_WRITE if FileAccess.file_exists(_path) else FileAccess.WRITE)
++			_file.seek_end()
++			_record("probe_start")
++		elif not enabled and _file != null:
++			_file.close()
++			_file = null
++	if _file == null:
++		return
++	var reset := FileAccess.get_file_as_string(_path + ".reset").strip_edges() if FileAccess.file_exists(_path + ".reset") else ""
++	if reset.is_valid_int() and int(reset) != _epoch:
++		_epoch = int(reset)
++		_last.clear()
++		_record("reset")
++	for device in POSES:
++		var tracker := XRServer.get_tracker(POSES[device][0]) as XRPositionalTracker
++		var pose: XRPose = null
++		if tracker:
++			pose = tracker.get_pose(POSES[device][1])
++		if pose == null or not pose.has_tracking_data:
++			continue
++		var origin := pose.transform.origin
++		var rotation := pose.transform.basis.get_rotation_quaternion()
++		var position := [origin.x, origin.y, origin.z]
++		var orientation := [rotation.x, rotation.y, rotation.z, rotation.w]
++		var moved := _changed("pose/" + device, position, 0.0005)
++		var turned := _changed("orientation/" + device, orientation, 0.0005)
++		if moved or turned:
++			_record("xr_pose", {"device": device, "position": position, "orientation": orientation})
++	for device in HANDS:
++		var controller := XRServer.get_tracker(HANDS[device]) as XRControllerTracker
++		if controller == null:
++			continue
++		for name in INPUTS:
++			var value = controller.get_input(name)
++			if value == null:
++				continue
++			var values: Array = [value.x, value.y] if value is Vector2 else [float(value)]
++			if _changed("input/" + device + "/" + name, values, 0.001):
++				var reported = values if value is Vector2 else value
++				_record("xr_input", {"device": device, "name": String(name), "value": reported})
++	_file.flush()
+diff --git a/project.godot b/project.godot
+index 8fc7f4c..51d817e 100644
+--- a/project.godot
++++ b/project.godot
+@@ -36,6 +36,7 @@ UI_AudioEngine="*res://game/ui/UI_AudioEngine/UI_AudioEngine.tscn"
+ Journal="*res://game/scripts/Journal.gd"
+ SandweaveTime="*res://game/scripts/SandweaveTime.gd"
+ SandweaveWarmup="*res://game/scripts/SandweaveWarmup.gd"
++SandweaveXRProbe="*res://game/scripts/SandweaveXRProbe.gd"
+ 
+ [debug]
+ 

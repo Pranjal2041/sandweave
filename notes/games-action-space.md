@@ -104,10 +104,13 @@ over 159 s of game time); Speed Dreams' qualifying ran from t = -2 s to 208 s wi
 ten cars in the standings; Wesnoth's turn went from 1 to 2 when the turn was
 ended. Open Saber's live state is read by the Modal acceptance from Sandweave's
 pack (attempt 11: song 2.6 s, 8.5 s after the time tests, then the map's result,
-score 384). In Wesnoth, an End Turn click and Enter sent through gym-anything's
-Sandweave 0.2.42 runner (fast I/O) had no effect; the same click with `xdotool`
-in the guest, as the task's own setup drives the game, ended the turn. That runner
-path is not yet explained.
+score 384). Wesnoth takes input through gym-anything's Sandweave runner (fast I/O),
+as the evaluation's solver played it (31 End Turn clicks at the same point):
+`scripts/wesnoth-input-check.py` showed that the first click after the hand-over
+is ignored, with the window focused and the pointer already on the button; a second
+click opens "You have not started your turn yet. Do you really want to end your
+turn?", and Enter accepts it (turn 1 to 2). An earlier run that sent one click and
+Enter saw no change for that reason.
 
 ## Portfolio
 
@@ -178,9 +181,16 @@ every entry passed all five repetitions, each observing a change: gamepad 15/15
 triggers, pad 1) and XR 11/11 (10 cm moves within 1e-8 m, a -20 degree head yaw
 within 0.02 degrees, trigger, squeeze, A button, thumbstick).
 
-## Open
+## Game time on desktop games
 
-- Time control exists for Open Saber only; other games need their own (OpenTTD
-  and OpenRA have native pause and speed; Speed Dreams' simulation multiplier voids
-  its task).
-- The Wesnoth fast I/O finding above.
+`FrozenGuestClock` (in `steps.py`) gives every game on `runtime="gvisor"` a pause:
+a sandbox created with `clock_pause="freeze"` (or a clock offset or start) freezes
+its wall and monotonic clocks in `pause()`, so the game cannot observe it.
+`game_speed` 0 and 1 pause and resume; a `wait` from a pause runs the guest that
+long; input and frames given while paused run it only for the call. Live
+(`scripts/frozen-clock-check.py`, GNOME sandbox on the Modal worker, a guest loop
+reading `CLOCK_MONOTONIC` every 50 ms): no step above 52.5 ms while 9.4 s of pauses
+passed (guest 7.0 s, host 16.4 s); a 1000 ms wait ran the guest 1000-1210 ms; a
+click and a frame while paused ran it at most 1.18 s together, the resume and pause
+round trips. Other speeds and tick waits need the game's own time control (Open
+Saber's above) and are rejected otherwise.

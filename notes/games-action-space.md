@@ -183,14 +183,29 @@ within 0.02 degrees, trigger, squeeze, A button, thumbstick).
 
 ## Game time on desktop games
 
-`FrozenGuestClock` (in `steps.py`) gives every game on `runtime="gvisor"` a pause:
-a sandbox created with `clock_pause="freeze"` (or a clock offset or start) freezes
-its wall and monotonic clocks in `pause()`, so the game cannot observe it.
-`game_speed` 0 and 1 pause and resume; a `wait` from a pause runs the guest that
-long; input and frames given while paused run it only for the call. Live
-(`scripts/frozen-clock-check.py`, GNOME sandbox on the Modal worker, a guest loop
-reading `CLOCK_MONOTONIC` every 50 ms): no step above 52.5 ms while 9.4 s of pauses
-passed (guest 7.0 s, host 16.4 s); a 1000 ms wait ran the guest 1000-1210 ms; a
-click and a frame while paused ran it at most 1.18 s together, the resume and pause
-round trips. Other speeds and tick waits need the game's own time control (Open
-Saber's above) and are rejected otherwise.
+Any game on `runtime="gvisor"` gets exact game time from a sandbox created with
+`clock_pause="freeze"` (`FrozenGuestClock` in `steps.py`, `Sandbox.game_time`):
+
+- `game_speed` 0 freezes the guest, wall and monotonic clocks included, with its
+  controls attached; 1 thaws it. The frame observed while frozen is captured as it
+  freezes.
+- A `wait` from a freeze runs the guest for exactly that much guest time: the engine
+  (`runsc resume --for=D`, capability `clock_advance` 2) stops guest time at the
+  deadline before it stops the tasks, so no task observes a later time.
+- Input given while frozen waits in the guest and lands as the next advance starts;
+  the advance holds the operations lock shared, so fast I/O reaches the guest while
+  it runs. The frame observed after an advance is captured in its last 50 ms.
+- Other speeds and tick waits need the game's own time control (Open Saber's above).
+
+Live on the Modal worker (`scripts/frozen-clock-check.py`, GNOME sandbox, a guest loop
+reading `CLOCK_MONOTONIC` every 50 ms), three runs: every 1000 ms advance measured
+exactly 1000.0 ms of guest time, the click queued while frozen was delivered inside
+it, the guest's largest step was 52.4-53.1 ms while 9 s of freezes passed, and its
+elapsed time matched its running time within the freeze/thaw round trips.
+
+In a real game (`scripts/openttd-game-time-check.py`, the frontier OpenTTD task with
+gym-anything's Sandweave runner creating the sandbox with `clock_pause="freeze"`):
+during 150 s of host time frozen the guest's uptime moved 0.31 s and the game date
+stayed 1950-01-05; an advance of exactly 150000.0 ms (guest uptime +150.2 s with the
+reads) moved the date to the 1950-03-01 record, two month starts. The runner's opt-in
+(`GYM_SANDWEAVE_CLOCK_PAUSE=freeze`) was applied in the worker's gym-anything checkout.

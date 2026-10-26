@@ -117,3 +117,14 @@ are retained locally and are not committed.
 - A pause before freezing and the resume call itself take guest time: each
   pause/resume cycle adds roughly 0.1–0.3 s to the observed elapsed time.
 - Memory snapshots captured on earlier engines cannot take clock options.
+
+## Exact advance (2026-10-26)
+
+`runsc resume --for=D` runs a sandbox paused with `--clock-pause=freeze` for exactly
+D of guest monotonic time and leaves it paused (`containerManager.Advance`,
+`Kernel.AdvanceClocks`). The kernel thaws time and tasks, sleeps D less 2 ms, freezes
+time at the deadline (`Timekeeper.freezeAt`: never below a value a reader observed),
+then pauses the tasks, so time stops at the deadline before any task can read past
+it. A first version that paused the tasks first overran by 3.4 ms. The prepared
+runtime advertises `clock_advance` 2. Live results are in
+[games-action-space.md](games-action-space.md#game-time-on-desktop-games).

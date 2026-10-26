@@ -1,9 +1,9 @@
 diff --git a/game/scripts/SandweaveTime.gd b/game/scripts/SandweaveTime.gd
 new file mode 100644
-index 0000000..b2ee0e7
+index 0000000..012353a
 --- /dev/null
 +++ b/game/scripts/SandweaveTime.gd
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,103 @@
 +extends Node
 +## Game-time control for Sandweave: pause, slow motion and tick stepping.
 +##
@@ -19,6 +19,8 @@ index 0000000..b2ee0e7
 +var _path := OS.get_environment("SANDWEAVE_TIME_CONTROL")
 +var _seq := -1
 +var _advance := 0
++var _advanced := 0  # ticks of the current advance already simulated
++var _song_start := 0.0  # song position when the advance began
 +var _ticks := 0  # physics ticks the game simulated (tree running)
 +
 +
@@ -34,11 +36,18 @@ index 0000000..b2ee0e7
 +
 +func _apply(scale: float) -> void:
 +	get_tree().paused = scale == 0.0
++	var song := _song()
 +	if scale > 0.0:
 +		Engine.time_scale = scale
-+		var song := _song()
 +		if song:
 +			song.pitch_scale = scale
++			song.stream_paused = false
++
++
++func _seek_song(position: float) -> void:
++	var song := _song()
++	if song and song.stream and song.playing:
++		song.seek(position)
 +
 +
 +func _ack(state: String) -> void:
@@ -65,7 +74,12 @@ index 0000000..b2ee0e7
 +		_ticks += 1
 +	if _advance > 0:
 +		_advance -= 1
++		_advanced += 1
 +		if _advance == 0:
++			# The song is the game's clock and plays in wall time; if frames lagged during the
++			# advance, it ran ahead of the ticks. Set it to exactly the ticks simulated (seek is
++			# honoured only while the song plays, so before pausing).
++			_seek_song(_song_start + float(_advanced) / Engine.physics_ticks_per_second)
 +			_ticks -= 1  # this tick is skipped by the pause below
 +			_apply(0.0)
 +			_ack("advanced")
@@ -80,9 +94,12 @@ index 0000000..b2ee0e7
 +	if _advance > 0:
 +		Engine.time_scale = 1.0
 +		var song := _song()
++		_advanced = 0
++		_song_start = song.get_playback_position() if song and song.stream else 0.0
++		get_tree().paused = false
 +		if song:
 +			song.pitch_scale = 1.0
-+		get_tree().paused = false
++			song.stream_paused = false
 +		_ticks += 1  # the game simulates this tick too
 +	else:
 +		var was_running := not get_tree().paused

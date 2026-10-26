@@ -175,9 +175,15 @@ def main():
             game_state = GameState('open-saber', source='/run/user/1000/open-saber')
             timing = {'state_before': compact(game_state.observe(sandbox))}
             pause = sandbox.vr.time(scale=0)
-            sandbox.audio.observe()
+            # Every audio read joins the startup chain, so the gameplay audio still continues it.
+            startup.chunks.append(sandbox.audio.observe())
             time.sleep(2)
             paused_audio = sandbox.audio.observe()
+            startup.chunks.append(paused_audio)
+            audio_summary([paused_audio], args.output / 'paused-audio.wav')
+            pcm = np.frombuffer(paused_audio['pcm'], dtype='<i2').astype(np.float64) / 32768
+            tenths = pcm[:len(pcm) // 9600 * 9600].reshape(-1, 9600)
+            paused_profile = [round(float(20 * np.log10(np.sqrt((t ** 2).mean()) + 1e-12)), 1) for t in tenths]
             still = sandbox.vr.time(scale=0)
             advanced = sandbox.vr.time(advance_ticks=90)
             slow = sandbox.vr.time(scale=.5)
@@ -185,6 +191,7 @@ def main():
             resumed = sandbox.vr.time(scale=1)
             time.sleep(1)
             playing_audio = sandbox.audio.observe()
+            startup.chunks.append(playing_audio)
             timing.update(
                 pause=pause, still=still, advanced=advanced, slow=slow, resumed=resumed,
                 paused_song_seconds=still['song_position'] - pause['song_position'],
@@ -193,6 +200,7 @@ def main():
                 slow_song_per_wall=(resumed['song_position'] - slow['song_position'])
                 / ((resumed['guest_ns'] - slow['guest_ns']) / 1e9),
                 paused_audio_dbfs=dbfs(paused_audio), playing_audio_dbfs=dbfs(playing_audio),
+                paused_audio_dbfs_per_100ms=paused_profile,
                 state_after=compact(game_state.observe(sandbox)))
             step = run_step(sandbox, {'id': 'tick-step', 'observe': ['stereo', 'state'], 'actions': [
                 {'kind': 'game_speed', 'scale': 0}, {'kind': 'wait', 'ticks': 30}, {'kind': 'game_speed', 'scale': 1}]},

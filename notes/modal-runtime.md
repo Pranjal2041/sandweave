@@ -171,7 +171,7 @@ with a cached image):
 | --- | --- |
 | Capture | **29.96 FPS**: 3,596 paired frames, 0 recorder drops; left, right and side-by-side videos each 3,596 frames |
 | Input | **118.4/s**: 14,208 acknowledged; RTT median 1.12 ms, p95 5.08 ms |
-| Application FPS (Monado, 120.0 s window) | **83.9**: interval median 11.13 ms, p99 16.7 ms, one 3.68 s stall (cause not identified); reused frames 8.3% |
+| Application FPS (Monado, 120.0 s window) | **83.9**: interval median 11.13 ms, p99 16.7 ms, one 3.68 s stall (the first note cut; fixed below); reused frames 8.3% |
 | Audio | 120.03 s in 238 reads, 0 gaps, 0 dropped; every second above −60 dBFS (RMS median −11.5 dBFS); offset from the video −20 ms; muxed AAC track is −10.9 dBFS at 60–70 s |
 | Haptics | 2,704 records (attempt 5, before zero de-duplication: 25,174); 2,458 pulses, 1,225 left and 1,233 right, at amplitudes 0.1, 0.5 and 0.75, 20 Hz, 11–100 ms |
 | 40 unified steps (`xr_pose` ×3, observe stereo, audio, haptics) | every stereo frame captured after its input acknowledgement; audio and haptics continue exactly from read to read; game time strictly increasing; median 46.6 ms per step |
@@ -184,6 +184,31 @@ before the steps reported 12,631,085 dropped frames, as designed. Evidence:
 `runs/modal-runtime-20261025/modal-opensaber-observations7.tar` (lossless frames
 excluded), SHA-256 `9f82cee6c886ecb04193e535f1fc14055f8485bb3a90cd78a313f20e1af11150`;
 `stereo-with-audio.mp4` SHA-256 `933bd4f0…71487cfc6`.
+
+### Journal pack, game time and the first-cut stall (2026-10-26)
+
+The image now exports a pack from the pinned Open Saber v0.5.0 source (Godot 4.3,
+SHA-256-pinned downloads) with the gameplay journal, `SandweaveTime`,
+`SandweaveWarmup` and `SandweaveXRProbe`; the official binary runs it with
+`--main-pack`. Attempts 11, 13, 14 and 15 passed the full acceptance plus:
+live state from the journal before and after the time tests and after recording
+(attempt 13: the map ended with score 381, 180 notes, 9 cut, 169 missed), and the
+game-time results in [games-action-space.md](games-action-space.md). Attempt 13:
+capture 29.96 FPS (3,597 frames, 0 dropped), application 87.7 FPS, audio 121.8 s
+without gaps, 2,963 haptic pulses, all 40 step checks. Attempt 11 evidence:
+`runs/modal-runtime-20261025/modal-opensaber-time11.tar`, SHA-256
+`5df4efc0b2c20aed6de526cb45ebe5b81650074c89ac6d428ef9ecb1c99b6b76`; a decoded
+side-by-side frame at 60 s shows both eyes at score 223.
+
+The 3.6-4.5 s application stall in every run (attempt 7 at 44.5 s guest time,
+attempt 8 at 43.7 s, attempts 11 and 12 at 22 s) was the song's first note cut:
+in attempt 14 it began 90 ms after the journal's first `note_cut`, inside the
+game's frame (Monado woke it on time; 111-131 compositor captures and 440-520
+input acknowledgements continued during the gap). A cut instantiates slice
+particles (GPUParticles3D), whose shaders the compatibility renderer compiles on
+first draw. `SandweaveWarmup` fires the particles in front of the camera while
+the menu loads; in attempt 15 nothing stalled after the first cut (27.4 s), and
+the largest gaps, 0.69 s, are at 12.9-14.7 s in the menu during the warm-up.
 
 ## Reference: direct VR stack on Modal
 

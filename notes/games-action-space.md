@@ -28,10 +28,24 @@ Names follow the qualified writers: gamepad buttons from
 
 ## Time
 
-`hold_ms` and `wait` are game time. With pause or slowed time, a 120 ms hold
-remains 120 ms of game time. Speed control itself (pause, slow, tick stepping)
-is a runtime capability; Sandweave's engine provides pause and guest clocks,
-while `runtime="modal"` does not yet.
+`hold_ms` and `wait` are game time. `game_speed` (0 pauses, up to 4) sets the
+speed of a game with time control; `steps.elapse` then advances exact physics
+ticks from a pause (`wait` in ms converts at the game's tick rate) or waits
+`ms / speed` of wall time while running. Without time control, game time is wall
+time and `wait` in ticks raises `UnsupportedFeature`.
+
+### Open Saber time control
+
+Sandweave's Open Saber pack (`notes/open-saber-time-control.patch`, autoload
+`SandweaveTime`) reads a control file every physics tick; `sandbox.vr.time(scale=,
+advance_ticks=)` writes it through the relay and waits for the game's
+acknowledgement. Pause pauses the scene tree (the song pauses with it; the frozen
+scene keeps rendering), a speed scales physics and the song together, and an
+advance runs exactly N ticks from a pause, then sets the song to the ticks
+simulated (a slow frame let it run ahead: 30 ticks moved it 1.14 s in attempt 11).
+Live on Modal (attempt 13): pausing for 2 s moved the song 0.012 s (one audio
+buffer; the paused audio is digital silence after its first 100 ms), 90 ticks
+moved it 1.003 s, a 30-tick step 0.348 s, and half speed ran it at 0.49996x.
 
 ## Observations
 
@@ -66,7 +80,8 @@ and returns the game's current aggregate:
 | Open Saber | gameplay journal `<session>/private/journal-NN.jsonl` (`open_saber_journal.patch`) | current map and attempt, score, combo, multiplier, cut/miss/bomb/wall counts, poses, every attempt's result |
 | OpenTTD | `GACR` records in `/var/lib/ottd_task/run/game.log` (game script) | date, pause, every company (value, bank, loan, vehicles, income, expenses, cargo), last 24 quarters, events, setting changes, end |
 | Wesnoth | audit plugin lines in `/var/lib/wesnoth-audit/game.log` | context, scenario, turn, level result, each scenario's results, game restarts, debug mode |
-| OpenRA | newest replay under `/var/lib/openra/support/Replays`, read with the environment's `openra_replay.py` | game time, players and bots, orders by kind and by client |
+| OpenRA | newest replay under `/var/lib/openra/support/Replays`, read with the environment's `openra_replay.py`; with `resim=True` re-simulated by the environment's hash-checked headless copy (`resim_replay.sh`, about 40x real time) | game time, players and bots, orders by kind and by client; with resim, each player's cash, structures, army and asset value, kills and losses, win state |
+| Open Saber (Sandweave template) | the same journal from Sandweave's own pack, `$XDG_RUNTIME_DIR/open-saber/journal-NN.jsonl` | as above |
 
 `scripts/game-state-check.py` replays each game's recorded telemetry into a real
 Linux guest (gVisor `coding` sandbox on the Modal worker) in six chunks cut
@@ -78,9 +93,21 @@ eval-02 audit log and the OpenRA eval replay. The states match the runs: Wesnoth
 won The Elves Besieged on turn 11 and Blackwater Port on turn 10 and was on turn
 10 of The Isle of Alduin; the Speed Dreams player was 10th of 10 after 82
 simulation-speed changes; OpenTTD's period ended on 1965-05-29 with four companies;
-OpenRA had 4 players (3 bots) and 384.7 s of game time. Not yet observed during
-live play of a running game. OpenRA's replay holds orders, not unit or cash
-state.
+OpenRA had 4 players (3 bots) and 384.7 s of game time.
+
+Live play (2026-10-26, `scripts/game-state-live-check.py`, each environment's task
+started with gym-anything on a worker from its frontier worker's exit snapshot,
+state read every 30 s for 4 min as the game ran): all four desktop games passed.
+OpenTTD's date advanced after unpausing with four companies; OpenRA's re-simulated
+world followed the bots (cash 4,671 to 977, structures 2 to 9, army 0 to 1,800
+over 159 s of game time); Speed Dreams' qualifying ran from t = -2 s to 208 s with
+ten cars in the standings; Wesnoth's turn went from 1 to 2 when the turn was
+ended. Open Saber's live state is read by the Modal acceptance from Sandweave's
+pack (attempt 11: song 2.6 s, 8.5 s after the time tests, then the map's result,
+score 384). In Wesnoth, an End Turn click and Enter sent through gym-anything's
+Sandweave 0.2.42 runner (fast I/O) had no effect; the same click with `xdotool`
+in the guest, as the task's own setup drives the game, ended the turn. That runner
+path is not yet explained.
 
 ## Portfolio
 
@@ -96,10 +123,10 @@ state.
 `sandweave.steps.run(sandbox, step)` applies a step on the sandbox's controls:
 desktop actions become fast I/O batches (split only where a hold elapses), XR
 actions merge into one VR state update, and gamepad actions set the persistent
-leased writer's state (a timed press sets, then releases). Rejected with
-`UnsupportedFeature` rather than approximated: `wait` in ticks and holds in
-slowed time (no runtime speed control yet), gamepad trigger axes (`lt`/`rt`,
-calibration unresolved) and pads other than 0. Observing `state` needs the game's
+leased writer's state (a timed press sets, then releases), on pads 0-3, `game_speed`
+uses the game's time control and waits and holds elapse in game time (above).
+Rejected with `UnsupportedFeature` rather than approximated: `game_speed` and
+`wait` in ticks without time control. Observing `state` needs the game's
 exporter: `steps.run(sandbox, step, state=GameState(game))`.
 Tests: `tests/test_steps.py`, `tests/test_game_observations.py`.
 
@@ -116,10 +143,44 @@ request. `scripts/sdl-gamepad-proxy-check.py` drives both against a real SDL2
 library: on the Modal worker (Ubuntu `libsdl2-2.0-0` 2.30.0) a button and axis
 held 2.88 s past the lease, a release kept the axis, end of input returned the
 pad to neutral, and all three rumble requests (motors, triggers, stop) came back
-through the writer. This is a real SDL program, not a game: the only gamepad
-template (GunSpinning) runs on gVisor and has not been run with this writer.
+through the writer.
 
-## Not implemented
+Triggers `lt`/`rt` are raw axes 2 and 5 (0..1, -32768 released), as SDL reports an
+Xbox 360 pad on Linux and SDL's controller database maps this GUID; the neutral
+state releases them. `LAB_GAMEPAD_COUNT` pads (1-4) read `LAB_GAMEPAD_STATE` and
+`<that>-N`; the capability's `pads` starts one writer per pad. Each pad also has
+an SDL_Haptic device: `SDL_HapticRumblePlay`/`Stop` and constant-force effects are
+recorded (`haptic_rumble`, `constant_force` in `gamepad.haptics()`). The SDL check
+passed with two pads, triggers and both kinds of force feedback.
 
-- Runtime speed control (pause, slow, tick stepping) on Modal.
-- cua-auto-harness probes and checks for gamepad and XR actions.
+In a running game (`scripts/gamepad-speed-dreams-check.py`): Speed Dreams 2.4.2,
+the frontier environment's qualifying session, restarted with the proxy and the
+player's throttle, brake and steering on right trigger, left trigger and left
+stick. The game's own commands in its race journal followed the pad (throttle 1.0,
+brake 1.0, steer 0.6 for the stick at -0.6, all 0 at release), the car went from
+9.5 to 27.5 m/s under throttle and stopped under brake, and the game's force
+feedback came back: the start-up rumble at 0.5 and its constant force while
+steering is on the pad (1,277 records). The writer ran as root, since the
+environment's lockdown denies its game user `python3`; the state file is 0644.
+
+## Checks (cua-auto-harness)
+
+The `games` branch of cua-auto-harness (`d21842b`) checks these actions through
+this runner: canonical `pad_button`, `pad_axis`, `xr_pose`, `xr_input`; a gamepad
+probe that reads every pad through the guest's libSDL2 with the proxy loaded, as a
+game does; Sandweave's in-app XR probe (`notes/open-saber-xr-probe.patch`, autoload
+`SandweaveXRProbe`, recording what the OpenXR app receives while
+`$XDG_RUNTIME_DIR/open-saber/xr-probe.jsonl.enable` exists); and adapters
+`sandweave-gamepad` (GNOME sandbox, two pads) and `sandweave-xr` (Open Saber on
+`runtime="modal"`) that inject with `steps.run`. On 2026-10-26 on the Modal worker,
+every entry passed all five repetitions, each observing a change: gamepad 15/15
+(presses held 604 ms for 600, 1,506 ms for a 1.5 s down/up past the lease; sticks,
+triggers, pad 1) and XR 11/11 (10 cm moves within 1e-8 m, a -20 degree head yaw
+within 0.02 degrees, trigger, squeeze, A button, thumbstick).
+
+## Open
+
+- Time control exists for Open Saber only; other games need their own (OpenTTD
+  and OpenRA have native pause and speed; Speed Dreams' simulation multiplier voids
+  its task).
+- The Wesnoth fast I/O finding above.

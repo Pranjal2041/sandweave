@@ -874,7 +874,8 @@ class Worker:
         # serializing them behind each other halves both rates. Haptics and audio reads hold their
         # own cursor locks. control() still requires a ready sandbox.
         concurrent = operation == 'control' and (parameters.get('name'), parameters.get('method')) in (
-            ('vr', 'observe'), ('vr', 'action'), ('vr', 'step'), ('vr', 'haptics'), ('audio', 'observe'))
+            ('vr', 'observe'), ('vr', 'action'), ('vr', 'step'), ('vr', 'haptics'), ('vr', 'time'),
+            ('audio', 'observe'))
         if identity and not concurrent and operation not in ('describe', 'process_wait', 'runtime_profile',
                                                              'runtime_audit', 'delete', 'delete_status'):
             with self.lock(identity):

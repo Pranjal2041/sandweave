@@ -12,6 +12,7 @@ EXAMPLES = [
     {'kind': 'xr_pose', 'device': 'right', 'position': [.2, 1.3, -.5], 'orientation': [0, 0, 0, 1]},
     {'kind': 'xr_input', 'device': 'left', 'buttons': {'trigger_click': True}, 'trigger_value': 1},
     {'kind': 'wait', 'ticks': 2},
+    {'kind': 'game_speed', 'scale': 0.5},
 ]
 
 

@@ -59,6 +59,20 @@ def prepare_inputs(builder, root, profile):
                          builder.downloads, 'virtualgl_3.1.5_amd64.deb',
                          sha256='df3f7788ce41b182a47c0d298e5cd6d2d63579522cb41825970b7726e825485e')
     shutil.copy2(virtualgl, payload / virtualgl.name)
+    if profile == 'vr/opensaber':
+        # The official binary runs a pack exported from the same v0.5.0 source with the gameplay
+        # journal (game state) and Sandweave game-time control; Godot 4.3 only exports the pack.
+        godot = download('https://github.com/godotengine/godot/releases/download/4.3-stable/'
+                         'Godot_v4.3-stable_linux.x86_64.zip', builder.downloads, 'Godot_v4.3-stable_linux.x86_64.zip',
+                         sha256='7de56444b130b10af84d19c7e0cf63cf9e9937ee4ba94364c3b7dd114253ca21')
+        shutil.copy2(godot, payload / godot.name)
+        commit = 'b8c8e97d3361c8a20c61cb38e92593266fead258'  # tag v0.5.0
+        source = download('https://codeload.github.com/leandrodreamer/BeepSaber/tar.gz/' + commit, builder.downloads,
+                          'BeepSaber-' + commit + '.tar.gz',
+                          sha256='fcca5b5a0f68576dec7008a197fd9693e40920dc97ee023be7b763b9fc5388a5')
+        extract_source(source, payload / 'open-saber-source')
+        for name in ('open-saber-journal.patch', 'open-saber-time-control.patch'):
+            shutil.copy2(build_input(name), payload / name)
     if 'gunspinning' not in profile:
         return
     archive = builder.downloads / 'gunspinning-vr-linux.zip'

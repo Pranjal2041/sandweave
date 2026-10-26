@@ -94,15 +94,37 @@ def xr_state(actions):
 
 
 def _gamepad(sandbox, action):
-    if action.pad != 0:
-        raise UnsupportedFeature('the gamepad writer drives pad 0')
     if action.kind == 'pad_button':
         if action.state == 'press':
-            return sandbox.gamepad.action(buttons=[action.button], hold=(action.hold_ms or 200) / 1000)
-        return sandbox.gamepad.state(**{'buttons_' + action.state: [action.button]})
-    if action.axis in ('lt', 'rt'):
-        raise UnsupportedFeature('trigger axes are not calibrated for the gamepad writer')
-    return sandbox.gamepad.state(axes={action.axis: action.value})
+            return sandbox.gamepad.action(buttons=[action.button], hold=(action.hold_ms or 200) / 1000, pad=action.pad)
+        return sandbox.gamepad.state(**{'buttons_' + action.state: [action.button]}, pad=action.pad)
+    return sandbox.gamepad.state(axes={action.axis: action.value}, pad=action.pad)
+
+
+def _game_clock(sandbox):
+    capabilities = sandbox.capabilities
+    return sandbox.vr if (capabilities.get('vr') or {}).get('time_control') else None
+
+
+def elapse(sandbox, ms=None, ticks=None):
+    """Let game time pass. With the game's time control: from a pause, advance exactly that
+    many physics ticks (ms converted at the game's tick rate); while running at speed s,
+    wait ms / s of wall time. Without it, game time is wall time and ticks are unknown."""
+    clock = _game_clock(sandbox)
+    if clock is None:
+        if ticks is not None:
+            raise UnsupportedFeature('wait in game ticks needs a game with time control')
+        time.sleep(ms / 1000)
+        return None
+    state = clock.time_state or {'paused': False, 'time_scale': 1.0}
+    if state['paused']:
+        rate = state.get('physics_ticks_per_second') or clock.time(scale=0)['physics_ticks_per_second']
+        count = ticks if ticks is not None else max(1, round(ms * rate / 1000))
+        return clock.time(advance_ticks=count)
+    if ticks is not None:
+        raise ValueError('wait in ticks advances a paused game: set game_speed 0 first')
+    time.sleep(ms / 1000 / state['time_scale'])
+    return None
 
 
 def run(sandbox, step, *, state=None):
@@ -124,22 +146,25 @@ def run(sandbox, step, *, state=None):
             for items, pause_ms in desktop_segments(group):
                 acknowledgements.append(sandbox.desktop.action(items))
                 if pause_ms:
-                    time.sleep(pause_ms / 1000)
+                    elapse(sandbox, ms=pause_ms)
         group.clear()
 
     for action in step.actions:
         family = 'xr' if action.kind.startswith('xr_') else 'pad' if action.kind.startswith('pad_') else \
-            'wait' if action.kind == 'wait' else 'desktop'
+            'wait' if action.kind == 'wait' else 'speed' if action.kind == 'game_speed' else 'desktop'
         if group and ('xr' if group[0].kind.startswith('xr_') else 'desktop') != family:
             flush()
         if family in ('xr', 'desktop'):
             group.append(action)
         elif family == 'pad':
             acknowledgements.append(_gamepad(sandbox, action))
-        elif action.ms is not None:
-            time.sleep(action.ms / 1000)
+        elif family == 'speed':
+            clock = _game_clock(sandbox)
+            if clock is None:
+                raise UnsupportedFeature('game_speed needs a game with time control')
+            acknowledgements.append(clock.time(scale=action.scale))
         else:
-            raise UnsupportedFeature('wait in game ticks requires runtime speed control')
+            acknowledgements.append(elapse(sandbox, ms=action.ms, ticks=action.ticks))
     flush()
     observations, capabilities = {}, sandbox.capabilities
     vr_acknowledged = vr_acks[-1]['guest_ack_ns'] if vr_acks else None

@@ -15,3 +15,5 @@ width = 960
 height = 1080
 fps = 90
 hz = 90
+# SandweaveTime in the Open Saber pack (notes/open-saber-time-control.patch).
+time_control = "sandweave-time"

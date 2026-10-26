@@ -175,6 +175,11 @@ def call(state, op, parameters):
         if state.vr is None:
             raise RuntimeError('the VR stream has not started')
         return state.vr.haptics(parameters.get('after', 0))
+    if op == 'game_time':
+        if state.vr is None:
+            raise RuntimeError('the VR stream has not started')
+        return state.vr.game_time(parameters.get('scale'), parameters.get('advance_ticks'),
+                                  parameters.get('timeout', 10))
     if op == 'audio_start':
         from guest_audio import Capture
         with state.lock:

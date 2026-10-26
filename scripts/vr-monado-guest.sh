@@ -19,6 +19,20 @@ case "${1:-}" in
     export XR_RUNTIME_JSON=/opt/vr/monado/share/openxr/1/openxr_monado.json
     export OXR_LAB_ALLOW_MISSING_GLX_CONFIG=1
     shift
+    pack=/opt/vr/open_saber_journal.pck
+    if [ -f "$pack" ]; then
+      # Gameplay journal (one generation per launch; the game reads and deletes the
+      # HMAC key) and the game-time control file, under the user's runtime directory.
+      state=$XDG_RUNTIME_DIR/open-saber
+      mkdir -p "$state"
+      n=1
+      while [ -e "$state/journal-$(printf %02d $n).jsonl" ]; do n=$((n + 1)); done
+      generation=$(printf %02d $n)
+      head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$state/journal-$generation.key"
+      export OPEN_SABER_JOURNAL=$state/journal-$generation.jsonl OPEN_SABER_JOURNAL_KEY=$state/journal-$generation.key
+      export SANDWEAVE_TIME_CONTROL=$state/time-control.json
+      set -- --main-pack "$pack" "$@"
+    fi
     exec /opt/vr/OpenSaber0.5.0.Linux.x86_64 --rendering-method gl_compatibility \
       --rendering-driver opengl3 --print-fps --resolution 1280x720 "$@"
     ;;

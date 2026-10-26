@@ -1,0 +1,104 @@
+diff --git a/game/scripts/SandweaveTime.gd b/game/scripts/SandweaveTime.gd
+new file mode 100644
+index 0000000..b2ee0e7
+--- /dev/null
++++ b/game/scripts/SandweaveTime.gd
+@@ -0,0 +1,86 @@
++extends Node
++## Game-time control for Sandweave: pause, slow motion and tick stepping.
++##
++## Enabled when SANDWEAVE_TIME_CONTROL names a JSON file that the sandbox
++## replaces atomically: {"seq": n, "scale": s, "advance_ticks": t}. scale 0
++## pauses the scene tree (the song player pauses with it and the frozen scene
++## keeps rendering); 0 < scale <= 4 runs physics (Engine.time_scale) and the
++## song (pitch_scale, the song position is the game's clock) at that speed;
++## advance_ticks runs exactly that many physics ticks at speed 1 from a pause,
++## then pauses again. Each request is acknowledged in "<file>.ack" once applied
++## ("applied") and, for an advance, again when it completes ("advanced").
++
++var _path := OS.get_environment("SANDWEAVE_TIME_CONTROL")
++var _seq := -1
++var _advance := 0
++var _ticks := 0  # physics ticks the game simulated (tree running)
++
++
++func _ready() -> void:
++	process_mode = Node.PROCESS_MODE_ALWAYS
++	set_physics_process(_path != "")
++
++
++func _song() -> AudioStreamPlayer:
++	var game := GlobalReferences.main_game_scene
++	return game.song_player if is_instance_valid(game) else null
++
++
++func _apply(scale: float) -> void:
++	get_tree().paused = scale == 0.0
++	if scale > 0.0:
++		Engine.time_scale = scale
++		var song := _song()
++		if song:
++			song.pitch_scale = scale
++
++
++func _ack(state: String) -> void:
++	var song := _song()
++	var reply := {
++		"seq": _seq, "state": state, "paused": get_tree().paused, "time_scale": Engine.time_scale,
++		"ticks": _ticks, "physics_ticks_per_second": Engine.physics_ticks_per_second,
++		"song_position": song.get_playback_position() if song and song.stream else null,
++		"mono_us": Time.get_ticks_usec(),
++	}
++	var temporary := _path + ".ack.tmp"
++	var file := FileAccess.open(temporary, FileAccess.WRITE)
++	if file == null:
++		push_error("SandweaveTime cannot write " + temporary)
++		return
++	file.store_string(JSON.stringify(reply))
++	file.close()
++	DirAccess.rename_absolute(temporary, _path + ".ack")
++
++
++func _physics_process(_delta: float) -> void:
++	# Autoloads process first, so a pause set here already skips this tick for the game.
++	if not get_tree().paused:
++		_ticks += 1
++	if _advance > 0:
++		_advance -= 1
++		if _advance == 0:
++			_ticks -= 1  # this tick is skipped by the pause below
++			_apply(0.0)
++			_ack("advanced")
++	var file := FileAccess.open(_path, FileAccess.READ)
++	if file == null:
++		return
++	var request = JSON.parse_string(file.get_as_text())
++	if typeof(request) != TYPE_DICTIONARY or int(request.get("seq", -1)) == _seq:
++		return
++	_seq = int(request["seq"])
++	_advance = maxi(int(request.get("advance_ticks", 0)), 0)
++	if _advance > 0:
++		Engine.time_scale = 1.0
++		var song := _song()
++		if song:
++			song.pitch_scale = 1.0
++		get_tree().paused = false
++		_ticks += 1  # the game simulates this tick too
++	else:
++		var was_running := not get_tree().paused
++		_apply(clampf(float(request.get("scale", 1.0)), 0.0, 4.0))
++		if was_running and get_tree().paused:
++			_ticks -= 1  # counted above, but the pause skips this tick
++	_ack("applied")
+diff --git a/project.godot b/project.godot
+index 0e581e9..a983556 100644
+--- a/project.godot
++++ b/project.godot
+@@ -34,6 +34,7 @@ PlayCount="*res://game/scripts/PlayCountTable.gd"
+ StopwatchFactory="*res://addons/stopwatch/public/StopwatchFactory.gd"
+ UI_AudioEngine="*res://game/ui/UI_AudioEngine/UI_AudioEngine.tscn"
+ Journal="*res://game/scripts/Journal.gd"
++SandweaveTime="*res://game/scripts/SandweaveTime.gd"
+ 
+ [debug]
+ 

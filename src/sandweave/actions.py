@@ -281,12 +281,23 @@ class Wait:
             raise ValueError('wait ticks must be a positive integer')
 
 
+@dataclass
+class GameSpeed:
+    """Set game speed for games with time control: 0 pauses, 1 is real time, up to 4."""
+    scale: float
+    kind: str = 'game_speed'
+
+    def __post_init__(self):
+        if not isinstance(self.scale, (int, float)) or not 0 <= self.scale <= 4:
+            raise ValueError('game_speed scale must be in 0..4 (0 pauses)')
+
+
 ACTIONS = {cls.kind: cls for cls in (Click, ButtonPress, ButtonRelease, Move, Drag, Scroll, KeyChord, KeyDown,
-                                     KeyUp, TypeText, PadButton, PadAxis, XRPose, XRInput, Wait)}
+                                     KeyUp, TypeText, PadButton, PadAxis, XRPose, XRInput, Wait, GameSpeed)}
 # Device groups a sandbox may declare; checkers and runtimes reject undeclared ones.
 DEVICES = {'desktop': ('click', 'button_press', 'button_release', 'move', 'drag', 'scroll', 'key_chord',
                        'key_down', 'key_up', 'type_text'),
-           'gamepad': ('pad_button', 'pad_axis'), 'xr': ('xr_pose', 'xr_input'), 'time': ('wait',)}
+           'gamepad': ('pad_button', 'pad_axis'), 'xr': ('xr_pose', 'xr_input'), 'time': ('wait', 'game_speed')}
 
 
 def action_from_dict(value):

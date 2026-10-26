@@ -22,8 +22,8 @@ class RemoteVRStream:
         self.runtime, self.context = runtime, context
         self.options = dict(width=width, height=height, fps=fps, hz=hz, slots=slots)
         self.codec, self.quality = codec, quality
-        self.connection = self.input_connection = None
-        self.sequence, self.input_mutex = 0, threading.Lock()
+        self.connection = self.input_connection = self.time_connection = None
+        self.sequence, self.input_mutex, self.time_mutex = 0, threading.Lock(), threading.Lock()
         self.broken = self.closed = self.suspended = False
         self.clock_rtt_ns = self.guest_to_host_ns = None
 
@@ -67,6 +67,13 @@ class RemoteVRStream:
                 self.broken = True
                 raise ConnectionError('input acknowledgement ID mismatch')
             return {**reply, 'host_sent_ns': sent, 'host_ack_ns': received, 'round_trip_ns': received - sent}
+
+    def game_time(self, scale=None, advance_ticks=None, timeout=10):
+        """Game-time control (pause, speed, tick advance) on its own connection: an advance blocks."""
+        with self.time_mutex:
+            if self.time_connection is None:
+                self.time_connection = self.runtime.io_connection(self.context.id, timeout=max(30, timeout + 10))
+            return self.time_connection.call('game_time', scale=scale, advance_ticks=advance_ticks, timeout=timeout)
 
     def haptics(self, after=0):
         """Vibration commands Monado received for the virtual controllers, from record index `after`."""
@@ -113,7 +120,7 @@ class RemoteVRStream:
         except Exception:
             pass
         finally:
-            for connection in (self.connection, self.input_connection):
+            for connection in (self.connection, self.input_connection, self.time_connection):
                 if connection is not None:
                     connection.close()
 

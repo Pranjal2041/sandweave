@@ -19,6 +19,24 @@ cc -O2 -fPIC -shared /sandweave-input/gpu-visual-order.c -Wl,-z,defs -ldl -lX11 
     -o /sandweave-output/gpu/compat/libvisualorder.so
 rm -rf /opt/vr/monado-source /opt/vr/monado-build
 
+if [ -d /sandweave-input/open-saber-source ]; then
+    # Journal (game state) and game-time control pack for the official binary.
+    build=/opt/vr/open-saber-build
+    mkdir -p "$build/home"
+    cp -a /sandweave-input/open-saber-source "$build/source"
+    patch --batch --forward -d "$build/source" -p1 < /sandweave-input/open-saber-journal.patch
+    patch --batch --forward -d "$build/source" -p1 < /sandweave-input/open-saber-time-control.patch
+    python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" \
+        /sandweave-input/Godot_v4.3-stable_linux.x86_64.zip "$build"
+    godot="$build/Godot_v4.3-stable_linux.x86_64"
+    chmod 755 "$godot"
+    # The first headless pass imports textures, meshes and audio; the export packs the imported data.
+    HOME="$build/home" "$godot" --headless --path "$build/source" --import
+    HOME="$build/home" "$godot" --headless --path "$build/source" --export-pack Linux/X11 /opt/vr/open_saber_journal.pck
+    test "$(stat -c %s /opt/vr/open_saber_journal.pck)" -gt 5000000
+    rm -rf "$build"
+fi
+
 if [[ "$profile" == *gunspinning* ]]; then
     mkdir -p /sandweave-output/gpu/vr /opt/gunspinning-lab
     cp -a /sandweave-input/gunspinning-linux-2.0.1 /sandweave-input/xrizer-v0.5 /sandweave-output/gpu/vr/

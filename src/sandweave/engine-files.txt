@@ -62,6 +62,8 @@ notes/passt-ephemeral-ports.patch
 sources/passt-backpressure-test.c
 sources/passt-retransmission-test.c
 notes/monado-vr-lab.patch
+notes/open-saber-journal.patch
+notes/open-saber-time-control.patch
 notes/primus-vk-visible-rows.patch
 sources/gs-base-probe.c
 sources/xvnc-fast-io.c

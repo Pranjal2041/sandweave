@@ -174,6 +174,44 @@ def test_steps_observe_state_through_the_games_exporter():
     assert GameState('openttd').command()[-1] == 'openttd'
 
 
+def test_game_time_control_drives_waits_and_speed():
+    calls = []
+
+    class Clock:
+        time_state = None
+
+        def time(self, scale=None, advance_ticks=None, timeout=10):
+            calls.append((scale, advance_ticks))
+            self.time_state = {'paused': scale == 0 or advance_ticks is not None, 'time_scale': scale or 1.0,
+                               'physics_ticks_per_second': 90}
+            return self.time_state
+
+    sandbox = types.SimpleNamespace(capabilities={'vr': {'time_control': 'sandweave-time'}}, vr=Clock())
+    run(sandbox, {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': 0}, {'kind': 'wait', 'ticks': 45},
+                                             {'kind': 'wait', 'ms': 500}]})
+    # Paused: ticks advance exactly, and 500 ms of game time is 45 ticks at 90 per second.
+    assert calls == [(0, None), (None, 45), (None, 45)]
+    calls.clear()
+    run(sandbox, {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': 4}, {'kind': 'wait', 'ms': 40}]})
+    assert calls == [(4, None)]  # running at 4x: 40 ms of game time is a 10 ms wall wait
+    with pytest.raises(ValueError):
+        run(sandbox, {'observe': [], 'actions': [{'kind': 'wait', 'ticks': 3}]})
+    with pytest.raises(UnsupportedFeature):
+        run(types.SimpleNamespace(capabilities={'vr': {}}), {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': 0}]})
+    from sandweave.actions import action_from_dict
+    with pytest.raises(ValueError):
+        action_from_dict({'kind': 'game_speed', 'scale': 5})
+
+
+def test_open_saber_build_includes_journal_and_time_control():
+    template = (ROOT / 'src/sandweave/templates/vr/opensaber/template.toml').read_text()
+    assert 'time_control = "sandweave-time"' in template
+    patch = (ROOT / 'notes/open-saber-time-control.patch').read_text()
+    assert 'SandweaveTime="*res://game/scripts/SandweaveTime.gd"' in patch and 'advance_ticks' in patch
+    launch = (ROOT / 'scripts/vr-monado-guest.sh').read_text()
+    assert '--main-pack' in launch and 'SANDWEAVE_TIME_CONTROL' in launch and 'OPEN_SABER_JOURNAL_KEY' in launch
+
+
 @pytest.mark.skipif(sys.platform == 'win32', reason='the writer uses POSIX select on stdin')
 def test_gamepad_writer_reports_rumble_and_keeps_state(tmp_path):
     writer = load(ROOT / 'scripts/gamepad-input.py', 'gamepad_input_test')
@@ -190,19 +228,20 @@ def test_gamepad_writer_reports_rumble_and_keeps_state(tmp_path):
     try:
         assert json.loads(process.stdout.readline())['ready']
         assert request({'haptics_after': 0})['events'] == []
-        haptics.write_bytes(writer.RUMBLE.pack(b'RUM1', 0, 7, 0xFFFF, 0, 250) +
-                            writer.RUMBLE.pack(b'RUM1', 1, 8, 0, 0, 0))
+        haptics.write_bytes(writer.RUMBLE.pack(b'RUM1', 0, 0, 7, 0xFFFF, 0, 250) +
+                            writer.RUMBLE.pack(b'RUM1', 1, 1, 8, 0, 0, 0))
         reply = request({'haptics_after': 0})
         assert reply['next'] == 2 and reply['events'][0] == {
-            'output': 'motors', 'guest_ns': 7, 'low_frequency': 1.0, 'high_frequency': 0.0,
+            'output': 'motors', 'pad': 0, 'guest_ns': 7, 'low_frequency': 1.0, 'high_frequency': 0.0,
             'duration_ms': 250, 'stop': False}
-        assert reply['events'][1]['output'] == 'triggers' and reply['events'][1]['stop']
+        assert reply['events'][1]['output'] == 'triggers' and reply['events'][1]['pad'] == 1 and reply['events'][1]['stop']
         assert request({'buttons_down': ['a']})['buttons'] == ['a']
         assert request({'haptics_after': 2})['events'] == []
         assert 'error' in request({'haptics_after': -1})
         assert request({'axes': {'lx': .5}})['buttons'] == ['a']
+        assert request({'axes': {'lt': 1}})['axes']['lt'] == 1.0 and 'error' in request({'axes': {'rt': -.1}})
     finally:
         process.stdin.close()
         process.wait(timeout=5)
-    mask = struct.unpack_from('<8sQQ8hIB3x', (tmp_path / 'pad.bin').read_bytes())[11]
-    assert mask == 0
+    record = struct.unpack_from('<8sQQ8hIB3x', (tmp_path / 'pad.bin').read_bytes())
+    assert record[11] == 0 and list(record[3:11]) == [0, 0, -32768, 0, 0, -32768, 0, 0]  # neutral: triggers released

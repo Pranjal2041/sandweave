@@ -1,0 +1,656 @@
+diff --git a/game/BeepCube/BeepCube.gd b/game/BeepCube/BeepCube.gd
+index 2897746..a455d1c 100644
+--- a/game/BeepCube/BeepCube.gd
++++ b/game/BeepCube/BeepCube.gd
+@@ -116,6 +116,7 @@ func make_chain_head() -> void:
+ 
+ func on_miss() -> void:
+ 	Scoreboard.reset_combo()
++	Journal.note_miss(self, "note")
+ 	release()
+ 
+ func set_collision_disabled(value: bool) -> void:
+@@ -132,6 +133,11 @@ func cut(saber_type: int, cut_speed: Vector3, cut_plane: Plane, controller: Beep
+ 	
+ 	_create_cut_rigid_body(cut_plane)
+ 	
++	var journal_details := {
++		"base_cut_angle_accuracy": base_cut_angle_accuracy,
++		"cut_distance": cut_distance,
++		"correct_saber": saber_type == which_saber,
++	}
+ 	if saber_type == which_saber:
+ 		var cut_angle_accuracy := clampf((base_cut_angle_accuracy-0.7)/0.3, 0.0, 1.0)
+ 		if is_dot: #ignore angle if is a dot
+@@ -142,10 +148,17 @@ func cut(saber_type: int, cut_speed: Vector3, cut_plane: Plane, controller: Beep
+ 		# allows a bit of save margin where the beat is considered 100% correct
+ 		var beat_accuracy := clampf((1.0 - absf(global_transform.origin.z)) / 0.5, 0.0, 1.0)
+ 		Scoreboard.note_cut(transform.origin, beat_accuracy, cut_angle_accuracy, cut_distance_accuracy, travel_distance_factor)
++		journal_details.merge({
++			"cut_angle_accuracy": cut_angle_accuracy,
++			"cut_distance_accuracy": cut_distance_accuracy,
++			"travel_distance_factor": travel_distance_factor,
++			"beat_accuracy": beat_accuracy,
++		})
+ 		cutted.emit(true)
+ 	else:
+ 		Scoreboard.bad_cut(transform.origin)
+ 		cutted.emit(false)
++	Journal.note_cut(self, saber_type, journal_details)
+ 	
+ 	# reset the movement tracking volume for the next cut
+ 	controller.reset_movement_aabb()
+diff --git a/game/BeepSaber_Game.gd b/game/BeepSaber_Game.gd
+index d86d11c..36317ba 100644
+--- a/game/BeepSaber_Game.gd
++++ b/game/BeepSaber_Game.gd
+@@ -83,6 +83,7 @@ func start_map(info: MapInfo, map_difficulty: DifficultyInfo) -> void:
+ 		vr.log_error("Could not read map data from " + map_filename)
+ 	if not Map.load_beatmap(info, map_difficulty, map_data):
+ 		return
++	Journal.map_start(info, map_difficulty, map_filename)
+ 	
+ 	update_left_color(Map.color_left)
+ 	update_right_color(Map.color_right)
+@@ -284,11 +285,13 @@ func _on_PlayerHead_area_entered(area: Area3D) -> void:
+ 	if area.is_in_group(&"wall"):
+ 		song_player.volume_db = -15.0
+ 		_in_wall = true
++		Journal.wall_enter(area, $XROrigin3D/XRCamera3D/PlayerHead as Node3D)
+ 
+ func _on_PlayerHead_area_exited(area: Area3D) -> void:
+ 	if area.is_in_group(&"wall"):
+ 		song_player.volume_db = 0.0
+ 		_in_wall = false
++		Journal.wall_exit(area, $XROrigin3D/XRCamera3D/PlayerHead as Node3D)
+ 
+ # when the song ended we want to display the current score and
+ # the high score
+@@ -307,6 +310,7 @@ func _on_song_ended() -> void:
+ 		new_record = true
+ 
+ 	var current_percent := Scoreboard.right_notes/(Scoreboard.right_notes+Scoreboard.wrong_notes)
++	Journal.map_end(Scoreboard.points, Scoreboard.right_notes, Scoreboard.wrong_notes, current_percent, Scoreboard.full_combo)
+ 	endscore.show_score(
+ 		Scoreboard.points,
+ 		highscore,
+@@ -331,6 +335,7 @@ func _restart_button() -> void:
+ 	pause_menu.visible = false
+ 
+ func _main_menu_button() -> void:
++	Journal.attempt_abort("main_menu")
+ 	_clear_track()
+ 	_transition_game_state(gamestate_mapselection)
+ 
+@@ -347,6 +352,7 @@ func _unpause_button() -> void:
+ 	pause_countdown.visible = false
+ 	
+ 	# continue game play
++	Journal.resume()
+ 	song_player.play(pause_position)
+ 	_transition_game_state(gamestate_playing)
+ 
+diff --git a/game/Bomb/Bomb.gd b/game/Bomb/Bomb.gd
+index 155eab8..ec467ab 100644
+--- a/game/Bomb/Bomb.gd
++++ b/game/Bomb/Bomb.gd
+@@ -10,9 +10,11 @@ func set_collision_disabled(value: bool) -> void:
+ @warning_ignore("unused_parameter")
+ func cut(saber_type: int, cut_speed: Vector3, cut_plane: Plane, controller: BeepSaberController) -> void:
+ 	Scoreboard.bad_cut(transform.origin)
++	Journal.bomb_hit(self, saber_type)
+ 	queue_free()
+ 
+ func on_miss() -> void:
++	Journal.bomb_pass(self)
+ 	queue_free()
+ 
+ func spawn(info: BombInfo, current_beat: float) -> void:
+diff --git a/game/Chain/ChainLink.gd b/game/Chain/ChainLink.gd
+index 8e34b94..6fadcaf 100644
+--- a/game/Chain/ChainLink.gd
++++ b/game/Chain/ChainLink.gd
+@@ -84,6 +84,7 @@ static func construct_chain(chain_info: ChainInfo, track_ref: Node3D, current_be
+ 		var chain_link := CHAIN_LINK_TEMPLATE.instantiate() as ChainLink
+ 		chain_link.spawn(chain_info, current_beat, head_pos, tail_pos, mid_pos, i)
+ 		track_ref.add_child(chain_link)
++		Journal.spawn_chain_link(chain_link, chain_info, i)
+ 		i += 1
+ 
+ func spawn(chain_info: ChainInfo, current_beat: float, head_pos: Vector2, tail_pos: Vector2, mid_pos: Vector2, link_index: int) -> void:
+@@ -128,10 +129,12 @@ func cut(saber_type: int, _cut_speed: Vector3, cut_plane: Plane, _controller: Be
+ 		Scoreboard.chain_link_cut(transform.origin)
+ 	else:
+ 		Scoreboard.bad_cut(transform.origin)
++	Journal.chain_cut(self, saber_type)
+ 	queue_free()
+ 
+ func on_miss() -> void:
+ 	Scoreboard.reset_combo()
++	Journal.note_miss(self, "chain")
+ 	queue_free()
+ 
+ func set_collision_disabled(value: bool) -> void:
+diff --git a/game/LightSaber.gd b/game/LightSaber.gd
+index 428747f..6aac1d6 100644
+--- a/game/LightSaber.gd
++++ b/game/LightSaber.gd
+@@ -134,6 +134,7 @@ func _handle_area_collided(area: Area3D) -> void:
+ 	var controller_speed: Vector3 = (saber_end - saber_end_past) / last_dt
+ 	const BEAT_DISTANCE := 4.0
+ 	var cutplane := Plane(o, saber_end, saber_end_past + Vector3(0, 0, BEAT_DISTANCE * Map.current_info.beats_per_minute * last_dt / 30)) # Account for relative position to track speed
++	Journal.begin_cut(self, controller, controller_speed, time_offset)
+ 	note.cut(type, controller_speed, cutplane, controller)
+ 
+ func _on_AnimationPlayer_animation_started(_anim_name: StringName) -> void:
+diff --git a/game/Wall/Wall.gd b/game/Wall/Wall.gd
+index fc0c4f7..4a31144 100644
+--- a/game/Wall/Wall.gd
++++ b/game/Wall/Wall.gd
+@@ -10,6 +10,7 @@ func _physics_process(delta: float) -> void:
+ 	
+ 	# remove children that go to far
+ 	if transform.origin.z > despawn_z:
++		Journal.wall_pass(self)
+ 		queue_free()
+ 
+ func spawn(wall_info: ObstacleInfo, current_beat: float) -> void:
+diff --git a/game/scripts/GameState/Paused.gd b/game/scripts/GameState/Paused.gd
+index cc2649c..9057718 100644
+--- a/game/scripts/GameState/Paused.gd
++++ b/game/scripts/GameState/Paused.gd
+@@ -22,6 +22,7 @@ func _ready(game: BeepSaber_Game) -> void:
+ 	Scoreboard.paused = true
+ 	
+ 	game.pause_position = game.song_player.get_playback_position()
++	Journal.pause()
+ 	game.song_player.stop()
+ 	(game.pause_menu.ui_control as PausePanel).set_pause_text(
+ 		"%s By %s\nMap author: %s" % [
+diff --git a/game/scripts/GameState/Playing.gd b/game/scripts/GameState/Playing.gd
+index 8ed5632..de1b093 100644
+--- a/game/scripts/GameState/Playing.gd
++++ b/game/scripts/GameState/Playing.gd
+@@ -60,20 +60,25 @@ func _process_map(game: BeepSaber_Game) -> void:
+ 		var note_info := Map.note_stack.pop_back() as ColorNoteInfo
+ 		var color := Map.color_left if note_info.color == 0 else Map.color_right
+ 		note.spawn(note_info, current_beat, color)
++		Journal.spawn_note(note, note_info)
+ 		note_info_refs.append(note_info)
+ 		cube_refs.append(note)
+ 	
+ 	# spawn bombs
+ 	while not Map.bomb_stack.is_empty() and Map.bomb_stack[-1].beat <= look_ahead:
+ 		var bomb := bomb_template.instantiate() as Bomb
+-		bomb.spawn(Map.bomb_stack.pop_back() as BombInfo, current_beat)
++		var bomb_info := Map.bomb_stack.pop_back() as BombInfo
++		bomb.spawn(bomb_info, current_beat)
+ 		game.track.add_child(bomb)
++		Journal.spawn_bomb(bomb, bomb_info)
+ 	
+ 	# spawn obstacles (walls)
+ 	while not Map.obstacle_stack.is_empty() and Map.obstacle_stack[-1].beat <= look_ahead:
+ 		var wall := wall_template.instantiate() as Wall
+-		wall.spawn(Map.obstacle_stack.pop_back() as ObstacleInfo, current_beat)
++		var wall_info := Map.obstacle_stack.pop_back() as ObstacleInfo
++		wall.spawn(wall_info, current_beat)
+ 		game.track.add_child(wall)
++		Journal.spawn_wall(wall, wall_info)
+ 	
+ 	while not Map.arc_stack.is_empty() and Map.arc_stack[-1].head_beat <= look_ahead:
+ 		var arc := arc_template.instantiate() as Arc
+diff --git a/game/scripts/Journal.gd b/game/scripts/Journal.gd
+new file mode 100644
+index 0000000..7b49b1f
+--- /dev/null
++++ b/game/scripts/Journal.gd
+@@ -0,0 +1,437 @@
++# Tamper-evident gameplay journal used by the evaluation environment.
++#
++# Enabled only when OPEN_SABER_JOURNAL (output file) and OPEN_SABER_JOURNAL_KEY
++# (a file holding a hex HMAC key, deleted as soon as it is read) are set. Every
++# line is "<json>\t<hmac-sha256 hex>"; each record carries the previous MAC, so
++# records cannot be edited, dropped or reordered without breaking the chain.
++# The journal only observes: it never changes game rules, timing or scoring.
++extends Node
++
++const FORMAT := "open-saber-journal/1"
++const POSE_EVERY_PHYSICS_FRAMES := 2
++
++var enabled := false
++var _file: FileAccess
++var _key := PackedByteArray()
++var _crypto := Crypto.new()
++var _prev_mac := ""
++var _seq := 0
++var _next_id := 0
++var _physics_frame := 0
++
++var attempt := 0
++var attempt_active := false
++var _paused := false
++var _max_combo := 0
++var _cut_context := {}
++var _speed_state := []
++var _origin_state := Transform3D()
++
++func _ready() -> void:
++	process_mode = Node.PROCESS_MODE_ALWAYS
++	var path := OS.get_environment("OPEN_SABER_JOURNAL")
++	var key_path := OS.get_environment("OPEN_SABER_JOURNAL_KEY")
++	if path.is_empty() or key_path.is_empty():
++		return
++	var key_hex := FileAccess.get_file_as_string(key_path).strip_edges()
++	@warning_ignore("return_value_discarded")
++	DirAccess.remove_absolute(key_path)
++	_key = key_hex.hex_decode()
++	if _key.size() < 32:
++		push_error("Journal key is missing or too short; journal disabled")
++		return
++	_file = FileAccess.open(path, FileAccess.WRITE)
++	if _file == null:
++		push_error("Cannot open journal " + path)
++		return
++	enabled = true
++	@warning_ignore("return_value_discarded")
++	Settings.changed.connect(_on_setting_changed)
++	# OS.get_cmdline_args() hides the engine's own options; read the real argv.
++	var argv := PackedStringArray()
++	var raw := _read_proc("/proc/self/cmdline")
++	var start := 0
++	for k in raw.size():
++		if raw[k] == 0:
++			argv.append(raw.slice(start, k).get_string_from_utf8())
++			start = k + 1
++	var main_pack := ""
++	var i := 0
++	while i < argv.size() - 1:
++		if argv[i] == "--main-pack":
++			main_pack = argv[i + 1]
++		i += 1
++	# Interfaces visible to this process (the episode runs in a loopback-only namespace).
++	var interfaces := PackedStringArray()
++	for line in _read_proc("/proc/net/dev").get_string_from_utf8().split("\n").slice(2):
++		if line.contains(":"):
++			interfaces.append(line.get_slice(":", 0).strip_edges())
++	# Project-setting overrides Godot would load next to the binary or the pack.
++	var overrides := {}
++	for candidate in [OS.get_executable_path().get_base_dir().path_join("override.cfg"),
++			main_pack.get_base_dir().path_join("override.cfg") if not main_pack.is_empty() else "",
++			"res://override.cfg"]:
++		if not candidate.is_empty() and FileAccess.file_exists(candidate):
++			overrides[candidate] = FileAccess.get_sha256(candidate)
++	var autoloads := {}
++	for property in ProjectSettings.get_property_list():
++		var name: String = property["name"]
++		if name.begins_with("autoload/"):
++			autoloads[name] = str(ProjectSettings.get_setting(name))
++	var environment := {}
++	for variable in ["LD_PRELOAD", "LD_LIBRARY_PATH", "XR_RUNTIME_JSON", "VK_ICD_FILENAMES", "VK_DRIVER_FILES",
++			"OXR_LAB_ALLOW_MISSING_GLX_CONFIG", "XDG_DATA_HOME", "DISPLAY", "VGL_DISPLAY"]:
++		environment[variable] = OS.get_environment(variable)
++	write("session_start", {
++		"format": FORMAT,
++		"game": ProjectSettings.get_setting("application/config/name", ""),
++		"engine": Engine.get_version_info(),
++		"debug_build": OS.is_debug_build(),
++		"argv": argv,
++		"cmdline": OS.get_cmdline_args(),
++		"user_args": OS.get_cmdline_user_args(),
++		"executable": OS.get_executable_path(),
++		"executable_sha256": FileAccess.get_sha256(OS.get_executable_path()),
++		"main_pack": main_pack,
++		"main_pack_sha256": FileAccess.get_sha256(main_pack) if not main_pack.is_empty() else "",
++		"user_data_dir": OS.get_user_data_dir(),
++		"network_interfaces": interfaces,
++		"override_cfg": overrides,
++		"autoloads": autoloads,
++		"environment": environment,
++		"physics_ticks_per_second": Engine.physics_ticks_per_second,
++		"settings": settings_snapshot(),
++		"speed": _speed(),
++	})
++
++static func _read_proc(path: String) -> PackedByteArray:
++	# procfs files report length 0, so read a bounded buffer instead of get_file_as_bytes().
++	var file := FileAccess.open(path, FileAccess.READ)
++	return file.get_buffer(65536) if file != null else PackedByteArray()
++
++func _notification(what: int) -> void:
++	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
++		if enabled and _file != null:
++			if attempt_active:
++				attempt_abort("quit")
++			write("session_end", {})
++			_file.close()
++			_file = null
++			enabled = false
++
++func write(type: String, data: Dictionary) -> void:
++	if not enabled:
++		return
++	_seq += 1
++	data["seq"] = _seq
++	data["type"] = type
++	data["t"] = Time.get_unix_time_from_system()
++	data["mono_us"] = Time.get_ticks_usec()
++	data["prev"] = _prev_mac
++	var body := JSON.stringify(data, "", true, true)
++	var mac := _crypto.hmac_digest(HashingContext.HASH_SHA256, _key, body.to_utf8_buffer()).hex_encode()
++	_file.store_string(body + "\t" + mac + "\n")
++	_file.flush()
++	_prev_mac = mac
++
++static func v3(v: Vector3) -> Array:
++	return [v.x, v.y, v.z]
++
++static func quat(b: Basis) -> Array:
++	var q := b.orthonormalized().get_rotation_quaternion()
++	return [q.x, q.y, q.z, q.w]
++
++static func xform(t: Transform3D) -> Array:
++	return v3(t.origin) + quat(t.basis)
++
++func settings_snapshot() -> Dictionary:
++	var out := {}
++	for key: Variant in Settings.default_values.keys():
++		var value: Variant = Settings.get(key)
++		if value is Vector3:
++			out[str(key)] = v3(value as Vector3)
++		elif value is Color:
++			out[str(key)] = (value as Color).to_html()
++		else:
++			out[str(key)] = value
++	return out
++
++func _speed() -> Dictionary:
++	var game := GlobalReferences.main_game_scene
++	return {
++		"engine_time_scale": Engine.time_scale,
++		"audio_playback_speed_scale": AudioServer.playback_speed_scale,
++		"song_pitch_scale": game.song_player.pitch_scale if game and game.song_player else 1.0,
++		"physics_ticks_per_second": Engine.physics_ticks_per_second,
++	}
++
++func _song_time() -> float:
++	var game := GlobalReferences.main_game_scene
++	if game == null or game.song_player == null:
++		return -1.0
++	return game.song_player.get_playback_position()
++
++func _new_id() -> int:
++	_next_id += 1
++	return _next_id
++
++func _id(node: Object) -> int:
++	return int(node.get_meta(&"journal_id", -1))
++
++func _on_setting_changed(key: StringName) -> void:
++	var value: Variant = Settings.get(key)
++	if value is Vector3:
++		value = v3(value as Vector3)
++	elif value is Color:
++		value = (value as Color).to_html()
++	write("setting", {"key": String(key), "value": value, "attempt": attempt, "attempt_active": attempt_active})
++
++func map_start(info: MapInfo, difficulty: DifficultyInfo, map_filename: String) -> void:
++	if not enabled:
++		return
++	if attempt_active:
++		attempt_abort("restart")
++	attempt += 1
++	attempt_active = true
++	_paused = false
++	_max_combo = 0
++	var game := GlobalReferences.main_game_scene
++	_origin_state = game.xr_origin.global_transform
++	_speed_state = []
++	var song_path := info.filepath + info.song_filename
++	write("map_start", {
++		"attempt": attempt,
++		"song_dir": info.filepath,
++		"song_name": info.song_name,
++		"song_sub_name": info.song_sub_name,
++		"song_author": info.song_author_name,
++		"level_author": info.level_author_name,
++		"info_version": info.version,
++		"bpm": info.beats_per_minute,
++		"difficulty": difficulty.difficulty,
++		"difficulty_rank": difficulty.difficulty_rank,
++		"difficulty_label": difficulty.custom_name,
++		"beatmap_filename": difficulty.beatmap_filename,
++		"note_jump_movement_speed": difficulty.note_jump_movement_speed,
++		"beatmap_sha256": FileAccess.get_sha256(map_filename),
++		"info_sha256": FileAccess.get_sha256(info.filepath + "Info.dat") if FileAccess.file_exists(info.filepath + "Info.dat") else FileAccess.get_sha256(info.filepath + "info.dat"),
++		"song_sha256": FileAccess.get_sha256(song_path),
++		"loaded": {
++			"notes": Map.note_stack.size(),
++			"bombs": Map.bomb_stack.size(),
++			"obstacles": Map.obstacle_stack.size(),
++			"arcs": Map.arc_stack.size(),
++			"chains": Map.chain_stack.size(),
++		},
++		"settings": settings_snapshot(),
++		"speed": _speed(),
++		"xr_origin": xform(game.xr_origin.global_transform),
++		"xr_world_scale": XRServer.world_scale,
++		"xr_interface": XRServer.primary_interface.get_name() if XRServer.primary_interface else "",
++		"camera_local": xform(game.xr_origin.get_node(^"XRCamera3D").transform),
++	})
++
++func map_end(points: int, right_notes: float, wrong_notes: float, percent: float, full_combo: bool) -> void:
++	if not enabled or not attempt_active:
++		return
++	write("map_end", {
++		"attempt": attempt,
++		"score": points,
++		"right_notes": right_notes,
++		"wrong_notes": wrong_notes,
++		"percent": percent if is_finite(percent) else -1.0,
++		"full_combo": full_combo,
++		"max_combo": _max_combo,
++		"song_t": _song_time(),
++		"speed": _speed(),
++	})
++	attempt_active = false
++
++func attempt_abort(reason: String) -> void:
++	if not enabled or not attempt_active:
++		return
++	write("map_abort", {
++		"attempt": attempt,
++		"reason": reason,
++		"score": Scoreboard.points,
++		"max_combo": _max_combo,
++		"song_t": _song_time(),
++	})
++	attempt_active = false
++
++func pause() -> void:
++	_paused = true
++	write("pause", {"attempt": attempt, "song_t": _song_time(), "score": Scoreboard.points})
++
++func resume() -> void:
++	_paused = false
++	write("resume", {"attempt": attempt, "song_t": _song_time()})
++
++func spawn_note(cube: BeepCube, info: ColorNoteInfo) -> void:
++	if not enabled:
++		return
++	var id := _new_id()
++	cube.set_meta(&"journal_id", id)
++	write("note_spawn", {
++		"attempt": attempt, "id": id, "beat": info.beat, "color": info.color,
++		"x": info.line_index, "y": info.line_layer, "dir": info.cut_direction,
++		"angle_offset": info.angle_offset, "pos": v3(cube.global_transform.origin),
++		"song_t": _song_time(),
++	})
++
++func spawn_bomb(bomb: Bomb, info: BombInfo) -> void:
++	if not enabled:
++		return
++	var id := _new_id()
++	bomb.set_meta(&"journal_id", id)
++	write("bomb_spawn", {
++		"attempt": attempt, "id": id, "beat": info.beat, "x": info.line_index,
++		"y": info.line_layer, "pos": v3(bomb.global_transform.origin), "song_t": _song_time(),
++	})
++
++func spawn_wall(wall: Wall, info: ObstacleInfo) -> void:
++	if not enabled:
++		return
++	var id := _new_id()
++	wall.set_meta(&"journal_id", id)
++	wall.set_meta(&"journal_hit", false)
++	write("wall_spawn", {
++		"attempt": attempt, "id": id, "beat": info.beat, "duration": info.duration,
++		"x": info.line_index, "y": info.line_layer, "width": info.width,
++		"height": info.height, "pos": v3(wall.global_transform.origin), "song_t": _song_time(),
++	})
++
++func spawn_chain_link(link: ChainLink, info: ChainInfo, index: int) -> void:
++	if not enabled:
++		return
++	var id := _new_id()
++	link.set_meta(&"journal_id", id)
++	write("chain_spawn", {
++		"attempt": attempt, "id": id, "beat": link.beat, "color": info.color,
++		"head_beat": info.head_beat, "link": index, "pos": v3(link.global_transform.origin),
++		"song_t": _song_time(),
++	})
++
++# Called by the saber immediately before it hands a collision to the cuttable.
++func begin_cut(saber: LightSaber, controller: BeepSaberController, cut_speed: Vector3, time_offset: float) -> void:
++	if not enabled:
++		return
++	var swing := saber._swing_cast
++	var game := GlobalReferences.main_game_scene
++	_cut_context = {
++		"saber": saber.type,
++		"cut_speed": v3(cut_speed),
++		"time_offset": time_offset,
++		"saber_end": v3(saber.saber_end),
++		"saber_end_past": v3(saber.saber_end_past),
++		"saber_dt": saber.last_dt,
++		"ray_base": v3(swing.global_transform.origin),
++		"ray_tip": v3(swing.global_transform * swing.target_position),
++		"controller_global": xform(controller.global_transform),
++		"controller_local": xform(controller.transform),
++		"xr_origin": xform(game.xr_origin.global_transform),
++		"score_before": Scoreboard.points,
++		"song_t": _song_time(),
++	}
++
++func _end_cut(type: String, node: Node3D, extra: Dictionary) -> void:
++	if not enabled:
++		return
++	var record := _cut_context.duplicate()
++	_cut_context = {}
++	record.merge(extra, true)
++	record["attempt"] = attempt
++	record["id"] = _id(node)
++	record["pos"] = v3(node.global_transform.origin)
++	record["score"] = Scoreboard.points
++	record["combo"] = Scoreboard.combo
++	record["multiplier"] = Scoreboard.multiplier
++	_max_combo = maxi(_max_combo, Scoreboard.combo)
++	if not record.has("song_t"):
++		record["song_t"] = _song_time()
++	write(type, record)
++
++func note_cut(cube: BeepCube, saber_type: int, details: Dictionary) -> void:
++	details["saber_type"] = saber_type
++	details["note_color"] = cube.which_saber
++	details["is_dot"] = cube.is_dot
++	details["note_up"] = v3(cube.global_transform.basis.y)
++	_end_cut("note_cut", cube, details)
++
++func chain_cut(link: ChainLink, saber_type: int) -> void:
++	_end_cut("chain_cut", link, {"saber_type": saber_type, "note_color": link.which_saber})
++
++func bomb_hit(bomb: Bomb, saber_type: int) -> void:
++	_end_cut("bomb_hit", bomb, {"saber_type": saber_type})
++
++func note_miss(node: Node3D, kind: String) -> void:
++	if not enabled:
++		return
++	write(kind + "_miss", {
++		"attempt": attempt, "id": _id(node), "pos": v3(node.global_transform.origin),
++		"song_t": _song_time(), "score": Scoreboard.points,
++	})
++
++func bomb_pass(bomb: Bomb) -> void:
++	if not enabled:
++		return
++	write("bomb_pass", {"attempt": attempt, "id": _id(bomb), "song_t": _song_time()})
++
++func _wall_of(area: Area3D) -> Node:
++	var node: Node = area
++	while node != null and not node is Wall:
++		node = node.get_parent()
++	return node
++
++func wall_enter(area: Area3D, head: Node3D) -> void:
++	var wall := _wall_of(area)
++	if not enabled or wall == null:
++		return
++	wall.set_meta(&"journal_hit", true)
++	write("wall_enter", {
++		"attempt": attempt, "id": _id(wall), "head": v3(head.global_transform.origin),
++		"song_t": _song_time(),
++	})
++
++func wall_exit(area: Area3D, head: Node3D) -> void:
++	var wall := _wall_of(area)
++	if not enabled or wall == null:
++		return
++	write("wall_exit", {
++		"attempt": attempt, "id": _id(wall), "head": v3(head.global_transform.origin),
++		"song_t": _song_time(),
++	})
++
++func wall_pass(wall: Wall) -> void:
++	if not enabled:
++		return
++	write("wall_pass", {
++		"attempt": attempt, "id": _id(wall), "hit": bool(wall.get_meta(&"journal_hit", false)),
++		"song_t": _song_time(),
++	})
++
++func _physics_process(_delta: float) -> void:
++	if not enabled or not attempt_active:
++		return
++	var game := GlobalReferences.main_game_scene
++	if game == null:
++		return
++	var speed := _speed()
++	var speed_values := speed.values()
++	if speed_values != _speed_state:
++		if not _speed_state.is_empty():
++			write("speed", {"attempt": attempt, "speed": speed})
++		_speed_state = speed_values
++	if not game.xr_origin.global_transform.is_equal_approx(_origin_state):
++		_origin_state = game.xr_origin.global_transform
++		write("xr_origin", {"attempt": attempt, "xr_origin": xform(_origin_state)})
++	_physics_frame += 1
++	if _paused or _physics_frame % POSE_EVERY_PHYSICS_FRAMES != 0:
++		return
++	write("pose", {
++		"attempt": attempt,
++		"l": xform(game.left_controller.transform),
++		"r": xform(game.right_controller.transform),
++		"h": xform((game.xr_origin.get_node(^"XRCamera3D") as Node3D).transform),
++		"song_t": _song_time(),
++	})
+diff --git a/project.godot b/project.godot
+index 8918fa6..0e581e9 100644
+--- a/project.godot
++++ b/project.godot
+@@ -33,6 +33,7 @@ Highscores="*res://game/scripts/HighscoreTable/HighscoreTable.gd"
+ PlayCount="*res://game/scripts/PlayCountTable.gd"
+ StopwatchFactory="*res://addons/stopwatch/public/StopwatchFactory.gd"
+ UI_AudioEngine="*res://game/ui/UI_AudioEngine/UI_AudioEngine.tscn"
++Journal="*res://game/scripts/Journal.gd"
+ 
+ [debug]
+ 

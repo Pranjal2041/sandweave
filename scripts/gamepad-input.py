@@ -9,14 +9,35 @@ import time
 
 BUTTONS = dict(a=0, b=1, x=2, y=3, lb=4, rb=5, back=6, start=7, menu=8,
                ls=9, rs=10, left=11, right=12, up=13, down=14)
-# Preserve raw SDL numbering, with aliases for the verified menu/aim pairs.
-# Trigger calibration remains unresolved; see notes/gunspinning-vr-experiment.md.
+# Raw SDL numbering of an Xbox 360 pad on Linux, with aliases for the sticks (-1..1)
+# and the triggers lt/rt on axes 2/5 (0..1; SDL reports a released trigger as -32768).
 AXES = {**{f'axis{i}': i for i in range(8)}, 'lx': 0, 'ly': 1, 'rx': 3, 'ry': 4}
-NEUTRAL = [0] * 8
-# Rumble records the SDL proxy (sdl-gamepad-proxy.c) appends: magic, output, monotonic_ns, first, second, ms.
-RUMBLE = struct.Struct('<4sIQHHI')
+TRIGGERS = {'lt': 2, 'rt': 5}
+NEUTRAL = [0, 0, -32768, 0, 0, -32768, 0, 0]
+# Rumble records the SDL proxy (sdl-gamepad-proxy.c) appends: magic, output, pad, monotonic_ns, first, second, ms.
+RUMBLE = struct.Struct('<4sHHQHHI')
 # Per read, within the SDK wire format's 4 MiB metadata limit; 'complete' is false when more remain.
 MAX_RUMBLE_EVENTS = 8192
+
+
+def axis_index(name):
+    if name in TRIGGERS:
+        return TRIGGERS[name]
+    if name in AXES:
+        return AXES[name]
+    raise ValueError('axes: ' + ', '.join([*AXES, *TRIGGERS]))
+
+
+def axis_value(name, value):
+    """Raw SDL value: triggers 0..1 span -32768..32767; sticks and raw axes -1..1 scale by 32767."""
+    value = float(value)
+    if name in TRIGGERS:
+        if not 0 <= value <= 1:
+            raise ValueError(name + ' must be in [0, 1]')
+        return round(-32768 + value * 65535)
+    if not -1 <= value <= 1:
+        raise ValueError(name + ' must be in [-1, 1]')
+    return round(value * 32767)
 
 
 def read_rumble(path, after):
@@ -31,11 +52,11 @@ def read_rumble(path, after):
         data = b''
     events = []
     for offset in range(0, len(data) - len(data) % RUMBLE.size, RUMBLE.size):
-        magic, output, guest_ns, first, second, duration_ms = RUMBLE.unpack_from(data, offset)
-        if magic != b'RUM1' or output not in (0, 1):
+        magic, output, pad, guest_ns, first, second, duration_ms = RUMBLE.unpack_from(data, offset)
+        if magic != b'RUM1' or output not in (0, 1) or pad > 3:
             raise ValueError(f'corrupt haptics record {after + len(events)}')
         names = ('low_frequency', 'high_frequency') if output == 0 else ('left_trigger', 'right_trigger')
-        events.append({'output': ('motors', 'triggers')[output], 'guest_ns': guest_ns,
+        events.append({'output': ('motors', 'triggers')[output], 'pad': pad, 'guest_ns': guest_ns,
                        names[0]: first / 0xFFFF, names[1]: second / 0xFFFF, 'duration_ms': duration_ms,
                        'stop': first == second == 0})
     return events
@@ -97,9 +118,7 @@ def serve(path, haptics, lease=1.0, renew=.25):
                     for name in update.get('buttons_up', []):
                         new_mask &= ~(1 << BUTTONS[name])
                     for name, value in update.get('axes', {}).items():
-                        if name not in AXES or not -1 <= float(value) <= 1:
-                            raise ValueError('axes: ' + ', '.join(AXES) + '; values must be in [-1, 1]')
-                        new_axes[AXES[name]] = round(float(value) * 32767)
+                        new_axes[axis_index(name)] = axis_value(name, value)
                 except (KeyError, ValueError, TypeError, AttributeError) as error:
                     print(json.dumps({'error': str(error)}), flush=True)
                     continue
@@ -108,7 +127,8 @@ def serve(path, haptics, lease=1.0, renew=.25):
                 sequence += 1
                 print(json.dumps({'sequence': sequence, 'guest_ack_ns': time.monotonic_ns(),
                                   'buttons': [n for n, bit in BUTTONS.items() if mask >> bit & 1],
-                                  'axes': {n: axes[i] / 32767 for n, i in AXES.items() if not n.startswith('axis')}}),
+                                  'axes': {**{n: axes[i] / 32767 for n, i in AXES.items() if not n.startswith('axis')},
+                                           **{n: (axes[i] + 32768) / 65535 for n, i in TRIGGERS.items()}}}),
                       flush=True)
             else:
                 write_state(path, axes, mask, lease)
@@ -136,9 +156,10 @@ def main():
             value = float(value)
         except ValueError:
             p.error('axis must have the form NAME=VALUE')
-        if name not in AXES or not -1 <= value <= 1:
-            p.error('axes: ' + ', '.join(AXES) + '; values must be in [-1, 1]')
-        axes[AXES[name]] = round(value * 32767)
+        try:
+            axes[axis_index(name)] = axis_value(name, value)
+        except ValueError as error:
+            p.error(str(error))
     mask = sum(1 << BUTTONS[name] for name in set(args.button))
     write_state(args.state, axes, mask, args.hold + .25)
     try:

@@ -24,6 +24,7 @@ import numpy as np
 from PIL import Image
 
 from sandweave import Sandbox
+from sandweave.games.state import GameState
 from sandweave.steps import run as run_step
 
 
@@ -74,6 +75,18 @@ class Streams:
         if self.errors:
             raise self.errors[0]
         self.poll()
+
+
+def compact(observed):
+    state = observed['state']
+    return {'guest_ns': observed['guest_ns'], 'song_t': state['song_t'], 'score': state['score'],
+            'combo': state['combo'], 'active': state['active'], 'counts': state['counts'],
+            'map': (state['map'] or {}).get('difficulty'), 'results': len(state['results']), 'records': state['records']}
+
+
+def dbfs(audio):
+    pcm = np.frombuffer(audio['pcm'], dtype='<i2').astype(np.float64) / 32768
+    return round(float(20 * np.log10(np.sqrt((pcm ** 2).mean()) + 1e-12)), 1) if len(pcm) else None
 
 
 def audio_summary(chunks, path):
@@ -158,6 +171,35 @@ def main():
             startup.poll()
             startup_audio, _ = audio_summary(startup.chunks, args.output / 'startup-audio.wav')
             startup_audio['song'] = song
+            # Game-time control and live game state, while the song plays.
+            game_state = GameState('open-saber', source='/run/user/1000/open-saber')
+            timing = {'state_before': compact(game_state.observe(sandbox))}
+            pause = sandbox.vr.time(scale=0)
+            sandbox.audio.observe()
+            time.sleep(2)
+            paused_audio = sandbox.audio.observe()
+            still = sandbox.vr.time(scale=0)
+            advanced = sandbox.vr.time(advance_ticks=90)
+            slow = sandbox.vr.time(scale=.5)
+            time.sleep(4)
+            resumed = sandbox.vr.time(scale=1)
+            time.sleep(1)
+            playing_audio = sandbox.audio.observe()
+            timing.update(
+                pause=pause, still=still, advanced=advanced, slow=slow, resumed=resumed,
+                paused_song_seconds=still['song_position'] - pause['song_position'],
+                advance_ticks=advanced['ticks'] - still['ticks'],
+                advance_song_seconds=advanced['song_position'] - still['song_position'],
+                slow_song_per_wall=(resumed['song_position'] - slow['song_position'])
+                / ((resumed['guest_ns'] - slow['guest_ns']) / 1e9),
+                paused_audio_dbfs=dbfs(paused_audio), playing_audio_dbfs=dbfs(playing_audio),
+                state_after=compact(game_state.observe(sandbox)))
+            step = run_step(sandbox, {'id': 'tick-step', 'observe': ['stereo', 'state'], 'actions': [
+                {'kind': 'game_speed', 'scale': 0}, {'kind': 'wait', 'ticks': 30}, {'kind': 'game_speed', 'scale': 1}]},
+                state=game_state)
+            timing['tick_step'] = {'acks': step['acknowledgements'], 'state': compact(step['observations']['state']['value']),
+                                   'state_game_time_ns': step['observations']['state']['game_time_ns']}
+            (args.output / 'game-time.json').write_text(json.dumps(timing, indent=1) + '\n')
             recording = sandbox.vr.record(args.output / 'recording', fps=30)
             with recording, Streams(sandbox, args.output) as streams, (args.output / 'inputs.jsonl').open('w') as inputs:
                 begin = time.monotonic()
@@ -252,6 +294,11 @@ def main():
                       'audio': {'startup': startup_audio, 'gameplay': gameplay_audio,
                                 'audio_offset_from_video_seconds': offset},
                       'haptics': haptics, 'steps': step_checks,
+                      'game_time': {key: timing[key] for key in (
+                          'paused_song_seconds', 'advance_ticks', 'advance_song_seconds', 'slow_song_per_wall',
+                          'paused_audio_dbfs', 'playing_audio_dbfs')},
+                      'game_state': {'before': timing['state_before'], 'after_time_tests': timing['state_after'],
+                                     'after_recording': compact(game_state.observe(sandbox))},
                       'monado': metrics.summarize(args.output / 'monado-metrics.pb', args.seconds, **window)}
             (args.output / 'summary.json').write_text(json.dumps(result, indent=2) + '\n')
             print(json.dumps(result, indent=2), flush=True)

@@ -47,8 +47,8 @@ def test_run_dispatches_in_order_and_observes():
 
     vr = types.SimpleNamespace(action=lambda state: calls.append(('vr', state)) or {'guest_ack_ns': 6},
                                observe=observe)
-    gamepad = types.SimpleNamespace(action=lambda buttons, hold: calls.append(('pad', buttons, hold)) or {},
-                                    state=lambda **update: calls.append(('pad_state', update)) or {})
+    gamepad = types.SimpleNamespace(action=lambda buttons, hold, pad: calls.append(('pad', buttons, hold)) or {},
+                                    state=lambda pad, **update: calls.append(('pad_state', update)) or {})
     sandbox = types.SimpleNamespace(capabilities={'vr': {}}, vr=vr, gamepad=gamepad,
                                     desktop=types.SimpleNamespace(action=lambda items: calls.append(('desktop', items))))
     result = run(sandbox, {'id': 's1', 'observe': ['stereo'], 'actions': [
@@ -66,8 +66,9 @@ def test_run_dispatches_in_order_and_observes():
     run(sandbox, {'actions': [{'kind': 'pad_axis', 'axis': 'lx', 'value': .5},
                               {'kind': 'pad_button', 'button': 'b', 'state': 'down'}], 'observe': []})
     assert calls == [('pad_state', {'axes': {'lx': .5}}), ('pad_state', {'buttons_down': ['b']})]
-    with pytest.raises(UnsupportedFeature):
-        run(sandbox, {'actions': [{'kind': 'pad_axis', 'axis': 'rt', 'value': .5}], 'observe': []})
+    calls.clear()
+    run(sandbox, {'actions': [{'kind': 'pad_axis', 'axis': 'rt', 'value': .5, 'pad': 2}], 'observe': []})
+    assert calls == [('pad_state', {'axes': {'rt': .5}})]
     with pytest.raises(UnsupportedFeature):
         run(sandbox, {'actions': [{'kind': 'wait', 'ticks': 2}], 'observe': []})
     with pytest.raises(UnsupportedFeature):

@@ -101,6 +101,9 @@ class Stream:
         LOGS.mkdir(parents=True, exist_ok=True)
         Path('/run/user/1000/monado_comp_ipc').unlink(missing_ok=True)
         account = pwd.getpwnam(options.user)
+        # The game's state directory (vr-monado-guest.sh): journal and game-time control file.
+        self.game_dir = Path('/run/user') / str(account.pw_uid) / 'open-saber'
+        self.account, self.time_lock, self.time_seq = account, threading.Lock(), time.monotonic_ns() // 1000
         descriptor = os.open(HAPTICS, os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_CLOEXEC, 0o600)
         os.fchown(descriptor, account.pw_uid, account.pw_gid)
         os.close(descriptor)
@@ -142,6 +145,43 @@ class Stream:
         # Monado appends each record on receipt; every record written before guest_ns is included.
         return {'events': events, 'first': after, 'next': after + len(events), 'guest_ns': guest_ns,
                 'complete': len(events) < MAX_HAPTIC_EVENTS}
+
+    def game_time(self, scale=None, advance_ticks=None, timeout=10):
+        """Pause (scale 0), run at a speed, or advance exactly N physics ticks from a pause.
+
+        The game (SandweaveTime in the Open Saber pack) polls the control file every
+        physics tick and acknowledges in <file>.ack; an advance is acknowledged again
+        when its last tick completes.
+        """
+        if advance_ticks is not None and (type(advance_ticks) is not int or not 0 < advance_ticks <= 100_000):
+            raise ValueError('advance_ticks must be a positive integer')
+        if advance_ticks is None and (not isinstance(scale, (int, float)) or not 0 <= scale <= 4):
+            raise ValueError('scale must be in 0..4 (0 pauses)')
+        control = self.game_dir / 'time-control.json'
+        if not self.game_dir.is_dir():
+            raise RuntimeError('the game provides no time control (' + str(self.game_dir) + ' is missing)')
+        with self.time_lock:
+            self.time_seq += 1
+            request = {'seq': self.time_seq, 'scale': 1.0 if scale is None else float(scale),
+                       'advance_ticks': advance_ticks or 0}
+            temporary = control.with_name('.time-control.tmp')
+            temporary.write_text(json.dumps(request))
+            os.chown(temporary, self.account.pw_uid, self.account.pw_gid)
+            temporary.chmod(0o644)
+            sent = time.monotonic_ns()
+            temporary.replace(control)
+            wanted = 'advanced' if advance_ticks else 'applied'
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    ack = json.loads((self.game_dir / 'time-control.json.ack').read_text())
+                except (FileNotFoundError, ValueError):
+                    ack = {}
+                if ack.get('seq') == self.time_seq and ack.get('state') == wanted:
+                    return {**ack, 'requested': request, 'guest_sent_ns': sent, 'guest_ns': time.monotonic_ns()}
+                if self.monado.poll() is not None or time.monotonic() > deadline:
+                    raise TimeoutError('the game did not acknowledge the time request: ' + json.dumps(request))
+                time.sleep(.001)
 
     def request(self, message):
         payload = json.dumps(message, separators=(',', ':'), allow_nan=False).encode() + b'\n'

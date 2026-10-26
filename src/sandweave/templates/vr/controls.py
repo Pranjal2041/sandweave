@@ -20,6 +20,7 @@ class VRObservation:
 class VR:
     def __init__(self, sandbox, config):
         self.sandbox, self.config = sandbox, config
+        self.time_state = None
 
     def _frame(self, method='observe', **parameters):
         from .frames import Frame
@@ -67,6 +68,19 @@ class VR:
         (amplitude 0, recorded only when it ends a vibration). `after` re-reads from a record index.
         """
         return self.sandbox._call('control', name='vr', method='haptics', parameters={'after': after})
+
+    @dualmethod
+    def time(self, *, scale=None, advance_ticks=None, timeout=10):
+        """Game-time control, for games that implement it (time_control in the template).
+
+        scale=0 pauses (the frozen scene keeps rendering), 0 < scale <= 4 sets the speed,
+        advance_ticks=N runs exactly N physics ticks from a pause and pauses again. Returns the
+        game's acknowledgement: paused, time_scale, ticks, song_position, physics_ticks_per_second.
+        """
+        value = self.sandbox._call('control', name='vr', method='time',
+                                   parameters={'scale': scale, 'advance_ticks': advance_ticks, 'timeout': timeout})
+        self.time_state = value
+        return value
 
     def record(self, directory, *, fps=30):
         return Recording(self, directory, fps=fps)
@@ -148,7 +162,7 @@ class AttachedVR:
     def __init__(self, context, config, cold):
         import zstandard
         self.compressor = zstandard.ZstdCompressor(level=1)
-        self.context = context
+        self.context, self.time_control = context, config.get('time_control')
         self.haptics_cursor, self.haptics_lock = 0, threading.Lock()
         options = {k: config[k] for k in ('width', 'height', 'fps', 'hz', 'mirror', 'slots') if k in config}
         if hasattr(context.runtime, 'vr_stream'):
@@ -189,6 +203,11 @@ class AttachedVR:
     def call(self, method, parameters):
         if method == 'action':
             return self.stream.input(parameters['action'])
+        if method == 'time':
+            if not hasattr(self.stream, 'game_time') or not self.time_control:
+                raise UnsupportedFeature('game-time control needs runtime="modal" and a game that implements it')
+            return self.stream.game_time(parameters.get('scale'), parameters.get('advance_ticks'),
+                                         parameters.get('timeout', 10))
         if method == 'haptics':
             if not hasattr(self.stream, 'haptics'):
                 raise UnsupportedFeature('VR haptics are recorded by runtime="modal"')
@@ -264,6 +283,7 @@ class VRProvider:
     @staticmethod
     def descriptor(config):
         return {'version': 1, 'schema': 'monado.head-and-controllers.v1', 'eye_count': 2,
+                'time_control': config.get('time_control'),
                 'state': ['filesystem'], 'unavailable': {'memory': 'live GPU graphics checkpoints are unsupported'},
                 'acknowledgement': 'runtime state received; not a simulation step'}
 

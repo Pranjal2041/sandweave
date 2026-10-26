@@ -3,14 +3,17 @@
 Desktop actions become fast I/O batches (one fenced batch per run of desktop
 actions, split only where a hold must elapse). XR actions in a step merge into
 one VR state update. Gamepad actions set the persistent leased writer's state;
-a timed press sets and then releases it. Until a runtime provides speed
-control, waits and holds elapse in wall time, which equals game time.
+a timed press sets and then releases it. Waits and holds elapse in game time:
+through the game's own time control (Open Saber), or a frozen guest clock
+(FrozenGuestClock: any game on runtime="gvisor" with clock_pause="freeze"), else
+in wall time, which then equals game time.
 
 Observations carry game_time_ns on the guest monotonic clock: a frame's capture
 time, the end of the returned audio, or the time the haptics records or the
 game's telemetry (state) were read. Audio and haptics return everything since the
 previous observation of that kind; state is the game's current aggregate.
 """
+import contextlib
 import time
 
 from .actions import Step, XR_SCALARS
@@ -101,9 +104,65 @@ def _gamepad(sandbox, action):
     return sandbox.gamepad.state(axes={action.axis: action.value}, pad=action.pad)
 
 
+class FrozenGuestClock:
+    """Game time for any game in a sandbox whose pause freezes its clock (runtime="gvisor" with
+    clock_pause="freeze", clock_offset or clock_start): pause() stops the whole guest, wall and
+    monotonic clocks included, so the game cannot observe the pause. It runs at real speed or
+    is paused; input given while paused runs the guest only for its delivery."""
+
+    def __init__(self, sandbox):
+        self.sandbox, self.time_state = sandbox, {'paused': False, 'time_scale': 1.0, 'clock': 'frozen-guest'}
+
+    def time(self, scale=None, advance_ticks=None, timeout=10):
+        if advance_ticks is not None:
+            raise UnsupportedFeature('ticks need the game\'s own time control; a frozen guest clock advances in ms')
+        if scale not in (0, 1):
+            raise UnsupportedFeature('a frozen guest clock pauses (0) or runs at real speed (1); other speeds '
+                                     'need the game\'s own time control')
+        if scale == 0 and not self.time_state['paused']:
+            self.sandbox.pause()
+        elif scale == 1 and self.time_state['paused']:
+            self.sandbox.resume()
+        self.time_state = {**self.time_state, 'paused': scale == 0}
+        return {**self.time_state, 'host_ns': time.monotonic_ns()}
+
+    def run_for(self, ms):
+        """From a pause: run the guest for ms of its time, then pause again."""
+        self.sandbox.resume()
+        started = time.monotonic_ns()
+        time.sleep(ms / 1000)
+        self.sandbox.pause()
+        return {**self.time_state, 'requested_ms': ms, 'host_running_ms': (time.monotonic_ns() - started) / 1e6}
+
+    @contextlib.contextmanager
+    def running(self):
+        """Deliver input or capture a frame: a paused guest runs just for the call."""
+        if not self.time_state['paused']:
+            yield
+            return
+        self.sandbox.resume()
+        try:
+            yield
+        finally:
+            self.sandbox.pause()
+
+
 def _game_clock(sandbox):
     capabilities = sandbox.capabilities
-    return sandbox.vr if (capabilities.get('vr') or {}).get('time_control') else None
+    if (capabilities.get('vr') or {}).get('time_control'):
+        return sandbox.vr
+    if '_game_clock' not in vars(sandbox):  # one describe per sandbox, not per step
+        clock = (getattr(sandbox, 'info', None) or {}).get('clock') or {}
+        sandbox._game_clock = FrozenGuestClock(sandbox) if clock.get('pause') == 'freeze' else None
+    return sandbox._game_clock
+
+
+def _delivered(sandbox, deliver):
+    clock = _game_clock(sandbox)
+    if isinstance(clock, FrozenGuestClock):
+        with clock.running():
+            return deliver()
+    return deliver()
 
 
 def elapse(sandbox, ms=None, ticks=None):
@@ -117,6 +176,13 @@ def elapse(sandbox, ms=None, ticks=None):
         time.sleep(ms / 1000)
         return None
     state = clock.time_state or {'paused': False, 'time_scale': 1.0}
+    if isinstance(clock, FrozenGuestClock):
+        if ticks is not None:
+            raise UnsupportedFeature('ticks need the game\'s own time control; a frozen guest clock advances in ms')
+        if state['paused']:
+            return clock.run_for(ms)
+        time.sleep(ms / 1000)
+        return None
     if state['paused']:
         rate = state.get('physics_ticks_per_second') or clock.time(scale=0)['physics_ticks_per_second']
         count = ticks if ticks is not None else max(1, round(ms * rate / 1000))
@@ -144,7 +210,7 @@ def run(sandbox, step, *, state=None):
             acknowledgements.append(vr_acks[-1])
         else:
             for items, pause_ms in desktop_segments(group):
-                acknowledgements.append(sandbox.desktop.action(items))
+                acknowledgements.append(_delivered(sandbox, lambda: sandbox.desktop.action(items)))
                 if pause_ms:
                     elapse(sandbox, ms=pause_ms)
         group.clear()
@@ -157,7 +223,7 @@ def run(sandbox, step, *, state=None):
         if family in ('xr', 'desktop'):
             group.append(action)
         elif family == 'pad':
-            acknowledgements.append(_gamepad(sandbox, action))
+            acknowledgements.append(_delivered(sandbox, lambda: _gamepad(sandbox, action)))
         elif family == 'speed':
             clock = _game_clock(sandbox)
             if clock is None:
@@ -176,7 +242,7 @@ def run(sandbox, step, *, state=None):
                 value = sandbox.vr.observe(after=value.metadata['sequence'])
             game_ns = value.metadata.get('capture_begin_ns')
         elif name == 'frame':
-            value = sandbox.desktop.capture_image()
+            value = _delivered(sandbox, sandbox.desktop.capture_image)
             game_ns = value.metadata.get('capture_completed_ns')
         elif name == 'audio':
             if 'audio' not in capabilities:

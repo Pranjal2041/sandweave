@@ -252,3 +252,30 @@ def test_gamepad_writer_reports_rumble_and_keeps_state(tmp_path):
         process.wait(timeout=5)
     record = struct.unpack_from('<8sQQ8hIB3x', (tmp_path / 'pad.bin').read_bytes())
     assert record[11] == 0 and list(record[3:11]) == [0, 0, -32768, 0, 0, -32768, 0, 0]  # neutral: triggers released
+
+
+def test_frozen_guest_clock_pauses_the_sandbox_and_runs_it_for_input_and_waits():
+    calls = []
+
+    class Desktop:
+        def action(self, items):
+            calls.append(('input', paused[0]))
+            return {}
+
+    paused = [False]
+    sandbox = types.SimpleNamespace(capabilities={'desktop': {}}, info={'clock': {'pause': 'freeze'}}, desktop=Desktop())
+    sandbox.pause = lambda: (calls.append('pause'), paused.__setitem__(0, True))
+    sandbox.resume = lambda: (calls.append('resume'), paused.__setitem__(0, False))
+    result = run(sandbox, {'observe': [], 'actions': [
+        {'kind': 'game_speed', 'scale': 0}, {'kind': 'click', 'x': 5, 'y': 5}, {'kind': 'wait', 'ms': 20},
+        {'kind': 'game_speed', 'scale': 1}]})
+    # Input reaches a running guest; the wait runs it for 20 ms of its time; it stays paused in between.
+    assert calls == ['pause', 'resume', ('input', False), 'pause', 'resume', 'pause', 'resume']
+    assert result['acknowledgements'][2]['requested_ms'] == 20
+    with pytest.raises(UnsupportedFeature):
+        run(sandbox, {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': .5}]})
+    with pytest.raises(UnsupportedFeature):
+        run(sandbox, {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': 0}, {'kind': 'wait', 'ticks': 3}]})
+    plain = types.SimpleNamespace(capabilities={'desktop': {}}, info={})
+    with pytest.raises(UnsupportedFeature):
+        run(plain, {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': 0}]})

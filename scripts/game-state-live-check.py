@@ -19,7 +19,6 @@ import time
 from gym_anything.api import from_config
 
 GUEST = '/run/sandweave-state/state_export.py'
-XDOTOOL = 'env DISPLAY=:1 XAUTHORITY=/home/ga/.Xauthority xdotool'
 CHECKS = {
     'openttd': lambda first, last: last['date'] > first['date'] and last['paused'] is False
     and len(last['companies']) >= 4 and first['session']['record'] == 'start',
@@ -63,21 +62,17 @@ def main():
             # The task loads qualifying paused on the grid, waiting for Enter.
             plan = [(10, [{'keyboard': {'keys': ['Return']}}], 'start the session (Enter)')]
         if args.game == 'wesnoth':
-            # Click the End Turn button (bottom right of the 1920x1080 screen), confirm "units have
-            # movement left" with Enter, then the AI sides play their turn 1.
-            plan = [(30, [{'mouse': {'left_click': [1830, 1052]}}], 'end turn (button, fast I/O)'),
-                    (34, [{'keyboard': {'keys': ['Return']}}], 'confirm (fast I/O)'),
-                    # The task's own setup drives the game with xdotool in the guest.
-                    (90, {'guest': f'{XDOTOOL} mousemove 1830 1052 click 1'}, 'end turn (button, xdotool)'),
-                    (94, {'guest': f'{XDOTOOL} key Return'}, 'confirm (xdotool)')]
+            # Through the runner only, as the evaluation's solver plays: the first click after the
+            # hand-over is ignored; the second opens "Do you really want to end your turn?", which
+            # Enter confirms; then the AI sides play their turn 1.
+            end_turn = [{'mouse': {'left_click': [1830, 1052]}}]
+            plan = [(30, end_turn, 'end turn'), (34, end_turn, 'end turn again'),
+                    (38, [{'keyboard': {'keys': ['Return']}}], 'confirm')]
         begin = time.monotonic()
         while time.monotonic() - begin < args.minutes * 60:
             elapsed = time.monotonic() - begin
             for when, actions, label in [p for p in plan if p[0] <= elapsed]:
-                if isinstance(actions, dict):
-                    env.runner.exec_capture(actions['guest'])
-                else:
-                    env.step(actions)
+                env.step(actions)
                 inputs.append({'at_s': round(time.monotonic() - begin, 1), 'label': label, 'actions': actions,
                                'state_before': reads[-1]['state'].get('turn') if reads else None})
                 plan.remove((when, actions, label))

@@ -37,6 +37,6 @@ class Runtime:
         return self.adapter(spec['runtime']).create(identity, spec, **options)
 
     def __getattr__(self, name):
-        if name not in ('status', 'agent', 'pause', 'resume', 'capture', 'terminate'):
+        if name not in ('status', 'agent', 'pause', 'resume', 'capture', 'terminate', 'game_time'):
             raise AttributeError(name)
         return lambda identity, *args, **kwargs: getattr(self.for_identity(identity), name)(identity, *args, **kwargs)

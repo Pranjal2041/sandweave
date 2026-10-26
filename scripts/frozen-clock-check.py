@@ -4,12 +4,12 @@
     frozen-clock-check.py --output DIR
 
 A GNOME sandbox with clock_pause="freeze" runs a guest logger that records its
-CLOCK_MONOTONIC every 50 ms, as a game's frame loop reads it. Unified steps then
-pause (game_speed 0) for 4 s of host time, advance 1000 ms of game time from the
-pause (wait), stay paused 3 s, click and capture a frame while paused (the guest
-runs only for each), and resume. Checks: the guest never observes a jump (largest
-step between log lines), its total elapsed time equals host time minus the paused
-time, and the wait advanced about 1000 ms of guest time.
+CLOCK_MONOTONIC every 50 ms, as a game's frame loop reads it. Unified steps freeze
+it (game_speed 0) for 4 s of host time, click and observe a frame while frozen,
+wait 2 s, advance exactly 1000 ms of game time (wait), stay frozen 3 s and thaw.
+Checks: the engine advanced exactly 1000 ms; the click was queued and delivered in
+the advance; the frame came from the freeze; the guest never observed a jump; and
+its elapsed time equals its running time (bounded by the freeze/thaw round trips).
 """
 import argparse
 import json
@@ -43,49 +43,41 @@ def main():
                           'frame_size': list(result['observations']['frame']['value'].size)
                           if 'frame' in result['observations'] else None})
 
-        step('pause', [{'kind': 'game_speed', 'scale': 0}])
+        step('freeze', [{'kind': 'game_speed', 'scale': 0}])
         time.sleep(4)
+        step('click-and-frame-while-frozen', [{'kind': 'click', 'x': 100, 'y': 100}], observe=['frame'])
+        time.sleep(2)
         step('advance-1000ms', [{'kind': 'wait', 'ms': 1000}])
         time.sleep(3)
-        step('click-and-frame-while-paused', [{'kind': 'click', 'x': 100, 'y': 100}], observe=['frame'])
-        time.sleep(2)
-        step('resume', [{'kind': 'game_speed', 'scale': 1}])
+        step('thaw', [{'kind': 'game_speed', 'scale': 1}])
         time.sleep(2)
         host['end'] = time.monotonic()
         logger.terminate()
         guest = [int(line) for line in sandbox.files.read_text('/tmp/clock.log').split()]
         info_clock = sandbox.info.get('clock')
-    # Host intervals in which the guest was certainly paused: from the end of the 'pause' step to the
-    # start of 'resume', less the whole wait and delivery steps (each resumes and pauses inside).
-    duration = lambda index: steps[index]['host_end_s'] - steps[index]['host_begin_s']  # noqa: E731
-    paused_host = steps[3]['host_begin_s'] - steps[0]['host_end_s'] - duration(1) - duration(2)
-    ran_host = steps[1]['acks'][0]['host_running_ms'] / 1000
-    first = 0
     gaps = [(b - a) / 1e6 for a, b in zip(guest, guest[1:])]
-    host_total = host['end'] - host['start']
-    guest_total = (guest[-1] - guest[first]) / 1e9
-    summary = {'clock': info_clock, 'host_total_s': round(host_total, 3), 'host_paused_s': round(paused_host, 3),
-               'wait_host_running_ms': round(ran_host * 1000, 1), 'guest_log_lines': len(guest),
-               'guest_total_s': round(guest_total, 3), 'largest_guest_step_ms': round(max(gaps), 1),
-               'steps': steps}
-    # The logger began 2 s before host['start'] and stopped 2 s after resuming: the guest can have run
-    # at most that plus the host time outside the certainly-paused intervals.
-    expected_guest = 2 + host_total - paused_host
-    summary.update(expected_guest_s_upper=round(expected_guest, 3), wait_step_host_s=round(duration(1), 3),
-                   delivery_host_s=round(duration(2), 3), guest_time_hidden_s=round(2 + host_total - guest_total, 3))
+    advance = steps[2]['acks'][0]
+    # Guest time ran: 2 s before host['start'], until the freeze, exactly the advance, and from the thaw.
+    # Freeze and thaw are host round trips, so they bound the comparison, not the advance.
+    running = 2 + steps[0]['host_end_s'] + advance['advanced_ms'] / 1000 + (host['end'] - host['start'] - steps[3]['host_begin_s'])
+    slack = (steps[0]['host_end_s'] - steps[0]['host_begin_s']) + (steps[3]['host_end_s'] - steps[3]['host_begin_s'])
+    guest_total = (guest[-1] - guest[0]) / 1e9
+    summary = {'clock': info_clock, 'host_total_s': round(host['end'] - host['start'] + 2, 3), 'guest_total_s': round(guest_total, 3),
+               'guest_expected_s': round(running, 3), 'freeze_thaw_round_trips_s': round(slack, 3),
+               'advance': advance, 'largest_guest_step_ms': round(max(gaps), 1), 'steps': steps}
     summary['checks'] = {
         'no_observed_jump': max(gaps) < 250,
-        'guest_time_excludes_pauses': guest_total <= expected_guest,
-        'paused_long_enough_to_tell': paused_host > 6,
-        'wait_advanced_about_1s': 990 <= steps[1]['acks'][0]['host_running_ms'] <= 1300,
-        'frame_captured_while_paused': steps[2]['frame_size'] is not None,
+        'advance_exact': advance['advanced_ms'] == 1000.0,
+        'input_queued_while_frozen': steps[1]['acks'][0] == {'queued_until_game_time_runs': True},
+        'queued_input_delivered_in_advance': advance['delivered'] == 1,
+        'frozen_frame_served': steps[1]['frame_size'] is not None,
+        'guest_time_matches': abs(guest_total - running) <= slack + 0.06,
     }
     summary['passed'] = all(summary['checks'].values())
     (args.output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
     (args.output / 'guest-clock.log').write_text('\n'.join(map(str, guest)) + '\n')
-    print(json.dumps({key: summary[key] for key in ('passed', 'checks', 'host_total_s', 'host_paused_s', 'guest_total_s',
-                                                     'expected_guest_s_upper', 'delivery_host_s', 'guest_time_hidden_s',
-                                                     'largest_guest_step_ms', 'wait_host_running_ms')}))
+    print(json.dumps({key: summary[key] for key in ('passed', 'checks', 'host_total_s', 'guest_total_s', 'guest_expected_s',
+                                                     'freeze_thaw_round_trips_s', 'advance', 'largest_guest_step_ms')}))
 
 
 if __name__ == '__main__':

@@ -162,6 +162,54 @@ class EnvironmentManager:
         with control.acquire_lock(self.local, name):
             return self._pause(name)
 
+    def advancing_marker(self, name):
+        """Present while game_time('advance') runs a frozen guest: runsc still reports it paused,
+        but fast I/O input and frames reach it and take effect as it runs."""
+        return self.local / 'game-time' / (control.valid_name(name) + '.advancing')
+
+    def game_time(self, name, operation, ms=None):
+        """Game time on a sandbox started with --clock-pause=freeze. 'freeze' and 'thaw' pause and
+        resume the guest, clocks included, without detaching fast I/O or releasing its CPU, so input
+        and frames continue at once; 'advance' runs a frozen guest for exactly ms of its monotonic
+        time (runsc resume --for) and returns its monotonic time before and after."""
+        if operation == 'arm':
+            # Before an advance: fast I/O accepts input and frames for the frozen guest, which handles
+            # them as the advance runs it. The advance removes the marker when it ends.
+            if self.status(name)['status'] != 'paused':
+                raise ValueError(f'arming needs a frozen sandbox; {name} is not')
+            marker = self.advancing_marker(name)
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.touch()
+            return {'armed': True}
+        if operation == 'advance':
+            if not isinstance(ms, (int, float)) or not 0 < ms <= 3_600_000:
+                raise ValueError('advance needs 0 < ms <= 3600000')
+            # Shared, as fast I/O holds it: lifecycle operations wait, input and frames reach the guest.
+            with (self.local / 'gvisor/operations' / (control.valid_name(name) + '.lock')).open('a+') as lock:
+                fcntl.flock(lock, fcntl.LOCK_SH)
+                state = self.status(name)['status']
+                if state != 'paused':
+                    raise ValueError(f'advance needs a frozen sandbox; {name} is {state}')
+                marker = self.advancing_marker(name)
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.touch()
+                try:
+                    return json.loads(self._run([*self._command(name), 'resume', f'--for={round(ms * 1000)}us', name],
+                                                timeout=ms / 1000 + 60))
+                finally:
+                    marker.unlink(missing_ok=True)
+        with control.acquire_lock(self.local, name):
+            state = self.status(name)['status']
+            if operation == 'freeze':
+                if state == 'running':
+                    self._run([*self._command(name), 'pause', name])
+            elif operation == 'thaw':
+                if state == 'paused':
+                    self._run([*self._command(name), 'resume', name])
+            else:
+                raise ValueError('unknown game time operation: ' + str(operation))
+            return {'frozen': operation == 'freeze'}
+
     def _resume(self, name):
         state = self.status(name)
         if state['status'] not in ('running', 'paused'):

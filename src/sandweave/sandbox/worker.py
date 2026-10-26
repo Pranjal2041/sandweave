@@ -598,6 +598,18 @@ class Worker:
             self.recordings.start(identity, resume=True)
         return self.describe(identity)
 
+    def game_time(self, identity, action, ms=None):
+        """Freeze, thaw or advance a sandbox's guest time while its controls stay attached; needs a
+        clock that freezes on pause (clock_pause="freeze", clock_offset or clock_start)."""
+        record = self.read(identity)
+        if (record['spec'].get('clock') or {}).get('pause') != 'freeze':
+            raise UnsupportedFeature('game time needs a sandbox created with clock_pause="freeze"')
+        if record.get('state') != 'ready':
+            raise UnsupportedFeature('game time needs a ready sandbox, not ' + str(record.get('state')))
+        if not hasattr(self.runtime.for_identity(identity), 'game_time'):
+            raise UnsupportedFeature('this runtime cannot freeze guest time')
+        return self.runtime.game_time(identity, action, ms)
+
     def terminate(self, identity):
         record = self.read(identity)
         if record.get('deleted'):
@@ -854,7 +866,7 @@ class Worker:
             return {'stopping': True}
         allowed = {'create', 'describe', 'list', 'command_start', 'process_status', 'process_wait', 'process_output',
                    'process_stdin', 'process_terminate', 'file', 'setup', 'pause', 'resume', 'terminate',
-                   'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control'}
+                   'snapshot_info', 'snapshot_spec', 'snapshot_verify', 'capture', 'stop', 'control', 'game_time'}
         allowed.add('pool')
         allowed.update(('process_resize', 'runtime_profile', 'runtime_audit'))
         allowed.update(('delete', 'delete_status'))
@@ -866,7 +878,7 @@ class Worker:
                     'memory_reservations': 1, 'runtime_memory_reservations': 1, 'disk_storage': 1,
                     'desktop_recording': 1, 'oci_image_import': 1, 'native_services': 1,
                     'dynamic_network_policy': 1, 'service_networks': 1, 'sandbox_deletion': 1,
-                    'local_oci_import': 1, 'proc_audit': 1, 'guest_clock': 1, 'kvm_platform': 1}
+                    'local_oci_import': 1, 'proc_audit': 1, 'guest_clock': 1, 'kvm_platform': 1, 'game_time': 1}
         if operation not in allowed:
             raise UnsupportedFeature('unknown worker operation: ' + operation)
         identity = parameters.get('identity')
@@ -876,8 +888,10 @@ class Worker:
         concurrent = operation == 'control' and (parameters.get('name'), parameters.get('method')) in (
             ('vr', 'observe'), ('vr', 'action'), ('vr', 'step'), ('vr', 'haptics'), ('vr', 'time'),
             ('audio', 'observe'))
+        # game_time holds the engine's per-sandbox lock instead: input and frames reach the guest
+        # while an advance runs it.
         if identity and not concurrent and operation not in ('describe', 'process_wait', 'runtime_profile',
-                                                             'runtime_audit', 'delete', 'delete_status'):
+                                                             'runtime_audit', 'delete', 'delete_status', 'game_time'):
             with self.lock(identity):
                 return getattr(self, operation)(**parameters)
         return getattr(self, operation)(**parameters)

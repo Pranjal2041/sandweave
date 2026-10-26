@@ -542,7 +542,9 @@ def serve(manager, name):
                         elif op in ('action', 'screenshot', 'screenshot_cursor', 'latest', 'step'):
                             with io_lock(manager, name):
                                 state = manager.status(name)
-                                if state['status'] != 'running':
+                                advancing = (state['status'] == 'paused' and hasattr(manager, 'advancing_marker')
+                                             and manager.advancing_marker(name).exists())
+                                if state['status'] != 'running' and not advancing:
                                     raise RuntimeError('fast I/O requires a running environment; resume first')
                                 events = request.get('events', [])
                                 if not isinstance(events, list) or len(events) > 8192 or any(

@@ -159,7 +159,7 @@ class Management:
                 return False
         if operation not in {'describe', 'command_start', 'process_status', 'process_wait', 'process_output',
                              'process_stdin', 'process_terminate', 'process_resize', 'file', 'setup',
-                             'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording',
+                             'pause', 'resume', 'terminate', 'capture', 'stop', 'control', 'recording', 'game_time',
                              'image_capture', 'image_upload', 'network_policy', 'service_rpc', 'service_volume_import', 'service_setup',
                              'vnc_stream', 'runtime_profile', 'runtime_audit', 'delete', 'delete_status'}:
             return False

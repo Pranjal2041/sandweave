@@ -13,7 +13,6 @@ time, the end of the returned audio, or the time the haptics records or the
 game's telemetry (state) were read. Audio and haptics return everything since the
 previous observation of that kind; state is the game's current aggregate.
 """
-import contextlib
 import time
 
 from .actions import Step, XR_SCALARS
@@ -105,13 +104,17 @@ def _gamepad(sandbox, action):
 
 
 class FrozenGuestClock:
-    """Game time for any game in a sandbox whose pause freezes its clock (runtime="gvisor" with
-    clock_pause="freeze", clock_offset or clock_start): pause() stops the whole guest, wall and
-    monotonic clocks included, so the game cannot observe the pause. It runs at real speed or
-    is paused; input given while paused runs the guest only for its delivery."""
+    """Game time for any game in a gVisor sandbox created with clock_pause="freeze".
+
+    game_speed 0 freezes the guest, clocks included (Sandbox.game_time), with its controls still
+    attached; 1 thaws it. A wait from a freeze runs the guest for exactly that much of its
+    monotonic time (the engine pauses it at the deadline). Input given while frozen is queued and
+    delivered at the start of the next wait, or when the game resumes, so it costs no game time.
+    A frame observed while frozen is the one captured as the guest froze."""
 
     def __init__(self, sandbox):
-        self.sandbox, self.time_state = sandbox, {'paused': False, 'time_scale': 1.0, 'clock': 'frozen-guest'}
+        self.sandbox, self.queue, self.frame = sandbox, [], None
+        self.time_state = {'paused': False, 'time_scale': 1.0, 'clock': 'frozen-guest'}
 
     def time(self, scale=None, advance_ticks=None, timeout=10):
         if advance_ticks is not None:
@@ -120,31 +123,74 @@ class FrozenGuestClock:
             raise UnsupportedFeature('a frozen guest clock pauses (0) or runs at real speed (1); other speeds '
                                      'need the game\'s own time control')
         if scale == 0 and not self.time_state['paused']:
-            self.sandbox.pause()
+            self.frame = self._capture()
+            self.sandbox.game_time('freeze')
         elif scale == 1 and self.time_state['paused']:
-            self.sandbox.resume()
+            self.sandbox.game_time('thaw')
+            self.time_state = {**self.time_state, 'paused': False}
+            self._flush()
         self.time_state = {**self.time_state, 'paused': scale == 0}
-        return {**self.time_state, 'host_ns': time.monotonic_ns()}
+        return dict(self.time_state)
+
+    def _capture(self):
+        return self.sandbox.desktop.capture_image() if 'desktop' in self.sandbox.capabilities else None
+
+    def _flush(self):
+        queue, self.queue = self.queue, []
+        return [deliver() for deliver in queue]
+
+    FRAME_WINDOW_MS = 50
+
+    def _segment(self, ms, calls):
+        """Arm, issue calls (they wait in the frozen guest), run exactly ms, and return their results."""
+        import threading
+        self.sandbox.game_time('arm')
+        results, errors = [None] * len(calls), []
+
+        def call(index, function):
+            try:
+                results[index] = function()
+            except Exception as exc:
+                errors.append(exc)
+        threads = [threading.Thread(target=call, args=item) for item in enumerate(calls)]
+        for thread in threads:
+            thread.start()
+        advanced = self.sandbox.game_time('advance', ms)
+        for thread in threads:
+            thread.join(30)
+            if thread.is_alive():
+                raise RuntimeError(f'a call did not complete within the {ms} ms the guest ran')
+        if errors:
+            raise errors[0]
+        return (advanced['monotonic_after_ns'] - advanced['monotonic_before_ns']) / 1e6, results
 
     def run_for(self, ms):
-        """From a pause: run the guest for ms of its time, then pause again."""
-        self.sandbox.resume()
-        started = time.monotonic_ns()
-        time.sleep(ms / 1000)
-        self.sandbox.pause()
-        return {**self.time_state, 'requested_ms': ms, 'host_running_ms': (time.monotonic_ns() - started) / 1e6}
+        """From a freeze: run the guest for exactly ms of its time. Queued input lands as it starts;
+        the observed frame is captured in its last FRAME_WINDOW_MS."""
+        queue, self.queue = self.queue, []
+        capture = [self._capture] if 'desktop' in self.sandbox.capabilities else []
+        if ms > self.FRAME_WINDOW_MS:
+            first, delivered = self._segment(ms - self.FRAME_WINDOW_MS, queue)
+            last, captured = self._segment(self.FRAME_WINDOW_MS, capture)
+        else:
+            first, (last, both) = 0.0, self._segment(ms, queue + capture)
+            delivered, captured = both[:len(queue)], both[len(queue):]
+        if captured:
+            self.frame = captured[0]
+        return {**self.time_state, 'requested_ms': ms, 'advanced_ms': first + last, 'delivered': len(delivered)}
 
-    @contextlib.contextmanager
-    def running(self):
-        """Deliver input or capture a frame: a paused guest runs just for the call."""
+    def deliver(self, function):
         if not self.time_state['paused']:
-            yield
-            return
-        self.sandbox.resume()
-        try:
-            yield
-        finally:
-            self.sandbox.pause()
+            return function()
+        self.queue.append(function)
+        return {'queued_until_game_time_runs': True}
+
+    def observe_frame(self):
+        if self.time_state['paused']:
+            if self.frame is None:
+                raise UnsupportedFeature('no frame was captured when the guest froze')
+            return self.frame
+        return self.sandbox.desktop.capture_image()
 
 
 def _game_clock(sandbox):
@@ -159,10 +205,7 @@ def _game_clock(sandbox):
 
 def _delivered(sandbox, deliver):
     clock = _game_clock(sandbox)
-    if isinstance(clock, FrozenGuestClock):
-        with clock.running():
-            return deliver()
-    return deliver()
+    return clock.deliver(deliver) if isinstance(clock, FrozenGuestClock) else deliver()
 
 
 def elapse(sandbox, ms=None, ticks=None):
@@ -242,7 +285,8 @@ def run(sandbox, step, *, state=None):
                 value = sandbox.vr.observe(after=value.metadata['sequence'])
             game_ns = value.metadata.get('capture_begin_ns')
         elif name == 'frame':
-            value = _delivered(sandbox, sandbox.desktop.capture_image)
+            clock = _game_clock(sandbox)
+            value = clock.observe_frame() if isinstance(clock, FrozenGuestClock) else sandbox.desktop.capture_image()
             game_ns = value.metadata.get('capture_completed_ns')
         elif name == 'audio':
             if 'audio' not in capabilities:

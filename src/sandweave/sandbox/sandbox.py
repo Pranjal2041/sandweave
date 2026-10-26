@@ -451,6 +451,13 @@ class Sandbox:
         return self._info
 
     @dualmethod
+    def game_time(self, action, ms=None):
+        """'freeze', 'thaw' or 'advance' (by ms of guest monotonic time) the guest's time with its
+        controls attached; needs clock_pause="freeze". advance returns monotonic_before_ns and
+        monotonic_after_ns."""
+        return self._call('game_time', action=action, ms=ms)
+
+    @dualmethod
     def terminate(self):
         if not self._terminated:
             # Explicit cleanup remains possible after close(), including an

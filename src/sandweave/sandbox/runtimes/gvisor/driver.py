@@ -427,6 +427,10 @@ class Runtime:
     def resume(self, identity):
         return self.manager.resume(identity)
 
+    def game_time(self, identity, operation, ms=None):
+        # Unlike pause(), the guest connection stays: input and frames resume with the clock.
+        return self.manager.game_time(identity, operation, ms)
+
     def capture(self, identity, label, state, *, experimental_gpu_live=False):
         if any(m['snapshot'] != 'rebind' for m in self.manager._settings(identity).get('external_mounts', [])):
             raise UnsupportedFeature('external writable mount rejects capture; explicitly choose snapshot="rebind" for shared state')

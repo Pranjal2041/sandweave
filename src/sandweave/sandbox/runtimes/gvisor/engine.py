@@ -93,7 +93,7 @@ def supports(root, descriptor, features):
     verify_runtime(str(root), descriptor['path'], json.dumps(descriptor['sha256'], sort_keys=True))
     required = set(features)
     for feature, key in (('disk-storage', 'disk_storage'), ('proc-hidepid', 'proc_hidepid'), ('audit-log', 'audit_log'),
-                         ('kvm-gs', 'kvm_gs')):
+                         ('kvm-gs', 'kvm_gs'), ('clock-advance', 'clock_advance')):
         if feature in required:
             marker = Path(root) / descriptor['path'] / 'capabilities.json'
             if ('capabilities.json' not in descriptor['sha256'] or

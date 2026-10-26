@@ -5,6 +5,7 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 import types
 
 import pytest
@@ -254,24 +255,50 @@ def test_gamepad_writer_reports_rumble_and_keeps_state(tmp_path):
     assert record[11] == 0 and list(record[3:11]) == [0, 0, -32768, 0, 0, -32768, 0, 0]  # neutral: triggers released
 
 
-def test_frozen_guest_clock_pauses_the_sandbox_and_runs_it_for_input_and_waits():
-    calls = []
+def test_frozen_guest_clock_queues_input_into_exact_advances_and_serves_the_frozen_frame():
+    calls, frozen = [], [False]
 
     class Desktop:
+        # Like the guest's fast I/O helper: a request to a frozen guest is served once it runs.
+        def _served(self):
+            deadline = time.monotonic() + 5
+            while frozen[0] and time.monotonic() < deadline:
+                time.sleep(.001)
+
         def action(self, items):
-            calls.append(('input', paused[0]))
+            self._served()
+            calls.append(('input', frozen[0]))
             return {}
 
-    paused = [False]
-    sandbox = types.SimpleNamespace(capabilities={'desktop': {}}, info={'clock': {'pause': 'freeze'}}, desktop=Desktop())
-    sandbox.pause = lambda: (calls.append('pause'), paused.__setitem__(0, True))
-    sandbox.resume = lambda: (calls.append('resume'), paused.__setitem__(0, False))
-    result = run(sandbox, {'observe': [], 'actions': [
-        {'kind': 'game_speed', 'scale': 0}, {'kind': 'click', 'x': 5, 'y': 5}, {'kind': 'wait', 'ms': 20},
-        {'kind': 'game_speed', 'scale': 1}]})
-    # Input reaches a running guest; the wait runs it for 20 ms of its time; it stays paused in between.
-    assert calls == ['pause', 'resume', ('input', False), 'pause', 'resume', 'pause', 'resume']
-    assert result['acknowledgements'][2]['requested_ms'] == 20
+        def capture_image(self):
+            self._served()
+            calls.append(('capture', frozen[0]))
+            return types.SimpleNamespace(metadata={'capture_completed_ns': len(calls)})
+
+    def game_time(operation, ms=None):
+        calls.append(operation)
+        if operation == 'advance':
+            frozen[0] = False  # the engine runs the guest for ms, then freezes it again
+            time.sleep(ms / 1000)
+            frozen[0] = True
+            return {'monotonic_before_ns': 10, 'monotonic_after_ns': 10 + int(ms * 1e6)}
+        if operation == 'arm':
+            return {'armed': True}
+        frozen[0] = operation == 'freeze'
+        return {'frozen': frozen[0]}
+
+    sandbox = types.SimpleNamespace(capabilities={'desktop': {}}, info={'clock': {'pause': 'freeze'}},
+                                    desktop=Desktop(), game_time=game_time)
+    paused = run(sandbox, {'observe': ['frame'], 'actions': [
+        {'kind': 'game_speed', 'scale': 0}, {'kind': 'click', 'x': 5, 'y': 5}]})
+    # Frozen: the click waits, and the observed frame is the one captured as the guest froze.
+    assert calls == [('capture', False), 'freeze']
+    assert paused['acknowledgements'][1] == {'queued_until_game_time_runs': True}
+    stepped = run(sandbox, {'observe': [], 'actions': [{'kind': 'wait', 'ms': 120}]})
+    assert stepped['acknowledgements'][0]['advanced_ms'] == 120 and stepped['acknowledgements'][0]['delivered'] == 1
+    assert ('input', False) in calls and calls[-1] != 'thaw'
+    run(sandbox, {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': 1}]})
+    assert calls[-1] == 'thaw'
     with pytest.raises(UnsupportedFeature):
         run(sandbox, {'observe': [], 'actions': [{'kind': 'game_speed', 'scale': .5}]})
     with pytest.raises(UnsupportedFeature):

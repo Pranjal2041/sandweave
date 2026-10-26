@@ -4154,7 +4154,7 @@ index 9fe1c6cec..472b77d4e 100644
  	for _, private := range []bool{false, true} {
  		t.Run(futexKind(private), func(t *testing.T) {
 diff --git a/pkg/sentry/kernel/kernel.go b/pkg/sentry/kernel/kernel.go
-index 32afe64a6..7ba5c4fc8 100644
+index 32afe64a6..ef8c837f9 100644
 --- a/pkg/sentry/kernel/kernel.go
 +++ b/pkg/sentry/kernel/kernel.go
 @@ -147,6 +147,13 @@ type SaveRestoreExecConfig struct {
@@ -4250,15 +4250,15 @@ index 32afe64a6..7ba5c4fc8 100644
  
  	if timeReady != nil {
  		close(timeReady)
-@@ -1015,10 +1032,21 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
+@@ -1015,9 +1032,20 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
  		if err := networkArgs.ConfigureNetwork(s); err != nil {
  			return fmt.Errorf("configuring network: %w", err)
  		}
 -		s.Restore()
 -		timeline.Reached("Network stack restored")
 +		timeline.Reached("Root network transport reconnected")
- 	}
- 
++	}
++
 +	// Restore namespaces concurrently: TCP endpoint restoration has global
 +	// ordering barriers across listeners and connected endpoints.
 +	var netRestore sync.WaitGroup
@@ -4268,12 +4268,11 @@ index 32afe64a6..7ba5c4fc8 100644
 +		}
 +		netRestore.Add(1)
 +		go func(ns *inet.Namespace) { defer netRestore.Done(); ns.Stack().Restore() }(ns)
-+	}
+ 	}
 +	netRestore.Wait()
-+
+ 
  	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {
  		return vfs.PrependErrMsg("vfs.CompleteRestore() failed", err)
- 	}
 @@ -1745,11 +1773,20 @@ func (k *Kernel) Kill(ws linux.WaitStatus) {
  // calls to Pause nest and require an equal number of calls to Unpause to
  // resume execution.
@@ -4297,7 +4296,7 @@ index 32afe64a6..7ba5c4fc8 100644
  }
  
  // IsPaused returns true if the kernel is currently paused.
-@@ -1774,6 +1811,35 @@ func (k *Kernel) Unpause() {
+@@ -1774,6 +1811,70 @@ func (k *Kernel) Unpause() {
  	k.tasks.EndExternalStop()
  }
  
@@ -4312,6 +4311,41 @@ index 32afe64a6..7ba5c4fc8 100644
 +	if k.clockFreezes == 1 && k.timekeeper.freeze() {
 +		k.pauseTimeLocked(k.SupervisorContext())
 +	}
++}
++
++// AdvanceClocks runs a paused kernel whose clocks are frozen by exactly one
++// FreezeClocks for d of guest monotonic time, then pauses it again with its
++// clocks frozen at the deadline: time stops at the deadline shortly before it is
++// reached, then the tasks stop. It returns guest monotonic time before and after.
++//
++// Preconditions: The kernel is paused and its clocks are frozen once.
++func (k *Kernel) AdvanceClocks(d time.Duration) (before, after int64, err error) {
++	k.extMu.Lock()
++	if k.clockFreezes != 1 || !k.timekeeper.frozen.Load() {
++		k.extMu.Unlock()
++		return 0, 0, fmt.Errorf("advancing requires a paused kernel whose clocks are frozen once")
++	}
++	before = k.timekeeper.frozenMonotonicTime()
++	k.clockFreezes = 0
++	k.timekeeper.thaw()
++	k.resumeTimeLocked(k.SupervisorContext())
++	k.extMu.Unlock()
++	k.Unpause()
++	// Stop guest time at the deadline before any task can observe a later time, then
++	// stop the tasks: the last advanceMargin of host time is skipped, never overrun.
++	const advanceMargin = 2 * time.Millisecond
++	time.Sleep(max(0, d-advanceMargin))
++	k.extMu.Lock()
++	k.clockFreezes = 1
++	frozen := k.timekeeper.freezeAt(before + d.Nanoseconds())
++	k.extMu.Unlock()
++	k.Pause()
++	k.extMu.Lock()
++	defer k.extMu.Unlock()
++	if frozen {
++		k.pauseTimeLocked(k.SupervisorContext())
++	}
++	return before, k.timekeeper.frozenMonotonicTime(), nil
 +}
 +
 +// ThawClocks ends the effect of a previous FreezeClocks. Guest time continues
@@ -4659,7 +4693,7 @@ index 1364d473a..451a538a8 100644
  	pidns.owner = ts
  	return ts
 diff --git a/pkg/sentry/kernel/timekeeper.go b/pkg/sentry/kernel/timekeeper.go
-index 2764538a2..3b14c6147 100644
+index 2764538a2..f2a934bec 100644
 --- a/pkg/sentry/kernel/timekeeper.go
 +++ b/pkg/sentry/kernel/timekeeper.go
 @@ -67,14 +67,28 @@ type Timekeeper struct {
@@ -4801,7 +4835,7 @@ index 2764538a2..3b14c6147 100644
  		for {
  			// It's possible that the clock is shaky. This may be due to
  			// platform issues, e.g. the KVM platform relies on the guest
-@@ -513,8 +573,82 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
+@@ -513,8 +573,105 @@ func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
  }
  
  // BootTime returns the system boot real time.
@@ -4827,6 +4861,15 @@ index 2764538a2..3b14c6147 100644
 +//
 +// Preconditions: The Timekeeper's updates must not be paused.
 +func (t *Timekeeper) freeze() bool {
++	return t.freezeAt(-1)
++}
++
++// freezeAt is freeze, except that time stops at monotonic deadline (and the
++// realtime that corresponds to it), or at the latest monotonic time any reader
++// observed if that is later. A negative deadline stops time at its current value.
++//
++// Preconditions: The Timekeeper's updates must not be paused.
++func (t *Timekeeper) freezeAt(deadline int64) bool {
 +	t.mu.Lock()
 +	defer t.mu.Unlock()
 +	if t.frozen.Load() {
@@ -4840,11 +4883,25 @@ index 2764538a2..3b14c6147 100644
 +	if err != nil {
 +		panic("timekeeper.GetTime(sentrytime.Monotonic): " + err.Error())
 +	}
++	if deadline >= 0 {
++		// Time stops exactly at the deadline: forward if it is still ahead, back if no
++		// reader has observed a later time.
++		stop := max(deadline, t.monotonicLowerBound.Load())
++		realtime += stop - monotonic
++		monotonic = stop
++	}
 +	t.frozenRealtime.Store(realtime)
 +	t.frozenMonotonic.Store(monotonic)
 +	t.frozen.Store(true)
 +	t.publishLocked(false)
 +	return true
++}
++
++// frozenMonotonicTime returns frozen guest monotonic time.
++//
++// Preconditions: Time is frozen.
++func (t *Timekeeper) frozenMonotonicTime() int64 {
++	return max(t.frozenMonotonic.Load(), t.monotonicLowerBound.Load())
 +}
 +
 +// thaw continues guest realtime and monotonic time from their frozen values.
@@ -4901,10 +4958,10 @@ index b2e0bf690..2d90d4f54 100644
  	}
  }
 diff --git a/pkg/sentry/kernel/timekeeper_test.go b/pkg/sentry/kernel/timekeeper_test.go
-index 1f22bc75d..d19c5917e 100644
+index 1f22bc75d..60ef5b729 100644
 --- a/pkg/sentry/kernel/timekeeper_test.go
 +++ b/pkg/sentry/kernel/timekeeper_test.go
-@@ -687,3 +687,213 @@ func TestTimekeeperPauseWaitsForInFlightAfterFunc(t *testing.T) {
+@@ -687,3 +687,251 @@ func TestTimekeeperPauseWaitsForInFlightAfterFunc(t *testing.T) {
  		t.Fatal("Pause() returned while AfterFunc was still running")
  	}
  }
@@ -5060,6 +5117,44 @@ index 1f22bc75d..d19c5917e 100644
 +	}
 +	if got := tk.BootTime(); got != boot {
 +		t.Errorf("BootTime after freeze got %v want %v", got, boot)
++	}
++}
++
++// TestTimekeeperFreezeAtDeadline tests that freezeAt stops time at a passed
++// deadline, keeping realtime consistent, unless a reader saw a later time.
++func TestTimekeeperFreezeAtDeadline(t *testing.T) {
++	c := &mockClocks{monotonic: 100000, realtime: 1000000}
++	tk, params := stateTestClocklessTimekeeper(t)
++	tk.SetClocksWithConfig(c, params, ClockConfig{})
++	defer tk.Destroy()
++
++	c.advance(50)
++	realtime := mustGetTime(t, tk, sentrytime.Realtime)
++	c.advance(30)
++	if !tk.freezeAt(60) {
++		t.Fatal("freezeAt got false want true")
++	}
++	if now := mustGetTime(t, tk, sentrytime.Monotonic); now != 60 {
++		t.Errorf("frozen Monotonic got %d want the deadline 60", now)
++	}
++	if now := mustGetTime(t, tk, sentrytime.Realtime); now != realtime+10 {
++		t.Errorf("frozen Realtime got %d want %d", now, realtime+10)
++	}
++	tk.thaw()
++	if !tk.freezeAt(100) {
++		t.Fatal("freezeAt got false want true")
++	}
++	if now := tk.frozenMonotonicTime(); now != 100 {
++		t.Errorf("frozen Monotonic got %d want the future deadline 100", now)
++	}
++	tk.thaw()
++	tk.monotonicLowerBound.Store(195)
++	c.advance(20)
++	if !tk.freezeAt(170) {
++		t.Fatal("freezeAt got false want true")
++	}
++	if now := tk.frozenMonotonicTime(); now != 195 {
++		t.Errorf("frozen Monotonic got %d want the observed 195", now)
 +	}
 +}
 +
@@ -10287,10 +10382,21 @@ index 479bfc064..5e24985b2 100644
 +    library = ":boot",
 +)
 diff --git a/runsc/boot/controller.go b/runsc/boot/controller.go
-index ae644c4f5..f87fedccc 100644
+index ae644c4f5..0dc01f08a 100644
 --- a/runsc/boot/controller.go
 +++ b/runsc/boot/controller.go
-@@ -276,6 +276,7 @@ func (c *controller) stop() {
+@@ -95,6 +95,10 @@ const (
+ 	// ContMgrResume resumes all tasks.
+ 	ContMgrResume = "containerManager.Resume"
+ 
++	// ContMgrAdvance runs a paused sandbox with frozen clocks for a duration of
++	// guest time and pauses it again.
++	ContMgrAdvance = "containerManager.Advance"
++
+ 	// ContMgrSignal sends a signal to a container.
+ 	ContMgrSignal = "containerManager.Signal"
+ 
+@@ -276,6 +280,7 @@ func (c *controller) stop() {
  
  // containerManager manages sandbox containers.
  type containerManager struct {
@@ -10298,7 +10404,7 @@ index ae644c4f5..f87fedccc 100644
  	// startChan is used to signal when the root container process should
  	// be started.
  	startChan chan struct{}
-@@ -626,7 +627,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
+@@ -626,7 +631,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error)
  	}
  
  	// Create the main MemoryFile.
@@ -10308,7 +10414,7 @@ index ae644c4f5..f87fedccc 100644
  	if err != nil {
  		return fmt.Errorf("creating memory file: %v", err)
  	}
-@@ -898,14 +900,63 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
+@@ -898,18 +904,96 @@ func (cm *containerManager) RestoreSubcontainer(args *StartArgs, _ *struct{}) (r
  	return nil
  }
  
@@ -10372,6 +10478,39 @@ index ae644c4f5..f87fedccc 100644
  	cm.l.k.Unpause()
  	return control.PostResume(cm.l.k, nil)
  }
+ 
++// AdvanceArgs are arguments to Advance.
++type AdvanceArgs struct {
++	// Duration of guest monotonic time to run.
++	Duration gtime.Duration
++}
++
++// AdvanceResult reports guest monotonic time around an Advance.
++type AdvanceResult struct {
++	MonotonicBefore int64
++	MonotonicAfter  int64
++}
++
++// Advance runs a sandbox paused with frozen clocks (--clock-pause=freeze) for
++// exactly args.Duration of guest time, then pauses it with its clocks frozen.
++func (cm *containerManager) Advance(args *AdvanceArgs, out *AdvanceResult) error {
++	if cm.l.root.conf.ClockPause != config.ClockPauseFreeze {
++		return fmt.Errorf("advance requires --clock-pause=freeze")
++	}
++	if args.Duration <= 0 {
++		return fmt.Errorf("advance needs a positive duration, got %v", args.Duration)
++	}
++	before, after, err := cm.l.k.AdvanceClocks(args.Duration)
++	if err != nil {
++		return err
++	}
++	out.MonotonicBefore, out.MonotonicAfter = before, after
++	return control.PostResume(cm.l.k, nil)
++}
++
+ // Wait waits for the init process in the given container.
+ func (cm *containerManager) Wait(cid *string, waitStatus *uint32) error {
+ 	log.Debugf("containerManager.Wait, cid: %s", *cid)
 diff --git a/runsc/boot/cpu_control.go b/runsc/boot/cpu_control.go
 new file mode 100644
 index 000000000..6407a2931
@@ -11048,6 +11187,60 @@ index bde091eda..b42f9b7bd 100644
  			connImpl = fsgofer.NewConnectionImpl(connConf)
  			connOpts = fsgofer.ConnectionOpts(cfg.readonly)
  		}
+diff --git a/runsc/cmd/resume.go b/runsc/cmd/resume.go
+index 815cc64ba..e7775e0a1 100644
+--- a/runsc/cmd/resume.go
++++ b/runsc/cmd/resume.go
+@@ -17,6 +17,7 @@ package cmd
+ import (
+ 	"context"
+ 	"fmt"
++	"time"
+ 
+ 	"github.com/google/subcommands"
+ 	specs "github.com/opencontainers/runtime-spec/specs-go"
+@@ -29,6 +30,9 @@ import (
+ // Resume implements subcommands.Command for the "resume" command.
+ type Resume struct {
+ 	containerLoader
++	// duration, when set, runs the paused container for that much guest time
++	// and leaves it paused (requires --clock-pause=freeze).
++	duration time.Duration
+ }
+ 
+ // Name implements subcommands.Command.Name.
+@@ -43,11 +47,14 @@ func (*Resume) Synopsis() string {
+ 
+ // Usage implements subcommands.Command.Usage.
+ func (*Resume) Usage() string {
+-	return "resume <container id> - resume a paused container.\n"
++	return "resume [--for=DURATION] <container id> - resume a paused container.\n"
+ }
+ 
+ // SetFlags implements subcommands.Command.SetFlags.
+-func (*Resume) SetFlags(*flag.FlagSet) {}
++func (r *Resume) SetFlags(f *flag.FlagSet) {
++	f.DurationVar(&r.duration, "for", 0, "run the paused container for this much guest time, then pause it with "+
++		"its clocks frozen; prints guest monotonic time before and after as JSON (requires --clock-pause=freeze)")
++}
+ 
+ // FetchSpec implements util.SubCommand.FetchSpec.
+ func (r *Resume) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
+@@ -72,6 +79,14 @@ func (r *Resume) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
+ 		util.Fatalf("loading container: %v", err)
+ 	}
+ 
++	if r.duration > 0 {
++		result, err := cont.Advance(r.duration)
++		if err != nil {
++			util.Fatalf("advance failed: %v", err)
++		}
++		fmt.Printf("{\"monotonic_before_ns\":%d,\"monotonic_after_ns\":%d}\n", result.MonotonicBefore, result.MonotonicAfter)
++		return subcommands.ExitSuccess
++	}
+ 	if err := cont.Resume(); err != nil {
+ 		util.Fatalf("resume failed: %v", err)
+ 	}
 diff --git a/runsc/cmd/sandboxsetup/process.go b/runsc/cmd/sandboxsetup/process.go
 index 60404f196..8fe835e52 100644
 --- a/runsc/cmd/sandboxsetup/process.go
@@ -11638,7 +11831,7 @@ index 957b4c693..87163c832 100644
          "//pkg/pinring",
          "//pkg/sentry/control",
 diff --git a/runsc/container/container.go b/runsc/container/container.go
-index f60048504..1f7b18598 100644
+index f60048504..e6095ed51 100644
 --- a/runsc/container/container.go
 +++ b/runsc/container/container.go
 @@ -34,6 +34,7 @@ import (
@@ -11664,7 +11857,28 @@ index f60048504..1f7b18598 100644
  }
  
  // SignalContainer sends the signal to the container. If all is true and signal
-@@ -1195,14 +1196,24 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
+@@ -950,6 +951,20 @@ func (c *Container) Resume() error {
+ 	return c.saveLocked()
+ }
+ 
++// Advance runs a paused container's kernel for d of guest time and leaves it
++// paused. The sandbox must freeze its clocks on pause (--clock-pause=freeze).
++func (c *Container) Advance(d time.Duration) (boot.AdvanceResult, error) {
++	log.Debugf("Advancing container, cid: %s, by %v", c.ID, d)
++	if err := c.Saver.lock(BlockAcquire); err != nil {
++		return boot.AdvanceResult{}, err
++	}
++	defer c.Saver.UnlockOrDie()
++	if c.Status != Paused {
++		return boot.AdvanceResult{}, fmt.Errorf("cannot advance container %q in state %v", c.ID, c.Status)
++	}
++	return c.Sandbox.Advance(c.ID, d)
++}
++
+ // State returns the metadata of the container.
+ func (c *Container) State() specs.State {
+ 	return specs.State{
+@@ -1195,14 +1210,24 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
  // createGoferFilestores creates the regular files that will back the
  // tmpfs/overlayfs mounts that will overlay some gofer mounts.
  //
@@ -11690,7 +11904,7 @@ index f60048504..1f7b18598 100644
  
  	// Handle rootfs first.
  	rootfsConf := c.GoferMountConfs[0]
-@@ -1235,6 +1246,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
+@@ -1235,6 +1260,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
  		// running with seccomp filters that do not allow this.
  		pgalloc.IMAWorkAroundForMemFile(filestore.Fd())
  	}
@@ -11698,7 +11912,7 @@ index f60048504..1f7b18598 100644
  	return goferFilestores, nil
  }
  
-@@ -1254,11 +1266,11 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
+@@ -1254,11 +1280,11 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
  
  func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
  	// Create the self filestore file.
@@ -11712,7 +11926,7 @@ index f60048504..1f7b18598 100644
  	}
  	dirPath := path.Join(goferRootfs, mountSrc)
  	fileName := boot.SelfFilestoreName(c.sandboxID())
-@@ -1269,11 +1281,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
+@@ -1269,11 +1295,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
  	}
  	defer unix.Close(dirFD)
  
@@ -11725,7 +11939,7 @@ index f60048504..1f7b18598 100644
  	if err != nil {
  		if err == unix.EEXIST {
  			// Note that if the same submount is mounted multiple times within the
-@@ -1500,8 +1508,12 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
+@@ -1500,8 +1522,12 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
  			}
  			cfgIdx++
  		}
@@ -12964,7 +13178,7 @@ index 000000000..02a983df9
 +	}
 +}
 diff --git a/runsc/sandbox/sandbox.go b/runsc/sandbox/sandbox.go
-index bcc7287f6..26bed8f03 100644
+index bcc7287f6..3b9cbf2b7 100644
 --- a/runsc/sandbox/sandbox.go
 +++ b/runsc/sandbox/sandbox.go
 @@ -1023,6 +1023,31 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
@@ -13025,7 +13239,24 @@ index bcc7287f6..26bed8f03 100644
  	cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
  
  	if args.Attached {
-@@ -2570,18 +2605,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
+@@ -2078,6 +2113,16 @@ func (s *Sandbox) Resume(cid string) error {
+ 	return nil
+ }
+ 
++// Advance runs the paused sandbox for d of guest time (--clock-pause=freeze).
++func (s *Sandbox) Advance(cid string, d time.Duration) (boot.AdvanceResult, error) {
++	log.Debugf("Advance sandbox %q by %v", s.ID, d)
++	var result boot.AdvanceResult
++	if err := s.call(boot.ContMgrAdvance, &boot.AdvanceArgs{Duration: d}, &result); err != nil {
++		return result, fmt.Errorf("advancing container %q: %w", cid, err)
++	}
++	return result, nil
++}
++
+ // Usage sends the collect call for a container in the sandbox.
+ func (s *Sandbox) Usage(Full bool) (control.MemoryUsage, error) {
+ 	log.Debugf("Usage sandbox %q", s.ID)
+@@ -2570,18 +2615,27 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
  // TarRootfsUpperLayer serializes the rootfs upper layer of a given
  // container to a tar file. When the rootfs is not an overlayfs, it
  // returns an error. It writes the tar file to outFD.

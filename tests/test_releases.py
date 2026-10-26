@@ -31,6 +31,12 @@ def test_prepared_runtime_upgrades_for_cpu_pauses_guest_clocks_and_kvm_gs(tmp_pa
     assert not releases.runtime_current(tmp_path)
     capabilities['kvm_gs'] = 1
     path.write_text(json.dumps(capabilities))
+    assert not releases.runtime_current(tmp_path)
+    capabilities['clock_advance'] = 1  # exact advance needs version 2 (time stops at the deadline)
+    path.write_text(json.dumps(capabilities))
+    assert not releases.runtime_current(tmp_path)
+    capabilities['clock_advance'] = 2
+    path.write_text(json.dumps(capabilities))
     assert releases.runtime_current(tmp_path)
 
 
@@ -52,7 +58,7 @@ def published_runtime(tmp_path, monkeypatch):
     pointer = root / 'tools/gvisor-socket/runtime.json'
     pointer.parent.mkdir()
     pointer.write_text(json.dumps({'path': 'tools/runtime-builds/test-build', 'sha256': hashes,
-                                   'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1, 'buffered_filesystem_export': 1, 'cancellable_cpu_pause': 1, 'guest_clock': 1, 'kvm_gs': 1}))
+                                   'cpu_accounting': 1, 'bridge_local_delivery': 1, 'disk_storage': 1, 'proc_signal_masks': 1, 'bounded_network_rx': 1, 'buffered_filesystem_export': 1, 'cancellable_cpu_pause': 1, 'guest_clock': 1, 'kvm_gs': 1, 'clock_advance': 2}))
     record_installation(root)
     archive = web / 'runtime.tar.gz'
     with tarfile.open(archive, 'w:gz') as stream:

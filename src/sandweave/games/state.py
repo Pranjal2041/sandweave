@@ -19,12 +19,14 @@ SCRIPT = DIRECTORY + '/state_export.py'
 
 
 class GameState:
-    def __init__(self, game, *, source=None, reader=None):
+    def __init__(self, game, *, source=None, reader=None, resim=False):
         if game not in GAMES:
             raise ValueError(f'unknown game {game!r}; known: {", ".join(GAMES)}')
         if game == 'open-saber' and source is None:
             raise ValueError("open-saber needs source: the session's private directory or a journal")
-        self.game, self.source, self.reader = game, source, reader
+        if resim and game != 'openra':
+            raise ValueError('resim applies to openra')
+        self.game, self.source, self.reader, self.resim = game, source, reader, resim
         self.script = resources.files(__package__).joinpath('state_export.py').read_bytes()
         self.installed = set()
 
@@ -34,7 +36,7 @@ class GameState:
             argv += ['--source', str(self.source)]
         if self.reader is not None:
             argv += ['--reader', str(self.reader)]
-        return argv
+        return argv + (['--resim'] if self.resim else [])
 
     def observe(self, sandbox):
         if sandbox.id not in self.installed:

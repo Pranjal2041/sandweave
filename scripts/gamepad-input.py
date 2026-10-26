@@ -53,12 +53,18 @@ def read_rumble(path, after):
     events = []
     for offset in range(0, len(data) - len(data) % RUMBLE.size, RUMBLE.size):
         magic, output, pad, guest_ns, first, second, duration_ms = RUMBLE.unpack_from(data, offset)
-        if magic != b'RUM1' or output not in (0, 1) or pad > 3:
+        if magic != b'RUM1' or output not in (0, 1, 2, 3) or pad > 3:
             raise ValueError(f'corrupt haptics record {after + len(events)}')
-        names = ('low_frequency', 'high_frequency') if output == 0 else ('left_trigger', 'right_trigger')
-        events.append({'output': ('motors', 'triggers')[output], 'pad': pad, 'guest_ns': guest_ns,
-                       names[0]: first / 0xFFFF, names[1]: second / 0xFFFF, 'duration_ms': duration_ms,
-                       'stop': first == second == 0})
+        event = {'output': ('motors', 'triggers', 'haptic_rumble', 'constant_force')[output], 'pad': pad,
+                 'guest_ns': guest_ns, 'duration_ms': duration_ms, 'stop': first == second == 0}
+        if output == 2:  # SDL_HapticRumblePlay strength
+            event['strength'] = first / 0xFFFF
+        elif output == 3:  # constant-force effect level, signed (SDL_HapticConstant.level)
+            event['level'] = struct.unpack('<h', struct.pack('<H', first))[0] / 32767
+        else:
+            names = ('low_frequency', 'high_frequency') if output == 0 else ('left_trigger', 'right_trigger')
+            event.update({names[0]: first / 0xFFFF, names[1]: second / 0xFFFF})
+        events.append(event)
     return events
 
 

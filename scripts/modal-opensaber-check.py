@@ -308,6 +308,8 @@ def main():
                       'game_state': {'before': timing['state_before'], 'after_time_tests': timing['state_after'],
                                      'after_recording': compact(game_state.observe(sandbox))},
                       'monado': metrics.summarize(args.output / 'monado-metrics.pb', args.seconds, **window)}
+            # The gameplay journal (HMAC-chained; keys already consumed) and time-control files.
+            sandbox.files.download('/run/user/1000/open-saber', args.output / 'game-journal')
             (args.output / 'summary.json').write_text(json.dumps(result, indent=2) + '\n')
             print(json.dumps(result, indent=2), flush=True)
     except BaseException as error:

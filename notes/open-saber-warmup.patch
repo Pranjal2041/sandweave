@@ -1,0 +1,47 @@
+diff --git a/game/scripts/SandweaveWarmup.gd b/game/scripts/SandweaveWarmup.gd
+new file mode 100644
+index 0000000..14ac7e5
+--- /dev/null
++++ b/game/scripts/SandweaveWarmup.gd
+@@ -0,0 +1,29 @@
++extends Node
++## Shader warm-up for Sandweave's Open Saber pack.
++##
++## Godot's compatibility renderer compiles a material's shaders when it is first
++## drawn. The first cut of a song instantiates slice particles (GPUParticles3D),
++## and compiling them froze the game for 3.6-4.5 s in every run on Modal. This
++## fires the same particles in front of the camera while the menu loads, as the
++## game's cube pool already does for the cubes themselves.
++
++const BURSTS := 3
++
++
++func _ready() -> void:
++	while not is_instance_valid(GlobalReferences.main_game_scene):
++		await get_tree().process_frame
++	var game := GlobalReferences.main_game_scene
++	while not game.is_node_ready():
++		await get_tree().process_frame
++	var camera := game.get_node("XROrigin3D/XRCamera3D") as Node3D
++	for burst in BURSTS:
++		var particles := BeepCube.particles_scene.instantiate() as BeepCubeSliceParticles
++		camera.add_child(particles)
++		particles.position = Vector3(0.2 * (burst - 1), 0, -2)
++		await get_tree().process_frame
++		particles.fire()
++		for frame in 30:
++			await get_tree().process_frame
++		particles.queue_free()
++	print("SandweaveWarmup: fired %d slice-particle bursts" % BURSTS)
+diff --git a/project.godot b/project.godot
+index a983556..8fc7f4c 100644
+--- a/project.godot
++++ b/project.godot
+@@ -35,6 +35,7 @@ StopwatchFactory="*res://addons/stopwatch/public/StopwatchFactory.gd"
+ UI_AudioEngine="*res://game/ui/UI_AudioEngine/UI_AudioEngine.tscn"
+ Journal="*res://game/scripts/Journal.gd"
+ SandweaveTime="*res://game/scripts/SandweaveTime.gd"
++SandweaveWarmup="*res://game/scripts/SandweaveWarmup.gd"
+ 
+ [debug]
+ 

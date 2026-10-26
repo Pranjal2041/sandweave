@@ -208,6 +208,10 @@ def test_open_saber_build_includes_journal_and_time_control():
     assert 'time_control = "sandweave-time"' in template
     patch = (ROOT / 'notes/open-saber-time-control.patch').read_text()
     assert 'SandweaveTime="*res://game/scripts/SandweaveTime.gd"' in patch and 'advance_ticks' in patch
+    warmup = (ROOT / 'notes/open-saber-warmup.patch').read_text()
+    assert 'SandweaveWarmup="*res://game/scripts/SandweaveWarmup.gd"' in warmup and 'particles.fire()' in warmup
+    install = (ROOT / 'scripts/install-sandbox-vr.sh').read_text()
+    assert all(f'open-saber-{name}.patch' in install for name in ('journal', 'time-control', 'warmup'))
     launch = (ROOT / 'scripts/vr-monado-guest.sh').read_text()
     assert '--main-pack' in launch and 'SANDWEAVE_TIME_CONTROL' in launch and 'OPEN_SABER_JOURNAL_KEY' in launch
 

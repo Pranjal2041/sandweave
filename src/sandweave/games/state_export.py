@@ -19,7 +19,10 @@ Sources (defaults are the environments' own paths):
   wesnoth       audit plugin lines in game.log (audit_plugin.lua): context,
                 scenario, turn, level results, debug mode
   openra        newest replay, read with the environment's openra_replay.py:
-                game time, players, orders by kind and by client
+                game time, players, orders by kind and by client; with --resim
+                also the world at the replay's last frame (cash, structures,
+                army and asset value, kills and losses per player), re-simulated
+                by the environment's headless copy (about 40x real time)
 Standard library only; runs as root because the telemetry is root-only.
 """
 import argparse
@@ -27,7 +30,10 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 
 DEFAULT_SOURCES = {'speed-dreams': '/var/lib/sdracer/eval/journal.jsonl',
@@ -156,7 +162,30 @@ def wesnoth(state, lines):
     return state
 
 
-def openra(source, reader):
+PLAYER_FIELDS = ('player_name', 'client_index', 'is_bot', 'bot_type', 'faction', 'team', 'win_state', 'lost_tick',
+                 'cash', 'structures', 'army_value', 'assets_value', 'units_killed', 'units_dead', 'buildings_killed',
+                 'buildings_dead', 'kills_cost', 'deaths_cost', 'order_count')
+
+
+def openra_resim(replay, script):
+    """World state at the replay's last frame, re-simulated by the environment's hash-checked
+    headless copy (resim_replay.sh); a live replay gets a metadata trailer first."""
+    with tempfile.TemporaryDirectory(prefix='sandweave-openra-') as directory:
+        copy, output = Path(directory) / 'live.orarep', Path(directory) / 'resim.json'
+        shutil.copyfile(replay, copy)  # the game keeps appending to the original
+        subprocess.run(['bash', script, str(copy), str(output)], check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=3600)
+        result = json.loads(output.read_text())
+    if 'error' in result:
+        raise RuntimeError('OpenRA re-simulation failed: ' + result['error'])
+    final = result['final']
+    return {'world_tick': final['world_tick'], 'game_seconds': final['world_tick'] * result['world']['timestep_ms'] / 1000,
+            'is_game_over': final['is_game_over'], 'finish_reason': result['finish_reason'], 'desync': result['desync'],
+            'wall_seconds': result['wall_seconds'],
+            'players': [{key: player.get(key) for key in PLAYER_FIELDS} for player in final['players']]}
+
+
+def openra(source, reader, resim_script=None):
     sys.path.insert(0, str(Path(reader).parent))
     import openra_replay
     replays = sorted(Path(source).rglob('*.orarep'), key=lambda path: path.stat().st_mtime)
@@ -176,7 +205,8 @@ def openra(source, reader):
         # Net frames x NetFrameInterval x 40 ms at Normal speed, as the task's scoring computes game time.
         'game_seconds': summary['last_frame'] * interval * 0.04, 'finished': bool(summary['metadata']),
         'players': summary['lobby'].get('clients', []), 'orders': summary['order_counts'],
-        'orders_by_client': by_client, 'truncated': summary['truncated']}
+        'orders_by_client': by_client, 'truncated': summary['truncated'],
+        'world': openra_resim(replays[-1], resim_script) if resim_script else None}
 
 
 REDUCERS = {'speed-dreams': speed_dreams, 'open-saber': open_saber, 'openttd': openttd, 'wesnoth': wesnoth}
@@ -212,12 +242,14 @@ def main():
     parser.add_argument('--source')
     parser.add_argument('--cache', default='/run/sandweave-state')
     parser.add_argument('--reader', default='/workspace/utils/openra_replay.py')
+    parser.add_argument('--resim', nargs='?', const='/usr/local/lib/openra-env/resim_replay.sh',
+                        help='OpenRA: also re-simulate the live replay (cash, structures, army, kills per player)')
     args = parser.parse_args()
     source = args.source or DEFAULT_SOURCES[args.game]
     if source is None:
         parser.error(args.game + ' needs --source')
     if args.game == 'openra':
-        path, state = openra(source, args.reader)
+        path, state = openra(source, args.reader, args.resim)
         new_bytes = None
     else:
         path = journal(args.game, source)

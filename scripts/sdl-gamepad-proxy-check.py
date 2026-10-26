@@ -8,7 +8,8 @@ this drives one gamepad-input.py --serve writer per pad: held buttons, sticks an
 triggers must persist past the writer's 1 s lease, a release must take effect while
 the axes stay set, end of input must leave both pads neutral (triggers released,
 -32768 as SDL reports a released Xbox 360 trigger), and the probe's rumble requests
-must come back through the writer with their pad.
+must come back through the writer with their pad, including SDL_Haptic
+rumble and constant-force effects on the pad's haptic device.
 
     scripts/sdl-gamepad-proxy-check.py --work DIR
 """
@@ -111,8 +112,11 @@ def main():
     neutral_samples = [s for s in samples if s['t_ns'] >= closed_ns + MARGIN_NS]
     second = [0, 0, -32768, 0, 0, round(-32768 + .5 * 65535), 0, 0]  # pad 1: right trigger half pressed
     expected_rumble = [(0, 'motors', 1.0, 0x8000 / 0xFFFF, 250, False), (0, 'triggers', 0x4000 / 0xFFFF, 0.0, 100, False),
-                       (0, 'motors', 0.0, 0.0, 0, True), (1, 'motors', 0x1000 / 0xFFFF, 0x2000 / 0xFFFF, 50, False)]
-    observed_rumble = [(e['pad'], e['output'], e.get('low_frequency', e.get('left_trigger')),
+                       (0, 'motors', 0.0, 0.0, 0, True), (1, 'motors', 0x1000 / 0xFFFF, 0x2000 / 0xFFFF, 50, False),
+                       (0, 'haptic_rumble', 0x8000 / 0xFFFF, None, 100, False),
+                       (0, 'constant_force', -12000 / 32767, None, 1000, False),
+                       (0, 'constant_force', 20000 / 32767, None, 1000, False)]
+    observed_rumble = [(e['pad'], e['output'], e.get('low_frequency', e.get('left_trigger', e.get('strength', e.get('level')))),
                         e.get('high_frequency', e.get('right_trigger')), e['duration_ms'], e['stop'])
                        for e in rumble['events']]
     checks = {
@@ -120,6 +124,8 @@ def main():
         'rumble_advertised': started['has_rumble'] == 1 and started['has_rumble_triggers'] == 1,
         'rumble_calls_succeeded': started['rumble'] == started['rumble_triggers'] == started['rumble_stop']
         == started['rumble_last_pad'] == 0,
+        'haptic_device_calls_succeeded': started['haptic_open'] == 1 and started['haptic_rumble'] == 0
+        and started['haptic_effect'] == 0 and started['haptic_run'] == 0 and started['haptic_update'] == 0,
         'rumble_recorded_with_pad': observed_rumble == expected_rumble,
         'rumble_stamped_after_request': all(e['guest_ns'] >= started['requested_ns'] for e in rumble['events']),
         'held_beyond_lease': len(held_samples) > 0 and (held_samples[-1]['t_ns'] - held_samples[0]['t_ns']) > 2e9

@@ -20,12 +20,13 @@ cc -O2 -fPIC -shared /sandweave-input/gpu-visual-order.c -Wl,-z,defs -ldl -lX11 
 rm -rf /opt/vr/monado-source /opt/vr/monado-build
 
 if [ -d /sandweave-input/open-saber-source ]; then
-    # Journal (game state) and game-time control pack for the official binary.
+    # Journal (game state), game-time control and shader warm-up pack for the official binary.
     build=/opt/vr/open-saber-build
     mkdir -p "$build/home"
     cp -a /sandweave-input/open-saber-source "$build/source"
     patch --batch --forward -d "$build/source" -p1 < /sandweave-input/open-saber-journal.patch
     patch --batch --forward -d "$build/source" -p1 < /sandweave-input/open-saber-time-control.patch
+    patch --batch --forward -d "$build/source" -p1 < /sandweave-input/open-saber-warmup.patch
     python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" \
         /sandweave-input/Godot_v4.3-stable_linux.x86_64.zip "$build"
     godot="$build/Godot_v4.3-stable_linux.x86_64"

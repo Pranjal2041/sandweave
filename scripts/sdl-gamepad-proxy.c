@@ -2,8 +2,10 @@
  * Build with build-sdl-gamepad-proxy.py; opt in with SDL_DYNAMIC_API.
  * The player's own SDL implements every function except this joystick API.
  * No evdev/uinput device, game assembly patch, or host privilege is required.
- * Rumble the game requests (SDL_JoystickRumble/RumbleTriggers) is appended as
- * fixed records to LAB_GAMEPAD_HAPTICS for the gamepad writer to report.
+ * Force feedback the game requests is appended as fixed records to
+ * LAB_GAMEPAD_HAPTICS for the gamepad writer to report: SDL_JoystickRumble and
+ * RumbleTriggers, and on each pad's SDL_Haptic device (SDL_HapticOpenFromJoystick)
+ * SDL_HapticRumblePlay/Stop and constant-force effects (New/Update/StopEffect).
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -158,7 +160,8 @@ static int type_handle(void *p) { return pad(p) >= 0 ? 1 : 0; }
 
 typedef struct __attribute__((packed)) {
     char magic[4];          /* "RUM1" */
-    uint16_t output;        /* 0 motors (low, high frequency), 1 triggers (left, right) */
+    uint16_t output;        /* 0 motors (low, high frequency), 1 triggers (left, right),
+                               2 haptic rumble (strength), 3 haptic constant force (level as int16) */
     uint16_t pad;           /* 0..3 */
     uint64_t monotonic_ns;  /* CLOCK_MONOTONIC when the game requested it */
     uint16_t first, second; /* strengths 0..0xFFFF; both zero stops */
@@ -166,19 +169,59 @@ typedef struct __attribute__((packed)) {
 } Rumble;
 _Static_assert(sizeof(Rumble) == 24, "gamepad haptics record ABI");
 static int rumble_fd = -1;
-static int record_rumble(uint16_t output, void *p, uint16_t first, uint16_t second, uint32_t duration_ms) {
-    int n = pad(p);
+static int haptic_handles[MAX_PADS];
+static int record(uint16_t output, int n, uint16_t first, uint16_t second, uint32_t duration_ms) {
     if (n < 0 || rumble_fd < 0) return -1;
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    Rumble record = {{'R', 'U', 'M', '1'}, output, (uint16_t)n, (uint64_t)now.tv_sec * 1000000000 + now.tv_nsec,
-                     first, second, duration_ms};
+    Rumble entry = {{'R', 'U', 'M', '1'}, output, (uint16_t)n, (uint64_t)now.tv_sec * 1000000000 + now.tv_nsec,
+                    first, second, duration_ms};
     /* One write on an O_APPEND file: records from concurrent callers never interleave. */
-    return write(rumble_fd, &record, sizeof(record)) == (ssize_t)sizeof(record) ? 0 : -1;
+    return write(rumble_fd, &entry, sizeof(entry)) == (ssize_t)sizeof(entry) ? 0 : -1;
 }
-static int rumble(void *p, uint16_t low, uint16_t high, uint32_t ms) { return record_rumble(0, p, low, high, ms); }
-static int rumble_triggers(void *p, uint16_t left, uint16_t right, uint32_t ms) { return record_rumble(1, p, left, right, ms); }
+static int rumble(void *p, uint16_t low, uint16_t high, uint32_t ms) { return record(0, pad(p), low, high, ms); }
+static int rumble_triggers(void *p, uint16_t left, uint16_t right, uint32_t ms) { return record(1, pad(p), left, right, ms); }
 static int has_rumble(void *p) { return pad(p) >= 0 && rumble_fd >= 0; }
+
+/* SDL_Haptic on the virtual pads: one device per pad, rumble plus one constant-force effect (id 0). */
+static int hpad(void *h) {
+    for (int i = 0; i < pad_count; ++i) if (h == &haptic_handles[i]) return i;
+    return -1;
+}
+static void *haptic_open(void *joystick) { int n = pad(joystick); return n >= 0 && rumble_fd >= 0 ? &haptic_handles[n] : NULL; }
+static int joystick_is_haptic(void *p) { return pad(p) >= 0 && rumble_fd >= 0; }
+static unsigned haptic_query(void *h) { return hpad(h) >= 0 ? 1u /* SDL_HAPTIC_CONSTANT */ : 0; }
+static int haptic_num_axes(void *h) { return hpad(h) >= 0 ? 1 : -1; }
+static int haptic_rumble_supported(void *h) { return hpad(h) >= 0; }
+static int haptic_ok(void *h) { return hpad(h) >= 0 ? 0 : -1; }
+static int haptic_rumble_play(void *h, float strength, uint32_t length) {
+    float clamped = strength < 0 ? 0 : strength > 1 ? 1 : strength;
+    return record(2, hpad(h), (uint16_t)(clamped * 0xFFFF + .5f), 0, length);
+}
+static int haptic_rumble_stop(void *h) { return record(2, hpad(h), 0, 0, 0); }
+/* SDL_HapticConstant (x86_64): Uint16 type at 0, Uint32 length at 20, Sint16 level at 30. */
+static int constant(const void *effect, int16_t *level, uint32_t *length) {
+    uint16_t type;
+    memcpy(&type, effect, 2);
+    if (type != 1) return -1;  /* SDL_HAPTIC_CONSTANT */
+    memcpy(length, (const char *)effect + 20, 4);
+    memcpy(level, (const char *)effect + 30, 2);
+    return 0;
+}
+static int haptic_effect_supported(void *h, void *effect) {
+    int16_t level; uint32_t length;
+    return hpad(h) >= 0 && effect && constant(effect, &level, &length) == 0;
+}
+static int haptic_set_effect(void *h, void *effect) {
+    int16_t level; uint32_t length;
+    if (hpad(h) < 0 || !effect || constant(effect, &level, &length)) return -1;
+    return record(3, hpad(h), (uint16_t)level, 0, length) ? -1 : 0;  /* effect id 0 */
+}
+static int haptic_update_effect(void *h, int id, void *effect) { return id == 0 ? haptic_set_effect(h, effect) : -1; }
+static int haptic_run_effect(void *h, int id, uint32_t iterations) { (void)iterations; return hpad(h) >= 0 && id == 0 ? 0 : -1; }
+static int haptic_stop_effect(void *h, int id) { return id == 0 ? record(3, hpad(h), 0, 0, 0) : -1; }
+static void haptic_destroy_effect(void *h, int id) { (void)h; (void)id; }
+static void haptic_close(void *h) { (void)h; }
 
 int32_t SDL_DYNAPI_entry(uint32_t version_number, void *table, uint32_t size) {
     /* dlopen(NULL) finds the original entry exported by Unity, not this
@@ -228,7 +271,21 @@ int32_t SDL_DYNAPI_entry(uint32_t version_number, void *table, uint32_t size) {
     HOOK(SDL_JoystickGetBall, ball);
     HOOK(SDL_JoystickGetButton, button);
     HOOK(SDL_JoystickClose, close_handle);
-    HOOK(SDL_JoystickIsHaptic, zero_handle);
+    HOOK(SDL_JoystickIsHaptic, joystick_is_haptic);
+    HOOK(SDL_HapticOpenFromJoystick, haptic_open);
+    HOOK(SDL_HapticQuery, haptic_query);
+    HOOK(SDL_HapticNumAxes, haptic_num_axes);
+    HOOK(SDL_HapticEffectSupported, haptic_effect_supported);
+    HOOK(SDL_HapticNewEffect, haptic_set_effect);
+    HOOK(SDL_HapticUpdateEffect, haptic_update_effect);
+    HOOK(SDL_HapticRunEffect, haptic_run_effect);
+    HOOK(SDL_HapticStopEffect, haptic_stop_effect);
+    HOOK(SDL_HapticDestroyEffect, haptic_destroy_effect);
+    HOOK(SDL_HapticRumbleSupported, haptic_rumble_supported);
+    HOOK(SDL_HapticRumbleInit, haptic_ok);
+    HOOK(SDL_HapticRumblePlay, haptic_rumble_play);
+    HOOK(SDL_HapticRumbleStop, haptic_rumble_stop);
+    HOOK(SDL_HapticClose, haptic_close);
     HOOK(SDL_JoystickCurrentPowerLevel, zero_handle);
     HOOK(SDL_JoystickFromInstanceID, from_instance);
     HOOK(SDL_JoystickGetDeviceVendor, vendor_index);

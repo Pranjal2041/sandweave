@@ -32,6 +32,7 @@ scripts/vr_frames.py
 scripts/vr_stream.py
 scripts/vr_stream_guest.py
 scripts/vr_input.py
+scripts/vr-metrics.py
 scripts/vr-remote-input.py
 scripts/vr-monado-build.sh
 scripts/vr-monado-guest.sh

@@ -62,6 +62,11 @@ artifacts deliberately covered by `.gitignore`. Apply this habit on every task.
 - At handoff, check both this repository and `sources/gvisor` for uncommitted or
   untracked files. Report the relevant commit IDs and any unresolved changes.
 - A recovery archive supplements Git history; it does not replace a commit.
+- Push to `Pranjal2041/sandweave` with the personal `gh` profile, without changing
+  any config: `GH_CONFIG_DIR=~/.config/gh-personal git -c credential.helper=
+  -c "credential.https://github.com.helper=!GH_CONFIG_DIR=$HOME/.config/gh-personal gh auth git-credential" push`.
+  The default `gh` login (`pranjal-cognition`) cannot push there. Author commits as
+  `Pranjal Aggarwal <pranjal2041@gmail.com>` via `git -c user.name=... -c user.email=...`.
 - The user has given standing authorization to sync completed changes to GitHub
   and PyPI. Include the required version, validation and release steps; do not
   stop at local commits. Publish documentation updates when affected, and verify

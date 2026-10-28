@@ -240,10 +240,17 @@ class AttachedDesktop:
         # machine was failed and started again from scratch (2026-10-23, aws-3: 17 of 424 in one boot).
         deadline = time.monotonic() + context.remaining(config.get('ready_timeout', 600))
         try:
-            with measure('desktop_display_seconds'):
-                self._wait_for_display(context, deadline)
-            with measure('desktop_session_seconds'):
-                self._wait_for_session(context, deadline)
+            if not cold:
+                # A warm reattach (after a pause or snapshot) finds the desktop running already. It must not
+                # depend on guest tools the application may since have locked down for its user: an
+                # environment that removed xprop's execute permission left the cold check retrying forever.
+                with measure('desktop_display_seconds'):
+                    self._wait_for_frame(deadline)
+            else:
+                with measure('desktop_display_seconds'):
+                    self._wait_for_display(context, deadline)
+                with measure('desktop_session_seconds'):
+                    self._wait_for_session(context, deadline)
             with measure('desktop_startup_seconds'):
                 if cold:
                     self._finish_startup(context, config, deadline)
@@ -261,6 +268,16 @@ class AttachedDesktop:
         except BaseException:
             self.client.close()
             raise
+
+    def _wait_for_frame(self, deadline):
+        while True:
+            try:
+                self.client.screenshot()
+                return
+            except Exception:
+                if time.monotonic() >= deadline:
+                    raise
+            time.sleep(.2)
 
     def _wait_for_display(self, context, deadline):
         while True:

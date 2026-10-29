@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import threading
 import time
 
 from ...connection import Connection
@@ -20,6 +21,9 @@ AGENT_PORT = 23799
 IO_PORT = 23801
 STATE = '/run/sandweave'
 MAXIMUM_LIFETIME = 24 * 3600
+
+
+SCHEDULE_FLOOR_S = 60  # after a long first image build, scheduling still gets this long
 
 
 def app_name():
@@ -88,6 +92,38 @@ class Runtime:
         return {'cpu': float(resources['cpu']['vcpus']), 'memory': (total + 1024**2 - 1) // 1024**2,
                 'gpu': gpu, 'block_network': resources['network']['mode'] == 'offline', **placement()}
 
+    @staticmethod
+    def _schedule(modal, app, identity, image, lifetime, spec, options, deadline):
+        """modal.Sandbox.create waits until Modal schedules the sandbox, which never happens while the requested
+        GPU has no capacity in the pinned region. Bound it by the startup deadline: the sandbox is named after its
+        Sandweave identity, so one still unscheduled at the deadline is found and terminated, and the caller gets
+        TimeoutError (and can ask for another GPU model)."""
+        name = 'sandweave-' + identity
+        outcome = {}
+
+        def launch():
+            try:
+                outcome['sandbox'] = modal.Sandbox.create(
+                    'python3', '-u', '/opt/sandweave/guest_boot.py', app=app, image=image, name=name,
+                    timeout=lifetime, encrypted_ports=[AGENT_PORT, IO_PORT],
+                    env={'SANDWEAVE_GUEST_USER': spec['template'].get('user', 'ga')}, **options)
+            except BaseException as error:
+                outcome['error'] = error
+
+        thread = threading.Thread(target=launch, name='sandweave-modal-create', daemon=True)
+        thread.start()
+        thread.join(max(0.0, deadline - time.monotonic()))
+        if thread.is_alive():
+            try:
+                modal.Sandbox.from_name(app_name(), name).terminate()
+            except Exception:
+                pass
+            raise TimeoutError(f"Modal did not schedule the sandbox before its startup deadline (gpu {options.get('gpu')}, "
+                               f"region {options.get('region')}, cloud {options.get('cloud')})")
+        if 'error' in outcome:
+            raise outcome['error']
+        return outcome['sandbox']
+
     def create(self, identity, spec, *, snapshot=None, token=None):
         import modal
         from .image import prepare
@@ -97,12 +133,12 @@ class Runtime:
         token = token or secrets.token_hex(32)
         app = modal.App.lookup(app_name(), create_if_missing=True)
         image = prepare(spec['template'], self.root, app)
+        # Build first: a first image build is not a wait for capacity and must not consume the scheduling deadline.
+        image.build(app)
         lifetime = min(MAXIMUM_LIFETIME, int(spec['ttl'])) if spec.get('ttl') else MAXIMUM_LIFETIME
         options = self.resources(spec)
-        sandbox = modal.Sandbox.create('python3', '-u', '/opt/sandweave/guest_boot.py', app=app, image=image,
-                                       timeout=lifetime, encrypted_ports=[AGENT_PORT, IO_PORT],
-                                       env={'SANDWEAVE_GUEST_USER': spec['template'].get('user', 'ga')},
-                                       **options)
+        sandbox = self._schedule(modal, app, identity, image, lifetime, spec, options,
+                                 max(deadline, time.monotonic() + SCHEDULE_FLOOR_S))
         atomic_json(self._record_path(identity), {'sandbox_id': sandbox.object_id, 'app': app_name(),
                                                   'created_at': time.time()})
         try:

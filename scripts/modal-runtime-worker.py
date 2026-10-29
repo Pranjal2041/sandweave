@@ -5,7 +5,7 @@ The worker runs Sandweave's ordinary (gVisor-capable) worker on Modal's VM runti
 and receives Modal credentials only from the named Modal Secret. It installs the
 given wheel with the modal and vr extras and prepares the coding installation.
 
-    scripts/modal-runtime-worker.py --wheel dist/sandweave-*.whl [--secret sandweave-modal-credentials]
+    scripts/modal-runtime-worker.py --wheel dist/sandweave-*.whl [--secret sandweave-modal-credentials] [--region us-east --cloud aws]
 
 Requires Modal credentials on the client; MODAL_ENVIRONMENT selects the environment.
 """
@@ -39,6 +39,10 @@ def main():
     parser.add_argument('--wheel', type=Path, required=True)
     parser.add_argument('--secret', default='sandweave-modal-credentials')
     parser.add_argument('--hours', type=float, default=12)
+    # Runtime sandboxes are pinned to the worker's own region and cloud, so the worker's placement decides
+    # where GPU capacity is sought (a worker Modal put in uk/oci found no L40S for its VR sandboxes).
+    parser.add_argument('--region', help='comma-separated Modal regions for the worker, e.g. us-east')
+    parser.add_argument('--cloud', help='Modal cloud for the worker, e.g. aws')
     args = parser.parse_args()
     image = (modal.Image.from_registry('ubuntu:24.04').apt_install(*PACKAGES.split())
              .run_commands('useradd -m sw', 'python3 -m venv /opt/venv', f'install -d -o sw -g sw {HOME}/sandweave'))
@@ -47,7 +51,9 @@ def main():
     sandbox = modal.Sandbox.create('sleep', 'infinity', app=app, image=image, cpu=8, memory=32768,
                                    timeout=int(args.hours * 3600), secrets=[modal.Secret.from_name(args.secret)],
                                    env={k: v for k, v in environment.items() if v},
-                                   experimental_options={'vm_runtime': True})
+                                   experimental_options={'vm_runtime': True},
+                                   **({'region': args.region.split(',')} if args.region else {}),
+                                   **({'cloud': args.cloud} if args.cloud else {}))
     remote = '/tmp/' + args.wheel.name
     sandbox.filesystem.write_bytes(args.wheel.read_bytes(), remote)
     run(sandbox, 'bash', '-c', f'chown sw /dev/fuse 2>/dev/null; chmod 600 /dev/fuse 2>/dev/null; '

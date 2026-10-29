@@ -86,6 +86,14 @@ class FakeProcess:
         return self.code
 
 
+class FakeImage:
+    def __init__(self):
+        self.builds = 0
+
+    def build(self, app):
+        self.builds += 1
+
+
 class FakeSandbox:
     created = []
 
@@ -102,6 +110,10 @@ class FakeSandbox:
     @classmethod
     def from_id(cls, identity):
         return cls.created[-1]
+
+    @classmethod
+    def from_name(cls, app, name):
+        return next(s for s in cls.created if s.options.get('name') == name)
 
     def poll(self):
         return 0 if self.terminated else None
@@ -126,7 +138,8 @@ def test_create_boots_the_guest_and_connects_to_its_agent(monkeypatch, tmp_path)
     fake.Sandbox = FakeSandbox
     monkeypatch.setitem(sys.modules, 'modal', fake)
     import sandweave.sandbox.runtimes.modal.image as image
-    monkeypatch.setattr(image, 'prepare', lambda recipe, root, app: 'image')
+    built = FakeImage()
+    monkeypatch.setattr(image, 'prepare', lambda recipe, root, app: built)
     calls = []
 
     class FakeConnection:
@@ -146,7 +159,8 @@ def test_create_boots_the_guest_and_connects_to_its_agent(monkeypatch, tmp_path)
     sandbox = FakeSandbox.created[-1]
     assert sandbox.args == ('python3', '-u', '/opt/sandweave/guest_boot.py')
     assert sandbox.options['encrypted_ports'] == [23799, 23801] and sandbox.options['gpu'] == 'L40S'
-    assert sandbox.options['timeout'] == 24 * 3600 and sandbox.options['image'] == 'image'
+    assert sandbox.options['timeout'] == 24 * 3600 and sandbox.options['image'] is built and built.builds == 1
+    assert sandbox.options['name'] == 'sandweave-vr-sw-1'
     assert sandbox.files['/run/sandweave/agent.token'].decode().strip() == metadata['token']
     assert b'open(sys.argv[2])' in sandbox.files['/run/sandweave/agent.py']
     assert metadata['host'] == '23799.modal.test' and metadata['io'] == {'host': '23801.modal.test', 'port': 443}
@@ -249,3 +263,34 @@ def test_placement_pins_only_what_the_worker_reports(monkeypatch):
     assert modal_driver.placement() == {'region': ['us-central']}
     monkeypatch.setenv('MODAL_CLOUD_PROVIDER', 'CLOUD_PROVIDER_OCI')
     assert modal_driver.placement() == {'region': ['us-central'], 'cloud': 'oci'}
+
+
+def test_a_sandbox_modal_cannot_schedule_times_out_and_is_terminated(monkeypatch, tmp_path):
+    import threading
+    (tmp_path / 'sandboxes').mkdir()
+    release = threading.Event()
+
+    class Pending(FakeSandbox):
+        @classmethod
+        def create(cls, *args, **options):
+            sandbox = cls(*args, **options)  # exists on Modal, but is not scheduled
+            release.wait(5)
+            return sandbox
+
+        def terminate(self):
+            self.terminated = True
+            release.set()
+
+    fake = types.ModuleType('modal')
+    fake.App = types.SimpleNamespace(lookup=lambda name, create_if_missing: types.SimpleNamespace(name=name))
+    fake.Sandbox = Pending
+    monkeypatch.setitem(sys.modules, 'modal', fake)
+    import sandweave.sandbox.runtimes.modal.image as image
+    monkeypatch.setattr(image, 'prepare', lambda recipe, root, app: FakeImage())
+    monkeypatch.setattr(modal_driver, 'SCHEDULE_FLOOR_S', 0.2)
+    spec = spec_for('vr/opensaber')
+    spec['startup_timeout'] = 0.2
+    with pytest.raises(TimeoutError, match='did not schedule'):
+        modal_driver.Runtime(tmp_path).create('vr-sw-2', spec)
+    pending = FakeSandbox.created[-1]
+    assert pending.options['name'] == 'sandweave-vr-sw-2' and pending.terminated

@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 import sys
 import types
@@ -294,3 +295,41 @@ def test_a_sandbox_modal_cannot_schedule_times_out_and_is_terminated(monkeypatch
         modal_driver.Runtime(tmp_path).create('vr-sw-2', spec)
     pending = FakeSandbox.created[-1]
     assert pending.options['name'] == 'sandweave-vr-sw-2' and pending.terminated
+
+
+def test_a_sandbox_scheduled_after_the_deadline_is_terminated_when_modal_returns_it(monkeypatch, tmp_path):
+    import threading
+    (tmp_path / 'sandboxes').mkdir()
+    release, returned = threading.Event(), threading.Event()
+
+    class Late(FakeSandbox):
+        @classmethod
+        def create(cls, *args, **options):
+            release.wait(5)  # Modal schedules it only after the deadline
+            sandbox = cls(*args, **options)
+            returned.set()
+            return sandbox
+
+        @classmethod
+        def from_name(cls, app, name):
+            raise LookupError('Sandbox not found')  # a pending create is not yet findable by name
+
+    fake = types.ModuleType('modal')
+    fake.App = types.SimpleNamespace(lookup=lambda name, create_if_missing: types.SimpleNamespace(name=name))
+    fake.Sandbox = Late
+    monkeypatch.setitem(sys.modules, 'modal', fake)
+    import sandweave.sandbox.runtimes.modal.image as image
+    monkeypatch.setattr(image, 'prepare', lambda recipe, root, app: FakeImage())
+    monkeypatch.setattr(modal_driver, 'SCHEDULE_FLOOR_S', 0.2)
+    spec = spec_for('vr/opensaber')
+    spec['startup_timeout'] = 0.2
+    with pytest.raises(TimeoutError, match='did not schedule'):
+        modal_driver.Runtime(tmp_path).create('vr-sw-3', spec)
+    release.set()
+    assert returned.wait(5)
+    late = FakeSandbox.created[-1]
+    for _ in range(50):
+        if late.terminated:
+            break
+        time.sleep(.05)
+    assert late.options['name'] == 'sandweave-vr-sw-3' and late.terminated

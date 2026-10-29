@@ -99,21 +99,33 @@ class Runtime:
         Sandweave identity, so one still unscheduled at the deadline is found and terminated, and the caller gets
         TimeoutError (and can ask for another GPU model)."""
         name = 'sandweave-' + identity
-        outcome = {}
+        outcome, lock, cancelled = {}, threading.Lock(), threading.Event()
 
         def launch():
             try:
-                outcome['sandbox'] = modal.Sandbox.create(
+                sandbox = modal.Sandbox.create(
                     'python3', '-u', '/opt/sandweave/guest_boot.py', app=app, image=image, name=name,
                     timeout=lifetime, encrypted_ports=[AGENT_PORT, IO_PORT],
                     env={'SANDWEAVE_GUEST_USER': spec['template'].get('user', 'ga')}, **options)
             except BaseException as error:
                 outcome['error'] = error
+                return
+            with lock:
+                if not cancelled.is_set():
+                    outcome['sandbox'] = sandbox
+                    return
+            # Scheduled only after the caller gave up: nobody owns it, so it must not run (and bill) unattended.
+            sandbox.terminate()
 
         thread = threading.Thread(target=launch, name='sandweave-modal-create', daemon=True)
         thread.start()
         thread.join(max(0.0, deadline - time.monotonic()))
-        if thread.is_alive():
+        with lock:
+            if 'sandbox' not in outcome and 'error' not in outcome:
+                cancelled.set()
+        if cancelled.is_set():
+            # A still-pending create is usually not yet findable by name; launch() terminates it if Modal
+            # returns it later. Terminate it now where Modal already resolves the name.
             try:
                 modal.Sandbox.from_name(app_name(), name).terminate()
             except Exception:

@@ -460,7 +460,8 @@ class Worker:
             agent = self.agent(identity)
         if getattr(agent, '_process_wait_supported', True):
             try:
-                return agent.call('wait', identity=process_id, timeout=timeout, stream=stream, offset=offset)
+                return self._read_guest(agent, 'wait', identity=process_id, timeout=timeout, stream=stream,
+                                        offset=offset)
             except ValueError as error:
                 if str(error) != 'unknown agent operation':
                     raise
@@ -468,13 +469,30 @@ class Worker:
                 agent._process_wait_supported = False
         deadline, delay = time.monotonic() + timeout, .01
         while True:
-            state = agent.call('status', identity=process_id)
+            state = self._read_guest(agent, 'status', identity=process_id)
             remaining = deadline - time.monotonic()
             if (state['returncode'] is not None or remaining <= 0
                     or stream is not None and state[stream + '_size'] > offset):
                 return state
             time.sleep(min(delay, remaining))
             delay = min(.25, delay * 2)
+
+    # A host that stops the guest briefly (a cloud VM held for about a minute) breaks one transport call.
+    # `wait` and `status` only read the process state, so repeating them is safe; a guest that stays
+    # unreachable for longer still fails the caller.
+    GUEST_READ_RETRY_S = 180
+
+    def _read_guest(self, agent, operation, **params):
+        from .errors import OperationUnknown
+        deadline = time.monotonic() + self.GUEST_READ_RETRY_S
+        while True:
+            try:
+                return agent.call(operation, **params)
+            except OperationUnknown:
+                if time.monotonic() >= deadline:
+                    raise
+                logging.getLogger(__name__).warning('guest %s failed in transport; repeating it', operation)
+                time.sleep(1)
 
     def process_output(self, identity, process_id, **params):
         return self.agent(identity).call('output', identity=process_id, **params)

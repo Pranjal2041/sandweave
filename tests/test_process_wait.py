@@ -275,3 +275,41 @@ def test_service_wait_uses_async_transport_and_member_route():
         dispatch=lambda operation, params: (operation, params))
     assert service.dispatch('group', 'db', 'process_wait', {'process_id': 'p'}) == (
         'process_wait', {'identity': 'member', 'process_id': 'p'})
+
+
+def test_worker_repeats_a_guest_wait_broken_in_transport(tmp_path, agent, monkeypatch):
+    from sandweave.sandbox.errors import OperationUnknown
+    value, connection = worker(tmp_path, agent)
+    spawn(agent, 'pass')
+    failures, call = [], connection.call
+    def frozen_once(operation, **params):
+        if operation == 'wait' and not failures:
+            failures.append(operation)
+            raise OperationUnknown('wait: transport failed; delivery outcome unknown: timed out')
+        return call(operation, **params)
+    connection.call = frozen_once
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    assert value.process_wait('sandbox', 'p', timeout=2)['returncode'] == 0
+    assert failures == ['wait']
+    def unreachable(operation, **params):
+        raise OperationUnknown('wait: transport failed; delivery outcome unknown: timed out')
+    connection.call = unreachable
+    monkeypatch.setattr(Worker, 'GUEST_READ_RETRY_S', 0)
+    with pytest.raises(OperationUnknown):
+        value.process_wait('sandbox', 'p', timeout=.1)
+
+
+def test_client_repeats_a_process_wait_broken_in_transport(monkeypatch):
+    from sandweave.sandbox.errors import OperationUnknown
+    calls = []
+    def call(operation, **params):
+        calls.append(operation)
+        if len(calls) == 1:
+            raise OperationUnknown('process_wait: transport failed; delivery outcome unknown: timed out')
+        return {'returncode': 0, 'stdout_size': 0, 'stderr_size': 0}
+    process = Process.__new__(Process)
+    process.id, process._final, process._wait_supported = 'p', None, True
+    process.sandbox = SimpleNamespace(_call=call)
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    assert process._waiting(timeout=1)['returncode'] == 0
+    assert calls == ['process_wait', 'process_wait']

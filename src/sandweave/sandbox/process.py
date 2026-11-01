@@ -6,7 +6,7 @@ import io
 import time
 
 from .asyncio import dualmethod
-from .errors import CommandError, CommandTimeout, OutputLimitExceeded
+from .errors import CommandError, CommandTimeout, OperationUnknown, OutputLimitExceeded
 
 INLINE_LIMIT = 1024**2
 
@@ -221,19 +221,37 @@ class Process:
             self._final = state
         return state
 
+    # Waiting only reads process state: a call broken in transport (a host that stopped the machine for
+    # about a minute) is repeated rather than failing a long command; a longer outage still raises.
+    READ_RETRY_S = 180
+
     def _waiting(self, timeout=10, **params):
         if self._final is not None:
             return self._final
         operation = 'process_wait' if self._wait_supported else 'process_status'
         options = dict(timeout=timeout, **params) if self._wait_supported else {}
-        return self._remember(self.sandbox._call(operation, process_id=self.id, **options))
+        deadline = time.monotonic() + self.READ_RETRY_S
+        while True:
+            try:
+                return self._remember(self.sandbox._call(operation, process_id=self.id, **options))
+            except OperationUnknown:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(1)
 
     async def _awaiting(self, timeout=10, **params):
         if self._final is not None:
             return self._final
         operation = 'process_wait' if self._wait_supported else 'process_status'
         options = dict(timeout=timeout, **params) if self._wait_supported else {}
-        return self._remember(await self._acall(operation, **options))
+        deadline = time.monotonic() + self.READ_RETRY_S
+        while True:
+            try:
+                return self._remember(await self._acall(operation, **options))
+            except OperationUnknown:
+                if time.monotonic() >= deadline:
+                    raise
+                await asyncio.sleep(1)
 
     @dualmethod
     def poll(self):

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Run root workers on hosts that deny unprivileged user namespaces, such as
+  Ubuntu with `kernel.apparmor_restrict_unprivileged_userns=1`. A privileged
+  root worker keeps passt at root, which otherwise cannot create its isolating
+  namespaces after dropping to `nobody`. Storage, build, import and release
+  directories that root creates are `0711`, so gVisor sidecars that drop root
+  can traverse them without listing them. Unprivileged workers are unchanged.
+
 ## 0.2.48
 
 - Add an opt-in `kvm` option for gVisor sandboxes. `kvm=True` uses gVisor's KVM

@@ -183,3 +183,11 @@ def test_extraction_rejects_invalid_partition_before_writing(tmp_path, monkeypat
     with pytest.raises(RuntimeError, match='invalid SquashFS partition'):
         module._extract_host_image(image, tmp_path / 'rootfs', 'apptainer')
     assert not (tmp_path / 'rootfs').exists()
+
+
+@pytest.mark.parametrize('euid,mode', [(1001, 0o700), (0, 0o711)])
+def test_root_worker_storage_is_traversable_by_its_sidecars(tmp_path, monkeypatch, euid, mode):
+    from sandweave import installation
+    monkeypatch.setattr(installation.os, 'geteuid', lambda: euid)
+    root = installation.destination(tmp_path / 'home')
+    assert root.stat().st_mode & 0o777 == mode

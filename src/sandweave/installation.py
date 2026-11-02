@@ -32,6 +32,8 @@ def destination(path):
     if any(character in str(root) for character in (':', ',', '\n', '\0')):
         raise ValueError('Storage paths cannot contain colons, commas, newlines or NUL characters')
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.geteuid() == 0 and root.stat().st_uid == os.getuid():
+        root.chmod(0o711)  # A root worker's gVisor sidecars drop root: they may traverse, never list, it.
     if root.stat().st_uid != os.getuid():
         raise ValueError('Choose a storage directory owned by your user: ' + str(root))
     # Check actual creation, rather than os.access (which misses quotas and ACLs).
@@ -161,6 +163,8 @@ def import_runtime(source, directory, recipe, *, engine=None):
                 # Install a replacement separately; never rewrite that tree.
                 target = store / (identity + '-' + uuid.uuid4().hex[:12])
         temporary = Path(tempfile.mkdtemp(prefix='.import-', dir=store))
+        if os.geteuid() == 0:
+            temporary.chmod(0o711)  # A root worker's gVisor sidecars drop root: they may traverse, never list, it.
         try:
             with Stage('Copy runtime files', total=len(selected), unit='inputs') as progress:
                 for name in selected:

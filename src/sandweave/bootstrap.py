@@ -257,6 +257,8 @@ done
         store.mkdir(parents=True, exist_ok=True)
         # Only this attempt owns these paths; no running worker points into them.
         root = Path(tempfile.mkdtemp(prefix='.build-', dir=store))
+        if os.geteuid() == 0:
+            root.chmod(0o711)  # A root worker's gVisor sidecars drop root: they may traverse, never list, it.
         try:
             return self._build(root, recipe, base=base, engine=engine)
         except BaseException:

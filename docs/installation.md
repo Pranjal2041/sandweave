@@ -30,6 +30,12 @@ host image once in `host-images` under your chosen Sandweave directory. Guest
 code still runs inside gVisor. This does not grant host privileges or override
 restrictions imposed on your account by the outer container.
 
+Some hosts deny unprivileged user namespaces through AppArmor (for example,
+Ubuntu with `kernel.apparmor_restrict_unprivileged_userns=1`). There, run setup
+and the worker as root. A root worker with mount authority skips Apptainer's
+user namespace, keeps passt at root and makes its directories traversable by
+the gVisor sidecars that drop root. Guest code still runs inside gVisor.
+
 The default Code sandbox reserves 1 GiB for the guest plus 512 MiB for its
 runtime. First-time package installation also needs memory for downloads and
 unpacking. A 1 GiB host cannot run that default configuration; smaller resource

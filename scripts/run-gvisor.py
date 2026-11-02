@@ -500,7 +500,11 @@ try:
     # passt drops privileges, so it cannot dereference the launcher's /proc FD.
     # Its private working directory gives it a short, relative socket address
     # in both host and Apptainer execution, without changing the parent cwd.
-    passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4', '-s', passt_socket.name,
+    passt = spawn(runtime_tools.command(lab, local, 'passt', '-f', '-1', '-4',
+                   # A privileged root worker keeps passt at root: dropping to nobody cannot create its
+                   # isolating namespaces on hosts that deny unprivileged user namespaces (AppArmor).
+                   *(['--runas', '0:0'] if host_compat.mount_privileged() else []),
+                   '-s', passt_socket.name,
                    '-a', '10.0.2.15', '-n', '24', '-g', '10.0.2.2', '-m', '1500',
                    '--dns-forward', '10.0.2.3', '--tcp-port-report', 'ports.json',
                    *forwards, memory_limit=True, cwd=netdir),

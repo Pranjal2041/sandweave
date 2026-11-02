@@ -194,6 +194,8 @@ def install(directory, host):
     if archive.stat().st_size != artifact['size']:
         raise ValueError('Runtime archive size differs from its manifest')
     temporary = Path(tempfile.mkdtemp(prefix='.release-', dir=store))
+    if os.geteuid() == 0:
+        temporary.chmod(0o711)  # A root worker's gVisor sidecars drop root: they may traverse, never list, it.
     try:
         extract_source(archive, temporary, max_bytes=artifact['unpacked_bytes'])
         with Stage('Verify runtime files'):
